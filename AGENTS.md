@@ -9,8 +9,9 @@
 - Runtime user should be non-root; do not grant general `sudo` inside the container
 - Runtime should include Nix for ad hoc `nix shell` usage
 - Persist Hermes state in the user home volume and persist `/nix` on a separate volume
-- Primary v1 interface should be Discord via `hermes gateway`
+- Primary v1 interface should be `ttyd` serving Hermes for browser access
 - CLI access remains available for admin/debug workflows inside the running container
+- Discord gateway remains an optional later interface, not the v1 default
 - Default skills should seed into the standard Hermes runtime skill directory on first start without overwriting user-managed content
 - The first utility scaffold should target SearXNG
 - Build on every push/PR; only publish from `main`
@@ -21,7 +22,7 @@
 - Hermes does not currently present a documented primary web UI. The official docs describe a CLI/TUI and a messaging gateway workflow.
 - Hermes browser automation docs describe `agent-browser` via Browserbase-style cloud/browser tooling rather than a local Chrome/CDP-first setup.
 - Hermes skills are stored in `~/.hermes/skills/`, and bundled skills are copied there on install; the container should mirror that behavior.
-- For this project, a web terminal is lower-priority than a stable gateway deployment. Discord is the preferred v1 interface.
+- The current v1 direction is a `ttyd`-served Hermes interface rather than Discord as the default entrypoint.
 
 ## Documentation Requirements
 

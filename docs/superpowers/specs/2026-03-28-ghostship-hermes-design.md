@@ -4,7 +4,7 @@ Date: 2026-03-28
 
 ## Summary
 
-`ghostship-hermes` will be a Nix-first monorepo that builds and publishes a `full` GHCR container image for Hermes. The image will target both `linux/amd64` and `linux/arm64`, run as a non-root `hermes` user, include a curated tool bundle and runtime Nix, and use Discord via `hermes gateway` as the primary v1 interface.
+`ghostship-hermes` will be a Nix-first monorepo that builds and publishes a `full` GHCR container image for Hermes. The image will target both `linux/amd64` and `linux/arm64`, run as a non-root `hermes` user, include a curated tool bundle and runtime Nix, and use `ttyd` serving Hermes as the primary v1 interface.
 
 The repository will also host Python-based CLI utility packages for API wrappers, default repo-managed Hermes skills, and GitHub Actions workflows that build on every push and publish from `main`. A scheduled workflow will watch upstream Hermes releases and only publish updated images when the pinned stable Nixpkgs branch contains the matching Hermes version.
 
@@ -110,9 +110,9 @@ Package duplicates should be normalized during implementation.
 
 ### Process Model
 
-The container should run `hermes gateway` as the default long-running process. Discord is the primary v1 interface. Direct CLI access remains available inside the running container for administration and debugging.
+The container should run a small entrypoint that starts a persistent `tmux` session for Hermes and serves it through `ttyd`. This browser-served terminal is the primary v1 interface. Direct CLI access remains available inside the running container for administration and debugging.
 
-The runtime should not include `ttyd` in v1. A browser-served terminal can be revisited later if operational experience shows a real need and acceptable reliability.
+The `tmux` session should preserve the Hermes process across browser disconnects so the web terminal behaves like a durable admin console rather than a fragile one-shot shell. Discord gateway support can be added later as a separate runtime mode if needed.
 
 ### User, Permissions, and Persistence
 
@@ -124,6 +124,8 @@ Persistent volumes should be mounted for:
 - `/nix` for the Nix store and downloaded dependencies
 
 Hermes configuration and secrets should be accepted through both environment variables and mounted configuration files.
+
+The `ttyd` endpoint should be exposed without built-in auth in the container, with the assumption that access control is handled by an external reverse proxy, VPN, or similar network boundary.
 
 ### Skills
 
@@ -177,7 +179,8 @@ Testing should be layered:
 The image-level validation should confirm at minimum:
 
 - Hermes is installed and runnable
-- the gateway entrypoint resolves correctly
+- the `ttyd` entrypoint resolves correctly
+- the persistent `tmux` Hermes session is created correctly
 - the default tool bundle is present on `PATH`
 - seeded default skills land in the correct Hermes path
 - the runtime user and persistence expectations are wired correctly
@@ -199,9 +202,9 @@ The repository should include, from the beginning:
 The README should explain:
 
 - what the image is for
-- how Hermes is run
+- how Hermes is run through `ttyd` and `tmux`
 - how persistence is expected to be mounted
-- how Discord gateway configuration works
+- how the browser terminal should be exposed safely behind external network protection
 - how Python CLI utilities are developed, tested, and packaged
 
 The project `AGENTS.md` should document repository-specific build and test guidance for the utility packages.
@@ -209,7 +212,7 @@ The project `AGENTS.md` should document repository-specific build and test guida
 ## Open Questions Resolved
 
 - Artifact type: OCI/Docker image built from Nix packages, not a NixOS system image
-- Interface: Discord via `hermes gateway` for v1
+- Interface: `ttyd` serving Hermes for v1
 - Runtime user: non-root
 - In-container privilege escalation: none in v1
 - Runtime Nix: included and persistent
