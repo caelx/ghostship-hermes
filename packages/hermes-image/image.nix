@@ -1,22 +1,20 @@
 {
   dockerTools,
   pkgs,
-  runCommand,
   ghostshipHermesRuntime,
   hermesRelease,
   ghostshipSearxng,
 }:
 let
-  skillsTree = runCommand "ghostship-hermes-default-skills" { } ''
-    mkdir -p "$out/share/ghostship-hermes"
-    cp -R ${../../skills} "$out/share/ghostship-hermes/skills"
-  '';
+  skillsTree = builtins.path {
+    path = ../../skills;
+    name = "ghostship-hermes-skills";
+  };
 
-  etcFiles = runCommand "ghostship-hermes-etc" { } ''
-    mkdir -p "$out/etc" "$out/home/hermes"
-    printf 'root:x:0:0:root:/root:/bin/sh\nhermes:x:1000:1000:Hermes:/home/hermes:/bin/bash\n' > "$out/etc/passwd"
-    printf 'root:x:0:\nhermes:x:1000:\n' > "$out/etc/group"
-  '';
+  rootfs = builtins.path {
+    path = ./rootfs;
+    name = "ghostship-hermes-rootfs";
+  };
 in
 dockerTools.buildLayeredImage {
   name = "ghostship-hermes";
@@ -32,6 +30,7 @@ dockerTools.buildLayeredImage {
     ffmpeg
     file
     findutils
+    gh
     ghostshipHermesRuntime
     ghostshipSearxng
     git
@@ -59,18 +58,20 @@ dockerTools.buildLayeredImage {
     codex
     gemini-cli
     opencode
-    etcFiles
-    skillsTree
+    rootfs
   ];
 
   config = {
     WorkingDir = "/home/hermes";
-    Entrypoint = [ "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime" "entrypoint" ];
+    Entrypoint = [
+      "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime"
+      "entrypoint"
+    ];
     Env = [
       "HOME=/home/hermes"
       "HERMES_HOME=/home/hermes/.hermes"
       "GHOSTSHIP_HERMES_REF=${hermesRelease}"
-      "GHOSTSHIP_DEFAULT_SKILLS=/share/ghostship-hermes/skills"
+      "GHOSTSHIP_DEFAULT_SKILLS=${skillsTree}"
       "NIX_CONFIG=experimental-features = nix-command flakes"
       "PATH=/home/hermes/.hermes/hermes-agent/venv/bin:/home/hermes/.hermes/hermes-agent/node_modules/.bin:/bin"
     ];

@@ -212,7 +212,7 @@ The arm64 image currently includes:
 - operator tooling: `git`, `curl`, `jq`, `yq-go`, `ripgrep`, `fd`, `gh`, `uv`, `python311`, `bash`, `nodejs`, `coreutils`, `wget`, `lsof`, `strace`, `psmisc`, `file`, `tree`, `bubblewrap`, `binutils`, `tmux`, `zip`, `unzip`, `p7zip`, `ripgrep-all`, `codex`, `gemini-cli`, `opencode`
 - runtime Nix CLI
 
-The image also ships the repo skill tree under `/share/ghostship-hermes/skills`, which is copied into the user-managed Hermes skill directory on first start.
+The image exposes the repo skill tree through the immutable Nix store and points `GHOSTSHIP_DEFAULT_SKILLS` at that store path, which is then copied into the user-managed Hermes skill directory on first start.
 
 ## Runtime Behavior
 
@@ -252,7 +252,7 @@ Current important environment variables:
 - `HOME=/home/hermes`
 - `HERMES_HOME=/home/hermes/.hermes`
 - `GHOSTSHIP_HERMES_REF=<tag from packages/hermes-image/hermes-release.txt>`
-- `GHOSTSHIP_DEFAULT_SKILLS=/share/ghostship-hermes/skills`
+- `GHOSTSHIP_DEFAULT_SKILLS=<immutable Nix store path for the repo skill tree>`
 - `TTYD_PORT=7681` by default
 - `TTYD_SESSION_NAME=hermes` by default
 - `TTYD_TITLE=Hermes` by default
@@ -314,6 +314,9 @@ Current CI does three things:
    - `nix flake check`
    - Python utility tests via the shared helper
    - `nix build .#packages.x86_64-linux.ghostship-hermes-runtime`
+   - `nix eval .#packages.aarch64-linux.ghostship-hermes-image.drvPath --raw`
+
+The CI job runs on x86_64, so it verifies the arm64 image still evaluates but leaves the full image build to the dedicated arm64 publish workflow.
 
 ### Image Publish
 

@@ -24,7 +24,9 @@
             config.allowUnfree = true;
           };
           ghostshipSearxng = pkgs.callPackage ./packages/searxng-cli/package.nix { };
-          hermesRelease = lib.strings.removeSuffix "\n" (builtins.readFile ./packages/hermes-image/hermes-release.txt);
+          hermesRelease = lib.strings.removeSuffix "\n" (
+            builtins.readFile ./packages/hermes-image/hermes-release.txt
+          );
           ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix {
             inherit hermesRelease;
           };
@@ -35,10 +37,20 @@
         }
         // lib.optionalAttrs (system == "aarch64-linux") {
           ghostship-hermes-image = pkgs.callPackage ./packages/hermes-image/image.nix {
-            inherit ghostshipHermesRuntime hermesRelease ghostshipSearxng pkgs;
+            inherit
+              ghostshipHermesRuntime
+              hermesRelease
+              ghostshipSearxng
+              pkgs
+              ;
           };
           default = pkgs.callPackage ./packages/hermes-image/image.nix {
-            inherit ghostshipHermesRuntime hermesRelease ghostshipSearxng pkgs;
+            inherit
+              ghostshipHermesRuntime
+              hermesRelease
+              ghostshipSearxng
+              pkgs
+              ;
           };
         }
       );
