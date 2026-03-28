@@ -1,0 +1,19 @@
+name: Feature request
+description: Propose a repo, image, or utility improvement.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should be added or changed?
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: Why does this matter for ghostship-hermes?
+    validations:
+      required: true

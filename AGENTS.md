@@ -15,7 +15,10 @@
 - Default skills should seed into the standard Hermes runtime skill directory on first start without overwriting user-managed content
 - The first utility scaffold should target SearXNG
 - Build on every push/PR; only publish from `main`
-- Scheduled automation should watch upstream Hermes releases and only publish when the pinned stable Nixpkgs branch contains the matching Hermes version
+- Hermes is installed at container runtime using the upstream manual `uv` plus `npm` flow against a pinned upstream release tag
+- Scheduled automation should watch upstream Hermes releases and update `packages/hermes-image/hermes-release.txt`
+- Publish only an `linux/arm64` image for v1
+- Repo-owned utilities should use a `ghostship-` prefix to avoid clobbering upstream or system package names
 
 ## Lessons Learned
 
@@ -23,8 +26,17 @@
 - Hermes browser automation docs describe `agent-browser` via Browserbase-style cloud/browser tooling rather than a local Chrome/CDP-first setup.
 - Hermes skills are stored in `~/.hermes/skills/`, and bundled skills are copied there on install; the container should mirror that behavior.
 - The current v1 direction is a `ttyd`-served Hermes interface rather than Discord as the default entrypoint.
+- Hermes is not packaged in the locally inspected `nixos-25.11` nixpkgs source tree, while `ttyd`, `codex`, `gemini-cli`, and `opencode` are present there.
+- In this repo, `agent-browser` is expected to come from the Hermes-side `npm install` step, making it available under the Hermes install tree rather than as a stable nixpkgs package.
+- A practical container needs a root init phase to prepare `/home/hermes/.hermes` and `/nix` volume permissions before dropping to the non-root `hermes` user.
 
 ## Documentation Requirements
 
 - Document how to build and test Python CLI utilities in this repository.
 - Keep repo identity and OSS maintenance files present from the start: `README.md`, `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and `.github/` metadata.
+- Python utility build/test loop:
+  - `python3 scripts/python_utility.py lock packages/searxng-cli`
+  - `python3 scripts/python_utility.py test packages/searxng-cli`
+  - `python3 scripts/python_utility.py build packages/searxng-cli`
+  - `nix build .#packages.x86_64-linux.ghostship-hermes-runtime`
+  - `nix build .#packages.aarch64-linux.ghostship-hermes-image`

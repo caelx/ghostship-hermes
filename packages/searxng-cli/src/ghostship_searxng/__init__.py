@@ -1,0 +1,1 @@
+"""ghostship-searxng package."""

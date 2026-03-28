@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Validate flake evaluation
+        run: nix flake check
+
+      - name: Run Python utility tests
+        run: nix develop -c python3 scripts/python_utility.py test packages/searxng-cli
+
+      - name: Build Python utility package
+        run: nix develop -c python3 scripts/python_utility.py build packages/searxng-cli
+
+      - name: Build runtime package
+        run: nix build .#packages.x86_64-linux.ghostship-hermes-runtime

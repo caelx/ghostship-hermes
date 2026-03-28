@@ -4,15 +4,15 @@ Date: 2026-03-28
 
 ## Summary
 
-`ghostship-hermes` will be a Nix-first monorepo that builds and publishes a `full` GHCR container image for Hermes. The image will target both `linux/amd64` and `linux/arm64`, run as a non-root `hermes` user, include a curated tool bundle and runtime Nix, and use `ttyd` serving Hermes as the primary v1 interface.
+`ghostship-hermes` will be a Nix-first monorepo that builds and publishes a `full` GHCR container image for Hermes. The image will target `linux/arm64`, run as a non-root `hermes` user, include a curated tool bundle and runtime Nix, and use `ttyd` serving Hermes as the primary v1 interface.
 
-The repository will also host Python-based CLI utility packages for API wrappers, default repo-managed Hermes skills, and GitHub Actions workflows that build on every push and publish from `main`. A scheduled workflow will watch upstream Hermes releases and only publish updated images when the pinned stable Nixpkgs branch contains the matching Hermes version.
+The repository will also host Python-based CLI utility packages for API wrappers, default repo-managed Hermes skills, and GitHub Actions workflows that build on every push and publish from `main`. Hermes itself will be installed inside the container using the upstream manual install flow pinned to a release tag, and a scheduled workflow will update that pinned release reference when upstream publishes a new version.
 
 ## Goals
 
-- Build a reproducible GHCR image for Hermes using stable Nixpkgs
+- Build a reproducible GHCR image for Hermes using stable Nixpkgs for the base toolchain and a pinned upstream Hermes release for the application itself
 - Ship Hermes plus a curated default tool bundle in a single `full` image
-- Support both `linux/amd64` and `linux/arm64`
+- Support `linux/arm64`
 - Run Hermes as a dedicated non-root user
 - Make Hermes state and runtime Nix persistent across container restarts
 - Seed repo-managed default skills into the standard Hermes skill path
@@ -29,7 +29,7 @@ The repository will also host Python-based CLI utility packages for API wrappers
 
 ## Recommended Approach
 
-Use a single monorepo with one flake as the source of truth for packages, the OCI image, shared Nix code, and automation. Hermes should come from a pinned stable Nixpkgs release branch, while the scheduled release workflow uses upstream `nousresearch/hermes-agent` tags/releases as the trigger source and Nixpkgs package availability as the publication gate.
+Use a single monorepo with one flake as the source of truth for packages, the OCI image, shared Nix code, and automation. The base image and curated tool bundle should come from a pinned stable Nixpkgs release branch, while Hermes itself should be installed in the container via the documented upstream `uv` plus `npm` flow against a pinned upstream release tag. The scheduled release workflow should update that pinned release tag when upstream publishes a new version.
 
 Python should be the default language for repo-hosted CLI utilities. The main reasons are API-integration ergonomics, strong testing support, and a good fit for machine-readable CLI patterns required by agents. Node remains an acceptable exception for SDK-driven cases, but not the default.
 
@@ -72,7 +72,6 @@ The default CLI contract should follow this shape:
 
 The published image should be a single `full` image including:
 
-- Hermes from stable Nixpkgs
 - runtime Nix
 - `git`
 - `curl`
@@ -104,13 +103,13 @@ The published image should be a single `full` image including:
 - `opencode`
 - `agent-browser`
 
-Package duplicates should be normalized during implementation.
+Hermes itself should not come from stable Nixpkgs because it is not currently packaged there. Instead, the container should bootstrap Hermes from the pinned upstream release on first start and retain that installation in the persistent Hermes home volume.
 
 ## Runtime Design
 
 ### Process Model
 
-The container should run a small entrypoint that starts a persistent `tmux` session for Hermes and serves it through `ttyd`. This browser-served terminal is the primary v1 interface. Direct CLI access remains available inside the running container for administration and debugging.
+The container should run a small entrypoint that ensures Hermes is installed from the pinned upstream release, seeds repo-managed skills, starts a persistent `tmux` session for Hermes, and serves it through `ttyd`. This browser-served terminal is the primary v1 interface. Direct CLI access remains available inside the running container for administration and debugging.
 
 The `tmux` session should preserve the Hermes process across browser disconnects so the web terminal behaves like a durable admin console rather than a fragile one-shot shell. Discord gateway support can be added later as a separate runtime mode if needed.
 
@@ -145,7 +144,7 @@ This repository should follow upstream tags/releases only, not upstream branch h
 
 ### Nixpkgs Policy
 
-The flake should pin to the current latest stable NixOS release branch, not `nixos-unstable`. Updates to the stable Nixpkgs pin should happen explicitly through controlled repository changes.
+The flake should pin to the current latest stable NixOS release branch, not `nixos-unstable`. Updates to the stable Nixpkgs pin should happen explicitly through controlled repository changes. Hermes should not be sourced from nixpkgs on v1 because it is absent from the inspected stable branch.
 
 ### Publication Rules
 
@@ -158,15 +157,15 @@ GitHub Actions should:
   - `sha-<commit>`
   - `hermes-<upstream-version>` when applicable
 
-### Scheduled Release Gate
+### Scheduled Release Update
 
 The scheduled workflow should:
 
 1. inspect the latest upstream Hermes release
-2. inspect the version available in the pinned stable Nixpkgs branch
-3. only update/build/publish when the versions match
+2. compare it with `packages/hermes-image/hermes-release.txt`
+3. update that file and commit it when the upstream tag changes
 
-This prevents breakage caused by upstream tagging a release before the stable Nixpkgs branch has packaged it.
+The normal `main` publish workflow then builds and publishes the updated image.
 
 ## Testing Strategy
 
@@ -174,13 +173,14 @@ Testing should be layered:
 
 - unit tests for each Python CLI utility
 - integration tests for each utility against mocked or controlled API boundaries
-- image-level validation for the built container
+- image-level validation for the built `linux/arm64` container
 
 The image-level validation should confirm at minimum:
 
 - Hermes is installed and runnable
 - the `ttyd` entrypoint resolves correctly
 - the persistent `tmux` Hermes session is created correctly
+- the bootstrap path installs the pinned upstream Hermes release into the persistent runtime home
 - the default tool bundle is present on `PATH`
 - seeded default skills land in the correct Hermes path
 - the runtime user and persistence expectations are wired correctly
@@ -216,9 +216,10 @@ The project `AGENTS.md` should document repository-specific build and test guida
 - Runtime user: non-root
 - In-container privilege escalation: none in v1
 - Runtime Nix: included and persistent
-- Architectures: `linux/amd64` and `linux/arm64`
+- Architectures: `linux/arm64`
 - Image variants: single `full` image only
 - First utility scaffold: SearXNG
+- Hermes source: upstream release bootstrap at runtime, not stable nixpkgs
 
 ## Implementation Notes
 
