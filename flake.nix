@@ -39,6 +39,7 @@
           ghostshipSynology = pkgs.callPackage ./packages/synology-cli/package.nix { };
           ghostshipFlaresolverr = pkgs.callPackage ./packages/flaresolverr-cli/package.nix { };
           ghostshipOnyx = pkgs.callPackage ./packages/onyx-cli/package.nix { };
+          ghostshipPyloadNg = pkgs.callPackage ./packages/pyload-ng-cli/package.nix { };
 
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
@@ -62,6 +63,7 @@
             ghostshipSynology
             ghostshipFlaresolverr
             ghostshipOnyx
+            ghostshipPyloadNg
           ];
         in
         {
@@ -79,6 +81,7 @@
           ghostship-synology = ghostshipSynology;
           ghostship-flaresolverr = ghostshipFlaresolverr;
           ghostship-onyx = ghostshipOnyx;
+          ghostship-pyload-ng = ghostshipPyloadNg;
 
           ghostship-hermes-runtime = ghostshipHermesRuntime;
 
@@ -117,6 +120,7 @@
             ghostship-synology
             ghostship-flaresolverr
             ghostship-onyx
+            ghostship-pyload-ng
             ghostship-hermes-runtime
             ghostship-hermes-image;
         }
@@ -158,7 +162,7 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/onyx-cli/src''${PYTHONPATH:+:$PYTHONPATH}"
+              export PYTHONPATH="$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/onyx-cli/src:$PWD/packages/pyload-ng-cli/src''${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }

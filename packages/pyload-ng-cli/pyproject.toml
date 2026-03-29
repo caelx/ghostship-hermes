@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ghostship-pyload-ng"
+version = "0.1.0"
+description = "pyLoad-ng CLI wrapper for ghostship-hermes"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.28.1",
+  "typer>=0.16.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.18.2",
+  "pytest>=8.4.2",
+]
+
+[project.scripts]
+ghostship-pyload-ng = "ghostship_pyload_ng.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_pyload_ng"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = [
+  "integration: exercises a configured pyLoad-ng deployment",
+]
