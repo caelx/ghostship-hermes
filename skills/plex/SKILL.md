@@ -7,6 +7,12 @@ description: Manage Plex Media Server library, sessions, and settings. Output is
 
 The `ghostship-plex` utility allows agents to manage a Plex Media Server, including library management, metadata retrieval, session monitoring, maintenance tasks, and server preferences.
 
+## Structure
+
+- **Skill Document:** `skills/plex/SKILL.md` (this file)
+- **Package Directory:** `packages/plex-cli/`
+- **README:** `packages/plex-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

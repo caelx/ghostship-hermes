@@ -7,6 +7,12 @@ description: Manage ROM library via Romm. Output is native JSON.
 
 The `ghostship-romm` utility allows agents to manage a ROM and game library via the Romm API (v4.7.0+). It supports library scanning, metadata retrieval, and platform management.
 
+## Structure
+
+- **Skill Document:** `skills/romm/SKILL.md` (this file)
+- **Package Directory:** `packages/romm-cli/`
+- **README:** `packages/romm-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

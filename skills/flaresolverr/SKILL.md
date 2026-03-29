@@ -7,6 +7,12 @@ description: Bypass Cloudflare protection via FlareSolverr. Output is native JSO
 
 The `ghostship-flaresolverr` utility allows agents to perform HTTP requests through a FlareSolverr instance to bypass Cloudflare and other bot protection services.
 
+## Structure
+
+- **Skill Document:** `skills/flaresolverr/SKILL.md` (this file)
+- **Package Directory:** `packages/flaresolverr-cli/`
+- **README:** `packages/flaresolverr-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

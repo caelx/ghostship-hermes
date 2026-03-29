@@ -7,6 +7,12 @@ description: Manage TV series library via Sonarr. Output is native JSON.
 
 The `ghostship-sonarr` utility allows agents to manage a TV series library, search for new content, and monitor download progress.
 
+## Structure
+
+- **Skill Document:** `skills/sonarr/SKILL.md` (this file)
+- **Package Directory:** `packages/sonarr-cli/`
+- **README:** `packages/sonarr-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

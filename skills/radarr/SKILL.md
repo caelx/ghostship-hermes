@@ -7,6 +7,12 @@ description: Manage movie library via Radarr. Output is native JSON.
 
 The `ghostship-radarr` utility allows agents to manage a movie library, search for new content, and monitor download progress.
 
+## Structure
+
+- **Skill Document:** `skills/radarr/SKILL.md` (this file)
+- **Package Directory:** `packages/radarr-cli/`
+- **README:** `packages/radarr-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

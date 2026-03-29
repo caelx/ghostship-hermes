@@ -7,6 +7,12 @@ description: Manage qBittorrent transfers, application settings, and logs. Outpu
 
 The `ghostship-qbittorrent` utility allows agents to manage torrent transfers, add new magnet links or URLs, control torrent states (pause/resume/delete), and manage application settings and logs.
 
+## Structure
+
+- **Skill Document:** `skills/qbittorrent/SKILL.md` (this file)
+- **Package Directory:** `packages/qbittorrent-cli/`
+- **README:** `packages/qbittorrent-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

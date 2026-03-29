@@ -7,6 +7,12 @@ description: Manage NZBGet download queue and server. Output is native JSON.
 
 The `ghostship-nzbget` utility allows agents to manage the NZBGet download queue, add new NZB URLs, and control the server state (pause/resume/rate/shutdown).
 
+## Structure
+
+- **Skill Document:** `skills/nzbget/SKILL.md` (this file)
+- **Package Directory:** `packages/nzbget-cli/`
+- **README:** `packages/nzbget-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

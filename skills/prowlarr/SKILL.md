@@ -7,6 +7,12 @@ description: Manage indexers and search releases via Prowlarr. Output is native 
 
 The `ghostship-prowlarr` utility allows agents to manage indexer configurations, search for releases (torrents/usenet) across all configured indexers, and manage connections to other applications.
 
+## Structure
+
+- **Skill Document:** `skills/prowlarr/SKILL.md` (this file)
+- **Package Directory:** `packages/prowlarr-cli/`
+- **README:** `packages/prowlarr-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

@@ -7,6 +7,12 @@ description: Manage files on Synology NAS via File Station. Output is native JSO
 
 The `ghostship-synology` utility allows agents to manage files and folders on a Synology NAS using the File Station API. It supports listing shares, managing files (upload/download/rename/delete), and searching.
 
+## Structure
+
+- **Skill Document:** `skills/synology/SKILL.md` (this file)
+- **Package Directory:** `packages/synology-cli/`
+- **README:** `packages/synology-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

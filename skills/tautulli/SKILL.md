@@ -7,6 +7,12 @@ description: Monitor Plex activity and history via Tautulli. Output is native JS
 
 The `ghostship-tautulli` utility allows agents to monitor Plex Media Server activity, playback history, and user statistics via the Tautulli API. It provides a more analytical view of Plex usage than the native Plex API.
 
+## Structure
+
+- **Skill Document:** `skills/tautulli/SKILL.md` (this file)
+- **Package Directory:** `packages/tautulli-cli/`
+- **README:** `packages/tautulli-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

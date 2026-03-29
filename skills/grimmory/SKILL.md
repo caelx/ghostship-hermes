@@ -13,6 +13,12 @@ The following environment variables must be configured:
 - `GRIMMORY_URL`: The base URL of the Grimmory instance.
 - `GRIMMORY_TOKEN`: Your Bearer authentication token.
 
+## Structure
+
+- **Skill Document:** `skills/grimmory/SKILL.md` (this file)
+- **Package Directory:** `packages/grimmory-cli/`
+- **README:** `packages/grimmory-cli/README.md`
+
 ## Usage
 
 All commands output native JSON.

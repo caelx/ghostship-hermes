@@ -7,6 +7,12 @@ description: Manage subtitles via Bazarr. Output is native JSON.
 
 The `ghostship-bazarr` utility allows agents to manage subtitle requirements for movies and TV series via the Bazarr API.
 
+## Structure
+
+- **Skill Document:** `skills/bazarr/SKILL.md` (this file)
+- **Package Directory:** `packages/bazarr-cli/`
+- **README:** `packages/bazarr-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

@@ -7,6 +7,12 @@ description: Manage RAG ingestion and chat via Onyx. Output is native JSON.
 
 The `ghostship-onyx` utility allows agents to manage a persistent knowledge base (RAG) and interact with chat sessions via the Onyx API.
 
+## Structure
+
+- **Skill Document:** `skills/onyx/SKILL.md` (this file)
+- **Package Directory:** `packages/onyx-cli/`
+- **README:** `packages/onyx-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:

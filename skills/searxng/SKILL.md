@@ -7,6 +7,12 @@ description: Search the web via SearXNG. Output is native JSON.
 
 The `ghostship-searxng` utility allows agents to perform web searches across multiple categories using a SearXNG instance.
 
+## Structure
+
+- **Skill Document:** `skills/searxng/SKILL.md` (this file)
+- **Package Directory:** `packages/searxng-cli/`
+- **README:** `packages/searxng-cli/README.md`
+
 ## Prerequisites
 
 The following environment variables must be configured:
