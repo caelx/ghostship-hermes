@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-romm = "ghostship_romm.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_romm"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

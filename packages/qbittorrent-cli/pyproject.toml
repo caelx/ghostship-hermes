@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-qbittorrent = "ghostship_qbittorrent.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_qbittorrent"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

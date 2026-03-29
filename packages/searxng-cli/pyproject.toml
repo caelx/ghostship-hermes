@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-searxng = "ghostship_searxng.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_searxng"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

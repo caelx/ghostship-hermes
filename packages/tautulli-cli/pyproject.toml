@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-tautulli = "ghostship_tautulli.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_tautulli"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

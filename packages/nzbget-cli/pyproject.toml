@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-nzbget = "ghostship_nzbget.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_nzbget"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

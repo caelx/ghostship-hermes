@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-sonarr = "ghostship_sonarr.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_sonarr"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

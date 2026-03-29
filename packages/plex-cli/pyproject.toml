@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-plex = "ghostship_plex.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_plex"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

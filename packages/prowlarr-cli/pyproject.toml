@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-prowlarr = "ghostship_prowlarr.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_prowlarr"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

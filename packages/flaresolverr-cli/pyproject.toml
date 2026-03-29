@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-flaresolverr = "ghostship_flaresolverr.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_flaresolverr"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

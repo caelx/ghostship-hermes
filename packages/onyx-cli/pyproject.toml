@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-onyx = "ghostship_onyx.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_onyx"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

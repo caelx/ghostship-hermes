@@ -22,6 +22,9 @@ dev = [
 [project.scripts]
 ghostship-bazarr = "ghostship_bazarr.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_bazarr"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
