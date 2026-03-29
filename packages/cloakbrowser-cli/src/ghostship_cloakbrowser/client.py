@@ -11,7 +11,7 @@ class CloakBrowserClient:
             self.headers["Authorization"] = f"Bearer {token}"
 
     def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}{path.lstrip('/')}"
+        url = f"{self.base_url}/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
             response = client.get(url, params=params)
             response.raise_for_status()
@@ -23,14 +23,14 @@ class CloakBrowserClient:
         json_data: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        url = f"{self.base_url}{path.lstrip('/')}"
+        url = f"{self.base_url}/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
             response = client.post(url, json=json_data, params=params)
             response.raise_for_status()
             return response.json()
 
     def _delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}{path.lstrip('/')}"
+        url = f"{self.base_url}/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
             response = client.delete(url, params=params)
             response.raise_for_status()
@@ -41,7 +41,7 @@ class CloakBrowserClient:
         path: str,
         json_data: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        url = f"{self.base_url}{path.lstrip('/')}"
+        url = f"{self.base_url}/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
             response = client.put(url, json=json_data)
             response.raise_for_status()

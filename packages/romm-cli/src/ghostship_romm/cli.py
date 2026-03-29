@@ -1,11 +1,21 @@
-import typer
-import os
 import json
+import os
 import sys
-from typing import Optional, List, Any
+from typing import Any, Optional
+
+import typer
+
 from .client import RommClient
 
-app = typer.Typer(help="Romm (ROM Manager) CLI interface.")
+HELP_TEXT = """Romm (ROM Manager) CLI interface.
+
+Auth:
+- Set ROMM_URL to the RomM base URL.
+- Preferred: set ROMM_USERNAME and ROMM_PASSWORD. The CLI exchanges them at /api/token.
+- Optional override: set ROMM_TOKEN if you already have a bearer token.
+"""
+
+app = typer.Typer(help=HELP_TEXT, no_args_is_help=True)
 
 
 def echo_json(data: Any, pretty: bool = False):
@@ -16,15 +26,24 @@ def echo_json(data: Any, pretty: bool = False):
 def get_client() -> RommClient:
     base_url = os.getenv("ROMM_URL")
     token = os.getenv("ROMM_TOKEN")
+    username = os.getenv("ROMM_USERNAME")
+    password = os.getenv("ROMM_PASSWORD")
 
-    if not base_url or not token:
+    if not base_url:
         print(
-            "Error: ROMM_URL and ROMM_TOKEN environment variables must be set.",
+            "Error: ROMM_URL must be set.",
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
 
-    return RommClient(base_url, token)
+    if not token and not (username and password):
+        print(
+            "Error: set ROMM_TOKEN or ROMM_USERNAME and ROMM_PASSWORD.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=1)
+
+    return RommClient(base_url, token=token, username=username, password=password)
 
 
 @app.command()

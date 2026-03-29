@@ -1,14 +1,21 @@
 import json
 import os
-import sys
 from typing import Any, Optional
 
-import httpx
 import typer
 
 from .client import CloakBrowserClient
 
-app = typer.Typer(no_args_is_help=True)
+HELP_TEXT = """CloakBrowser Manager CLI.
+
+Auth:
+- Set CLOAKBROWSER_URL to the manager base URL.
+- If the manager was started with AUTH_TOKEN=..., set CLOAKBROWSER_TOKEN to that same static secret.
+- There is no username/password token minting flow for API clients. If manager auth is disabled, omit CLOAKBROWSER_TOKEN.
+- /api/status stays unauthenticated upstream and can be used as a health check.
+"""
+
+app = typer.Typer(help=HELP_TEXT, no_args_is_help=True)
 
 
 def echo_json(data: Any, pretty: bool = False) -> None:
@@ -30,6 +37,20 @@ def status(
     client = get_client()
     try:
         data = client.get_system_status()
+        echo_json(data, pretty=pretty)
+    except Exception as e:
+        echo_json({"error": str(e)}, pretty=pretty)
+        raise typer.Exit(code=1)
+
+
+@app.command("auth-status")
+def auth_status(
+    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
+) -> None:
+    """Report whether manager auth is enabled and whether this client is authenticated."""
+    client = get_client()
+    try:
+        data = client.get_auth_status()
         echo_json(data, pretty=pretty)
     except Exception as e:
         echo_json({"error": str(e)}, pretty=pretty)

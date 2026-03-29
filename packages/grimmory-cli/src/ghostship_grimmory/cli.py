@@ -1,11 +1,21 @@
-import typer
-import os
 import json
+import os
 import sys
-from typing import Optional, List, Any
+from typing import Any, Optional
+
+import typer
+
 from .client import GrimmoryClient
 
-app = typer.Typer(help="Grimmory (Book Manager) CLI interface.")
+HELP_TEXT = """Grimmory (Book Manager) CLI interface.
+
+Auth:
+- Set GRIMMORY_URL to the Grimmory or BookLore base URL.
+- Preferred: set GRIMMORY_USERNAME and GRIMMORY_PASSWORD. The CLI exchanges them at /api/v1/auth/login.
+- Optional override: set GRIMMORY_TOKEN if you already have a bearer token.
+"""
+
+app = typer.Typer(help=HELP_TEXT, no_args_is_help=True)
 
 def echo_json(data: Any, pretty: bool = False):
     indent = 2 if pretty else None
@@ -14,12 +24,26 @@ def echo_json(data: Any, pretty: bool = False):
 def get_client() -> GrimmoryClient:
     base_url = os.getenv("GRIMMORY_URL")
     token = os.getenv("GRIMMORY_TOKEN")
-    
-    if not base_url or not token:
-        print("Error: GRIMMORY_URL and GRIMMORY_TOKEN environment variables must be set.", file=sys.stderr)
+    username = os.getenv("GRIMMORY_USERNAME")
+    password = os.getenv("GRIMMORY_PASSWORD")
+
+    if not base_url:
+        print("Error: GRIMMORY_URL must be set.", file=sys.stderr)
         raise typer.Exit(code=1)
-    
-    return GrimmoryClient(base_url, token)
+
+    if not token and not (username and password):
+        print(
+            "Error: set GRIMMORY_TOKEN or GRIMMORY_USERNAME and GRIMMORY_PASSWORD.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=1)
+
+    return GrimmoryClient(
+        base_url,
+        token=token,
+        username=username,
+        password=password,
+    )
 
 @app.command()
 def info(pretty: bool = typer.Option(False, "--pretty")):

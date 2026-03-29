@@ -1,17 +1,60 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
+
 import httpx
 
+
 class GrimmoryClient:
-    def __init__(self, base_url: str, token: str):
-        self.base_url = base_url.rstrip("/")
-        self.token = token
+    def __init__(
+        self,
+        base_url: str,
+        token: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ):
+        normalized_base_url = base_url.rstrip("/")
+        if normalized_base_url.endswith("/api/v1"):
+            self.base_url = normalized_base_url[: -len("/api/v1")]
+            self.api_base_url = normalized_base_url
+        else:
+            self.base_url = normalized_base_url
+            self.api_base_url = f"{normalized_base_url}/api/v1"
+
+        self.token = token or self._authenticate(username=username, password=password)
+        if not self.token:
+            raise ValueError(
+                "Grimmory authentication requires a token or username/password."
+            )
         self.headers = {"Authorization": f"Bearer {self.token}"}
 
-    def _request(self, path: str, method: str = "GET", params: Optional[Dict[str, Any]] = None, json_data: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        if not url.startswith(f"{self.base_url}/api/v1"):
-             url = f"{self.base_url}/api/v1/{path.lstrip('/')}"
-             
+    def _authenticate(self, username: Optional[str], password: Optional[str]) -> str:
+        if not username or not password:
+            raise ValueError(
+                "Set GRIMMORY_TOKEN or GRIMMORY_USERNAME and GRIMMORY_PASSWORD."
+            )
+
+        response = httpx.post(
+            f"{self.api_base_url}/auth/login",
+            json={"username": username, "password": password},
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        token = payload.get("accessToken") or payload.get("access_token")
+        if not token:
+            raise ValueError(
+                "Grimmory /api/v1/auth/login response did not include an access token."
+            )
+        return token
+
+    def _request(
+        self,
+        path: str,
+        method: str = "GET",
+        params: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        url = f"{self.api_base_url}/{path.lstrip('/')}"
+
         with httpx.Client(headers=self.headers) as client:
             if method == "POST":
                 response = client.post(url, json=json_data, params=params)

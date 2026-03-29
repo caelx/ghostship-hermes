@@ -1,14 +1,45 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
+
 import httpx
 
 
 class RommClient:
-    def __init__(self, base_url: str, token: str):
+    def __init__(
+        self,
+        base_url: str,
+        token: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ):
         self.base_url = base_url.rstrip("/")
         if "/api" not in self.base_url:
             self.base_url = f"{self.base_url}/api"
-        self.token = token
+        self.token = token or self._authenticate(username=username, password=password)
+        if not self.token:
+            raise ValueError("RomM authentication requires a token or username/password.")
         self.headers = {"Authorization": f"Bearer {self.token}"}
+
+    def _authenticate(self, username: Optional[str], password: Optional[str]) -> str:
+        if not username or not password:
+            raise ValueError(
+                "Set ROMM_TOKEN or ROMM_USERNAME and ROMM_PASSWORD to authenticate."
+            )
+
+        response = httpx.post(
+            f"{self.base_url}/token",
+            data={
+                "grant_type": "password",
+                "username": username,
+                "password": password,
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        token = payload.get("access_token")
+        if not token:
+            raise ValueError("RomM /api/token response did not include access_token.")
+        return token
 
     def _request(
         self,

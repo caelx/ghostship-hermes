@@ -17,7 +17,7 @@ The `ghostship-cloakbrowser` utility allows agents to create, manage, and launch
 
 The following environment variables must be configured:
 - `CLOAKBROWSER_URL`: The base URL of the CloakBrowser Manager (default: `http://localhost:8080`).
-- `CLOAKBROWSER_TOKEN`: Auth token. Optional if authentication is disabled on the server.
+- `CLOAKBROWSER_TOKEN`: Optional static auth token. If the manager was started with `AUTH_TOKEN=...`, set this to that same exact value. Omit it when manager auth is disabled.
 
 ## Usage
 
@@ -27,6 +27,9 @@ All commands output native JSON. Use `--pretty` for human-readable output.
 
 #### `ghostship-cloakbrowser status`
 Get system status (running count, binary version, total profiles).
+
+#### `ghostship-cloakbrowser auth-status`
+Report whether manager auth is enabled and whether the current client is authenticated.
 
 #### `ghostship-cloakbrowser list`
 List all profiles with their status and CDP URLs. Running profiles show `cdp_url` for Playwright/Puppeteer connection.
@@ -109,6 +112,7 @@ ghostship-cloakbrowser stop profile-123
 
 ## Agent Guidance
 
+- CloakBrowser Manager auth is a static shared secret, not a username/password login flow. Use `CLOAKBROWSER_TOKEN` only when the server was started with `AUTH_TOKEN=...`.
 - Use `list` to find running profiles and their CDP URLs for automation.
 - The `cdp_url` returned is relative; prefix with your `CLOAKBROWSER_URL` host for full WebSocket URL.
 - Profile fingerprints are persistent - created profiles maintain their identity across launches.

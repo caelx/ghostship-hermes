@@ -10,8 +10,9 @@ The `ghostship-grimmory` utility allows agents to manage a book library via the 
 ## Prerequisites
 
 The following environment variables must be configured:
-- `GRIMMORY_URL`: The base URL of the Grimmory instance.
-- `GRIMMORY_TOKEN`: Your Bearer authentication token.
+- `GRIMMORY_URL`: The base URL of the Grimmory or BookLore instance.
+- Preferred: `GRIMMORY_USERNAME` and `GRIMMORY_PASSWORD`. The CLI exchanges these at `POST /api/v1/auth/login`.
+- Optional override: `GRIMMORY_TOKEN` if you already have a bearer token.
 
 ## Structure
 
@@ -65,6 +66,7 @@ ghostship-grimmory scan
 ## Agent Guidance
 
 - Grimmory is used for digital book collections (EPUB, PDF, etc.).
+- Default to `GRIMMORY_USERNAME` and `GRIMMORY_PASSWORD` unless the user already has a bearer token. Treat `GRIMMORY_TOKEN` as an override rather than the primary auth path.
 - Use `list-libraries` to understand the library structure before filtering `list-books`.
 - Trigger a `scan` if the filesystem has changed.
 - Use `list-tasks` to monitor the progress of a scan.

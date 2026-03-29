@@ -17,7 +17,8 @@ The `ghostship-romm` utility allows agents to manage a ROM and game library via 
 
 The following environment variables must be configured:
 - `ROMM_URL`: The base URL of the Romm instance.
-- `ROMM_TOKEN`: Your Bearer authentication token.
+- Preferred: `ROMM_USERNAME` and `ROMM_PASSWORD`. The CLI exchanges these at `POST /api/token`.
+- Optional override: `ROMM_TOKEN` if you already have a bearer token.
 
 ## Usage
 
@@ -79,6 +80,7 @@ ghostship-romm scan
 
 ## Agent Guidance
 
+- Default to `ROMM_USERNAME` and `ROMM_PASSWORD` unless the user already has a fresh bearer token. RomM v4.7.0 does not use a repo-managed static token as the primary auth path.
 - Use `heartbeat` to verify the service is up and the token is valid.
 - `list-roms` and `get-rom` provide extensive metadata including file paths and release years.
 - When helping users find games, `platforms` can be used to see which consoles are supported.

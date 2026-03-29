@@ -148,16 +148,18 @@ All `ghostship-` utilities require specific environment variables. Set these bef
 | `ghostship-radarr` | `RADARR_URL`, `RADARR_API_KEY` |
 | `ghostship-prowlarr` | `PROWLARR_URL`, `PROWLARR_API_KEY` |
 | `ghostship-plex` | `PLEX_URL`, `PLEX_TOKEN` |
-| `ghostship-romm` | `ROMM_URL`, `ROMM_TOKEN` |
+| `ghostship-romm` | `ROMM_URL`, `ROMM_USERNAME`, `ROMM_PASSWORD` or `ROMM_TOKEN` |
 | `ghostship-nzbget` | `NZBGET_URL`, `NZBGET_USER`, `NZBGET_PASS` |
 | `ghostship-qbittorrent` | `QBITTORRENT_URL`, `QBITTORRENT_USER`, `QBITTORRENT_PASS` |
-| `ghostship-grimmory` | `GRIMMORY_URL`, `GRIMMORY_TOKEN` |
+| `ghostship-grimmory` | `GRIMMORY_URL`, `GRIMMORY_USERNAME`, `GRIMMORY_PASSWORD` or `GRIMMORY_TOKEN` |
 | `ghostship-tautulli` | `TAUTULLI_URL`, `TAUTULLI_API_KEY` |
 | `ghostship-bazarr` | `BAZARR_URL`, `BAZARR_API_KEY` |
 | `ghostship-synology` | `SYNOLOGY_URL`, `SYNOLOGY_USER`, `SYNOLOGY_PASS`, `SYNOLOGY_VERIFY_SSL` |
 | `ghostship-flaresolverr` | `FLARESOLVERR_URL` |
 | `ghostship-pyload-ng` | `PYLOAD_URL`, `PYLOAD_USER`, `PYLOAD_PASS` |
-| `ghostship-cloakbrowser` | `CLOAKBROWSER_URL`, `CLOAKBROWSER_TOKEN` |
+| `ghostship-cloakbrowser` | `CLOAKBROWSER_URL`, optional `CLOAKBROWSER_TOKEN` matching manager `AUTH_TOKEN` |
+
+Canonical API references for every `ghostship-*` utility now live in [docs/api/README.md](docs/api/README.md), using raw upstream specs where available and repo-owned full reference sheets everywhere else.
 
 ## Skills
 

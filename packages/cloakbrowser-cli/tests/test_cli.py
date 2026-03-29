@@ -10,6 +10,16 @@ from ghostship_cloakbrowser.cli import app
 runner = CliRunner()
 
 
+def test_root_help_explains_static_token_auth():
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "CLOAKBROWSER_URL" in result.stdout
+    assert "CLOAKBROWSER_TOKEN" in result.stdout
+    assert "AUTH_TOKEN" in result.stdout
+    assert "static" in result.stdout.lower()
+
+
 def test_list_profiles(monkeypatch):
     mock_profiles = [
         {

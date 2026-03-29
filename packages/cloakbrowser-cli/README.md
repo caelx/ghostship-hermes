@@ -5,7 +5,13 @@ CLI utility for CloakBrowser Manager API.
 ## Environment Variables
 
 - `CLOAKBROWSER_URL`: The base URL of your CloakBrowser Manager instance (default: `http://localhost:8080`).
-- `CLOAKBROWSER_TOKEN`: Auth token. Optional if authentication is disabled on the server.
+- `CLOAKBROWSER_TOKEN`: Optional static auth token. If the manager was started with `AUTH_TOKEN=...`, set `CLOAKBROWSER_TOKEN` to that same exact value. Omit it when manager auth is disabled.
+
+## Authentication Notes
+
+- CloakBrowser Manager does not mint bearer tokens from username/password.
+- Authentication is optional and server-side. When enabled, the manager compares the incoming bearer token to its configured `AUTH_TOKEN`.
+- Upstream keeps `GET /api/status` unauthenticated so Docker and other health checks can probe the manager without credentials.
 
 ## Contract
 
@@ -15,6 +21,12 @@ CLI utility for CloakBrowser Manager API.
 - output: JSON by default
 
 ## Commands
+
+### auth-status
+Report whether manager auth is enabled and whether the current client is authenticated.
+```bash
+ghostship-cloakbrowser auth-status
+```
 
 ### status
 Get system status information (running count, binary version, total profiles).
