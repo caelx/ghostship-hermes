@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add `delta`, `bat`, `miller`, `sqlite-utils`, `yt-dlp`, `exiftool`, and `visidata` to the `ghostship-hermes` image.
+**Goal:** Add `delta`, `bat`, `miller`, `sqlite-utils`, `yt-dlp`, `exiftool`, `visidata`, and `hn-text` to the `ghostship-hermes` image.
 
 **Architecture:** Modify `packages/hermes-image/image.nix` to include these packages in the `contents` list.
 
@@ -21,6 +21,7 @@ Modify the `contents` list in `packages/hermes-image/image.nix` to include:
 - `bat`
 - `delta`
 - `exiftool`
+- `hn-text`
 - `miller`
 - `sqlite-utils`
 - `visidata`
@@ -46,6 +47,7 @@ Modify the `contents` list in `packages/hermes-image/image.nix` to include:
     git
     gnugrep
     gnused
+    hn-text
     jq
     lsof
     miller
@@ -80,22 +82,20 @@ Modify the `contents` list in `packages/hermes-image/image.nix` to include:
 
 ```bash
 git add packages/hermes-image/image.nix
-git commit -m "feat: add bat, delta, exiftool, miller, sqlite-utils, visidata, yt-dlp to image"
+git commit -m "feat: add bat, delta, exiftool, hn-text, miller, sqlite-utils, visidata, yt-dlp to image"
 ```
 
 ### Task 2: Validate the image build
 
 - [ ] **Step 1: Build the image package**
 
-Run: `nix build .#hermes-image`
+Run: `nix build .#ghostship-hermes-image`
 
 Expected: SUCCESS.
 
 - [ ] **Step 2: Verify binary availability**
 
 Check if one of the new binaries is present in the build output.
-Run: `ls result/bin | grep -E "bat|delta|exiftool|mlr|sqlite-utils|visidata|yt-dlp"`
+Run: `ls result/bin | grep -E "bat|delta|exiftool|hn|mlr|sqlite-utils|visidata|yt-dlp"`
 
 Expected: List of binaries.
-
-- [ ] **Step 3: Commit (no-op or update if needed)**
