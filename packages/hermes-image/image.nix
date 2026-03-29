@@ -80,6 +80,8 @@ dockerTools.buildLayeredImage {
       "GHOSTSHIP_HERMES_REF=${hermesRelease}"
       "GHOSTSHIP_DEFAULT_SKILLS=${skillsTree}"
       "NIX_CONFIG=experimental-features = nix-command flakes"
+      "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+      "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
       "PATH=/home/hermes/.hermes/hermes-agent/venv/bin:/home/hermes/.hermes/hermes-agent/node_modules/.bin:/bin"
     ];
     ExposedPorts = {

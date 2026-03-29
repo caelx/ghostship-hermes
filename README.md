@@ -123,6 +123,7 @@ The published manifest list and per-architecture image tags follow the same nami
 - **Hermes**: Installed at container runtime from a pinned upstream release
 - **Interface**: `ttyd` on port `7681` launches the default Hermes session
 - **Persistence**: `/home/hermes/.hermes` and `/nix` are mounted as volumes
+- **Bootstrap Resilience**: The entrypoint creates `/tmp` and defaults `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` to `/etc/ssl/certs/ca-bundle.crt` so bootstrap `git`, `uv`, and Nix operations inherit a working CA bundle
 - **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, etc.
 - **Output Standard**: All `ghostship-` utilities output native JSON. Use `--pretty` for human-readable output.
 

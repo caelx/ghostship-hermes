@@ -30,6 +30,7 @@
 - Hermes is not packaged in the locally inspected `nixos-25.11` nixpkgs source tree, while `ttyd`, `codex`, `gemini-cli`, and `opencode` are present there.
 - In this repo, `agent-browser` is expected to come from the Hermes-side `npm install` step, making it available under the Hermes install tree rather than as a stable nixpkgs package.
 - A practical container needs a root init phase to prepare `/home/hermes/.hermes` and `/nix` volume permissions before dropping to the non-root `hermes` user.
+- Hermes bootstrap also depends on a writable `/tmp` and a default CA bundle exported through `SSL_CERT_FILE` and `NIX_SSL_CERT_FILE`, otherwise `mktemp`, `git clone`, and Nix HTTP fetches can fail at runtime.
 - On the current x86_64 development host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired up and rely on arm64 runners for the full image build.
 - RomM v4.7.0 auth is not a repo-managed static token flow. The supported bearer token path is `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`).
 - CloakBrowser Manager auth is a static shared secret configured on the server via `AUTH_TOKEN`; API callers reuse that same value as `Authorization: Bearer <token>`, and `/api/status` remains unauthenticated for health checks.

@@ -39,18 +39,27 @@ writeShellApplication {
   text = ''
     set -euo pipefail
 
+    ensure_runtime_prereqs() {
+      export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-bundle.crt}"
+      export NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-$SSL_CERT_FILE}"
+
+      tmp_dir="''${TMPDIR:-/tmp}"
+      mkdir -p "$tmp_dir"
+    }
+
     command_name="''${1:-}"
     shift || true
 
     case "$command_name" in
       bootstrap)
+        ensure_runtime_prereqs
         export HOME="''${HOME:-/home/hermes}"
         export HERMES_HOME="''${HERMES_HOME:-$HOME/.hermes}"
         export GHOSTSHIP_HERMES_REF="''${GHOSTSHIP_HERMES_REF:-${hermesRelease}}"
         install_root="$HERMES_HOME/hermes-agent"
         release_marker="$HERMES_HOME/.ghostship-hermes-release"
         repo_url="''${GHOSTSHIP_HERMES_REPO:-https://github.com/NousResearch/hermes-agent.git}"
-        tmp_root="$(mktemp -d)"
+        tmp_root="$(TMPDIR="$tmp_dir" mktemp -d)"
         cleanup() {
           rm -rf "$tmp_root"
         }
@@ -106,6 +115,7 @@ writeShellApplication {
         ;;
       entrypoint)
         if [ "$(id -u)" -eq 0 ]; then
+          install -d -m 1777 /tmp
           install -d -m 0755 -o 1000 -g 1000 /home/hermes
           install -d -m 0755 -o 1000 -g 1000 /home/hermes/.hermes
           install -d -m 0755 -o 1000 -g 1000 /nix
@@ -114,6 +124,7 @@ writeShellApplication {
         exec "$0" entrypoint-user "$@"
         ;;
       entrypoint-user)
+        ensure_runtime_prereqs
         export HOME="''${HOME:-/home/hermes}"
         export HERMES_HOME="''${HERMES_HOME:-$HOME/.hermes}"
         export TERMINAL_CWD="''${TERMINAL_CWD:-$HOME}"
