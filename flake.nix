@@ -81,17 +81,8 @@
           ghostship-onyx = ghostshipOnyx;
 
           ghostship-hermes-runtime = ghostshipHermesRuntime;
-        }
-        // lib.optionalAttrs (system == "aarch64-linux") {
+
           ghostship-hermes-image = pkgs.callPackage ./packages/hermes-image/image.nix {
-            inherit
-              ghostshipHermesRuntime
-              hermesRelease
-              pkgs
-              ;
-            ghostshipUtilities = allUtilities;
-          };
-          default = pkgs.callPackage ./packages/hermes-image/image.nix {
             inherit
               ghostshipHermesRuntime
               hermesRelease
@@ -126,10 +117,8 @@
             ghostship-synology
             ghostship-flaresolverr
             ghostship-onyx
-            ghostship-hermes-runtime;
-        }
-        // lib.optionalAttrs (system == "aarch64-linux") {
-          ghostship-hermes-image = self.packages.${system}.ghostship-hermes-image;
+            ghostship-hermes-runtime
+            ghostship-hermes-image;
         }
       );
 
