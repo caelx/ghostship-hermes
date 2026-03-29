@@ -1,19 +1,21 @@
 from typing import Any, Dict, List, Optional
 import httpx
 
+
 class NZBGetClient:
-    def __init__(self, base_url: str, username: str, password: str):
+    def __init__(
+        self,
+        base_url: str,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ):
         self.base_url = base_url.rstrip("/")
         if not self.base_url.endswith("/jsonrpc"):
             self.base_url = f"{self.base_url}/jsonrpc"
-        self.auth = (username, password)
+        self.auth = (username, password) if username and password else None
 
     def _request(self, method: str, params: Optional[List[Any]] = None) -> Any:
-        payload = {
-            "version": "1.1",
-            "method": method,
-            "params": params or []
-        }
+        payload = {"version": "1.1", "method": method, "params": params or []}
         with httpx.Client(auth=self.auth) as client:
             response = client.post(self.base_url, json=payload)
             response.raise_for_status()
@@ -45,9 +47,13 @@ class NZBGetClient:
     def get_history(self) -> Any:
         return self._request("history")
 
-    def append_url(self, url: str, category: str = "", priority: int = 0, top: bool = False) -> int:
+    def append_url(
+        self, url: str, category: str = "", priority: int = 0, top: bool = False
+    ) -> int:
         # string append(string Filename, string Content, string Category, int Priority, bool Top, bool Paused, string DupeKey, int DupeScore, string DupeMode)
-        return self._request("append", [url, "", category, priority, top, False, "", 0, "SCORE"])
+        return self._request(
+            "append", [url, "", category, priority, top, False, "", 0, "SCORE"]
+        )
 
     def edit_queue(self, command: str, offset: int, size: int, ids: List[int]) -> bool:
         return self._request("editqueue", [command, offset, size, ids])

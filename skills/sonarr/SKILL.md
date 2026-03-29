@@ -59,6 +59,25 @@ Trigger a long-running system command.
 - `name`: Command name (e.g., `RescanSeries`, `EpisodeSearch`).
 - `--args`: Optional JSON string of arguments for the command.
 
+#### `ghostship-sonarr missing`
+List episodes that are missing from the library.
+- `--page`: Page number (default: 1).
+- `--page-size`: Records per page (default: 10).
+
+#### `ghostship-sonarr blocklist`
+List blocklisted releases (failed downloads).
+- `--page`: Page number (default: 1).
+- `--page-size`: Records per page (default: 10).
+
+#### `ghostship-sonarr tags`
+List all tags in the system.
+
+#### `ghostship-sonarr rootfolders`
+List root folders configured in Sonarr.
+
+#### `ghostship-sonarr profiles`
+List quality profiles available for series.
+
 ## Examples
 
 ```bash
@@ -78,3 +97,7 @@ ghostship-sonarr queue --pretty
 - Monitor `queue` to check if content is being downloaded.
 - Use `history` to verify if content was successfully imported.
 - When adding content, ensure the `root-folder-path` is consistent with the server's filesystem layout.
+- Use `missing` to find episodes that haven't been downloaded yet.
+- Use `blocklist` to see failed downloads that have been blocked.
+- Use `tags` to organize content and filter by tags later.
+- Use `profiles` to check available quality profiles before adding series.

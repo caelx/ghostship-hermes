@@ -55,7 +55,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ghostship-onyx"
+name = "ghostship-cloakbrowser"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

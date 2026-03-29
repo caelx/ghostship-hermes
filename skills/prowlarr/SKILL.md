@@ -37,6 +37,12 @@ Search for releases across all indexers. This is useful for manual release disco
 #### `ghostship-prowlarr list-apps`
 List all connected applications (e.g., Sonarr, Radarr, Lidarr).
 
+#### `ghostship-prowlarr indexer-stats`
+Get statistics for all indexers, including number of queries, successful grabs, and failed grabs.
+
+#### `ghostship-prowlarr indexer-status`
+Get the current status of all indexers (enabled/disabled state).
+
 ## Examples
 
 ```bash

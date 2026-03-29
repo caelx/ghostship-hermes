@@ -50,6 +50,20 @@ Start a library scan.
 #### `ghostship-romm config`
 Get the Romm system configuration.
 
+#### `ghostship-romm saves [--page <n>] [--page-size <n>]`
+List save files in the library.
+- `--page`: Page number (default: 1).
+- `--page-size`: Records per page (default: 24).
+
+#### `ghostship-romm saves-summary`
+Get a summary of all save files across all platforms.
+
+#### `ghostship-romm users`
+List all users on the Romm instance.
+
+#### `ghostship-romm me`
+Get current authenticated user information.
+
 ## Examples
 
 ```bash

@@ -2,6 +2,10 @@
 
 `ghostship-searxng` is the first repo-local Python utility packaged for `ghostship-hermes`.
 
+## Environment Variables
+
+- `SEARXNG_URL`: The base URL of your SearXNG instance (default: `http://localhost:8080`).
+
 ## Contract
 
 - executable name: `ghostship-searxng`

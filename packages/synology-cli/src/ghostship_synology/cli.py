@@ -7,20 +7,25 @@ from .client import SynologyClient
 
 app = typer.Typer(help="Synology File Station CLI interface.")
 
+
 def echo_json(data: Any, pretty: bool = False):
     indent = 2 if pretty else None
     typer.echo(json.dumps(data, indent=indent))
+
 
 def get_client() -> SynologyClient:
     base_url = os.getenv("SYNOLOGY_URL")
     username = os.getenv("SYNOLOGY_USER")
     password = os.getenv("SYNOLOGY_PASS")
     verify_ssl = os.getenv("SYNOLOGY_VERIFY_SSL", "true").lower() == "true"
-    
+
     if not base_url or not username or not password:
-        print("Error: SYNOLOGY_URL, SYNOLOGY_USER, and SYNOLOGY_PASS environment variables must be set.", file=sys.stderr)
+        print(
+            "Error: SYNOLOGY_URL, SYNOLOGY_USER, and SYNOLOGY_PASS environment variables must be set.",
+            file=sys.stderr,
+        )
         raise typer.Exit(code=1)
-    
+
     client = SynologyClient(base_url, username, password, verify_ssl)
     try:
         client.login()
@@ -29,8 +34,11 @@ def get_client() -> SynologyClient:
         raise typer.Exit(code=1)
     return client
 
+
 @app.command()
-def list_shares(pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output")):
+def list_shares(
+    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
+):
     """List all shared folders on the NAS."""
     client = get_client()
     try:
@@ -39,8 +47,14 @@ def list_shares(pretty: bool = typer.Option(False, "--pretty", help="Pretty prin
     finally:
         client.logout()
 
+
 @app.command()
-def list_files(path: str, offset: int = 0, limit: int = 100, pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output")):
+def list_files(
+    path: str,
+    offset: int = 0,
+    limit: int = 100,
+    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
+):
     """List files and folders in a specific path."""
     client = get_client()
     try:
@@ -50,23 +64,40 @@ def list_files(path: str, offset: int = 0, limit: int = 100, pretty: bool = type
     finally:
         client.logout()
 
+
 @app.command()
-def download(path: str, output: str = typer.Option(".", "--output", "-o", help="Output directory or file path"), pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output")):
+def download(
+    path: str,
+    output: str = typer.Option(
+        ".", "--output", "-o", help="Output directory or file path"
+    ),
+    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
+):
     """Download a file from the NAS."""
     client = get_client()
     try:
         response = client.download_file(path)
         filename = os.path.basename(path)
         dest = os.path.join(output, filename) if os.path.isdir(output) else output
-        
+
         with open(dest, "wb") as f:
             f.write(response.content)
-        echo_json({"status": "success", "message": f"Successfully downloaded {path} to {dest}"}, pretty=pretty)
+        echo_json(
+            {
+                "status": "success",
+                "message": f"Successfully downloaded {path} to {dest}",
+            },
+            pretty=pretty,
+        )
     finally:
         client.logout()
 
+
 @app.command()
-def info(path: str, pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output")):
+def info(
+    path: str,
+    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
+):
     """Get detailed information for a file or folder."""
     client = get_client()
     try:
@@ -75,8 +106,14 @@ def info(path: str, pretty: bool = typer.Option(False, "--pretty", help="Pretty 
     finally:
         client.logout()
 
+
 @app.command()
-def search(folder_path: str, pattern: str, recursive: bool = True, pretty: bool = typer.Option(False, "--pretty")):
+def search(
+    folder_path: str,
+    pattern: str,
+    recursive: bool = True,
+    pretty: bool = typer.Option(False, "--pretty"),
+):
     """Start a search for files."""
     client = get_client()
     try:
@@ -85,8 +122,14 @@ def search(folder_path: str, pattern: str, recursive: bool = True, pretty: bool 
     finally:
         client.logout()
 
+
 @app.command()
-def search_results(taskid: str, offset: int = 0, limit: int = 100, pretty: bool = typer.Option(False, "--pretty")):
+def search_results(
+    taskid: str,
+    offset: int = 0,
+    limit: int = 100,
+    pretty: bool = typer.Option(False, "--pretty"),
+):
     """Get search results for a task."""
     client = get_client()
     try:
@@ -95,8 +138,14 @@ def search_results(taskid: str, offset: int = 0, limit: int = 100, pretty: bool 
     finally:
         client.logout()
 
+
 @app.command()
-def mkdir(path: str, name: str, parents: bool = typer.Option(False, "--parents", "-p"), pretty: bool = typer.Option(False, "--pretty")):
+def mkdir(
+    path: str,
+    name: str,
+    parents: bool = typer.Option(False, "--parents", "-p"),
+    pretty: bool = typer.Option(False, "--pretty"),
+):
     """Create a new folder."""
     client = get_client()
     try:
@@ -104,6 +153,7 @@ def mkdir(path: str, name: str, parents: bool = typer.Option(False, "--parents",
         echo_json(data, pretty=pretty)
     finally:
         client.logout()
+
 
 @app.command()
 def rename(path: str, name: str, pretty: bool = typer.Option(False, "--pretty")):
@@ -115,8 +165,13 @@ def rename(path: str, name: str, pretty: bool = typer.Option(False, "--pretty"))
     finally:
         client.logout()
 
+
 @app.command()
-def rm(path: str, recursive: bool = typer.Option(True, "--recursive/--no-recursive"), pretty: bool = typer.Option(False, "--pretty")):
+def rm(
+    path: str,
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive"),
+    pretty: bool = typer.Option(False, "--pretty"),
+):
     """Delete a file or folder."""
     client = get_client()
     try:
@@ -125,8 +180,58 @@ def rm(path: str, recursive: bool = typer.Option(True, "--recursive/--no-recursi
     finally:
         client.logout()
 
+
+@app.command()
+def upload(
+    folder_path: str,
+    file_path: str,
+    parents: bool = typer.Option(True, "--parents/--no-parents"),
+    pretty: bool = typer.Option(False, "--pretty"),
+):
+    """Upload a local file to the NAS."""
+    client = get_client()
+    try:
+        data = client.upload_file(folder_path, file_path, create_parents=parents)
+        echo_json(data, pretty=pretty)
+    finally:
+        client.logout()
+
+
+@app.command()
+def copy(
+    path: str,
+    destination: str,
+    overwrite: bool = typer.Option(True, "--overwrite/--no-overwrite"),
+    pretty: bool = typer.Option(False, "--pretty"),
+):
+    """Copy a file or folder to another location."""
+    client = get_client()
+    try:
+        data = client.copy(path, destination, overwrite=overwrite)
+        echo_json(data, pretty=pretty)
+    finally:
+        client.logout()
+
+
+@app.command()
+def move(
+    path: str,
+    destination: str,
+    overwrite: bool = typer.Option(True, "--overwrite/--no-overwrite"),
+    pretty: bool = typer.Option(False, "--pretty"),
+):
+    """Move a file or folder to another location."""
+    client = get_client()
+    try:
+        data = client.move(path, destination, overwrite=overwrite)
+        echo_json(data, pretty=pretty)
+    finally:
+        client.logout()
+
+
 def main():
     app()
+
 
 if __name__ == "__main__":
     main()

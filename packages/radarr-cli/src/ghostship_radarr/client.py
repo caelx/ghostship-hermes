@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 import httpx
 
+
 class RadarrClient:
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip("/")
@@ -14,7 +15,12 @@ class RadarrClient:
             response.raise_for_status()
             return response.json()
 
-    def _post(self, path: str, json_data: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None) -> Any:
+    def _post(
+        self,
+        path: str,
+        json_data: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Any:
         url = f"{self.base_url}/api/v3/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
             response = client.post(url, json=json_data, params=params)
@@ -61,25 +67,78 @@ class RadarrClient:
         return self._post("command", json_data=payload)
 
     # Queue
-    def get_queue(self, page: int = 1, page_size: int = 10, sort_key: str = "timeleft", sort_direction: str = "ascending") -> Any:
+    def get_queue(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        sort_key: str = "timeleft",
+        sort_direction: str = "ascending",
+    ) -> Any:
         params = {
             "page": page,
             "pageSize": page_size,
             "sortKey": sort_key,
-            "sortDirection": sort_direction
+            "sortDirection": sort_direction,
         }
         return self._get("queue", params=params)
 
     # History
-    def get_history(self, page: int = 1, page_size: int = 10, sort_key: str = "date", sort_direction: str = "descending") -> Any:
+    def get_history(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        sort_key: str = "date",
+        sort_direction: str = "descending",
+    ) -> Any:
         params = {
             "page": page,
             "pageSize": page_size,
             "sortKey": sort_key,
-            "sortDirection": sort_direction
+            "sortDirection": sort_direction,
         }
         return self._get("history", params=params)
 
     # System
     def get_status(self) -> Any:
         return self._get("system/status")
+
+    # Wanted/Missing
+    def get_wanted_missing(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        sort_key: str = "releaseDate",
+        sort_direction: str = "descending",
+    ) -> Any:
+        params = {
+            "page": page,
+            "pageSize": page_size,
+            "sortKey": sort_key,
+            "sortDirection": sort_direction,
+        }
+        return self._get("wanted/missing", params=params)
+
+    def get_wanted_cutoff(self, page: int = 1, page_size: int = 10) -> Any:
+        params = {"page": page, "pageSize": page_size}
+        return self._get("wanted/cutoff", params=params)
+
+    # Blocklist
+    def get_blocklist(self, page: int = 1, page_size: int = 10) -> Any:
+        params = {"page": page, "pageSize": page_size}
+        return self._get("blocklist", params=params)
+
+    def get_blocklist_movie(self, page: int = 1, page_size: int = 10) -> Any:
+        params = {"page": page, "pageSize": page_size}
+        return self._get("blocklist/movie", params=params)
+
+    # Tag
+    def get_tags(self) -> Any:
+        return self._get("tag")
+
+    # Root folder
+    def get_root_folders(self) -> Any:
+        return self._get("rootfolder")
+
+    # Quality profiles
+    def get_quality_profiles(self) -> Any:
+        return self._get("qualityprofile")

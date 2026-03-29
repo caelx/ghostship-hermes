@@ -21,7 +21,7 @@ This repository provides a unified environment for running Hermes with a pre-con
 - `ghostship-bazarr`: Subtitle management
 - `ghostship-synology`: Synology File Station management (search, mkdir, rm, etc.)
 - `ghostship-flaresolverr`: Cloudflare protection bypass
-- `ghostship-onyx`: RAG ingestion and chat via Onyx
+- `ghostship-cloakbrowser`: CloakBrowser profile management
 
 ## Architecture
 
@@ -40,6 +40,28 @@ For the standardized Python utility workflow, see [docs/python-utilities.md](doc
 - **Pretty Printing**: All utilities support `--pretty` for formatted JSON.
 - **Environment Config**: Utilities use environment variables (e.g., `SONARR_API_KEY`, `PLEX_TOKEN`) for configuration.
 - **No Rich Formatting**: Human-readable tables and colors are avoided in favor of raw data.
+
+## Environment Variables
+
+All `ghostship-` utilities require specific environment variables. Set these before running commands.
+
+| Utility | Variables |
+|---------|------------|
+| `ghostship-searxng` | `SEARXNG_URL` |
+| `ghostship-sonarr` | `SONARR_URL`, `SONARR_API_KEY` |
+| `ghostship-radarr` | `RADARR_URL`, `RADARR_API_KEY` |
+| `ghostship-prowlarr` | `PROWLARR_URL`, `PROWLARR_API_KEY` |
+| `ghostship-plex` | `PLEX_URL`, `PLEX_TOKEN` |
+| `ghostship-romm` | `ROMM_URL`, `ROMM_TOKEN` |
+| `ghostship-nzbget` | `NZBGET_URL`, `NZBGET_USER`, `NZBGET_PASS` |
+| `ghostship-qbittorrent` | `QBITTORRENT_URL`, `QBITTORRENT_USER`, `QBITTORRENT_PASS` |
+| `ghostship-grimmory` | `GRIMMORY_URL`, `GRIMMORY_TOKEN` |
+| `ghostship-tautulli` | `TAUTULLI_URL`, `TAUTULLI_API_KEY` |
+| `ghostship-bazarr` | `BAZARR_URL`, `BAZARR_API_KEY` |
+| `ghostship-synology` | `SYNOLOGY_URL`, `SYNOLOGY_USER`, `SYNOLOGY_PASS`, `SYNOLOGY_VERIFY_SSL` |
+| `ghostship-flaresolverr` | `FLARESOLVERR_URL` |
+| `ghostship-pyload-ng` | `PYLOAD_URL`, `PYLOAD_USER`, `PYLOAD_PASS` |
+| `ghostship-cloakbrowser` | `CLOAKBROWSER_URL`, `CLOAKBROWSER_TOKEN` |
 
 ## Skills
 

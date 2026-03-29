@@ -1,16 +1,20 @@
 from typing import Any, Dict, List, Optional
 import httpx
 
+
 class PlexClient:
     def __init__(self, base_url: str, token: str):
         self.base_url = base_url.rstrip("/")
         self.token = token
-        self.headers = {
-            "X-Plex-Token": self.token,
-            "Accept": "application/json"
-        }
+        self.headers = {"X-Plex-Token": self.token, "Accept": "application/json"}
 
-    def _request(self, path: str, method: str = "GET", params: Optional[Dict[str, Any]] = None, json_data: Optional[Dict[str, Any]] = None) -> Any:
+    def _request(
+        self,
+        path: str,
+        method: str = "GET",
+        params: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+    ) -> Any:
         url = f"{self.base_url}/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
             if method == "POST":
@@ -21,7 +25,7 @@ class PlexClient:
                 response = client.delete(url, params=params)
             else:
                 response = client.get(url, params=params)
-            
+
             response.raise_for_status()
             if response.status_code in [201, 204] or not response.content:
                 return {"status": "success"}
@@ -54,7 +58,11 @@ class PlexClient:
         return self._request(f"library/sections/{section_id}/sorts")
 
     def refresh_library(self, section_id: Optional[int] = None) -> Any:
-        path = "library/sections/all/refresh" if section_id is None else f"library/sections/{section_id}/refresh"
+        path = (
+            "library/sections/all/refresh"
+            if section_id is None
+            else f"library/sections/{section_id}/refresh"
+        )
         return self._request(path)
 
     def get_metadata(self, rating_key: int) -> Any:
@@ -85,3 +93,10 @@ class PlexClient:
     # System
     def get_statistics(self) -> Any:
         return self._request("statistics/resources", params={"timespan": 6})
+
+    # Sessions
+    def terminate_session(self, session_id: int) -> Any:
+        return self._request(f"library/terminate/{session_id}", method="PUT")
+
+    def get_session(self, session_id: int) -> Any:
+        return self._request(f"sessions/{session_id}")

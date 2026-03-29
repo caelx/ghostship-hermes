@@ -68,6 +68,24 @@ Rename a file or folder.
 Delete a file or folder.
 - `--no-recursive`: Disable recursive delete for folders.
 
+#### `ghostship-synology upload <folder_path> <file_path> [--parents|--no-parents]`
+Upload a local file to the NAS.
+- `folder_path`: Destination folder on the NAS.
+- `file_path`: Local file path to upload.
+- `--parents/--no-parents`: Create parent folders if needed (default: true).
+
+#### `ghostship-synology copy <path> <destination> [--overwrite|--no-overwrite]`
+Copy a file or folder to another location.
+- `path`: Source path on the NAS.
+- `destination`: Destination path on the NAS.
+- `--overwrite/--no-overwrite`: Overwrite if destination exists (default: true).
+
+#### `ghostship-synology move <path> <destination> [--overwrite|--no-overwrite]`
+Move a file or folder to another location.
+- `path`: Source path on the NAS.
+- `destination`: Destination path on the NAS.
+- `--overwrite/--no-overwrite`: Overwrite if destination exists (default: true).
+
 ## Examples
 
 ```bash

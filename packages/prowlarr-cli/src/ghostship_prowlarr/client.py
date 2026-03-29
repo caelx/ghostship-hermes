@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 import httpx
 
+
 class ProwlarrClient:
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip("/")
@@ -14,7 +15,12 @@ class ProwlarrClient:
             response.raise_for_status()
             return response.json()
 
-    def _post(self, path: str, json_data: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None) -> Any:
+    def _post(
+        self,
+        path: str,
+        json_data: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Any:
         url = f"{self.base_url}/api/v1/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
             response = client.post(url, json=json_data, params=params)
@@ -65,3 +71,10 @@ class ProwlarrClient:
     def run_command(self, name: str, **kwargs) -> Any:
         payload = {"name": name, **kwargs}
         return self._post("command", json_data=payload)
+
+    # Indexer Stats
+    def get_indexer_stats(self) -> Any:
+        return self._get("indexerstats")
+
+    def get_indexer_status(self) -> Any:
+        return self._get("indexerstatus")

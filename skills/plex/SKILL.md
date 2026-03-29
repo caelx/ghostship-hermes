@@ -56,6 +56,10 @@ Get all server preferences and settings.
 #### `ghostship-plex tasks`
 List scheduled maintenance (Butler) tasks and their status.
 
+#### `ghostship-plex terminate-session <session_id>`
+Terminate an active streaming session by its ID.
+- `session_id`: The session ID to terminate (get from `sessions`).
+
 ## Examples
 
 ```bash

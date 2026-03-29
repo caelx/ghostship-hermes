@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 import httpx
 
+
 class RommClient:
     def __init__(self, base_url: str, token: str):
         self.base_url = base_url.rstrip("/")
@@ -9,7 +10,13 @@ class RommClient:
         self.token = token
         self.headers = {"Authorization": f"Bearer {self.token}"}
 
-    def _request(self, path: str, method: str = "GET", params: Optional[Dict[str, Any]] = None, json_data: Optional[Dict[str, Any]] = None) -> Any:
+    def _request(
+        self,
+        path: str,
+        method: str = "GET",
+        params: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+    ) -> Any:
         url = f"{self.base_url}/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
             if method == "POST":
@@ -20,7 +27,7 @@ class RommClient:
                 response = client.delete(url, params=params)
             else:
                 response = client.get(url, params=params)
-            
+
             response.raise_for_status()
             if not response.content:
                 return {"status": "success"}
@@ -35,7 +42,9 @@ class RommClient:
     def get_libraries(self) -> Any:
         return self._request("libraries")
 
-    def get_roms(self, page: int = 1, page_size: int = 24, platform: Optional[str] = None) -> Any:
+    def get_roms(
+        self, page: int = 1, page_size: int = 24, platform: Optional[str] = None
+    ) -> Any:
         params = {"page": page, "page_size": page_size}
         if platform:
             params["platform"] = platform
@@ -62,3 +71,21 @@ class RommClient:
 
     def get_config(self) -> Any:
         return self._request("config")
+
+    # Saves
+    def get_saves(self, page: int = 1, page_size: int = 24) -> Any:
+        params = {"page": page, "page_size": page_size}
+        return self._request("saves", params=params)
+
+    def get_saves_summary(self) -> Any:
+        return self._request("saves/summary")
+
+    def get_save(self, save_id: int) -> Any:
+        return self._request(f"saves/{save_id}")
+
+    # Users
+    def get_users(self) -> Any:
+        return self._request("users")
+
+    def get_user_me(self) -> Any:
+        return self._request("users/me")

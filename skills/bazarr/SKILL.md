@@ -31,6 +31,14 @@ Get system status information, including version and Python environment.
 #### `ghostship-bazarr list-series`
 List all TV series in the library and their monitoring status for subtitles.
 
+#### `ghostship-bazarr history [--media episodes|movies]`
+Get subtitle download history.
+- `--media`: Filter by `episodes` (default) or `movies`.
+
+#### `ghostship-bazarr blacklist [--media episodes|movies]`
+Get blocklisted subtitles (downloads that failed or were rejected).
+- `--media`: Filter by `episodes` (default) or `movies`.
+
 ## Examples
 
 ```bash

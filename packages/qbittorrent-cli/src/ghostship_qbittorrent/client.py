@@ -1,8 +1,14 @@
 from typing import Any, Dict, List, Optional
 import httpx
 
+
 class QBitClient:
-    def __init__(self, base_url: str, username: str, password: str):
+    def __init__(
+        self,
+        base_url: str,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ):
         self.base_url = base_url.rstrip("/")
         if "/api/v2" not in self.base_url:
             self.base_url = f"{self.base_url}/api/v2"
@@ -11,6 +17,8 @@ class QBitClient:
         self.cookies: Optional[httpx.Cookies] = None
 
     def login(self) -> bool:
+        if not self.username or not self.password:
+            return True
         url = f"{self.base_url}/auth/login"
         data = {"username": self.username, "password": self.password}
         with httpx.Client() as client:
@@ -22,19 +30,28 @@ class QBitClient:
             return False
 
     def logout(self) -> bool:
+        if not self.username or not self.password:
+            return True
         return self._request("auth/logout", method="POST") == "Ok."
 
-    def _request(self, path: str, method: str = "GET", params: Optional[Dict[str, Any]] = None, data: Optional[Dict[str, Any]] = None, files: Optional[Dict[str, Any]] = None) -> Any:
-        if not self.cookies:
+    def _request(
+        self,
+        path: str,
+        method: str = "GET",
+        params: Optional[Dict[str, Any]] = None,
+        data: Optional[Dict[str, Any]] = None,
+        files: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        if not self.cookies and self.username and self.password:
             self.login()
-        
+
         url = f"{self.base_url}/{path.lstrip('/')}"
         with httpx.Client(cookies=self.cookies) as client:
             if method == "POST":
                 response = client.post(url, data=data, params=params, files=files)
             else:
                 response = client.get(url, params=params)
-            
+
             response.raise_for_status()
             if not response.content:
                 return {"status": "success"}
@@ -79,15 +96,30 @@ class QBitClient:
         return self._request("transfer/toggleSpeedLimitsMode", method="POST") == "Ok."
 
     # Torrent management
-    def get_torrents(self, filter_type: Optional[str] = None, category: Optional[str] = None, sort: Optional[str] = None, reverse: bool = False) -> Any:
+    def get_torrents(
+        self,
+        filter_type: Optional[str] = None,
+        category: Optional[str] = None,
+        sort: Optional[str] = None,
+        reverse: bool = False,
+    ) -> Any:
         params = {}
-        if filter_type: params["filter"] = filter_type
-        if category: params["category"] = category
-        if sort: params["sort"] = sort
-        if reverse: params["reverse"] = str(reverse).lower()
+        if filter_type:
+            params["filter"] = filter_type
+        if category:
+            params["category"] = category
+        if sort:
+            params["sort"] = sort
+        if reverse:
+            params["reverse"] = str(reverse).lower()
         return self._request("torrents/info", params=params)
 
-    def add_torrent(self, urls: List[str], save_path: Optional[str] = None, category: Optional[str] = None) -> bool:
+    def add_torrent(
+        self,
+        urls: List[str],
+        save_path: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> bool:
         data = {"urls": "\n".join(urls)}
         if save_path:
             data["savepath"] = save_path
@@ -108,7 +140,9 @@ class QBitClient:
         return self._request("torrents/resume", method="POST", data=data) == "Ok."
 
     # Search
-    def search_start(self, pattern: str, category: str = "all", plugins: str = "all") -> Any:
+    def search_start(
+        self, pattern: str, category: str = "all", plugins: str = "all"
+    ) -> Any:
         data = {"pattern": pattern, "category": category, "plugins": plugins}
         return self._request("search/start", method="POST", data=data)
 

@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ghostship-onyx"
+name = "ghostship-cloakbrowser"
 version = "0.1.0"
-description = "Onyx CLI wrapper for ghostship-hermes"
+description = "CloakBrowser CLI wrapper for ghostship-hermes"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -20,10 +20,10 @@ dev = [
 ]
 
 [project.scripts]
-ghostship-onyx = "ghostship_onyx.cli:main"
+ghostship-cloakbrowser = "ghostship_cloakbrowser.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ghostship_onyx"]
+packages = ["src/ghostship_cloakbrowser"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

@@ -47,6 +47,21 @@ Delete one or more packages by their IDs.
 #### `ghostship-pyload-ng pause`
 Toggle the pause/resume state of the server.
 
+#### `ghostship-pyload-ng delete-finished`
+Delete all completed downloads from the queue.
+
+#### `ghostship-pyload-ng restart-failed`
+Restart all failed downloads.
+
+#### `ghostship-pyload-ng accounts`
+List all configured download accounts (e.g., hosting providers).
+
+#### `ghostship-pyload-ng version`
+Get the pyLoad server version information.
+
+#### `ghostship-pyload-ng freespace`
+Get available disk space on the server.
+
 ## Examples
 
 ```bash

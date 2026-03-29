@@ -1,9 +1,9 @@
 { python311Packages }:
 python311Packages.buildPythonApplication {
-  pname = "ghostship-onyx";
+  pname = "ghostship-cloakbrowser";
   version = "0.1.0";
   pyproject = true;
-  src = ./.;
+  src = ./;
 
   build-system = with python311Packages; [
     hatchling
@@ -20,5 +20,5 @@ python311Packages.buildPythonApplication {
 
   doCheck = false;
 
-  pythonImportsCheck = [ "ghostship_onyx" ];
+  pythonImportsCheck = [ "ghostship_cloakbrowser" ];
 }
