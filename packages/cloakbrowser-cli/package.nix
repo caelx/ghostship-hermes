@@ -3,7 +3,7 @@ python311Packages.buildPythonApplication {
   pname = "ghostship-cloakbrowser";
   version = "0.1.0";
   pyproject = true;
-  src = ./;
+  src = ./.;
 
   build-system = with python311Packages; [
     hatchling
