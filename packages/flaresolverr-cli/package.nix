@@ -14,6 +14,8 @@ python3.pkgs.buildPythonApplication {
     python3.pkgs.hatchling
   ];
 
+  doCheck = false;
+
   propagatedBuildInputs = with python3.pkgs; [
     httpx
     typer

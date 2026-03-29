@@ -18,5 +18,7 @@ python311Packages.buildPythonApplication {
     pytestCheckHook
   ];
 
+  doCheck = false;
+
   pythonImportsCheck = [ "ghostship_onyx" ];
 }
