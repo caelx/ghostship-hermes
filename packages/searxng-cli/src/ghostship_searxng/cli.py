@@ -1,14 +1,18 @@
 import json
-from typing import Any
+import os
+import sys
+from typing import Any, Optional
 
 import httpx
 import typer
-
 
 app = typer.Typer(no_args_is_help=True)
 search_app = typer.Typer(no_args_is_help=True)
 app.add_typer(search_app, name="search")
 
+def echo_json(data: Any, pretty: bool = False):
+    indent = 2 if pretty else None
+    typer.echo(json.dumps(data, indent=indent))
 
 def search_searxng(
     *,
@@ -46,37 +50,34 @@ def search_searxng(
         ],
     }
 
-
 @search_app.command("web")
 def search_web(
     query: str,
-    base_url: str = typer.Option("http://localhost:8080", "--base-url"),
+    base_url: Optional[str] = typer.Option(None, "--base-url"),
     category: str = typer.Option("general", "--category"),
     limit: int = typer.Option(5, "--limit"),
     language: str = typer.Option("all", "--language"),
     safe_search: int = typer.Option(1, "--safe-search"),
-    json_output: bool = typer.Option(False, "--json"),
+    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
 ) -> None:
-    payload = search_searxng(
-        base_url=base_url,
-        query=query,
-        categories=category,
-        limit=limit,
-        language=language,
-        safe_search=safe_search,
-        timeout=10.0,
-    )
-
-    if json_output:
-        typer.echo(json.dumps(payload))
-        return
-
-    typer.echo(f"Query: {payload['query']}")
-    typer.echo(f"Results: {payload['number_of_results']}")
-    for result in payload["results"]:
-        typer.echo(f"- {result['title']}")
-        typer.echo(f"  {result['url']}")
-
+    url = base_url or os.getenv("SEARXNG_URL", "http://localhost:8080")
+    try:
+        payload = search_searxng(
+            base_url=url,
+            query=query,
+            categories=category,
+            limit=limit,
+            language=language,
+            safe_search=safe_search,
+            timeout=10.0,
+        )
+        echo_json(payload, pretty=pretty)
+    except Exception as e:
+        echo_json({"error": str(e)}, pretty=pretty)
+        raise typer.Exit(code=1)
 
 def main() -> None:
     app()
+
+if __name__ == "__main__":
+    main()

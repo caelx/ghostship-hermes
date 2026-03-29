@@ -11,7 +11,6 @@ python311Packages.buildPythonApplication {
 
   dependencies = with python311Packages; [
     httpx
-    rich
     typer
   ];
 

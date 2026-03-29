@@ -41,11 +41,13 @@ python3 scripts/python_utility.py build packages/searxng-cli
 
 Python utilities in this repo should:
 
-- avoid interactive prompts
-- provide `--json` when machine-readable output is useful
-- use stable flag names
-- include unit tests
-- include an integration test scaffold gated by environment variables or explicit configuration
+- **Output native JSON by default**: All commands MUST output valid JSON to stdout.
+- **Support `--pretty`**: Provide a flag for formatted, human-readable JSON output.
+- **No rich tables**: Avoid tables, colors, or other terminal-specific formatting in the default output path.
+- **Use environment variables**: Configuration should be sourced from environment variables (e.g., `APP_URL`, `APP_API_KEY`).
+- **Avoid interactive prompts**: All tools must be fully automatable.
+- **Use stable flag names**: Ensure consistency across different utilities.
+- **Include unit tests**: Verify core logic and CLI interface with mocks.
 
 ## Nix Packaging
 

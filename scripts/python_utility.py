@@ -56,8 +56,6 @@ def command_test(project_dir: Path) -> None:
             "--with",
             "typer",
             "--with",
-            "rich",
-            "--with",
             "httpx",
             "pytest",
             str(project_dir / "tests"),

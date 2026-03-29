@@ -19,6 +19,7 @@
 - Scheduled automation should watch upstream Hermes releases and update `packages/hermes-image/hermes-release.txt`
 - Publish only an `linux/arm64` image for v1
 - Repo-owned utilities should use a `ghostship-` prefix to avoid clobbering upstream or system package names
+- All CLI utilities MUST output native JSON by default to ensure they are agent-friendly and easily machine-readable. Human-readable formatting (like tables) should be avoided in favor of raw JSON output.
 
 ## Lessons Learned
 

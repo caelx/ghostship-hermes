@@ -3,7 +3,7 @@
   pkgs,
   ghostshipHermesRuntime,
   hermesRelease,
-  ghostshipSearxng,
+  ghostshipUtilities,
 }:
 let
   skillsTree = builtins.path {
@@ -32,7 +32,6 @@ dockerTools.buildLayeredImage {
     findutils
     gh
     ghostshipHermesRuntime
-    ghostshipSearxng
     git
     gnugrep
     gnused
@@ -59,7 +58,7 @@ dockerTools.buildLayeredImage {
     gemini-cli
     opencode
     rootfs
-  ];
+  ] ++ ghostshipUtilities;
 
   config = {
     WorkingDir = "/home/hermes";

@@ -23,16 +23,63 @@
             inherit system;
             config.allowUnfree = true;
           };
+
+          # Utility packages
           ghostshipSearxng = pkgs.callPackage ./packages/searxng-cli/package.nix { };
+          ghostshipSonarr = pkgs.callPackage ./packages/sonarr-cli/package.nix { };
+          ghostshipRadarr = pkgs.callPackage ./packages/radarr-cli/package.nix { };
+          ghostshipProwlarr = pkgs.callPackage ./packages/prowlarr-cli/package.nix { };
+          ghostshipPlex = pkgs.callPackage ./packages/plex-cli/package.nix { };
+          ghostshipRomm = pkgs.callPackage ./packages/romm-cli/package.nix { };
+          ghostshipNzbget = pkgs.callPackage ./packages/nzbget-cli/package.nix { };
+          ghostshipQbittorrent = pkgs.callPackage ./packages/qbittorrent-cli/package.nix { };
+          ghostshipGrimmory = pkgs.callPackage ./packages/grimmory-cli/package.nix { };
+          ghostshipTautulli = pkgs.callPackage ./packages/tautulli-cli/package.nix { };
+          ghostshipBazarr = pkgs.callPackage ./packages/bazarr-cli/package.nix { };
+          ghostshipSynology = pkgs.callPackage ./packages/synology-cli/package.nix { };
+          ghostshipFlaresolverr = pkgs.callPackage ./packages/flaresolverr-cli/package.nix { };
+          ghostshipOnyx = pkgs.callPackage ./packages/onyx-cli/package.nix { };
+
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
           );
           ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix {
             inherit hermesRelease;
           };
+
+          allUtilities = [
+            ghostshipSearxng
+            ghostshipSonarr
+            ghostshipRadarr
+            ghostshipProwlarr
+            ghostshipPlex
+            ghostshipRomm
+            ghostshipNzbget
+            ghostshipQbittorrent
+            ghostshipGrimmory
+            ghostshipTautulli
+            ghostshipBazarr
+            ghostshipSynology
+            ghostshipFlaresolverr
+            ghostshipOnyx
+          ];
         in
         {
           ghostship-searxng = ghostshipSearxng;
+          ghostship-sonarr = ghostshipSonarr;
+          ghostship-radarr = ghostshipRadarr;
+          ghostship-prowlarr = ghostshipProwlarr;
+          ghostship-plex = ghostshipPlex;
+          ghostship-romm = ghostshipRomm;
+          ghostship-nzbget = ghostshipNzbget;
+          ghostship-qbittorrent = ghostshipQbittorrent;
+          ghostship-grimmory = ghostshipGrimmory;
+          ghostship-tautulli = ghostshipTautulli;
+          ghostship-bazarr = ghostshipBazarr;
+          ghostship-synology = ghostshipSynology;
+          ghostship-flaresolverr = ghostshipFlaresolverr;
+          ghostship-onyx = ghostshipOnyx;
+
           ghostship-hermes-runtime = ghostshipHermesRuntime;
         }
         // lib.optionalAttrs (system == "aarch64-linux") {
@@ -40,17 +87,17 @@
             inherit
               ghostshipHermesRuntime
               hermesRelease
-              ghostshipSearxng
               pkgs
               ;
+            ghostshipUtilities = allUtilities;
           };
           default = pkgs.callPackage ./packages/hermes-image/image.nix {
             inherit
               ghostshipHermesRuntime
               hermesRelease
-              ghostshipSearxng
               pkgs
               ;
+            ghostshipUtilities = allUtilities;
           };
         }
       );
@@ -64,8 +111,22 @@
           };
         in
         {
-          ghostship-searxng = self.packages.${system}.ghostship-searxng;
-          ghostship-hermes-runtime = self.packages.${system}.ghostship-hermes-runtime;
+          inherit (self.packages.${system})
+            ghostship-searxng
+            ghostship-sonarr
+            ghostship-radarr
+            ghostship-prowlarr
+            ghostship-plex
+            ghostship-romm
+            ghostship-nzbget
+            ghostship-qbittorrent
+            ghostship-grimmory
+            ghostship-tautulli
+            ghostship-bazarr
+            ghostship-synology
+            ghostship-flaresolverr
+            ghostship-onyx
+            ghostship-hermes-runtime;
         }
         // lib.optionalAttrs (system == "aarch64-linux") {
           ghostship-hermes-image = self.packages.${system}.ghostship-hermes-image;
@@ -85,7 +146,6 @@
               httpx
               mypy
               pytest
-              rich
               typer
             ]
           );
@@ -109,7 +169,7 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/searxng-cli/src''${PYTHONPATH:+:$PYTHONPATH}"
+              export PYTHONPATH="$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/onyx-cli/src''${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }
