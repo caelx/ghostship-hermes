@@ -54,7 +54,7 @@ jobs:
         with:
           path: dist
 
-      - name: Install skopeo
+      - name: Install Nix tooling
         uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
@@ -67,37 +67,55 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Publish image tags
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ghostship-hermes
           GIT_SHA: ${{ github.sha }}
+        shell: bash
         run: |
-          # Fetch versions
+          set -euo pipefail
+
           HERMES_REF="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)"
-          
-          # Publish x86_64
-          AMD64_PATH="$(readlink -f dist/ghostship-hermes-x86_64-linux/ghostship-hermes-x86_64.tar.gz)"
-          nix shell nixpkgs#skopeo -c skopeo copy "docker-archive:$AMD64_PATH" "docker://$IMAGE_NAME:sha-$GIT_SHA-amd64"
-          nix shell nixpkgs#skopeo -c skopeo copy "docker-archive:$AMD64_PATH" "docker://$IMAGE_NAME:latest-amd64"
-          nix shell nixpkgs#skopeo -c skopeo copy "docker-archive:$AMD64_PATH" "docker://$IMAGE_NAME:hermes-$HERMES_REF-amd64"
+          tags=("sha-$GIT_SHA")
 
-          # Publish aarch64
-          ARM64_PATH="$(readlink -f dist/ghostship-hermes-aarch64-linux/ghostship-hermes-aarch64.tar.gz)"
-          nix shell nixpkgs#skopeo -c skopeo copy "docker-archive:$ARM64_PATH" "docker://$IMAGE_NAME:sha-$GIT_SHA-arm64"
-          nix shell nixpkgs#skopeo -c skopeo copy "docker-archive:$ARM64_PATH" "docker://$IMAGE_NAME:latest-arm64"
-          nix shell nixpkgs#skopeo -c skopeo copy "docker-archive:$ARM64_PATH" "docker://$IMAGE_NAME:hermes-$HERMES_REF-arm64"
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            tags=(latest "sha-$GIT_SHA" "hermes-$HERMES_REF")
+          else
+            echo "non-main workflow_dispatch detected for $GITHUB_REF; publishing immutable sha tag only"
+          fi
 
-          # Create multi-arch manifests (latest, sha, release)
-          # We use skopeo to create the manifest lists
-          nix shell nixpkgs#skopeo -c skopeo copy --format v2s2 "docker://$IMAGE_NAME:sha-$GIT_SHA-amd64" "docker://$IMAGE_NAME:sha-$GIT_SHA" --additional-tag "docker://$IMAGE_NAME:sha-$GIT_SHA-arm64" || true
-          
-          # More reliable way to build manifest with skopeo or docker
-          # Since we are already logged in to docker, we can use docker manifest
-          docker manifest create "$IMAGE_NAME:latest" "$IMAGE_NAME:latest-amd64" "$IMAGE_NAME:latest-arm64"
-          docker manifest push "$IMAGE_NAME:latest"
-          
-          docker manifest create "$IMAGE_NAME:sha-$GIT_SHA" "$IMAGE_NAME:sha-$GIT_SHA-amd64" "$IMAGE_NAME:sha-$GIT_SHA-arm64"
-          docker manifest push "$IMAGE_NAME:sha-$GIT_SHA"
-          
-          docker manifest create "$IMAGE_NAME:hermes-$HERMES_REF" "$IMAGE_NAME:hermes-$HERMES_REF-amd64" "$IMAGE_NAME:hermes-$HERMES_REF-arm64"
-          docker manifest push "$IMAGE_NAME:hermes-$HERMES_REF"
+          publish_arch() {
+            arch="$1"
+            tarball="$2"
+            case "$arch" in
+              amd64)
+                platform_tag="amd64"
+                ;;
+              arm64)
+                platform_tag="arm64"
+                ;;
+              *)
+                echo "unexpected arch: $arch" >&2
+                exit 64
+                ;;
+            esac
+
+            for tag in "${tags[@]}"; do
+              nix shell nixpkgs#skopeo -c skopeo copy \
+                "docker-archive:$tarball" \
+                "docker://$IMAGE_NAME:$tag-$platform_tag"
+            done
+          }
+
+          publish_arch amd64 "$(readlink -f dist/ghostship-hermes-x86_64-linux/ghostship-hermes-x86_64.tar.gz)"
+          publish_arch arm64 "$(readlink -f dist/ghostship-hermes-aarch64-linux/ghostship-hermes-aarch64.tar.gz)"
+
+          for tag in "${tags[@]}"; do
+            docker buildx imagetools create \
+              --tag "$IMAGE_NAME:$tag" \
+              "$IMAGE_NAME:$tag-amd64" \
+              "$IMAGE_NAME:$tag-arm64"
+          done

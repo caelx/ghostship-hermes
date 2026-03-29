@@ -5,7 +5,7 @@
 - Repository name: `ghostship-hermes`
 - Product goal: build and publish a GHCR container image for Hermes with a curated tool bundle and repo-managed default skills
 - Monorepo from the start: Hermes image, Python CLI utilities, and skills live in this repository
-- Primary published image target: `ghcr.io/<owner>/ghostship-hermes`
+- Primary published image target: `ghcr.io/caelx/ghostship-hermes`
 - Runtime user should be non-root; do not grant general `sudo` inside the container
 - Runtime should include Nix for ad hoc `nix shell` usage
 - Persist Hermes state in the user home volume and persist `/nix` on a separate volume
@@ -14,10 +14,10 @@
 - Discord gateway remains an optional later interface, not the v1 default
 - Default skills should seed into the standard Hermes runtime skill directory on first start without overwriting user-managed content
 - The first utility scaffold should target SearXNG
-- Build on every push/PR; only publish from `main`
+- Build on every push/PR; publish the full mutable tag set from `main`, and limit non-main `workflow_dispatch` runs to immutable `sha-*` tags
 - Hermes is installed at container runtime using the upstream manual `uv` plus `npm` flow against a pinned upstream release tag
 - Scheduled automation should watch upstream Hermes releases and update `packages/hermes-image/hermes-release.txt`
-- Publish only an `linux/arm64` image for v1
+- Publish multi-arch `amd64` and `arm64` image tags plus manifest lists for the documented release channels
 - Repo-owned utilities should use a `ghostship-` prefix to avoid clobbering upstream or system package names
 - All CLI utilities MUST output native JSON by default to ensure they are agent-friendly and easily machine-readable. Human-readable formatting (like tables) should be avoided in favor of raw JSON output.
 
