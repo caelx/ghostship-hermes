@@ -21,11 +21,14 @@ dockerTools.buildLayeredImage {
   tag = hermesRelease;
   contents = with pkgs; [
     bash
+    bat
     binutils
     bubblewrap
     cacert
     coreutils
     curl
+    delta
+    exiftool
     fd
     ffmpeg
     file
@@ -35,8 +38,10 @@ dockerTools.buildLayeredImage {
     git
     gnugrep
     gnused
+    hn-text
     jq
     lsof
+    miller
     nix
     nodejs_22
     p7zip
@@ -45,14 +50,17 @@ dockerTools.buildLayeredImage {
     ripgrep
     ripgrep-all
     rsync
+    sqlite-utils
     strace
     tmux
     tree
     ttyd
     unzip
     uv
+    visidata
     wget
     yq-go
+    yt-dlp
     zip
     codex
     gemini-cli
