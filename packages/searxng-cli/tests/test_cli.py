@@ -9,7 +9,9 @@ runner = CliRunner()
 
 
 def test_search_web_json_output(monkeypatch):
-    def fake_search(*, base_url, query, categories, limit, language, safe_search, timeout):
+    def fake_search(
+        *, base_url, query, categories, limit, language, safe_search, timeout
+    ):
         assert base_url == "https://search.example"
         assert query == "nixos hermes"
         assert categories == "general"
@@ -46,7 +48,6 @@ def test_search_web_json_output(monkeypatch):
             "en",
             "--safe-search",
             "1",
-            "--json",
         ],
     )
 
@@ -58,7 +59,9 @@ def test_search_web_json_output(monkeypatch):
 
 
 def test_search_web_human_output(monkeypatch):
-    def fake_search(*, base_url, query, categories, limit, language, safe_search, timeout):
+    def fake_search(
+        *, base_url, query, categories, limit, language, safe_search, timeout
+    ):
         return {
             "query": query,
             "number_of_results": 2,
