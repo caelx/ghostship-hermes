@@ -12,6 +12,7 @@ Canonical image references:
 - Hermes is prepackaged in a container runtime instead of installed directly on the host.
 - `ttyd` on port `7681` is the default interface, so the primary v1 workflow is browser-to-terminal rather than a messaging gateway.
 - Hermes is bootstrapped at container start from the pinned upstream release in `packages/hermes-image/hermes-release.txt`.
+- Hermes is installed into the final `/home/hermes/.hermes/hermes-agent` path during bootstrap so the generated launchers and imports do not depend on a temporary build directory.
 - Repo-managed skills are seeded into `~/.hermes/skills` on first start without overwriting user-managed content.
 - Hermes state is persisted in `/home/hermes/.hermes`, and `/nix` is mounted separately so ad hoc `nix shell` usage survives container restarts.
 - The runtime includes curated `ghostship-*` utilities so Hermes can call them from the same environment.
@@ -55,8 +56,9 @@ After the container starts:
 
 1. Open `http://localhost:7681`.
 2. The browser session opens directly into Hermes inside tmux.
-3. For first-time provider or gateway setup, open a separate shell and run `docker exec -it ghostship-hermes bash -lc 'hermes setup'`.
-4. Return to the browser session and keep chatting there, or use `/model` in-session and `hermes model` from an exec shell whenever you want to switch providers or models.
+3. If Hermes is not configured yet, the session falls back to a shell so the browser terminal still stays live instead of showing a dead reconnect prompt.
+4. For first-time provider or gateway setup, open a separate shell and run `docker exec -it ghostship-hermes bash -lc 'hermes setup'`.
+5. Return to the browser session and keep chatting there, or use `/model` in-session and `hermes model` from an exec shell whenever you want to switch providers or models.
 
 ## Hermes Usage
 

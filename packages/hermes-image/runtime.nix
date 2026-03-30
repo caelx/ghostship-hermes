@@ -47,6 +47,39 @@ writeShellApplication {
       mkdir -p "$tmp_dir"
     }
 
+    hermes_has_credentials() {
+      local key
+      for key in \
+        OPENROUTER_API_KEY \
+        NOUS_API_KEY \
+        GLM_API_KEY \
+        KIMI_API_KEY \
+        MINIMAX_API_KEY \
+        MINIMAX_CN_API_KEY \
+        COPILOT_GITHUB_TOKEN \
+        GH_TOKEN \
+        GITHUB_TOKEN \
+        OPENAI_API_KEY \
+        OPENAI_BASE_URL \
+        HERMES_INFERENCE_PROVIDER \
+        HERMES_MODEL
+      do
+        if [ -n "''${!key:-}" ]; then
+          return 0
+        fi
+      done
+
+      if [ -f "$HERMES_HOME/.env" ] && grep -Eq '^(OPENROUTER_API_KEY|NOUS_API_KEY|GLM_API_KEY|KIMI_API_KEY|MINIMAX_API_KEY|MINIMAX_CN_API_KEY|COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|OPENAI_API_KEY|OPENAI_BASE_URL|HERMES_INFERENCE_PROVIDER|HERMES_MODEL)=' "$HERMES_HOME/.env"; then
+        return 0
+      fi
+
+      if [ -f "$HERMES_HOME/auth.json" ] && grep -Eq '"active_provider"[[:space:]]*:[[:space:]]*"[A-Za-z0-9-]+"' "$HERMES_HOME/auth.json"; then
+        return 0
+      fi
+
+      return 1
+    }
+
     command_name="''${1:-}"
     shift || true
 
@@ -68,7 +101,14 @@ writeShellApplication {
         mkdir -p "$HOME" "$HERMES_HOME"
         mkdir -p "$HERMES_HOME/cron" "$HERMES_HOME/logs" "$HERMES_HOME/memories" "$HERMES_HOME/sessions" "$HERMES_HOME/skills"
 
+        needs_reinstall=1
         if [ -x "$install_root/venv/bin/hermes" ] && [ -f "$release_marker" ] && [ "$(tr -d '\n' < "$release_marker")" = "$GHOSTSHIP_HERMES_REF" ]; then
+          if grep -Fx "#!$install_root/venv/bin/python" "$install_root/venv/bin/hermes" >/dev/null 2>&1; then
+            needs_reinstall=0
+          fi
+        fi
+
+        if [ "$needs_reinstall" -eq 0 ]; then
           exit 0
         fi
 
@@ -76,23 +116,27 @@ writeShellApplication {
         git clone --depth 1 --branch "$GHOSTSHIP_HERMES_REF" --recurse-submodules "$repo_url" "$tmp_root/repo"
         cd "$tmp_root/repo"
 
-        uv venv venv --python ${python311.interpreter}
-        uv pip install --python "$tmp_root/repo/venv/bin/python" -e ".[all]"
-        npm install
+        rm -rf "$install_root.new"
+        mkdir -p "$install_root.new"
+        rsync -a --delete "$tmp_root/repo/" "$install_root.new/"
+        rm -rf "$install_root"
+        mv "$install_root.new" "$install_root"
+        cd "$install_root"
 
-        if [ -f "$tmp_root/repo/cli-config.yaml.example" ] && [ ! -f "$HERMES_HOME/config.yaml" ]; then
-          cp "$tmp_root/repo/cli-config.yaml.example" "$HERMES_HOME/config.yaml"
+        if [ -f "$install_root/cli-config.yaml.example" ] && [ ! -f "$HERMES_HOME/config.yaml" ]; then
+          cp "$install_root/cli-config.yaml.example" "$HERMES_HOME/config.yaml"
         fi
 
         if [ ! -f "$HERMES_HOME/.env" ]; then
           touch "$HERMES_HOME/.env"
         fi
 
-        rm -rf "$install_root.new"
-        mkdir -p "$install_root.new"
-        rsync -a --delete "$tmp_root/repo/" "$install_root.new/"
-        rm -rf "$install_root"
-        mv "$install_root.new" "$install_root"
+        rm -rf "$install_root/venv"
+        uv venv venv --python ${python311.interpreter}
+        uv build --wheel --out-dir "$tmp_root/dist" .
+        uv pip install --python "$install_root/venv/bin/python" "$tmp_root/dist"/*.whl
+        npm install
+
         printf '%s' "$GHOSTSHIP_HERMES_REF" > "$release_marker"
         ;;
       seed-skills)
@@ -136,7 +180,7 @@ writeShellApplication {
         session_name="''${TTYD_SESSION_NAME:-hermes}"
         title="''${TTYD_TITLE:-Hermes}"
         port="''${TTYD_PORT:-7681}"
-        startup_command="cd \"$TERMINAL_CWD\" && exec env HOME=\"$HOME\" HERMES_HOME=\"$HERMES_HOME\" PATH=\"$PATH\" hermes"
+        startup_command="exec \"$0\" terminal-session"
 
         if ! tmux has-session -t "$session_name" 2>/dev/null; then
           tmux new-session -d -s "$session_name" "$startup_command"
@@ -144,8 +188,24 @@ writeShellApplication {
 
         exec ttyd --writable -p "$port" -t "titleFixed=$title" tmux attach-session -t "$session_name"
         ;;
+      terminal-session)
+        ensure_runtime_prereqs
+        export HOME="''${HOME:-/home/hermes}"
+        export HERMES_HOME="''${HERMES_HOME:-$HOME/.hermes}"
+        export TERMINAL_CWD="''${TERMINAL_CWD:-$HOME}"
+        export PATH="$HERMES_HOME/hermes-agent/venv/bin:$HERMES_HOME/hermes-agent/node_modules/.bin:$PATH"
+
+        if hermes_has_credentials; then
+          cd "$TERMINAL_CWD"
+          exec hermes chat
+        fi
+
+        printf 'Hermes is not configured yet; starting shell.\n' >&2
+        cd "$TERMINAL_CWD"
+        exec bash -l
+        ;;
       *)
-        printf 'usage: ghostship-hermes-runtime <bootstrap|seed-skills|entrypoint|entrypoint-user>\n' >&2
+        printf 'usage: ghostship-hermes-runtime <bootstrap|seed-skills|entrypoint|entrypoint-user|terminal-session>\n' >&2
         exit 64
         ;;
     esac
