@@ -33,6 +33,7 @@
 - Hermes bootstrap also depends on a writable `/tmp` and a default CA bundle exported through `SSL_CERT_FILE` and `NIX_SSL_CERT_FILE`, otherwise `mktemp`, `git clone`, and Nix HTTP fetches can fail at runtime.
 - Hermes bootstrap must install the package into the final `/home/hermes/.hermes/hermes-agent` path, not an editable temp-tree checkout, because the generated launchers and `__editable__` import map otherwise point at a dead `/tmp/...` build path and tmux sessions exit immediately.
 - `hermes chat` exits immediately when no provider is configured, so the browser session must fall back to a real shell instead of attaching `ttyd` to an empty tmux session.
+- Under the current `s6` layout, `ttyd` is supervised as the primary browser terminal and the gateway watcher polls `~/.hermes/.env`; as soon as gateway credentials appear, it launches `hermes gateway run --replace` without requiring a container restart.
 - On the current x86_64 development host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired up and rely on arm64 runners for the full image build.
 - RomM v4.7.0 auth is not a repo-managed static token flow. The supported bearer token path is `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`).
 - CloakBrowser Manager auth is a static shared secret configured on the server via `AUTH_TOKEN`; API callers reuse that same value as `Authorization: Bearer <token>`, and `/api/status` remains unauthenticated for health checks.

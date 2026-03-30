@@ -15,6 +15,7 @@ Canonical image references:
 - Hermes is installed into the final `/home/hermes/.hermes/hermes-agent` path during bootstrap so the generated launchers and imports do not depend on a temporary build directory.
 - Repo-managed skills are seeded into `~/.hermes/skills` on first start without overwriting user-managed content.
 - Hermes state is persisted in `/home/hermes/.hermes`, and `/nix` is mounted separately so ad hoc `nix shell` usage survives container restarts.
+- The runtime is supervised by `s6`: one service runs `ttyd`, one watcher starts `hermes gateway` when messaging credentials appear, and the browser terminal falls back to a shell until Hermes is configured.
 - The runtime includes curated `ghostship-*` utilities so Hermes can call them from the same environment.
 
 ## Overview
@@ -92,7 +93,7 @@ Common shared slash commands from the upstream README include:
 /platforms
 ```
 
-`hermes gateway` remains available for upstream compatibility, but this image uses `ttyd` as the default browser-facing interface. If you do want to use upstream messaging workflows, run `hermes gateway setup` or `hermes gateway start` from inside the running container. For the full current command inventory, use the upstream CLI reference linked below.
+`hermes gateway` remains available for upstream compatibility, but this image uses `ttyd` as the default browser-facing interface. The container runs a background watcher under `s6` that starts `hermes gateway run --replace` automatically once messaging credentials are present in `~/.hermes/.env`, so you only need to run `hermes gateway setup` when you actually want messaging enabled. For the full current command inventory, use the upstream CLI reference linked below.
 
 ## Hermes Docs
 

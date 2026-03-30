@@ -12,7 +12,7 @@
   hermesRelease,
   nodejs_22,
   python311,
-  tmux,
+  s6,
   ttyd,
   uv,
   util-linux,
@@ -30,7 +30,7 @@ writeShellApplication {
     gnused
     nodejs_22
     rsync
-    tmux
+    s6
     ttyd
     uv
     util-linux
@@ -74,6 +74,38 @@ writeShellApplication {
       fi
 
       if [ -f "$HERMES_HOME/auth.json" ] && grep -Eq '"active_provider"[[:space:]]*:[[:space:]]*"[A-Za-z0-9-]+"' "$HERMES_HOME/auth.json"; then
+        return 0
+      fi
+
+      return 1
+    }
+
+    gateway_has_credentials() {
+      local key
+      for key in \
+        TELEGRAM_BOT_TOKEN \
+        DISCORD_BOT_TOKEN \
+        SLACK_BOT_TOKEN \
+        SLACK_APP_TOKEN \
+        MATTERMOST_TOKEN \
+        MATRIX_ACCESS_TOKEN \
+        MATRIX_PASSWORD \
+        WHATSAPP_ENABLED \
+        WEBHOOK_ENABLED \
+        API_SERVER_ENABLED \
+        SIGNAL_ACCOUNT \
+        EMAIL_PASSWORD \
+        EMAIL_IMAP_HOST \
+        EMAIL_SMTP_HOST \
+        DINGTALK_CLIENT_ID \
+        DINGTALK_CLIENT_SECRET
+      do
+        if [ -n "''${!key:-}" ]; then
+          return 0
+        fi
+      done
+
+      if [ -f "$HERMES_HOME/.env" ] && grep -Eq '^(TELEGRAM_BOT_TOKEN|DISCORD_BOT_TOKEN|SLACK_BOT_TOKEN|SLACK_APP_TOKEN|MATTERMOST_TOKEN|MATRIX_ACCESS_TOKEN|MATRIX_PASSWORD|WHATSAPP_ENABLED|WEBHOOK_ENABLED|API_SERVER_ENABLED|SIGNAL_ACCOUNT|EMAIL_PASSWORD|EMAIL_IMAP_HOST|EMAIL_SMTP_HOST|DINGTALK_CLIENT_ID|DINGTALK_CLIENT_SECRET)=' "$HERMES_HOME/.env"; then
         return 0
       fi
 
@@ -163,37 +195,29 @@ writeShellApplication {
           install -d -m 0755 -o 1000 -g 1000 /home/hermes
           install -d -m 0755 -o 1000 -g 1000 /home/hermes/.hermes
           install -d -m 0755 -o 1000 -g 1000 /nix
-          exec setpriv --reuid=1000 --regid=1000 --clear-groups "$0" entrypoint-user "$@"
+          "$0" bootstrap
+          "$0" seed-skills
+          chown -R 1000:1000 /home/hermes
+          exec s6-svscan /etc/s6/services
         fi
-        exec "$0" entrypoint-user "$@"
+        exec s6-svscan /etc/s6/services
         ;;
-      entrypoint-user)
+      entrypoint-user|ttyd-service)
         ensure_runtime_prereqs
         export HOME="''${HOME:-/home/hermes}"
         export HERMES_HOME="''${HERMES_HOME:-$HOME/.hermes}"
         export TERMINAL_CWD="''${TERMINAL_CWD:-$HOME}"
-        export PATH="$HERMES_HOME/hermes-agent/venv/bin:$HERMES_HOME/hermes-agent/node_modules/.bin:$PATH"
-
-        "$0" bootstrap
-        "$0" seed-skills
-
-        session_name="''${TTYD_SESSION_NAME:-hermes}"
-        title="''${TTYD_TITLE:-Hermes}"
+        export PATH="/usr/local/bin:$HERMES_HOME/hermes-agent/venv/bin:$HERMES_HOME/hermes-agent/node_modules/.bin:$PATH"
         port="''${TTYD_PORT:-7681}"
-        startup_command="exec \"$0\" terminal-session"
-
-        if ! tmux has-session -t "$session_name" 2>/dev/null; then
-          tmux new-session -d -s "$session_name" "$startup_command"
-        fi
-
-        exec ttyd --writable -p "$port" -t "titleFixed=$title" tmux attach-session -t "$session_name"
+        title="''${TTYD_TITLE:-Hermes}"
+        exec ttyd --writable -p "$port" -t "titleFixed=$title" /usr/local/bin/ghostship-hermes-runtime terminal-session
         ;;
       terminal-session)
         ensure_runtime_prereqs
         export HOME="''${HOME:-/home/hermes}"
         export HERMES_HOME="''${HERMES_HOME:-$HOME/.hermes}"
         export TERMINAL_CWD="''${TERMINAL_CWD:-$HOME}"
-        export PATH="$HERMES_HOME/hermes-agent/venv/bin:$HERMES_HOME/hermes-agent/node_modules/.bin:$PATH"
+        export PATH="/usr/local/bin:$HERMES_HOME/hermes-agent/venv/bin:$HERMES_HOME/hermes-agent/node_modules/.bin:$PATH"
 
         if hermes_has_credentials; then
           cd "$TERMINAL_CWD"
@@ -204,8 +228,26 @@ writeShellApplication {
         cd "$TERMINAL_CWD"
         exec bash -l
         ;;
+      gateway-loop)
+        ensure_runtime_prereqs
+        export HOME="''${HOME:-/home/hermes}"
+        export HERMES_HOME="''${HERMES_HOME:-$HOME/.hermes}"
+        export PATH="/usr/local/bin:$HERMES_HOME/hermes-agent/venv/bin:$HERMES_HOME/hermes-agent/node_modules/.bin:$PATH"
+
+        while true; do
+          if gateway_has_credentials; then
+            cd "$HERMES_HOME"
+            hermes gateway run --replace
+            rc="$?"
+            printf 'Hermes gateway exited with %s; retrying in 5s.\n' "$rc" >&2
+            sleep 5
+          else
+            sleep 15
+          fi
+        done
+        ;;
       *)
-        printf 'usage: ghostship-hermes-runtime <bootstrap|seed-skills|entrypoint|entrypoint-user|terminal-session>\n' >&2
+        printf 'usage: ghostship-hermes-runtime <bootstrap|seed-skills|entrypoint|entrypoint-user|ttyd-service|terminal-session|gateway-loop>\n' >&2
         exit 64
         ;;
     esac
