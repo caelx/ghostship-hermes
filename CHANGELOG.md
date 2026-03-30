@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Pinned Hermes release updated to `v2026.3.30`.
+
 - Fixed the RomM and Grimmory CLIs to authenticate via their live login flows by default, while still accepting direct bearer token overrides.
 - Fixed `ghostship-cloakbrowser` request URL construction and clarified that its auth token is a static server-side `AUTH_TOKEN`, not a generated session token.
 - Added curated API/auth spec sheets for RomM, Grimmory/BookLore, and CloakBrowser Manager under `docs/api/`.
