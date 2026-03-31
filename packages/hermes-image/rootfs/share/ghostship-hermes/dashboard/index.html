@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ghostship-hermes</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body data-dashboard="ghostship-hermes-dashboard">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">ghostship-hermes</p>
+          <h1>Hermes Profiles</h1>
+          <p class="lede">Same-origin terminals proxied through Caddy. Each profile gets its own Hermes shell and optional gateway service.</p>
+        </div>
+        <div id="profiles" class="profiles" aria-live="polite"></div>
+      </aside>
+      <main class="terminal-shell">
+        <div class="toolbar">
+          <div>
+            <p class="eyebrow">Active Profile</p>
+            <h2 id="active-name">Loading…</h2>
+          </div>
+          <a id="popout-link" class="popout-link" href="/profiles/default/" target="_blank" rel="noopener noreferrer">Open terminal</a>
+        </div>
+        <div class="frame-wrap">
+          <iframe id="profile-frame" title="Hermes profile terminal" src="/profiles/default/"></iframe>
+        </div>
+      </main>
+    </div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

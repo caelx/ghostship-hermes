@@ -1,4 +1,0 @@
-#!/bin/sh
-set -eu
-
-exec setpriv --reuid 1000 --regid 1000 --clear-groups --inh-caps -all /usr/local/bin/ghostship-hermes-runtime gateway-loop

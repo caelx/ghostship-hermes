@@ -1,6 +1,6 @@
 # ghostship-hermes
 
-`ghostship-hermes` is a Nix-first monorepo for building and publishing the `caelx` Hermes container image. The image runs Hermes behind `ttyd` on port `7681`, seeds repo-managed skills on first start, persists Hermes state in `/home/hermes/.hermes` and `/nix`, and bundles repo-owned `ghostship-*` utilities for agent-friendly operator workflows.
+`ghostship-hermes` is a Nix-first monorepo for building and publishing the `caelx` Hermes container image. The image runs Hermes behind a Caddy dashboard on port `7681`, seeds repo-managed skills on first start, persists Hermes state in `/home/hermes/.hermes` and `/nix`, and bundles repo-owned `ghostship-*` utilities plus a curated operator toolchain for agent-friendly workflows.
 
 Canonical image references:
 
@@ -10,12 +10,12 @@ Canonical image references:
 ## What This Image Changes
 
 - Hermes is prepackaged in a container runtime instead of installed directly on the host.
-- `ttyd` on port `7681` is the default interface, so the primary v1 workflow is browser-to-terminal rather than a messaging gateway.
+- Caddy on port `7681` is the public interface. It serves a profile dashboard and reverse-proxies same-origin `ttyd` terminals for each Hermes profile.
 - Hermes is bootstrapped at container start from the pinned upstream release in `packages/hermes-image/hermes-release.txt`.
 - Hermes is installed into the final `/home/hermes/.hermes/hermes-agent` path during bootstrap so the generated launchers and imports do not depend on a temporary build directory.
 - Repo-managed skills are seeded into `~/.hermes/skills` on first start without overwriting user-managed content.
 - Hermes state is persisted in `/home/hermes/.hermes`, and `/nix` is mounted separately so ad hoc `nix shell` usage survives container restarts.
-- The runtime is supervised by `s6`: one service runs `ttyd`, one watcher starts `hermes gateway` when messaging credentials appear, and the browser terminal falls back to a shell until Hermes is configured.
+- The runtime is supervised by `s6`: Caddy is the only public web service, profile-specific `ttyd` terminals are created dynamically for the default and named Hermes profiles, profile-specific gateways start automatically when messaging credentials appear, and unconfigured profiles fall back to a shell instead of a dead reconnect screen.
 - The runtime includes curated `ghostship-*` utilities so Hermes can call them from the same environment.
 
 ## Overview
@@ -49,17 +49,34 @@ docker run \
   --name ghostship-hermes \
   --publish 7681:7681 \
   --volume ghostship-hermes-home:/home/hermes/.hermes \
-  --volume ghostship-hermes-nix:/nix \
   ghcr.io/caelx/ghostship-hermes:latest
 ```
 
 After the container starts:
 
 1. Open `http://localhost:7681`.
-2. The browser session opens directly into Hermes inside tmux.
-3. If Hermes is not configured yet, the session falls back to a shell so the browser terminal still stays live instead of showing a dead reconnect prompt.
+2. The dashboard opens the default Hermes profile in a same-origin iframe backed by a private `ttyd` session.
+3. If Hermes is not configured yet, that profile falls back to a shell so the browser terminal still stays live instead of showing a dead reconnect prompt.
 4. For first-time provider or gateway setup, open a separate shell and run `docker exec -it ghostship-hermes bash -lc 'hermes setup'`.
-5. Return to the browser session and keep chatting there, or use `/model` in-session and `hermes model` from an exec shell whenever you want to switch providers or models.
+5. Create additional Hermes profiles with `docker exec -it ghostship-hermes bash -lc 'hermes profile create coder --clone'`. The dashboard picks them up automatically without restarting the container.
+6. Return to the dashboard and switch between profiles from the left-hand panel.
+
+`/nix` is part of the intended persistent runtime model, but do not blindly mount an empty Docker volume over `/nix` on a fresh Nix-built image. That hides or forces Docker to copy the image’s Nix store. If you need `/nix` persistence, use a deployment strategy that keeps the existing store available rather than replacing `/nix` with an empty volume.
+
+### Profiles Dashboard
+
+- `/` serves the Caddy dashboard.
+- `/profiles/default/` serves the default Hermes profile terminal.
+- `/profiles/<slug>/` serves a named profile terminal through the same origin.
+- Profile routes stay private behind Caddy; the individual `ttyd` backends bind only to loopback inside the container.
+- Hermes profile discovery follows the upstream layout:
+  - default profile: `~/.hermes`
+  - named profiles: `~/.hermes/profiles/<name>`
+- Profile commands use upstream Hermes behavior:
+  - `hermes profile create coder`
+  - `hermes profile create research --clone`
+  - `hermes -p coder chat`
+  - `hermes profile list`
 
 ## Hermes Usage
 
@@ -93,7 +110,7 @@ Common shared slash commands from the upstream README include:
 /platforms
 ```
 
-`hermes gateway` remains available for upstream compatibility, but this image uses `ttyd` as the default browser-facing interface. The container runs a background watcher under `s6` that starts `hermes gateway run --replace` automatically once messaging credentials are present in `~/.hermes/.env`, so you only need to run `hermes gateway setup` when you actually want messaging enabled. For the full current command inventory, use the upstream CLI reference linked below.
+`hermes gateway` remains available for upstream compatibility, but this image uses the Caddy dashboard and profile `ttyd` terminals as the default browser-facing interface. The container runs a background watcher under `s6` that starts `hermes gateway run --replace` automatically for each profile once that profile’s messaging credentials are present, so you only need to run `hermes gateway setup` when you actually want messaging enabled. For the full current command inventory, use the upstream CLI reference linked below.
 
 ## Hermes Docs
 
@@ -101,6 +118,7 @@ The upstream Hermes documentation still applies to CLI behavior and features ins
 
 - <https://hermes-agent.nousresearch.com/docs/>
 - <https://hermes-agent.nousresearch.com/docs/user-guide/cli>
+- <https://hermes-agent.nousresearch.com/docs/user-guide/profiles/>
 - <https://hermes-agent.nousresearch.com/docs/user-guide/messaging>
 - <https://hermes-agent.nousresearch.com/docs/reference/cli-commands>
 
@@ -124,10 +142,10 @@ The published manifest list and per-architecture image tags follow the same nami
 
 - **Base Image**: Stable NixOS (`nixos-25.11`)
 - **Hermes**: Installed at container runtime from a pinned upstream release
-- **Interface**: `ttyd` on port `7681` launches the default Hermes session
-- **Persistence**: `/home/hermes/.hermes` and `/nix` are mounted as volumes
+- **Interface**: Caddy on port `7681` serves a profile dashboard and same-origin proxied `ttyd` terminals
+- **Persistence**: `/home/hermes/.hermes` is the safe default Docker volume; `/nix` persistence is deployment-specific because replacing `/nix` with an empty Docker volume hides or copies the image’s Nix store
 - **Bootstrap Resilience**: The entrypoint creates `/tmp` and defaults `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` to `/etc/ssl/certs/ca-bundle.crt` so bootstrap `git`, `uv`, and Nix operations inherit a working CA bundle
-- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, etc.
+- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, and more
 - **Output Standard**: All `ghostship-` utilities output native JSON. Use `--pretty` for human-readable output.
 
 ## Python Utility Workflow
@@ -167,7 +185,11 @@ Canonical API references for every `ghostship-*` utility now live in [docs/api/R
 
 ## Skills
 
-Default skills are stored in `skills/` and seeded into the Hermes runtime `~/.hermes/skills` on first start without overwriting user-managed content. Each skill document provides detailed instructions for Hermes on how to use the corresponding CLI utility.
+Default skills are stored in `skills/` and seeded into the Hermes runtime `~/.hermes/skills` on first start without overwriting user-managed content. In addition to service-specific skills, the image now ships:
+
+- `hermes-nix`: how to run missing tools, do `nix profile` user installs, and rebuild repo tools without root
+- `hermes-agent-browser`: how to use `agent-browser` only through CloakBrowser-backed profiles
+- `current-environment`: how the Caddy dashboard, `ttyd`, `s6`, persistence, and safe self-restart behavior work in this container
 
 ## Local Development
 
@@ -181,3 +203,4 @@ Default skills are stored in `skills/` and seeded into the Hermes runtime `~/.he
 - Runs as non-root `hermes` user.
 - No in-container `sudo`.
 - Secrets should be provided via mounted `.env` or environment variables.
+- Runtime UID/GID is configurable with `HERMES_UID` and `HERMES_GID`; mounted volumes should be writable by the chosen identity.

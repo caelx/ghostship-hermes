@@ -11,6 +11,11 @@ let
     name = "ghostship-hermes-skills";
   };
 
+  dashboardTree = builtins.path {
+    path = ./rootfs/share/ghostship-hermes/dashboard;
+    name = "ghostship-hermes-dashboard";
+  };
+
   rootfs = builtins.path {
     path = ./rootfs;
     name = "ghostship-hermes-rootfs";
@@ -21,25 +26,38 @@ let
     binutils
     bubblewrap
     cacert
+    caddy
     coreutils
     curl
     delta
+    dnsutils
+    entr
     exiftool
     fd
     ffmpeg
     file
     findutils
+    fzf
+    gawk
     gh
     git
+    git-lfs
     gnugrep
     gnused
     hn-text
+    iproute2
+    iputils
     jq
+    less
     lsof
+    man-db
+    man-pages
     miller
     nix
     nodejs_22
+    openssl
     p7zip
+    procps
     psmisc
     python311
     ripgrep
@@ -48,6 +66,9 @@ let
     sqlite-utils
     strace
     s6
+    shellcheck
+    bats
+    tmux
     tree
     ttyd
     unzip
@@ -74,8 +95,11 @@ dockerTools.buildImage {
   };
   extraCommands = ''
     mkdir -p usr/local/bin
+    mkdir -p usr/local/share/ghostship-hermes/dashboard
     cp ${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime usr/local/bin/ghostship-hermes-runtime
     chmod 0755 usr/local/bin/ghostship-hermes-runtime
+    cp -R ${dashboardTree}/. usr/local/share/ghostship-hermes/dashboard/
+    ln -s ${pkgs.python311}/bin/python3 usr/local/bin/python
   '';
   config = {
     WorkingDir = "/home/hermes";
@@ -86,6 +110,7 @@ dockerTools.buildImage {
       "HERMES_HOME=/home/hermes/.hermes"
       "GHOSTSHIP_HERMES_REF=${hermesRelease}"
       "GHOSTSHIP_DEFAULT_SKILLS=${skillsTree}"
+      "GHOSTSHIP_DASHBOARD_DIR=/usr/local/share/ghostship-hermes/dashboard"
       "NIX_CONFIG=experimental-features = nix-command flakes"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
       "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
@@ -96,11 +121,10 @@ dockerTools.buildImage {
     };
     Volumes = {
       "/home/hermes/.hermes" = { };
-      "/nix" = { };
     };
     Labels = {
       "org.opencontainers.image.title" = "ghostship-hermes";
-      "org.opencontainers.image.description" = "Hermes container with ttyd and curated operator tooling";
+      "org.opencontainers.image.description" = "Hermes container with a Caddy profile dashboard, per-profile ttyd terminals, and curated operator tooling";
       "org.opencontainers.image.version" = hermesRelease;
     };
   };

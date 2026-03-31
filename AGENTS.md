@@ -9,13 +9,15 @@
 - Runtime user should be non-root; do not grant general `sudo` inside the container
 - Runtime should include Nix for ad hoc `nix shell` usage
 - Persist Hermes state in the user home volume and persist `/nix` on a separate volume
-- Primary v1 interface should be `ttyd` serving Hermes for browser access
+- Primary browser interface should be a Caddy dashboard on port `7681` that proxies same-origin `ttyd` terminals for the default and named Hermes profiles
 - CLI access remains available for admin/debug workflows inside the running container
 - Discord gateway remains an optional later interface, not the v1 default
 - Default skills should seed into the standard Hermes runtime skill directory on first start without overwriting user-managed content
 - The first utility scaffold should target SearXNG
 - Build on every push/PR; publish the full mutable tag set from `main`, and limit non-main `workflow_dispatch` runs to immutable `sha-*` tags
 - Hermes is installed at container runtime using the upstream manual `uv` plus `npm` flow against a pinned upstream release tag
+- Hermes profile discovery should follow the upstream layout: default profile at `~/.hermes`, named profiles under `~/.hermes/profiles/<name>`
+- Profile-scoped `ttyd` terminals and profile-scoped gateway services should be generated dynamically from the Hermes profile set, without requiring a container restart
 - Scheduled automation should watch upstream Hermes releases and update `packages/hermes-image/hermes-release.txt`
 - Publish multi-arch `amd64` and `arm64` image tags plus manifest lists for the documented release channels
 - Repo-owned utilities should use a `ghostship-` prefix to avoid clobbering upstream or system package names
@@ -34,6 +36,13 @@
 - Hermes bootstrap must install the package into the final `/home/hermes/.hermes/hermes-agent` path, not an editable temp-tree checkout, because the generated launchers and `__editable__` import map otherwise point at a dead `/tmp/...` build path and tmux sessions exit immediately.
 - `hermes chat` exits immediately when no provider is configured, so the browser session must fall back to a real shell instead of attaching `ttyd` to an empty tmux session.
 - Under the current `s6` layout, `ttyd` is supervised as the primary browser terminal and the gateway watcher polls `~/.hermes/.env`; as soon as gateway credentials appear, it launches `hermes gateway run --replace` without requiring a container restart.
+- Hermes `v2026.3.28` does not yet have native profile support; `v2026.3.30` adds `hermes profile ...` and `-p/--profile`, which the multi-profile dashboard design depends on.
+- Caddy does not auto-discover local `ttyd` processes; the container must generate its own route table and iframe manifest from the Hermes profile set.
+- `s6-svscan` does not automatically pick up newly created service directories after startup unless the runtime explicitly signals it, so the profile reconciler must call `s6-svscanctl -a` after creating new per-profile services.
+- For this container, the supported `agent-browser` path is CloakBrowser-backed profiles only, with two default profiles available initially and one default VPN-backed profile that is more likely to hit CAPTCHA.
+- Mounting an empty Docker volume over `/nix` on a fresh Nix-built image is not a safe default: it hides or triggers a copy of the image’s Nix store and can make `docker run` stall before the container starts. Treat `/nix` persistence as deployment-specific rather than a generic Docker named-volume mount.
+- In bash with `set -e`, helper functions that stream records via `while read` should end with an explicit `return 0`; otherwise the final `read` returns `1` and can kill reconciliation loops after they already truncated runtime state files.
+- In bash with `set -e`, idempotent helper functions like `write_if_changed` must also return `0` on the no-op path; returning `1` for “unchanged” will still crash long-running service loops.
 - On the current x86_64 development host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired up and rely on arm64 runners for the full image build.
 - RomM v4.7.0 auth is not a repo-managed static token flow. The supported bearer token path is `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`).
 - CloakBrowser Manager auth is a static shared secret configured on the server via `AUTH_TOKEN`; API callers reuse that same value as `Authorization: Bearer <token>`, and `/api/status` remains unauthenticated for health checks.
