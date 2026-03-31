@@ -63,6 +63,7 @@ writeShellApplication {
       export GHOSTSHIP_CADDY_DIR="$GHOSTSHIP_STATE_DIR/caddy"
       export GHOSTSHIP_CADDY_CONFIG="$GHOSTSHIP_CADDY_DIR/Caddyfile"
       export GHOSTSHIP_PROFILE_PORTS="$GHOSTSHIP_STATE_DIR/profile-ports.tsv"
+      export GHOSTSHIP_HONCHO_SHARED_DIR="''${GHOSTSHIP_HONCHO_SHARED_DIR:-$HERMES_HOME/shared/honcho}"
       export PATH="/usr/local/bin:$HERMES_HOME/hermes-agent/venv/bin:$HERMES_HOME/hermes-agent/node_modules/.bin:$PATH"
 
       tmp_dir="''${TMPDIR:-/tmp}"
@@ -93,8 +94,25 @@ writeShellApplication {
 
     ensure_runtime_directories() {
       install -d -m 1777 /tmp
-      install -d -m 0755 "$HOME" "$HERMES_HOME" "$HERMES_HOME/profiles" "$GHOSTSHIP_STATE_DIR" "$GHOSTSHIP_SERVICES_DIR" "$GHOSTSHIP_WWW_DIR" "$GHOSTSHIP_API_DIR" "$GHOSTSHIP_CADDY_DIR"
+      install -d -m 0755 "$HOME" "$HERMES_HOME" "$HERMES_HOME/profiles" "$GHOSTSHIP_STATE_DIR" "$GHOSTSHIP_SERVICES_DIR" "$GHOSTSHIP_WWW_DIR" "$GHOSTSHIP_API_DIR" "$GHOSTSHIP_CADDY_DIR" "$GHOSTSHIP_HONCHO_SHARED_DIR"
       touch "$GHOSTSHIP_API_DIR/profiles.json"
+    }
+
+    ensure_honcho_layout() {
+      local compat_link="$HOME/.honcho"
+
+      install -d -m 0755 "$GHOSTSHIP_HONCHO_SHARED_DIR"
+
+      if [ -d "$compat_link" ] && [ ! -L "$compat_link" ]; then
+        rsync -a "$compat_link/" "$GHOSTSHIP_HONCHO_SHARED_DIR/"
+        rm -rf "$compat_link"
+      elif [ -L "$compat_link" ] && [ "$(readlink -f "$compat_link")" != "$GHOSTSHIP_HONCHO_SHARED_DIR" ]; then
+        rm -f "$compat_link"
+      fi
+
+      if [ ! -e "$compat_link" ]; then
+        ln -s "$GHOSTSHIP_HONCHO_SHARED_DIR" "$compat_link"
+      fi
     }
 
     write_if_changed() {
@@ -348,6 +366,7 @@ PY
     reconcile_profiles() {
       ensure_runtime_prereqs
       ensure_runtime_directories
+      ensure_honcho_layout
 
       local entries_file desired_services_file
       entries_file="$(mktemp)"
@@ -499,6 +518,7 @@ PY
       ensure_runtime_prereqs
       configure_runtime_identity
       ensure_runtime_directories
+      ensure_honcho_layout
       render_static_services
       reconcile_profiles
       ;;
@@ -510,6 +530,7 @@ PY
           install -d -m 0755 -o "$HERMES_UID" -g "$HERMES_GID" "$HOME" "$HERMES_HOME" /nix
           "$0" bootstrap
           "$0" seed-skills
+          ensure_honcho_layout
           chown -R "$HERMES_UID:$HERMES_GID" "$HOME"
           "$0" prepare-runtime
           exec s6-svscan "$GHOSTSHIP_SERVICES_DIR"

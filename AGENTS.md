@@ -26,6 +26,8 @@
 
 ## Lessons Learned
 
+- Hermes Honcho resolution is profile-local first: it prefers `$HERMES_HOME/honcho.json` before the legacy shared compatibility config path, so per-profile Honcho config can live inside persisted profile state without changing `HOME`.
+- Hermes `v2026.3.30` already pins `honcho-ai` `2.0.1` as the upstream `honcho` extra, so container support only needs the SDK available in the Hermes Python environment.
 - Hermes does not currently present a documented primary web UI. The official docs describe a CLI/TUI and a messaging gateway workflow.
 - Hermes browser automation docs describe `agent-browser` via Browserbase-style cloud/browser tooling rather than a local Chrome/CDP-first setup.
 - Hermes skills are stored in `~/.hermes/skills/`, and bundled skills are copied there on install; the container should mirror that behavior.

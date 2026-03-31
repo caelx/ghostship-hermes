@@ -17,6 +17,7 @@ Canonical image references:
 - Hermes state is persisted in `/home/hermes/.hermes`, and `/nix` is mounted separately so ad hoc `nix shell` usage survives container restarts.
 - The runtime is supervised by `s6`: Caddy is the only public web service, profile-specific `ttyd` terminals are created dynamically for the default and named Hermes profiles, profile-specific gateways start automatically when messaging credentials appear, and unconfigured profiles fall back to a shell instead of a dead reconnect screen.
 - The runtime includes curated `ghostship-*` utilities so Hermes can call them from the same environment.
+- Upstream Hermes Honcho support is available in the container out of the box for connecting Hermes to an external Honcho instance, with the `honcho-ai` SDK available to Hermes and env-first configuration preferred for container use.
 
 ## Overview
 
@@ -77,6 +78,14 @@ After the container starts:
   - `hermes profile create research --clone`
   - `hermes -p coder chat`
   - `hermes profile list`
+
+## Honcho
+
+- `hermes honcho ...` is available in the container without extra host setup, but it connects to an external Honcho instance rather than running a local Honcho daemon in this image.
+- Honcho is not active by default. It only becomes active after you actually configure it in a profile with `HONCHO_API_KEY`, optional `HONCHO_BASE_URL`, and optional `HONCHO_ENVIRONMENT`, or by writing a profile-local `honcho.json`.
+- Prefer environment variables in the relevant Hermes profile `.env` so each Hermes profile can opt in independently.
+- Profile-local Honcho config can live at `HERMES_HOME/honcho.json`, which persists with each Hermes profile under `~/.hermes`.
+- The legacy compatibility path `~/.honcho/config.json` is also persisted under Hermes storage at `~/.hermes/shared/honcho/config.json`, but it is kept as a fallback rather than the primary configuration path.
 
 ## Hermes Usage
 

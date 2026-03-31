@@ -4,6 +4,7 @@
   ghostshipHermesRuntime,
   hermesRelease,
   ghostshipUtilities,
+  honchoAi,
 }:
 let
   skillsTree = builtins.path {
@@ -20,6 +21,9 @@ let
     path = ./rootfs;
     name = "ghostship-hermes-rootfs";
   };
+
+  honchoPython = pkgs.python311.withPackages (_: [ honchoAi ]);
+
   imageContents = with pkgs; [
     bash
     bat
@@ -59,7 +63,6 @@ let
     p7zip
     procps
     psmisc
-    python311
     ripgrep
     ripgrep-all
     rsync
@@ -82,6 +85,7 @@ let
     codex
     gemini-cli
     opencode
+    honchoPython
     rootfs
   ] ++ ghostshipUtilities;
 in
@@ -99,7 +103,7 @@ dockerTools.buildImage {
     cp ${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime usr/local/bin/ghostship-hermes-runtime
     chmod 0755 usr/local/bin/ghostship-hermes-runtime
     cp -R ${dashboardTree}/. usr/local/share/ghostship-hermes/dashboard/
-    ln -s ${pkgs.python311}/bin/python3 usr/local/bin/python
+    ln -s ${honchoPython}/bin/python3 usr/local/bin/python
   '';
   config = {
     WorkingDir = "/home/hermes";
@@ -115,6 +119,7 @@ dockerTools.buildImage {
       "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
       "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
       "PATH=/usr/local/bin:/home/hermes/.hermes/hermes-agent/venv/bin:/home/hermes/.hermes/hermes-agent/node_modules/.bin:/bin"
+      "PYTHONPATH=${honchoPython}/${pkgs.python311.sitePackages}"
     ];
     ExposedPorts = {
       "7681/tcp" = { };

@@ -40,6 +40,7 @@
           ghostshipFlaresolverr = pkgs.callPackage ./packages/flaresolverr-cli/package.nix { };
           ghostshipPyloadNg = pkgs.callPackage ./packages/pyload-ng-cli/package.nix { };
           ghostshipCloakbrowser = pkgs.callPackage ./packages/cloakbrowser-cli/package.nix { };
+          honchoAi = pkgs.callPackage ./packages/honcho-ai/package.nix { };
 
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
@@ -90,6 +91,7 @@
               ghostshipHermesRuntime
               hermesRelease
               pkgs
+              honchoAi
               ;
             ghostshipUtilities = allUtilities;
           };

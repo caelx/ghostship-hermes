@@ -129,3 +129,9 @@ if docker exec "$container_name" bash -lc 'test -d /run/ghostship-hermes/service
 fi
 
 docker exec "$container_name" bash -lc 'command -v rg jq python python3 gh tmux ps awk less man fzf entr openssl ip dig shellcheck bats git-lfs >/dev/null'
+docker exec "$container_name" bash -lc 'hermes honcho --help >/dev/null'
+docker exec "$container_name" bash -lc 'python -c "import honcho"'
+docker exec "$container_name" bash -lc '/home/hermes/.hermes/hermes-agent/venv/bin/python -c "import honcho"'
+docker exec "$container_name" bash -lc 'test -L /home/hermes/.honcho'
+docker exec "$container_name" bash -lc 'test "$(readlink -f /home/hermes/.honcho)" = "/home/hermes/.hermes/shared/honcho"'
+docker exec "$container_name" bash -lc 'test -d /home/hermes/.hermes/shared/honcho'
