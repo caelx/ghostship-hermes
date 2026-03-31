@@ -10,9 +10,15 @@
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <p class="eyebrow">ghostship-hermes</p>
+          <div class="brand-header">
+            <img
+              class="brand-mark"
+              src="https://hermes-agent.nousresearch.com/docs/img/logo.png"
+              alt="Hermes logo"
+            >
+            <p class="eyebrow">ghostship-hermes</p>
+          </div>
           <h1>Hermes Profiles</h1>
-          <p class="lede">Same-origin terminals proxied through Caddy. Each profile gets its own Hermes shell and optional gateway service.</p>
         </div>
         <div id="profiles" class="profiles" aria-live="polite"></div>
       </aside>
@@ -25,7 +31,7 @@
           <a id="popout-link" class="popout-link" href="/profiles/default/" target="_blank" rel="noopener noreferrer">Open terminal</a>
         </div>
         <div class="frame-wrap">
-          <iframe id="profile-frame" title="Hermes profile terminal" src="/profiles/default/"></iframe>
+          <iframe id="profile-frame" title="Hermes profile terminal" src="/profiles/default/" sandbox="allow-same-origin allow-scripts allow-forms allow-downloads"></iframe>
         </div>
       </main>
     </div>

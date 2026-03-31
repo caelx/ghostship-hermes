@@ -39,7 +39,7 @@ function renderProfiles() {
       button.classList.add("active");
     }
 
-    const gatewayText = profile.gateway_expected ? "Gateway expected" : "Gateway idle";
+    const gatewayText = profile.gateway_expected ? "Gateway On" : "Gateway Off";
     button.innerHTML = `
       <span class="profile-title">${profile.name}</span>
       <span class="profile-meta">${profile.is_default ? "Default profile" : "Named profile"}</span>
@@ -51,7 +51,8 @@ function renderProfiles() {
   }
 }
 
-function activateProfile(slug) {
+function activateProfile(slug, options = {}) {
+  const { reloadFrame = true } = options;
   const profile = state.profiles.find((entry) => entry.slug === slug);
   if (!profile) {
     return;
@@ -59,7 +60,9 @@ function activateProfile(slug) {
 
   state.activeSlug = slug;
   activeName.textContent = profile.name;
-  profileFrame.src = profile.terminal_path;
+  if (reloadFrame || profileFrame.getAttribute("src") !== profile.terminal_path) {
+    profileFrame.src = profile.terminal_path;
+  }
   popoutLink.href = profile.terminal_path;
   syncUrl(slug);
   renderProfiles();
@@ -75,8 +78,7 @@ async function loadProfiles() {
   if (!state.activeSlug || !state.profiles.some((profile) => profile.slug === state.activeSlug)) {
     state.activeSlug = pickDefaultProfile(state.profiles);
   }
-  renderProfiles();
-  activateProfile(state.activeSlug);
+  activateProfile(state.activeSlug, { reloadFrame: false });
 }
 
 async function refreshProfiles() {

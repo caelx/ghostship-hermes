@@ -22,6 +22,7 @@
 - Publish multi-arch `amd64` and `arm64` image tags plus manifest lists for the documented release channels
 - Repo-owned utilities should use a `ghostship-` prefix to avoid clobbering upstream or system package names
 - All CLI utilities MUST output native JSON by default to ensure they are agent-friendly and easily machine-readable. Human-readable formatting (like tables) should be avoided in favor of raw JSON output.
+- After Docker-based testing, clean up old images, dead test containers, and temporary test artifacts; keep only the current image and any still-needed live validation container.
 
 ## Lessons Learned
 
