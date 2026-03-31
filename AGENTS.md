@@ -28,6 +28,8 @@
 
 - Hermes Honcho resolution is profile-local first: it prefers `$HERMES_HOME/honcho.json` before the legacy shared compatibility config path, so per-profile Honcho config can live inside persisted profile state without changing `HOME`.
 - Hermes `v2026.3.30` already pins `honcho-ai` `2.0.1` as the upstream `honcho` extra, so container support only needs the SDK available in the Hermes Python environment.
+- The container should create the legacy Honcho compatibility path `~/.honcho` lazily only when compatibility state exists; the primary persisted config path remains profile-local `$HERMES_HOME/honcho.json`.
+- Scheduled GitHub release polling must authenticate GitHub API requests with `GITHUB_TOKEN` or `GH_TOKEN`; anonymous `api.github.com` release queries can hit rate limits and break Actions even for small hourly jobs.
 - Hermes does not currently present a documented primary web UI. The official docs describe a CLI/TUI and a messaging gateway workflow.
 - Hermes browser automation docs describe `agent-browser` via Browserbase-style cloud/browser tooling rather than a local Chrome/CDP-first setup.
 - Hermes skills are stored in `~/.hermes/skills/`, and bundled skills are copied there on install; the container should mirror that behavior.
@@ -55,6 +57,7 @@
 - NZBGet’s automation contract is JSON-RPC over `/jsonrpc` with HTTP Basic auth rather than a REST resource model.
 - Synology has official PDF guides for both DSM login and File Station. The DSM guide explicitly documents `enable_syno_token=yes`, `sid`, `synotoken`, and `SynoToken`, while the File Station guide provides the broader namespace inventory beyond the subset used by `ghostship-synology`.
 - Grimmory source-of-truth is the official `grimmory-tools/grimmory` repository. It is the successor to BookLore, and its backend API surface should be documented from that repo's controllers rather than from unrelated `grimoire` services.
+- User preference: always clean up old Docker test containers and stale local Docker artifacts after verification work, and leave local Docker state tidy when tests are complete.
 
 ## Documentation Requirements
 

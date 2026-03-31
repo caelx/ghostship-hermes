@@ -4,7 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Added direct Honcho support to the Hermes image by shipping the `honcho-ai` SDK in the container, enabling `hermes honcho ...` against external Honcho instances without extra host installs, persisting the Honcho compatibility config under Hermes storage, and documenting explicit env-first per-profile Honcho setup.
+- Fixed the scheduled Hermes release updater to authenticate GitHub API requests with `GITHUB_TOKEN`, avoiding anonymous release-API rate limit failures in GitHub Actions.
+- Added direct Honcho support to the Hermes image by shipping the `honcho-ai` SDK in the container, enabling `hermes honcho ...` against external Honcho instances without extra host installs, lazily persisting the Honcho compatibility config under Hermes storage, and documenting explicit env-first per-profile Honcho setup.
 - Refined the Hermes profile dashboard branding by adding the upstream Hermes logo, bottom-aligning the `ghostship-hermes` wordmark beside it, renaming the gateway status labels to `Gateway On` and `Gateway Off`, and stopping the 5-second profile poll from reloading the active terminal iframe unnecessarily.
 - Replaced the single public `ttyd` entrypoint with a Caddy dashboard that proxies same-origin per-profile Hermes terminals, and added a Docker integration test covering multiple profiles, iframe routing, and profile-scoped gateway startup.
 - Stopped advertising `/nix` as an automatic Docker volume because mounting an empty volume over `/nix` on a fresh Nix-built image hides or copies the store and can stall container startup.

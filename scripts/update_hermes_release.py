@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 RELEASE_FILE = Path("packages/hermes-image/hermes-release.txt")
@@ -11,7 +12,17 @@ LATEST_RELEASE_URL = "https://api.github.com/repos/NousResearch/hermes-agent/rel
 
 
 def fetch_latest_tag() -> str:
-    with urlopen(LATEST_RELEASE_URL) as response:  # noqa: S310 - GitHub API endpoint
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "ghostship-hermes-release-updater",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    request = Request(LATEST_RELEASE_URL, headers=headers)
+    with urlopen(request) as response:  # noqa: S310 - GitHub API endpoint
         payload = json.load(response)
     tag_name = payload["tag_name"].strip()
     if not tag_name:
