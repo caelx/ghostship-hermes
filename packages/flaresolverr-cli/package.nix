@@ -1,30 +1,24 @@
-{
-  lib,
-  python3,
-  ghostshipCliContract,
-  ...
-}:
-python3.pkgs.buildPythonApplication {
+{ python311Packages, ghostshipCliContract }:
+python311Packages.buildPythonApplication {
   pname = "ghostship-flaresolverr";
   version = "0.1.0";
   pyproject = true;
 
   src = ./.;
 
-  nativeBuildInputs = [
-    python3.pkgs.hatchling
+  build-system = with python311Packages; [
+    hatchling
   ];
 
   doCheck = false;
 
-  propagatedBuildInputs = with python3.pkgs; [
+  dependencies = with python311Packages; [
     ghostshipCliContract
     httpx
     typer
   ];
 
-  meta = with lib; {
-    description = "FlareSolverr CLI wrapper for ghostship-hermes";
-    license = licenses.mit;
-  };
+  nativeCheckInputs = with python311Packages; [
+    pytest
+  ];
 }

@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed the GitHub Actions flake/image build regression by pinning `ghostship-flaresolverr` to the same `python311Packages` set as the shared `ghostship-cli-contract`, eliminating the Python 3.13 vs 3.11 package-set mismatch that broke `nix flake check` and image evaluation on GitHub.
 - Standardized the `ghostship-*` CLI contract around exact snake_case API/client method names with no compatibility aliases, a shared `--timeout` flag with a `30` second default, consistent JSON error envelopes and exit codes, and `--dry-run` request rendering for write/delete operations.
 - Expanded the remaining service CLIs to use the shared contract package, refreshed their package READMEs and skills, and updated the live suite to use the canonical commands.
 - Added first-wave full-surface utilities for PriceBuddy and RSS-Bridge, including typed clients, CLI help/docs, RSS-Bridge feed URL generation, local `.envrc` stubs, new service skills, and initial live coverage with token-gated PriceBuddy write-path checks.

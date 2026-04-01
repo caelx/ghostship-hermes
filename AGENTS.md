@@ -66,6 +66,7 @@
 - User preference: always clean up old Docker test containers and stale local Docker artifacts after verification work, and leave local Docker state tidy when tests are complete.
 
 - PriceBuddy publishes authenticated API docs at `/docs/api`, but the raw OpenAPI export is token-gated in practice; when no token-authenticated export is available, document the surface from upstream tests and handlers instead of inventing a spec mirror.
+- The shared `ghostship-cli-contract` Python package must be built from the same Python package set as each consuming CLI package. A flake can pass per-package unit tests locally and still fail `nix flake check` on GitHub if one CLI uses the ambient `python3` set while the shared contract is pinned to `python311Packages`.
 - RSS-Bridge is action-driven rather than CRUD-driven. For this repo, “create a feed” means generating a canonical `action=display` URL from the bridge schema, not persisting a server-side feed object.
 - The deployed RSS-Bridge instance does not use one uniform parameter schema shape. Some bridges expose `parameters` as a dict of contexts, while others return a legacy list of parameter groups that should be treated as the global context; `ghostship-rss-bridge` needs to support both.
 
