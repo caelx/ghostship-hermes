@@ -196,7 +196,7 @@ All `ghostship-` utilities require specific environment variables. Set these bef
 
 Canonical API references for every `ghostship-*` utility now live in [docs/api/README.md](docs/api/README.md), using raw upstream specs where available and repo-owned full reference sheets everywhere else.
 
-All `ghostship-*` CLIs now follow one contract: dedicated commands mirror the underlying client/API method names exactly in snake_case, and generic passthrough (`request` or `call`) is only the escape hatch for uncovered endpoints.
+All `ghostship-*` CLIs now follow one contract: dedicated commands mirror the underlying client/API method names exactly in snake_case, generic passthrough (`request` or `call`) is only the escape hatch for uncovered endpoints, every invocation accepts `--timeout` with a default hard timeout of `30` seconds, and write/delete commands expose `--dry-run` to print the exact request object without touching the remote service.
 
 ## Skills
 

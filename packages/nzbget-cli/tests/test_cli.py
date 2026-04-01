@@ -9,28 +9,35 @@ runner = CliRunner()
 
 
 class DummyClient:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+    def __init__(self):
+        self.calls = []
 
-    def get_status(self):
-        self.calls.append(("get_status", (), {}))
-        return {"status": "ok"}
+    def get_version(self, *, timeout=None):
+        self.calls.append(('get_version', timeout))
+        return '1.0'
 
-    def call(self, method: str, params=None):
-        self.calls.append(("call", (method,), {"params": params}))
-        return {"method": method, "params": params}
+    def build_shutdown(self):
+        class _Spec:
+            def to_dict(self): return {'json_body': {'method': 'shutdown'}}
+        return _Spec()
+
+    def shutdown(self, *, timeout=None):
+        self.calls.append(('shutdown', timeout))
+        return True
 
 
-def test_get_status(monkeypatch) -> None:
+def test_timeout_applies(monkeypatch):
     client = DummyClient()
-    monkeypatch.setattr(cli, "get_client", lambda: client)
-    result = runner.invoke(cli.app, ["get_status"])
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['--timeout', '8', 'get_version'])
     assert result.exit_code == 0
+    assert client.calls[-1] == ('get_version', 8.0)
 
 
-def test_call(monkeypatch) -> None:
+def test_shutdown_dry_run(monkeypatch):
     client = DummyClient()
-    monkeypatch.setattr(cli, "get_client", lambda: client)
-    result = runner.invoke(cli.app, ["call", "config", "--params-json", '[1,2]'])
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['shutdown', '--dry-run'])
     assert result.exit_code == 0
-    assert client.calls[-1] == ("call", ("config",), {"params": [1, 2]})
+    assert 'shutdown' in result.stdout
+    assert not client.calls

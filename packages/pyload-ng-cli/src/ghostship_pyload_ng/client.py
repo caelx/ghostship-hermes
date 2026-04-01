@@ -1,97 +1,113 @@
 from __future__ import annotations
 
 from typing import Any
-import os
 
 import httpx
 
-
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
+from ghostship_cli_contract import BaseHttpClient, RequestSpec
 
 
-class PyLoadClient:
-    def __init__(self, base_url: str, username: str | None = None, password: str | None = None):
-        self.base_url = base_url.rstrip("/")
+class PyLoadClient(BaseHttpClient):
+    def __init__(self, base_url: str, username: str | None = None, password: str | None = None, *, default_timeout: float = 30.0):
+        super().__init__(base_url.rstrip('/'), default_timeout=default_timeout)
         self.auth = (username, password) if username and password else None
-        self.headers = _cloudflare_access_headers()
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        json_data: dict[str, Any] | list[Any] | None = None,
-    ) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(auth=self.auth, headers=self.headers) as client:
-            response = client.request(method.upper(), url, params=params, json=json_data)
-            response.raise_for_status()
-            if not response.content:
-                return {"status": "success"}
+    def _client(self, timeout: float) -> httpx.Client:
+        return httpx.Client(headers=self.default_headers, timeout=timeout, auth=self.auth, transport=self.transport, follow_redirects=self.follow_redirects)
+
+    def build_request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> RequestSpec:
+        return self.build_request_spec(method, path, params=params, json_body=json_data, timeout=timeout)
+
+    def request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_request(method, path, params=params, json_data=json_data, timeout=timeout)
+        response = BaseHttpClient.request(self, spec)
+        if not response.content:
+            return {'status': 'success'}
+        try:
             return response.json()
+        except ValueError:
+            return response.text
 
-    def _request(
-        self,
-        path: str,
-        method: str = "GET",
-        params: dict[str, Any] | None = None,
-        json_data: dict[str, Any] | list[Any] | None = None,
-    ) -> Any:
-        return self.request(method, path, params=params, json_data=json_data)
+    def get_server_status(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'api/status_server', timeout=timeout)
 
-    def get_server_status(self) -> Any:
-        return self._request("api/status_server")
+    def get_downloads(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'api/status_downloads', timeout=timeout)
 
-    def get_downloads(self) -> Any:
-        return self._request("api/status_downloads")
+    def get_queue(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'api/get_queue', timeout=timeout)
 
-    def get_queue(self) -> Any:
-        return self._request("api/get_queue")
+    def build_add_package(self, name: str, links: list[str]) -> RequestSpec:
+        return self.build_request('POST', 'api/add_package', json_data={'name': name, 'links': links})
 
-    def add_package(self, name: str, links: list[str]) -> Any:
-        return self._request("api/add_package", method="POST", json_data={"name": name, "links": links})
+    def add_package(self, name: str, links: list[str], timeout: float | None = None) -> Any:
+        spec = self.build_add_package(name, links)
+        return self.request(spec.method, spec.path, json_data=spec.json_body, timeout=timeout)
 
-    def add_files(self, package_id: int, links: list[str]) -> Any:
-        return self._request("api/add_files", method="POST", json_data={"package_id": package_id, "links": links})
+    def build_add_files(self, package_id: int, links: list[str]) -> RequestSpec:
+        return self.build_request('POST', 'api/add_files', json_data={'package_id': package_id, 'links': links})
 
-    def delete_packages(self, package_ids: list[int]) -> Any:
-        return self._request("api/delete_packages", method="POST", json_data={"package_ids": package_ids})
+    def add_files(self, package_id: int, links: list[str], timeout: float | None = None) -> Any:
+        spec = self.build_add_files(package_id, links)
+        return self.request(spec.method, spec.path, json_data=spec.json_body, timeout=timeout)
 
-    def toggle_pause(self) -> Any:
-        return self._request("api/toggle_pause", method="POST")
+    def build_delete_packages(self, package_ids: list[int]) -> RequestSpec:
+        return self.build_request('POST', 'api/delete_packages', json_data={'package_ids': package_ids})
 
-    def get_config(self) -> Any:
-        return self._request("api/get_config_dict")
+    def delete_packages(self, package_ids: list[int], timeout: float | None = None) -> Any:
+        spec = self.build_delete_packages(package_ids)
+        return self.request(spec.method, spec.path, json_data=spec.json_body, timeout=timeout)
 
-    def delete_finished(self) -> Any:
-        return self._request("api/delete_finished", method="POST")
+    def build_toggle_pause(self) -> RequestSpec:
+        return self.build_request('POST', 'api/toggle_pause')
 
-    def restart_failed(self) -> Any:
-        return self._request("api/restart_failed", method="POST")
+    def toggle_pause(self, timeout: float | None = None) -> Any:
+        spec = self.build_toggle_pause()
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def stop_all_downloads(self) -> Any:
-        return self._request("api/stop_all_downloads", method="POST")
+    def get_config(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'api/get_config_dict', timeout=timeout)
 
-    def get_accounts(self, refresh: bool = False) -> Any:
-        return self._request("api/get_accounts", params={"refresh": str(refresh).lower()})
+    def build_delete_finished(self) -> RequestSpec:
+        return self.build_request('POST', 'api/delete_finished')
 
-    def add_account(self, plugin: str, login: str, password: str) -> Any:
-        return self._request("api/update_account", method="POST", json_data={"plugin": plugin, "login": login, "password": password})
+    def delete_finished(self, timeout: float | None = None) -> Any:
+        spec = self.build_delete_finished()
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def remove_account(self, plugin: str, login: str) -> Any:
-        return self._request("api/remove_account", method="POST", json_data={"plugin": plugin, "login": login})
+    def build_restart_failed(self) -> RequestSpec:
+        return self.build_request('POST', 'api/restart_failed')
 
-    def get_server_version(self) -> Any:
-        return self._request("api/get_server_version")
+    def restart_failed(self, timeout: float | None = None) -> Any:
+        spec = self.build_restart_failed()
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def get_free_space(self) -> Any:
-        return self._request("api/free_space")
+    def build_stop_all_downloads(self) -> RequestSpec:
+        return self.build_request('POST', 'api/stop_all_downloads')
+
+    def stop_all_downloads(self, timeout: float | None = None) -> Any:
+        spec = self.build_stop_all_downloads()
+        return self.request(spec.method, spec.path, timeout=timeout)
+
+    def get_accounts(self, refresh: bool = False, timeout: float | None = None) -> Any:
+        return self.request('GET', 'api/get_accounts', params={'refresh': str(refresh).lower()}, timeout=timeout)
+
+    def build_add_account(self, plugin: str, login: str, password: str) -> RequestSpec:
+        return self.build_request('POST', 'api/update_account', json_data={'plugin': plugin, 'login': login, 'password': password})
+
+    def add_account(self, plugin: str, login: str, password: str, timeout: float | None = None) -> Any:
+        spec = self.build_add_account(plugin, login, password)
+        return self.request(spec.method, spec.path, json_data=spec.json_body, timeout=timeout)
+
+    def build_remove_account(self, plugin: str, login: str) -> RequestSpec:
+        return self.build_request('POST', 'api/remove_account', json_data={'plugin': plugin, 'login': login})
+
+    def remove_account(self, plugin: str, login: str, timeout: float | None = None) -> Any:
+        spec = self.build_remove_account(plugin, login)
+        return self.request(spec.method, spec.path, json_data=spec.json_body, timeout=timeout)
+
+    def get_server_version(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'api/get_server_version', timeout=timeout)
+
+    def get_free_space(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'api/free_space', timeout=timeout)

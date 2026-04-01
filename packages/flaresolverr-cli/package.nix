@@ -1,6 +1,7 @@
 {
   lib,
   python3,
+  ghostshipCliContract,
   ...
 }:
 python3.pkgs.buildPythonApplication {
@@ -17,6 +18,7 @@ python3.pkgs.buildPythonApplication {
   doCheck = false;
 
   propagatedBuildInputs = with python3.pkgs; [
+    ghostshipCliContract
     httpx
     typer
   ];

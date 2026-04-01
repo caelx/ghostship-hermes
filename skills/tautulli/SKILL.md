@@ -6,6 +6,8 @@ description: Use when you need Tautulli history, activity, user, or control endp
 # ghostship-tautulli
 
 - Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
 - Configure the utility with:
 - `TAUTULLI_URL`
 - `TAUTULLI_API_KEY`

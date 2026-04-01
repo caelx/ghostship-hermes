@@ -6,6 +6,8 @@ description: Use when you need Plex server, library, metadata, playlist, or sess
 # ghostship-plex
 
 - Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
 - Configure the utility with:
 - `PLEX_URL`
 - `PLEX_TOKEN`

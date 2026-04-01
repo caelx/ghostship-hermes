@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import os
-import sys
 from typing import Any
 
 import typer
+
+from ghostship_cli_contract import DEFAULT_TIMEOUT, echo_json, parse_json_option, parse_params, require_env, run_app, run_cli_command
 
 from .client import GrimmoryClient
 
@@ -18,123 +18,125 @@ Auth:
 """
 
 app = typer.Typer(help=HELP_TEXT, no_args_is_help=True)
+APP_STATE = {'timeout': DEFAULT_TIMEOUT}
 
 
-def echo_json(data: Any, pretty: bool = False) -> None:
-    typer.echo(json.dumps(data, indent=2 if pretty else None))
-
-
-def _parse_json_option(value: str | None, option_name: str) -> Any:
-    if value is None:
-        return None
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise typer.BadParameter(f"{option_name} must be valid JSON: {exc}") from exc
-
-
-def _parse_params(values: list[str]) -> dict[str, str]:
-    params: dict[str, str] = {}
-    for value in values:
-        if "=" not in value:
-            raise typer.BadParameter(f"parameter must use key=value form: {value}")
-        key, raw = value.split("=", 1)
-        params[key] = raw
-    return params
+@app.callback()
+def app_callback(timeout: float = typer.Option(DEFAULT_TIMEOUT, '--timeout', help='Hard timeout in seconds for all API calls in this invocation.')) -> None:
+    APP_STATE['timeout'] = timeout
 
 
 def get_client() -> GrimmoryClient:
-    base_url = os.getenv("GRIMMORY_URL")
-    token = os.getenv("GRIMMORY_TOKEN")
-    username = os.getenv("GRIMMORY_USERNAME")
-    password = os.getenv("GRIMMORY_PASSWORD")
-    if not base_url:
-        print("Error: GRIMMORY_URL must be set.", file=sys.stderr)
-        raise typer.Exit(code=1)
-    if not token and not (username and password):
-        print("Error: set GRIMMORY_TOKEN or GRIMMORY_USERNAME and GRIMMORY_PASSWORD.", file=sys.stderr)
-        raise typer.Exit(code=1)
-    return GrimmoryClient(base_url, token=token, username=username, password=password)
+    return GrimmoryClient(require_env('GRIMMORY_URL', os.getenv('GRIMMORY_URL')), token=os.getenv('GRIMMORY_TOKEN'), username=os.getenv('GRIMMORY_USERNAME'), password=os.getenv('GRIMMORY_PASSWORD'), default_timeout=APP_STATE['timeout'])
 
 
-@app.command("request")
-def request(method: str, path: str, param: list[str] = typer.Option([], "--param"), body_json: str | None = typer.Option(None, "--body-json"), pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().request(method, path, params=_parse_params(param) or None, json_data=_parse_json_option(body_json, "--body-json")), pretty=pretty)
+def _emit(data: Any, pretty: bool) -> None:
+    echo_json(data, pretty=pretty)
 
 
-@app.command("get_books")
-def get_books(page: int = typer.Option(0, "--page"), size: int = typer.Option(20, "--size"), library_id: int | None = typer.Option(None, "--library-id"), pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_books(page=page, size=size, library_id=library_id), pretty=pretty)
+def _run(execute, *, pretty: bool) -> None:
+    _emit(run_cli_command(None, execute, timeout=APP_STATE['timeout']), pretty)
 
 
-@app.command("get_book")
-def get_book(book_id: int, pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_book(book_id), pretty=pretty)
+def _run_write(build_request, execute, *, dry_run: bool, pretty: bool) -> None:
+    _emit(run_cli_command(build_request, execute, timeout=APP_STATE['timeout'], dry_run=dry_run), pretty)
 
 
-@app.command("download_book")
-def download_book(book_id: int, pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().download_book(book_id), pretty=pretty)
+@app.command('request')
+def request(method: str, path: str, param: list[str] = typer.Option([], '--param'), body_json: str | None = typer.Option(None, '--body-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    params = parse_params(param) or None
+    payload = parse_json_option(body_json, '--body-json')
+    _run_write(lambda: client.build_request(method, path, params=params, json_data=payload), lambda timeout: client.request(method, path, params=params, json_data=payload, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("get_libraries")
-def get_libraries(pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_libraries(), pretty=pretty)
+@app.command('get_books')
+def get_books(page: int = typer.Option(0, '--page'), size: int = typer.Option(20, '--size'), library_id: int | None = typer.Option(None, '--library-id'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_books(page=page, size=size, library_id=library_id, timeout=timeout), pretty=pretty)
 
 
-@app.command("get_library")
-def get_library(library_id: int, pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_library(library_id), pretty=pretty)
+@app.command('get_book')
+def get_book(book_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_book(book_id, timeout=timeout), pretty=pretty)
 
 
-@app.command("scan_libraries")
-def scan_libraries(pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().scan_libraries(), pretty=pretty)
+@app.command('download_book')
+def download_book(book_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.download_book(book_id, timeout=timeout), pretty=pretty)
 
 
-@app.command("refresh_library")
-def refresh_library(library_id: int, pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().refresh_library(library_id), pretty=pretty)
+@app.command('get_libraries')
+def get_libraries(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_libraries(timeout=timeout), pretty=pretty)
 
 
-@app.command("get_authors")
-def get_authors(page: int = typer.Option(0, "--page"), size: int = typer.Option(20, "--size"), pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_authors(page=page, size=size), pretty=pretty)
+@app.command('get_library')
+def get_library(library_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_library(library_id, timeout=timeout), pretty=pretty)
 
 
-@app.command("get_author")
-def get_author(author_id: int, pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_author(author_id), pretty=pretty)
+@app.command('scan_libraries')
+def scan_libraries(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run_write(lambda: client.build_scan_libraries(), lambda timeout: client.scan_libraries(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("get_shelves")
-def get_shelves(pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_shelves(), pretty=pretty)
+@app.command('refresh_library')
+def refresh_library(library_id: int, dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run_write(lambda: client.build_refresh_library(library_id), lambda timeout: client.refresh_library(library_id, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("get_shelf_books")
-def get_shelf_books(shelf_id: int, pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_shelf_books(shelf_id), pretty=pretty)
+@app.command('get_authors')
+def get_authors(page: int = typer.Option(0, '--page'), size: int = typer.Option(20, '--size'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_authors(page=page, size=size, timeout=timeout), pretty=pretty)
 
 
-@app.command("get_tasks")
-def get_tasks(pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_tasks(), pretty=pretty)
+@app.command('get_author')
+def get_author(author_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_author(author_id, timeout=timeout), pretty=pretty)
 
 
-@app.command("cancel_task")
-def cancel_task(task_id: str, pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().cancel_task(task_id), pretty=pretty)
+@app.command('get_shelves')
+def get_shelves(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_shelves(timeout=timeout), pretty=pretty)
 
 
-@app.command("get_version")
-def get_version(pretty: bool = typer.Option(False, "--pretty")) -> None:
-    echo_json(get_client().get_version(), pretty=pretty)
+@app.command('get_shelf_books')
+def get_shelf_books(shelf_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_shelf_books(shelf_id, timeout=timeout), pretty=pretty)
+
+
+@app.command('get_tasks')
+def get_tasks(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_tasks(timeout=timeout), pretty=pretty)
+
+
+@app.command('cancel_task')
+def cancel_task(task_id: str, dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run_write(lambda: client.build_cancel_task(task_id), lambda timeout: client.cancel_task(task_id, timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('get_version')
+def get_version(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_version(timeout=timeout), pretty=pretty)
 
 
 def main() -> None:
-    app()
+    run_app(app)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

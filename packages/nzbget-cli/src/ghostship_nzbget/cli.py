@@ -1,148 +1,171 @@
 from __future__ import annotations
 
-import json
 import os
-import sys
 from typing import Any
 
 import typer
 
+from ghostship_cli_contract import DEFAULT_TIMEOUT, echo_json, parse_json_option, require_env, run_app, run_cli_command
+
 from .client import NZBGetClient
 
-app = typer.Typer(help="NZBGet CLI interface.", no_args_is_help=True)
+app = typer.Typer(help='NZBGet CLI interface.', no_args_is_help=True)
+APP_STATE = {'timeout': DEFAULT_TIMEOUT}
 
 
-def echo_json(data: Any, pretty: bool = False):
-    typer.echo(json.dumps(data, indent=2 if pretty else None))
-
-
-def _parse_json_option(value: str | None, option_name: str) -> Any:
-    if value is None:
-        return None
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise typer.BadParameter(f"{option_name} must be valid JSON: {exc}") from exc
+@app.callback()
+def app_callback(timeout: float = typer.Option(DEFAULT_TIMEOUT, '--timeout', help='Hard timeout in seconds for all API calls in this invocation.')) -> None:
+    APP_STATE['timeout'] = timeout
 
 
 def get_client() -> NZBGetClient:
-    base_url = os.getenv("NZBGET_URL")
-    username = os.getenv("NZBGET_USER")
-    password = os.getenv("NZBGET_PASS")
-    if not base_url:
-        print("Error: NZBGET_URL environment variable must be set.", file=sys.stderr)
-        raise typer.Exit(code=1)
-    return NZBGetClient(base_url, username, password)
+    return NZBGetClient(require_env('NZBGET_URL', os.getenv('NZBGET_URL')), os.getenv('NZBGET_USER'), os.getenv('NZBGET_PASS'), default_timeout=APP_STATE['timeout'])
 
 
-@app.command("call")
-def call(method: str, params_json: str | None = typer.Option(None, "--params-json"), pretty: bool = typer.Option(False, "--pretty")):
-    echo_json(get_client().call(method, params=_parse_json_option(params_json, "--params-json")), pretty=pretty)
+def _emit(data: Any, pretty: bool) -> None:
+    echo_json(data, pretty=pretty)
 
 
-@app.command("get_version")
-def get_version(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"version": get_client().get_version()}, pretty=pretty)
+def _run(execute, *, pretty: bool) -> None:
+    _emit(run_cli_command(None, execute, timeout=APP_STATE['timeout']), pretty)
 
 
-@app.command("shutdown")
-def shutdown(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().shutdown()}, pretty=pretty)
+def _run_write(build_request, execute, *, dry_run: bool, pretty: bool) -> None:
+    _emit(run_cli_command(build_request, execute, timeout=APP_STATE['timeout'], dry_run=dry_run), pretty)
 
 
-@app.command("reload")
-def reload(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().reload()}, pretty=pretty)
+@app.command('call')
+def call(method: str, params_json: str | None = typer.Option(None, '--params-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    params = parse_json_option(params_json, '--params-json')
+    _run_write(lambda: client.build_call(method, params=params), lambda timeout: client.call(method, params=params, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("get_status")
-def get_status(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json(get_client().get_status(), pretty=pretty)
+@app.command('get_version')
+def get_version(pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run(lambda timeout: {'version': client.get_version(timeout=timeout)}, pretty=pretty)
 
 
-@app.command("list_groups")
-def list_groups(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json(get_client().list_groups(), pretty=pretty)
+@app.command('shutdown')
+def shutdown(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_shutdown(), lambda timeout: client.shutdown(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("list_files")
-def list_files(nzb_id: int, pretty: bool = typer.Option(False, "--pretty")):
-    echo_json(get_client().list_files(nzb_id), pretty=pretty)
+@app.command('reload')
+def reload(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_reload(), lambda timeout: client.reload(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("get_history")
-def get_history(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json(get_client().get_history(), pretty=pretty)
+@app.command('get_status')
+def get_status(pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run(lambda timeout: client.get_status(timeout=timeout), pretty=pretty)
 
 
-@app.command("append_url")
-def append_url(url: str, category: str = typer.Option("", "--category"), priority: int = typer.Option(0, "--priority"), top: bool = typer.Option(False, "--top"), pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"nzbid": get_client().append_url(url, category=category, priority=priority, top=top)}, pretty=pretty)
+@app.command('list_groups')
+def list_groups(pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run(lambda timeout: client.list_groups(timeout=timeout), pretty=pretty)
 
 
-@app.command("edit_queue")
-def edit_queue(command: str, offset: int, size: int, ids_json: str = typer.Option(..., "--ids-json"), pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().edit_queue(command, offset, size, _parse_json_option(ids_json, "--ids-json"))}, pretty=pretty)
+@app.command('list_files')
+def list_files(nzb_id: int, pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run(lambda timeout: client.list_files(nzb_id, timeout=timeout), pretty=pretty)
 
 
-@app.command("disk_scan")
-def disk_scan(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().disk_scan()}, pretty=pretty)
+@app.command('get_history')
+def get_history(pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run(lambda timeout: client.get_history(timeout=timeout), pretty=pretty)
 
 
-@app.command("get_log")
-def get_log(id_from: int, count: int, pretty: bool = typer.Option(False, "--pretty")):
-    echo_json(get_client().get_log(id_from, count), pretty=pretty)
+@app.command('append_url')
+def append_url(url: str, category: str = typer.Option('', '--category'), priority: int = typer.Option(0, '--priority'), top: bool = typer.Option(False, '--top'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_append_url(url, category=category, priority=priority, top=top), lambda timeout: client.append_url(url, category=category, priority=priority, top=top, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("set_rate")
-def set_rate(limit_kb: int, pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().set_rate(limit_kb)}, pretty=pretty)
+@app.command('edit_queue')
+def edit_queue(command: str, offset: int, size: int, ids_json: str = typer.Option(..., '--ids-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    ids = parse_json_option(ids_json, '--ids-json')
+    _run_write(lambda: client.build_edit_queue(command, offset, size, ids), lambda timeout: client.edit_queue(command, offset, size, ids, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("pause_download")
-def pause_download(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().pause_download()}, pretty=pretty)
+@app.command('disk_scan')
+def disk_scan(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_disk_scan(), lambda timeout: client.disk_scan(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("resume_download")
-def resume_download(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().resume_download()}, pretty=pretty)
+@app.command('get_log')
+def get_log(id_from: int = typer.Option(0, '--id-from'), count: int = typer.Option(10, '--count'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run(lambda timeout: client.get_log(id_from, count, timeout=timeout), pretty=pretty)
 
 
-@app.command("pause_post")
-def pause_post(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().pause_post()}, pretty=pretty)
+@app.command('set_rate')
+def set_rate(limit_kb: int, dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_set_rate(limit_kb), lambda timeout: client.set_rate(limit_kb, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("resume_post")
-def resume_post(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().resume_post()}, pretty=pretty)
+@app.command('pause_download')
+def pause_download(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_pause_download(), lambda timeout: client.pause_download(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("pause_scan")
-def pause_scan(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().pause_scan()}, pretty=pretty)
+@app.command('resume_download')
+def resume_download(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_resume_download(), lambda timeout: client.resume_download(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("resume_scan")
-def resume_scan(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().resume_scan()}, pretty=pretty)
+@app.command('pause_post')
+def pause_post(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_pause_post(), lambda timeout: client.pause_post(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("get_config")
-def get_config(pretty: bool = typer.Option(False, "--pretty")):
-    echo_json(get_client().get_config(), pretty=pretty)
+@app.command('resume_post')
+def resume_post(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_resume_post(), lambda timeout: client.resume_post(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command("save_config")
-def save_config(config_json: str = typer.Option(..., "--config-json"), pretty: bool = typer.Option(False, "--pretty")):
-    echo_json({"ok": get_client().save_config(_parse_json_option(config_json, "--config-json"))}, pretty=pretty)
+@app.command('pause_scan')
+def pause_scan(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_pause_scan(), lambda timeout: client.pause_scan(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('resume_scan')
+def resume_scan(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_resume_scan(), lambda timeout: client.resume_scan(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('get_config')
+def get_config(pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run(lambda timeout: client.get_config(timeout=timeout), pretty=pretty)
+
+
+@app.command('save_config')
+def save_config(config_json: str = typer.Option(..., '--config-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    config = parse_json_option(config_json, '--config-json')
+    _run_write(lambda: client.build_save_config(config), lambda timeout: client.save_config(config, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
 def main():
-    app()
+    run_app(app)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

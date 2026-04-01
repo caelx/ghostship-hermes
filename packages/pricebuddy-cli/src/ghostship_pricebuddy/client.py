@@ -3,26 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict, is_dataclass
 from decimal import Decimal
 from enum import Enum
-import json
-import os
 from typing import Any, Callable, Generic, Mapping, TypeVar
 from urllib.parse import quote
 
-import httpx
+from ghostship_cli_contract import BaseHttpClient, RequestSpec
 
 
 T = TypeVar("T")
-
-
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
 
 
 def _compact_dict(data: Mapping[str, Any]) -> dict[str, Any]:
@@ -656,34 +643,46 @@ def to_jsonable(value: Any) -> Any:
     return value
 
 
-class PriceBuddyClient:
-    def __init__(self, base_url: str, token: str, timeout: float = 30.0):
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self.headers = _cloudflare_access_headers()
-        self.headers["Authorization"] = f"Bearer {token}"
-        self.headers["Accept"] = "application/json"
-        self.headers["Content-Type"] = "application/json"
+class PriceBuddyClient(BaseHttpClient):
+    def __init__(self, base_url: str, token: str, *, default_timeout: float = 30.0):
+        super().__init__(
+            base_url,
+            default_headers={
+                'Authorization': f'Bearer {token}',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            },
+            default_timeout=default_timeout,
+        )
 
-    def _request(
+    def _api_path(self, path: str) -> str:
+        if path.startswith('/api/'):
+            return path
+        if path.startswith('/'):
+            return f'/api{path}'
+        return f'/api/{path}'
+
+    def build_request(
         self,
         method: str,
         path: str,
         *,
         params: Mapping[str, Any] | None = None,
         json_data: Mapping[str, Any] | None = None,
-        parse: Callable[[Any], T] | None = None,
-    ) -> T | Any:
-        url = f"{self.base_url}{path}"
-        with httpx.Client(headers=self.headers, timeout=self.timeout) as client:
-            response = client.request(method, url, params=params, json=json_data)
-            response.raise_for_status()
-            status_code = getattr(response, "status_code", 200)
-            content = getattr(response, "content", b"__dummy__")
-            if status_code == 204 or content in (b"", ""):
-                return None
-            payload = response.json()
-        return parse(payload) if parse is not None else payload
+        timeout: float | None = None,
+    ) -> RequestSpec:
+        return self.build_request_spec(method, self._api_path(path), params=dict(params) if params else None, json_body=json_data, timeout=timeout)
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        json_data: Mapping[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        return self.request_json(method, self._api_path(path), params=dict(params) if params else None, json_body=json_data, timeout=timeout)
 
     def _build_collection_params(
         self,
@@ -697,31 +696,31 @@ class PriceBuddyClient:
     ) -> dict[str, str]:
         params: dict[str, str] = {}
         if include:
-            params["include"] = ",".join(include)
+            params['include'] = ','.join(include)
         if sort:
-            params["sort"] = sort
+            params['sort'] = sort
         if filters:
             for key, value in filters.items():
                 if value is None:
                     continue
-                params[f"filter[{key}]"] = str(value)
+                params[f'filter[{key}]'] = str(value)
         if per_page is not None:
-            params["per_page"] = str(per_page)
+            params['per_page'] = str(per_page)
         if page is not None:
-            params["page"] = str(page)
+            params['page'] = str(page)
         if search:
-            params["search"] = search
+            params['search'] = search
         return params
 
     def _parse_page(self, payload: Mapping[str, Any], item_parser: Callable[[Mapping[str, Any]], T]) -> PaginatedResponse[T]:
         return PaginatedResponse(
-            data=[item_parser(item) for item in payload.get("data", [])],
-            links=dict(payload.get("links", {})),
-            meta=dict(payload.get("meta", {})),
+            data=[item_parser(item) for item in payload.get('data', [])],
+            links=dict(payload.get('links', {})),
+            meta=dict(payload.get('meta', {})),
         )
 
-    def get_current_user(self) -> UserSummary:
-        return self._request("GET", "/api/user", parse=UserSummary.from_dict)
+    def get_current_user(self, *, timeout: float | None = None) -> UserSummary:
+        return UserSummary.from_dict(self.request('GET', 'user', timeout=timeout))
 
     def list_products(
         self,
@@ -731,23 +730,32 @@ class PriceBuddyClient:
         filters: Mapping[str, Any] | None = None,
         per_page: int | None = None,
         page: int | None = None,
+        timeout: float | None = None,
     ) -> PaginatedResponse[Product]:
         params = self._build_collection_params(include=include, sort=sort, filters=filters, per_page=per_page, page=page)
-        return self._request("GET", "/api/products", params=params, parse=lambda payload: self._parse_page(payload, Product.from_dict))
+        return self._parse_page(self.request('GET', 'products', params=params, timeout=timeout), Product.from_dict)
 
-    def get_product(self, product_id: int, *, include: list[str] | None = None) -> Product:
-        params = {"include": ",".join(include)} if include else None
-        return self._request("GET", f"/api/products/{product_id}", params=params, parse=lambda payload: Product.from_dict(payload["data"]))
+    def get_product(self, product_id: int, *, include: list[str] | None = None, timeout: float | None = None) -> Product:
+        params = {'include': ','.join(include)} if include else None
+        return Product.from_dict(self.request('GET', f'products/{product_id}', params=params, timeout=timeout)['data'])
 
-    def create_product(self, request: ProductCreateRequest) -> dict[str, Any]:
-        return self._request("POST", "/api/products", json_data=request.to_payload())
+    def build_create_product(self, request: ProductCreateRequest, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('POST', 'products', json_data=request.to_payload(), timeout=timeout)
 
-    def update_product(self, product_id: int, request: ProductUpdateRequest) -> dict[str, Any]:
-        return self._request("PUT", f"/api/products/{product_id}", json_data=request.to_payload())
+    def create_product(self, request: ProductCreateRequest, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('POST', 'products', json_data=request.to_payload(), timeout=timeout)
 
-    def delete_product(self, product_id: int) -> dict[str, Any]:
-        self._request("DELETE", f"/api/products/{product_id}")
-        return {"status": "deleted", "id": product_id}
+    def build_update_product(self, product_id: int, request: ProductUpdateRequest, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('PUT', f'products/{product_id}', json_data=request.to_payload(), timeout=timeout)
+
+    def update_product(self, product_id: int, request: ProductUpdateRequest, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('PUT', f'products/{product_id}', json_data=request.to_payload(), timeout=timeout)
+
+    def build_delete_product(self, product_id: int, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('DELETE', f'products/{product_id}', timeout=timeout)
+
+    def delete_product(self, product_id: int, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('DELETE', f'products/{product_id}', timeout=timeout)
 
     def list_product_sources(
         self,
@@ -758,39 +766,44 @@ class PriceBuddyClient:
         per_page: int | None = None,
         page: int | None = None,
         search: str | None = None,
+        timeout: float | None = None,
     ) -> PaginatedResponse[ProductSource]:
         params = self._build_collection_params(include=include, sort=sort, filters=filters, per_page=per_page, page=page, search=search)
-        return self._request("GET", "/api/product-sources", params=params, parse=lambda payload: self._parse_page(payload, ProductSource.from_dict))
+        return self._parse_page(self.request('GET', 'product-sources', params=params, timeout=timeout), ProductSource.from_dict)
 
-    def get_product_source(self, source_id: int, *, include: list[str] | None = None) -> ProductSource:
-        params = {"include": ",".join(include)} if include else None
-        return self._request("GET", f"/api/product-sources/{source_id}", params=params, parse=lambda payload: ProductSource.from_dict(payload["data"]))
+    def get_product_source(self, source_id: int, *, include: list[str] | None = None, timeout: float | None = None) -> ProductSource:
+        params = {'include': ','.join(include)} if include else None
+        return ProductSource.from_dict(self.request('GET', f'product-sources/{source_id}', params=params, timeout=timeout)['data'])
 
-    def create_product_source(self, request: ProductSourceCreateRequest) -> dict[str, Any]:
-        return self._request("POST", "/api/product-sources", json_data=request.to_payload())
+    def build_create_product_source(self, request: ProductSourceCreateRequest, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('POST', 'product-sources', json_data=request.to_payload(), timeout=timeout)
 
-    def update_product_source(self, source_id: int, request: ProductSourceUpdateRequest) -> dict[str, Any]:
-        return self._request("PUT", f"/api/product-sources/{source_id}", json_data=request.to_payload())
+    def create_product_source(self, request: ProductSourceCreateRequest, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('POST', 'product-sources', json_data=request.to_payload(), timeout=timeout)
 
-    def delete_product_source(self, source_id: int) -> dict[str, Any]:
-        self._request("DELETE", f"/api/product-sources/{source_id}")
-        return {"status": "deleted", "id": source_id}
+    def build_update_product_source(self, source_id: int, request: ProductSourceUpdateRequest, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('PUT', f'product-sources/{source_id}', json_data=request.to_payload(), timeout=timeout)
 
-    def search_product_source(self, source_id: int, query: str) -> list[ProductSourceSearchResult]:
-        encoded = quote(query, safe="")
-        return self._request(
-            "GET",
-            f"/api/product-sources/{source_id}/search/{encoded}",
-            parse=lambda payload: [ProductSourceSearchResult.from_dict(item) for item in payload.get("data", payload)],
-        )
+    def update_product_source(self, source_id: int, request: ProductSourceUpdateRequest, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('PUT', f'product-sources/{source_id}', json_data=request.to_payload(), timeout=timeout)
 
-    def search_all_product_sources(self, query: str) -> list[ProductSourceSearchResult]:
-        encoded = quote(query, safe="")
-        return self._request(
-            "GET",
-            f"/api/product-sources/search/{encoded}",
-            parse=lambda payload: [ProductSourceSearchResult.from_dict(item) for item in payload.get("data", payload)],
-        )
+    def build_delete_product_source(self, source_id: int, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('DELETE', f'product-sources/{source_id}', timeout=timeout)
+
+    def delete_product_source(self, source_id: int, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('DELETE', f'product-sources/{source_id}', timeout=timeout)
+
+    def search_product_source(self, source_id: int, query: str, *, timeout: float | None = None) -> list[ProductSourceSearchResult]:
+        encoded = quote(query, safe='')
+        payload = self.request('GET', f'product-sources/{source_id}/search/{encoded}', timeout=timeout)
+        items = payload.get('data', payload) if isinstance(payload, Mapping) else payload
+        return [ProductSourceSearchResult.from_dict(item) for item in items]
+
+    def search_all_product_sources(self, query: str, *, timeout: float | None = None) -> list[ProductSourceSearchResult]:
+        encoded = quote(query, safe='')
+        payload = self.request('GET', f'product-sources/search/{encoded}', timeout=timeout)
+        items = payload.get('data', payload) if isinstance(payload, Mapping) else payload
+        return [ProductSourceSearchResult.from_dict(item) for item in items]
 
     def list_stores(
         self,
@@ -801,23 +814,32 @@ class PriceBuddyClient:
         per_page: int | None = None,
         page: int | None = None,
         search: str | None = None,
+        timeout: float | None = None,
     ) -> PaginatedResponse[Store]:
         params = self._build_collection_params(include=include, sort=sort, filters=filters, per_page=per_page, page=page, search=search)
-        return self._request("GET", "/api/stores", params=params, parse=lambda payload: self._parse_page(payload, Store.from_dict))
+        return self._parse_page(self.request('GET', 'stores', params=params, timeout=timeout), Store.from_dict)
 
-    def get_store(self, store_id: int, *, include: list[str] | None = None) -> Store:
-        params = {"include": ",".join(include)} if include else None
-        return self._request("GET", f"/api/stores/{store_id}", params=params, parse=lambda payload: Store.from_dict(payload["data"]))
+    def get_store(self, store_id: int, *, include: list[str] | None = None, timeout: float | None = None) -> Store:
+        params = {'include': ','.join(include)} if include else None
+        return Store.from_dict(self.request('GET', f'stores/{store_id}', params=params, timeout=timeout)['data'])
 
-    def create_store(self, request: StoreCreateRequest) -> dict[str, Any]:
-        return self._request("POST", "/api/stores", json_data=request.to_payload())
+    def build_create_store(self, request: StoreCreateRequest, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('POST', 'stores', json_data=request.to_payload(), timeout=timeout)
 
-    def update_store(self, store_id: int, request: StoreUpdateRequest) -> dict[str, Any]:
-        return self._request("PUT", f"/api/stores/{store_id}", json_data=request.to_payload())
+    def create_store(self, request: StoreCreateRequest, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('POST', 'stores', json_data=request.to_payload(), timeout=timeout)
 
-    def delete_store(self, store_id: int) -> dict[str, Any]:
-        self._request("DELETE", f"/api/stores/{store_id}")
-        return {"status": "deleted", "id": store_id}
+    def build_update_store(self, store_id: int, request: StoreUpdateRequest, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('PUT', f'stores/{store_id}', json_data=request.to_payload(), timeout=timeout)
+
+    def update_store(self, store_id: int, request: StoreUpdateRequest, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('PUT', f'stores/{store_id}', json_data=request.to_payload(), timeout=timeout)
+
+    def build_delete_store(self, store_id: int, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('DELETE', f'stores/{store_id}', timeout=timeout)
+
+    def delete_store(self, store_id: int, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('DELETE', f'stores/{store_id}', timeout=timeout)
 
     def list_tags(
         self,
@@ -828,20 +850,29 @@ class PriceBuddyClient:
         per_page: int | None = None,
         page: int | None = None,
         search: str | None = None,
+        timeout: float | None = None,
     ) -> PaginatedResponse[Tag]:
         params = self._build_collection_params(include=include, sort=sort, filters=filters, per_page=per_page, page=page, search=search)
-        return self._request("GET", "/api/tags", params=params, parse=lambda payload: self._parse_page(payload, Tag.from_dict))
+        return self._parse_page(self.request('GET', 'tags', params=params, timeout=timeout), Tag.from_dict)
 
-    def get_tag(self, tag_id: int, *, include: list[str] | None = None) -> Tag:
-        params = {"include": ",".join(include)} if include else None
-        return self._request("GET", f"/api/tags/{tag_id}", params=params, parse=lambda payload: Tag.from_dict(payload["data"]))
+    def get_tag(self, tag_id: int, *, include: list[str] | None = None, timeout: float | None = None) -> Tag:
+        params = {'include': ','.join(include)} if include else None
+        return Tag.from_dict(self.request('GET', f'tags/{tag_id}', params=params, timeout=timeout)['data'])
 
-    def create_tag(self, request: TagCreateRequest) -> dict[str, Any]:
-        return self._request("POST", "/api/tags", json_data=request.to_payload())
+    def build_create_tag(self, request: TagCreateRequest, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('POST', 'tags', json_data=request.to_payload(), timeout=timeout)
 
-    def update_tag(self, tag_id: int, request: TagUpdateRequest) -> dict[str, Any]:
-        return self._request("PUT", f"/api/tags/{tag_id}", json_data=request.to_payload())
+    def create_tag(self, request: TagCreateRequest, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('POST', 'tags', json_data=request.to_payload(), timeout=timeout)
 
-    def delete_tag(self, tag_id: int) -> dict[str, Any]:
-        self._request("DELETE", f"/api/tags/{tag_id}")
-        return {"status": "deleted", "id": tag_id}
+    def build_update_tag(self, tag_id: int, request: TagUpdateRequest, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('PUT', f'tags/{tag_id}', json_data=request.to_payload(), timeout=timeout)
+
+    def update_tag(self, tag_id: int, request: TagUpdateRequest, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('PUT', f'tags/{tag_id}', json_data=request.to_payload(), timeout=timeout)
+
+    def build_delete_tag(self, tag_id: int, *, timeout: float | None = None) -> RequestSpec:
+        return self.build_request('DELETE', f'tags/{tag_id}', timeout=timeout)
+
+    def delete_tag(self, tag_id: int, *, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('DELETE', f'tags/{tag_id}', timeout=timeout)

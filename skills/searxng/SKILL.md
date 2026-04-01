@@ -6,6 +6,8 @@ description: Use when you need SearXNG search results or raw JSON endpoint acces
 # ghostship-searxng
 
 - Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
 - Configure the utility with:
 - `SEARXNG_URL`
 - Prefer the dedicated snake_case command first. Use `request` only as fallback.

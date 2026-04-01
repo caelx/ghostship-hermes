@@ -46,8 +46,7 @@ def pick_id(item: Any, *keys: str) -> Any | None:
 def test_live_searxng(cli_runner) -> None:
     payload = cli_runner(
         "ghostship_searxng.cli",
-        "search",
-        "web",
+        "search_web",
         "ghostship hermes",
         "--limit",
         "3",
@@ -168,7 +167,7 @@ def test_live_romm(cli_runner) -> None:
         try:
             payload = cli_runner("ghostship_romm.cli", *command)
         except AssertionError as exc:
-            assert_or_skip_known_live_failure(exc, "403 Forbidden", "422 Unprocessable Entity")
+            assert_or_skip_known_live_failure(exc, "403 Forbidden", "HTTP 403", "422 Unprocessable Entity")
         else:
             assert_json_payload(payload)
             if command[0] == "get_roms":
@@ -377,19 +376,19 @@ def _select_rss_bridge_candidate(bridge_map: dict[str, Any]) -> tuple[str, str |
 
 
 def test_live_rss_bridge(cli_runner) -> None:
-    bridges = cli_runner("ghostship_rss_bridge.cli", "list-bridges")
+    bridges = cli_runner("ghostship_rss_bridge.cli", "list_bridges")
     assert_json_payload(bridges)
     bridge_map = bridges.get("bridges", {}) if isinstance(bridges, dict) else {}
     assert isinstance(bridge_map, dict)
     assert bridge_map
 
-    active = cli_runner("ghostship_rss_bridge.cli", "list-bridges", "--active-only")
+    active = cli_runner("ghostship_rss_bridge.cli", "list_bridges", "--active-only")
     assert_json_payload(active)
 
     bridge_name = next(iter(bridge_map))
-    detail = cli_runner("ghostship_rss_bridge.cli", "describe-bridge", bridge_name)
-    contexts = cli_runner("ghostship_rss_bridge.cli", "list-contexts", bridge_name)
-    formats = cli_runner("ghostship_rss_bridge.cli", "list-known-formats")
+    detail = cli_runner("ghostship_rss_bridge.cli", "describe_bridge", bridge_name)
+    contexts = cli_runner("ghostship_rss_bridge.cli", "list_contexts", bridge_name)
+    formats = cli_runner("ghostship_rss_bridge.cli", "list_known_formats")
 
     for payload in (detail, contexts, formats):
         assert_json_payload(payload)
@@ -397,7 +396,7 @@ def test_live_rss_bridge(cli_runner) -> None:
     candidate = _select_rss_bridge_candidate(bridge_map)
     if candidate is not None:
         candidate_bridge, candidate_context, candidate_params = candidate
-        build_args = ["build-url", "--bridge", candidate_bridge, "--format", "Atom"]
+        build_args = ["build_url", "--bridge", candidate_bridge, "--format", "Atom"]
         display_args = ["display", "--bridge", candidate_bridge, "--format", "Atom"]
         if candidate_context is not None:
             build_args.extend(["--context", candidate_context])
@@ -425,11 +424,11 @@ def test_live_rss_bridge(cli_runner) -> None:
             )
         else:
             assert_json_payload(displayed)
-            fetched = cli_runner("ghostship_rss_bridge.cli", "fetch-url", built["url"])
+            fetched = cli_runner("ghostship_rss_bridge.cli", "fetch_url", built["url"])
             assert_json_payload(fetched)
 
     for command in (
-        ("find-feed", "https://github.com/openai/openai-python/releases"),
+        ("find_feed", "https://github.com/openai/openai-python/releases"),
         ("detect", "https://github.com/openai/openai-python/releases"),
     ):
         try:
@@ -453,11 +452,11 @@ def test_live_pricebuddy(cli_runner, live_env) -> None:
         pytest.skip("PRICEBUDDY_TOKEN is not configured")
 
     try:
-        whoami = cli_runner("ghostship_pricebuddy.cli", "whoami")
-        products = cli_runner("ghostship_pricebuddy.cli", "products", "list")
-        product_sources = cli_runner("ghostship_pricebuddy.cli", "product-sources", "list")
-        stores = cli_runner("ghostship_pricebuddy.cli", "stores", "list")
-        tags = cli_runner("ghostship_pricebuddy.cli", "tags", "list")
+        whoami = cli_runner("ghostship_pricebuddy.cli", "get_current_user")
+        products = cli_runner("ghostship_pricebuddy.cli", "list_products")
+        product_sources = cli_runner("ghostship_pricebuddy.cli", "list_product_sources")
+        stores = cli_runner("ghostship_pricebuddy.cli", "list_stores")
+        tags = cli_runner("ghostship_pricebuddy.cli", "list_tags")
     except AssertionError as exc:
         assert_or_skip_known_live_failure(exc, "401 Unauthorized", "Unauthenticated", "500 Internal Server Error")
     else:
@@ -468,19 +467,18 @@ def test_live_pricebuddy(cli_runner, live_env) -> None:
         updated_name = f"{tag_name}-updated"
         created_tag_id: int | None = None
         try:
-            created = cli_runner("ghostship_pricebuddy.cli", "tags", "create", "--name", tag_name)
+            created = cli_runner("ghostship_pricebuddy.cli", "create_tag", "--name", tag_name)
             assert_json_payload(created)
             created_tag_id = pick_id(created, "id")
             assert created_tag_id is not None
 
-            detail = cli_runner("ghostship_pricebuddy.cli", "tags", "get", str(created_tag_id))
+            detail = cli_runner("ghostship_pricebuddy.cli", "get_tag", str(created_tag_id))
             assert_json_payload(detail)
             assert detail.get("name") == tag_name
 
             updated = cli_runner(
                 "ghostship_pricebuddy.cli",
-                "tags",
-                "update",
+                "update_tag",
                 str(created_tag_id),
                 "--name",
                 updated_name,
@@ -490,8 +488,7 @@ def test_live_pricebuddy(cli_runner, live_env) -> None:
 
             searched = cli_runner(
                 "ghostship_pricebuddy.cli",
-                "tags",
-                "list",
+                "list_tags",
                 "--search",
                 updated_name,
             )
@@ -499,7 +496,7 @@ def test_live_pricebuddy(cli_runner, live_env) -> None:
         finally:
             if created_tag_id is not None:
                 try:
-                    deleted = cli_runner("ghostship_pricebuddy.cli", "tags", "delete", str(created_tag_id))
+                    deleted = cli_runner("ghostship_pricebuddy.cli", "delete_tag", str(created_tag_id))
                 except AssertionError:
                     pass
                 else:

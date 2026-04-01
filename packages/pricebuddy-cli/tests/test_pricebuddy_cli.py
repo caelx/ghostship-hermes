@@ -2,69 +2,61 @@ import json
 
 from typer.testing import CliRunner
 
-from ghostship_pricebuddy.cli import app
+from ghostship_pricebuddy import cli
 
 
 runner = CliRunner()
 
 
-def test_whoami_outputs_json(monkeypatch):
-    class DummyClient:
-        def get_current_user(self):
-            return {'id': 1, 'name': 'Alice', 'email': 'alice@example.com'}
+class DummyClient:
+    def __init__(self):
+        self.calls = []
 
-    monkeypatch.setattr('ghostship_pricebuddy.cli.get_client', lambda: DummyClient())
+    def get_current_user(self, *, timeout=None):
+        self.calls.append(('get_current_user', timeout))
+        return {'id': 1, 'name': 'Alice', 'email': 'alice@example.com'}
 
-    result = runner.invoke(app, ['whoami'])
+    def build_create_product(self, request, *, timeout=None):
+        class _Spec:
+            def __init__(self, payload):
+                self.payload = payload
+            def to_dict(self):
+                return self.payload
+        return _Spec({'method': 'POST', 'path': '/api/products', 'json_body': request.to_payload(), 'timeout': timeout})
 
+    def create_product(self, request, *, timeout=None):
+        self.calls.append(('create_product', request.title, timeout))
+        return {'data': {'id': 7, 'title': request.title}}
+
+    def search_all_product_sources(self, query, *, timeout=None):
+        self.calls.append(('search_all_product_sources', query, timeout))
+        return [{'title': 'Laptop Deal', 'url': 'https://store.example/laptop', 'source': 'Deals'}]
+
+
+def test_timeout_applies(monkeypatch):
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['--timeout', '8', 'get_current_user'])
+    assert result.exit_code == 0
+    assert client.calls[-1] == ('get_current_user', 8.0)
+
+
+def test_create_product_dry_run(monkeypatch):
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['create_product', '--title', 'Steam Deck', '--url', 'https://store.example/steam-deck', '--notify-price', '399.99', '--favourite', '--dry-run'])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload['email'] == 'alice@example.com'
+    assert payload['path'] == '/api/products'
+    assert payload['json_body']['title'] == 'Steam Deck'
+    assert payload['json_body']['notify_price'] == '399.99'
+    assert not client.calls
 
 
-def test_products_create_accepts_minimal_fields(monkeypatch):
-    captured = {}
-
-    class DummyClient:
-        def create_product(self, request):
-            captured['request'] = request
-            return {'data': {'id': 7, 'title': request.title}}
-
-    monkeypatch.setattr('ghostship_pricebuddy.cli.get_client', lambda: DummyClient())
-
-    result = runner.invoke(
-        app,
-        [
-            'products',
-            'create',
-            '--title',
-            'Steam Deck',
-            '--url',
-            'https://store.example/steam-deck',
-            '--notify-price',
-            '399.99',
-            '--favourite',
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert captured['request'].title == 'Steam Deck'
-    assert str(captured['request'].notify_price) == '399.99'
-    assert captured['request'].favourite is True
-
-
-def test_product_sources_search_all_returns_json(monkeypatch):
-    class DummyClient:
-        def search_all_product_sources(self, query):
-            assert query == 'laptop'
-            return [
-                {'title': 'Laptop Deal', 'url': 'https://store.example/laptop', 'source': 'Deals'}
-            ]
-
-    monkeypatch.setattr('ghostship_pricebuddy.cli.get_client', lambda: DummyClient())
-
-    result = runner.invoke(app, ['product-sources', 'search-all', 'laptop'])
-
+def test_search_all_product_sources_outputs_json(monkeypatch):
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['search_all_product_sources', 'laptop'])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload[0]['title'] == 'Laptop Deal'

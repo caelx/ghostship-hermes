@@ -2,116 +2,96 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
-import os
+from ghostship_cli_contract import BaseHttpClient, ConfigError, RequestSpec
 
 
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
+class RommClient(BaseHttpClient):
+    def __init__(self, base_url: str, token: str | None = None, username: str | None = None, password: str | None = None, *, default_timeout: float = 30.0):
+        base = base_url.rstrip('/')
+        if '/api' not in base:
+            base = f'{base}/api'
+        resolved_token = token or self._authenticate(base, username=username, password=password, timeout=default_timeout)
+        if not resolved_token:
+            raise ConfigError('RomM authentication requires a token or username/password.')
+        super().__init__(base, default_headers={'Authorization': f'Bearer {resolved_token}'}, default_timeout=default_timeout)
 
-
-class RommClient:
-    def __init__(self, base_url: str, token: str | None = None, username: str | None = None, password: str | None = None):
-        self.base_url = base_url.rstrip("/")
-        if "/api" not in self.base_url:
-            self.base_url = f"{self.base_url}/api"
-        self.cf_headers = _cloudflare_access_headers()
-        self.token = token or self._authenticate(username=username, password=password)
-        if not self.token:
-            raise ValueError("RomM authentication requires a token or username/password.")
-        self.headers = {**self.cf_headers, "Authorization": f"Bearer {self.token}"}
-
-    def _authenticate(self, username: str | None, password: str | None) -> str:
+    @staticmethod
+    def _authenticate(api_base_url: str, *, username: str | None, password: str | None, timeout: float) -> str:
         if not username or not password:
-            raise ValueError("Set ROMM_TOKEN or ROMM_USERNAME and ROMM_PASSWORD to authenticate.")
-
-        response = httpx.post(
-            f"{self.base_url}/token",
-            data={"grant_type": "password", "username": username, "password": password},
-            timeout=30.0,
-            headers=self.cf_headers,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        token = payload.get("access_token")
+            raise ConfigError('Set ROMM_TOKEN or ROMM_USERNAME and ROMM_PASSWORD to authenticate.')
+        payload = BaseHttpClient(api_base_url, default_timeout=timeout).request_json('POST', '/token', form_data={'grant_type': 'password', 'username': username, 'password': password}, timeout=timeout)
+        token = payload.get('access_token')
         if not token:
-            raise ValueError("RomM /api/token response did not include access_token.")
-        return token
+            raise ConfigError('RomM /api/token response did not include access_token.')
+        return str(token)
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        json_data: dict[str, Any] | list[Any] | None = None,
-    ) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.request(method.upper(), url, params=params, json=json_data)
-            response.raise_for_status()
-            if not response.content:
-                return {"status": "success"}
-            return response.json()
+    def build_request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> RequestSpec:
+        return self.build_request_spec(method, path, params=params, json_body=json_data, timeout=timeout)
 
-    def _request(self, path: str, method: str = "GET", params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None) -> Any:
-        return self.request(method, path, params=params, json_data=json_data)
+    def request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_request(method, path, params=params, json_data=json_data, timeout=timeout)
+        return self.request_json(spec.method, spec.path, params=spec.params, json_body=spec.json_body, timeout=spec.timeout)
 
-    def get_heartbeat(self) -> Any:
-        return self._request("heartbeat")
+    def get_heartbeat(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'heartbeat', timeout=timeout)
 
-    def get_platforms(self) -> Any:
-        return self._request("platforms")
+    def get_platforms(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'platforms', timeout=timeout)
 
-    def get_libraries(self) -> Any:
-        return self._request("libraries")
+    def get_libraries(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'libraries', timeout=timeout)
 
-    def get_roms(self, page: int = 1, page_size: int = 24, platform: str | None = None) -> Any:
-        params = {"page": page, "page_size": page_size}
+    def get_roms(self, page: int = 1, page_size: int = 24, platform: str | None = None, timeout: float | None = None) -> Any:
+        params = {'page': page, 'page_size': page_size}
         if platform:
-            params["platform"] = platform
-        return self._request("roms", params=params)
+            params['platform'] = platform
+        return self.request('GET', 'roms', params=params, timeout=timeout)
 
-    def get_rom(self, rom_id: int) -> Any:
-        return self._request(f"roms/{rom_id}")
+    def get_rom(self, rom_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'roms/{rom_id}', timeout=timeout)
 
-    def update_rom(self, rom_id: int, data: dict[str, Any]) -> Any:
-        return self._request(f"roms/{rom_id}", method="PUT", json_data=data)
+    def build_update_rom(self, rom_id: int, data: dict[str, Any]) -> RequestSpec:
+        return self.build_request('PUT', f'roms/{rom_id}', json_data=data)
 
-    def delete_rom(self, rom_id: int) -> Any:
-        return self._request(f"roms/{rom_id}", method="DELETE")
+    def update_rom(self, rom_id: int, data: dict[str, Any], timeout: float | None = None) -> Any:
+        spec = self.build_update_rom(rom_id, data)
+        return self.request(spec.method, spec.path, json_data=spec.json_body, timeout=timeout)
 
-    def get_scans(self) -> Any:
-        return self._request("scans")
+    def build_delete_rom(self, rom_id: int) -> RequestSpec:
+        return self.build_request('DELETE', f'roms/{rom_id}')
 
-    def start_scan(self, library_id: int | None = None) -> Any:
-        path = "scans" if library_id is None else f"scans/{library_id}"
-        return self._request(path, method="POST")
+    def delete_rom(self, rom_id: int, timeout: float | None = None) -> Any:
+        spec = self.build_delete_rom(rom_id)
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def get_collections(self) -> Any:
-        return self._request("collections")
+    def get_scans(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'scans', timeout=timeout)
 
-    def get_config(self) -> Any:
-        return self._request("config")
+    def build_start_scan(self, library_id: int | None = None) -> RequestSpec:
+        path = 'scans' if library_id is None else f'scans/{library_id}'
+        return self.build_request('POST', path)
 
-    def get_saves(self, page: int = 1, page_size: int = 24) -> Any:
-        return self._request("saves", params={"page": page, "page_size": page_size})
+    def start_scan(self, library_id: int | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_start_scan(library_id)
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def get_saves_summary(self) -> Any:
-        return self._request("saves/summary")
+    def get_collections(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'collections', timeout=timeout)
 
-    def get_save(self, save_id: int) -> Any:
-        return self._request(f"saves/{save_id}")
+    def get_config(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'config', timeout=timeout)
 
-    def get_users(self) -> Any:
-        return self._request("users")
+    def get_saves(self, page: int = 1, page_size: int = 24, timeout: float | None = None) -> Any:
+        return self.request('GET', 'saves', params={'page': page, 'page_size': page_size}, timeout=timeout)
 
-    def get_user_me(self) -> Any:
-        return self._request("users/me")
+    def get_saves_summary(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'saves/summary', timeout=timeout)
+
+    def get_save(self, save_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'saves/{save_id}', timeout=timeout)
+
+    def get_users(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'users', timeout=timeout)
+
+    def get_user_me(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'users/me', timeout=timeout)

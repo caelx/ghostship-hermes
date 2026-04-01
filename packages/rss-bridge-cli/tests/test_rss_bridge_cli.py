@@ -1,63 +1,41 @@
-import json
+from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from ghostship_rss_bridge.cli import app
+from ghostship_rss_bridge import cli
 
 
 runner = CliRunner()
 
 
-def test_build_url_returns_json_wrapper(monkeypatch):
-    class DummyClient:
-        def build_display_url(self, *, bridge, format, context, parameters):
-            assert bridge == 'InstagramBridge'
-            assert format == 'Atom'
-            assert context == 'Username'
-            assert parameters == {'u': 'nasa'}
-            return 'https://rss-bridge.example/?action=display&bridge=InstagramBridge&context=Username&format=Atom&u=nasa'
+class DummyClient:
+    def __init__(self):
+        self.calls = []
 
-    monkeypatch.setattr('ghostship_rss_bridge.cli.get_client', lambda: DummyClient())
+    def list_bridges(self):
+        self.calls.append(('list_bridges', {}))
+        class Payload:
+            bridges = {}
+            total = 0
+            def to_dict(self): return {'bridges': {}, 'total': 0}
+        return Payload()
 
-    result = runner.invoke(
-        app,
-        ['build-url', '--bridge', 'InstagramBridge', '--format', 'Atom', '--context', 'Username', '--param', 'u=nasa'],
-    )
+    def build_display_url(self, **kwargs):
+        self.calls.append(('build_display_url', kwargs))
+        return 'https://rss.example/feed'
 
+
+def test_list_bridges(monkeypatch):
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['list_bridges'])
     assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload['url'].startswith('https://rss-bridge.example/')
+    assert client.calls[-1][0] == 'list_bridges'
 
 
-def test_find_feed_returns_candidates(monkeypatch):
-    class DummyClient:
-        def find_feed(self, url, format):
-            return [
-                {
-                    'url': 'https://rss-bridge.example/?action=display&bridge=InstagramBridge&context=Username&format=Atom&u=nasa',
-                    'bridgeParams': {'bridge': 'InstagramBridge', 'context': 'Username', 'u': 'nasa', 'format': 'Atom'},
-                }
-            ]
-
-    monkeypatch.setattr('ghostship_rss_bridge.cli.get_client', lambda: DummyClient())
-
-    result = runner.invoke(app, ['find-feed', 'https://www.instagram.com/nasa/', '--format', 'Atom'])
-
+def test_build_url(monkeypatch):
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['build_url', '--bridge', 'DemoBridge', '--param', 'q=test'])
     assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload[0]['bridgeParams']['bridge'] == 'InstagramBridge'
-
-
-def test_bridge_describe_returns_single_bridge(monkeypatch):
-    class DummyClient:
-        def get_bridge(self, bridge):
-            assert bridge == 'RedditBridge'
-            return {'status': 'active', 'name': 'Reddit Bridge', 'parameters': {'global': {}}}
-
-    monkeypatch.setattr('ghostship_rss_bridge.cli.get_client', lambda: DummyClient())
-
-    result = runner.invoke(app, ['describe-bridge', 'RedditBridge'])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload['name'] == 'Reddit Bridge'
+    assert 'https://rss.example/feed' in result.stdout

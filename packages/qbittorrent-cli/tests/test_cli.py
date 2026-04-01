@@ -9,28 +9,36 @@ runner = CliRunner()
 
 
 class DummyClient:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+    def __init__(self):
+        self.calls = []
 
-    def get_transfer_info(self):
-        self.calls.append(("get_transfer_info", (), {}))
-        return {"status": "ok"}
+    def get_app_version(self, *, timeout=None):
+        self.calls.append(('get_app_version', timeout))
+        return '1.0'
 
-    def request(self, method: str, path: str, *, params=None, data=None, json_data=None, files=None):
-        self.calls.append(("request", (method, path), {"params": params, "data": data, "json_data": json_data, "files": files}))
-        return {"method": method, "path": path}
+    def build_add_torrent(self, urls, save_path=None, category=None):
+        class _Spec:
+            def __init__(self, payload): self.payload = payload
+            def to_dict(self): return self.payload
+        return _Spec({'form_data': {'urls': '\n'.join(urls), 'savepath': save_path, 'category': category}})
+
+    def add_torrent(self, urls, save_path=None, category=None, *, timeout=None):
+        self.calls.append(('add_torrent', urls, save_path, category, timeout))
+        return True
 
 
-def test_get_transfer_info(monkeypatch) -> None:
+def test_timeout_applies(monkeypatch):
     client = DummyClient()
-    monkeypatch.setattr(cli, "get_client", lambda: client)
-    result = runner.invoke(cli.app, ["get_transfer_info"])
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['--timeout', '8', 'get_app_version'])
     assert result.exit_code == 0
+    assert client.calls[-1] == ('get_app_version', 8.0)
 
 
-def test_request(monkeypatch) -> None:
+def test_add_torrent_dry_run(monkeypatch):
     client = DummyClient()
-    monkeypatch.setattr(cli, "get_client", lambda: client)
-    result = runner.invoke(cli.app, ["request", "POST", "torrents/pause", "--data", "hashes=abc"])
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['add_torrent', 'https://example.com/file.torrent', '--dry-run'])
     assert result.exit_code == 0
-    assert client.calls[-1] == ("request", ("POST", "torrents/pause"), {"params": None, "data": {"hashes": "abc"}, "json_data": None, "files": None})
+    assert 'file.torrent' in result.stdout
+    assert not client.calls

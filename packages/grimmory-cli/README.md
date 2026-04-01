@@ -10,6 +10,8 @@
 - Primary commands use the exact snake_case client method names.
 - Use `request` only for endpoints that are not covered by a dedicated wrapper yet.
 - Output is JSON by default.
+- Every invocation accepts `--timeout`; the default hard timeout is `30` seconds.
+- Where a service exposes write or delete operations, those commands accept `--dry-run` and print the exact request object instead of calling the API.
 
 ## Commands
 - `ghostship-grimmory request`

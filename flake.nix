@@ -25,23 +25,24 @@
           };
 
           # Utility packages
-          ghostshipSearxng = pkgs.callPackage ./packages/searxng-cli/package.nix { };
-          ghostshipSonarr = pkgs.callPackage ./packages/sonarr-cli/package.nix { };
-          ghostshipRadarr = pkgs.callPackage ./packages/radarr-cli/package.nix { };
-          ghostshipProwlarr = pkgs.callPackage ./packages/prowlarr-cli/package.nix { };
-          ghostshipPlex = pkgs.callPackage ./packages/plex-cli/package.nix { };
-          ghostshipRomm = pkgs.callPackage ./packages/romm-cli/package.nix { };
-          ghostshipNzbget = pkgs.callPackage ./packages/nzbget-cli/package.nix { };
-          ghostshipQbittorrent = pkgs.callPackage ./packages/qbittorrent-cli/package.nix { };
-          ghostshipGrimmory = pkgs.callPackage ./packages/grimmory-cli/package.nix { };
-          ghostshipTautulli = pkgs.callPackage ./packages/tautulli-cli/package.nix { };
-          ghostshipBazarr = pkgs.callPackage ./packages/bazarr-cli/package.nix { };
-          ghostshipSynology = pkgs.callPackage ./packages/synology-cli/package.nix { };
-          ghostshipFlaresolverr = pkgs.callPackage ./packages/flaresolverr-cli/package.nix { };
-          ghostshipPyloadNg = pkgs.callPackage ./packages/pyload-ng-cli/package.nix { };
-          ghostshipCloakbrowser = pkgs.callPackage ./packages/cloakbrowser-cli/package.nix { };
-          ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { };
-          ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { };
+          ghostshipCliContract = pkgs.callPackage ./packages/ghostship-cli-contract/package.nix { };
+          ghostshipSearxng = pkgs.callPackage ./packages/searxng-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipSonarr = pkgs.callPackage ./packages/sonarr-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipRadarr = pkgs.callPackage ./packages/radarr-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipProwlarr = pkgs.callPackage ./packages/prowlarr-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipPlex = pkgs.callPackage ./packages/plex-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipRomm = pkgs.callPackage ./packages/romm-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipNzbget = pkgs.callPackage ./packages/nzbget-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipQbittorrent = pkgs.callPackage ./packages/qbittorrent-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipGrimmory = pkgs.callPackage ./packages/grimmory-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipTautulli = pkgs.callPackage ./packages/tautulli-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipBazarr = pkgs.callPackage ./packages/bazarr-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipSynology = pkgs.callPackage ./packages/synology-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipFlaresolverr = pkgs.callPackage ./packages/flaresolverr-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipPyloadNg = pkgs.callPackage ./packages/pyload-ng-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipCloakbrowser = pkgs.callPackage ./packages/cloakbrowser-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
           honchoAi = pkgs.callPackage ./packages/honcho-ai/package.nix { };
 
           hermesRelease = lib.strings.removeSuffix "\n" (
@@ -72,6 +73,7 @@
           ];
         in
         {
+          ghostship-cli-contract = ghostshipCliContract;
           ghostship-searxng = ghostshipSearxng;
           ghostship-sonarr = ghostshipSonarr;
           ghostship-radarr = ghostshipRadarr;
@@ -114,6 +116,7 @@
         in
         {
           inherit (self.packages.${system})
+            ghostship-cli-contract
             ghostship-searxng
             ghostship-sonarr
             ghostship-radarr
@@ -172,7 +175,7 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src${PYTHONPATH:+:$PYTHONPATH}"
+              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }

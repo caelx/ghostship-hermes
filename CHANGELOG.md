@@ -4,7 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Standardized the `ghostship-*` CLI contract around exact snake_case API/client method names with no compatibility aliases, expanded the remaining service CLIs to expose their full client surfaces, refreshed their package READMEs and skills, and updated the live suite to use the canonical commands.
+- Standardized the `ghostship-*` CLI contract around exact snake_case API/client method names with no compatibility aliases, a shared `--timeout` flag with a `30` second default, consistent JSON error envelopes and exit codes, and `--dry-run` request rendering for write/delete operations.
+- Expanded the remaining service CLIs to use the shared contract package, refreshed their package READMEs and skills, and updated the live suite to use the canonical commands.
 - Added first-wave full-surface utilities for PriceBuddy and RSS-Bridge, including typed clients, CLI help/docs, RSS-Bridge feed URL generation, local `.envrc` stubs, new service skills, and initial live coverage with token-gated PriceBuddy write-path checks.
 - Added a broad non-writing live integration suite under `tests/live/` for the deployed Ghostship services, fixed the Synology and Prowlarr client regressions it exposed, cached Grimmory bearer auth once per test session, and isolated Cloudflare Access headers behind test-only `GHOSTSHIP_TEST_CF_ACCESS_*` env vars so the runtime container does not depend on them.
 - Fixed the scheduled Hermes release updater to authenticate GitHub API requests with `GITHUB_TOKEN`, avoiding anonymous release-API rate limit failures in GitHub Actions.

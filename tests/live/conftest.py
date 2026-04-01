@@ -148,7 +148,10 @@ def cli_runner(live_env: dict[str, str]):
             raise AssertionError(f"{module} {' '.join(args)} failed: {message}")
 
         stdout = result.stdout.strip()
-        assert stdout, f"{module} {' '.join(args)} returned no output"
+        stderr = result.stderr.strip()
+        if not stdout:
+            message = stderr or f"{module} {' '.join(args)} returned no output"
+            raise AssertionError(message)
         try:
             return json.loads(stdout)
         except json.JSONDecodeError as exc:

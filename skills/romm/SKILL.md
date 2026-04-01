@@ -6,6 +6,8 @@ description: Use when you need RomM library, ROM, scan, save, and user operation
 # ghostship-romm
 
 - Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
 - Configure the utility with:
 - `ROMM_URL`
 - `ROMM_TOKEN or ROMM_USERNAME and ROMM_PASSWORD`
