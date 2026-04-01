@@ -1,6 +1,18 @@
 from typing import Any, Dict, Optional
 
 import httpx
+import os
+
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
 
 
 class RommClient:
@@ -14,10 +26,11 @@ class RommClient:
         self.base_url = base_url.rstrip("/")
         if "/api" not in self.base_url:
             self.base_url = f"{self.base_url}/api"
+        self.cf_headers = _cloudflare_access_headers()
         self.token = token or self._authenticate(username=username, password=password)
         if not self.token:
             raise ValueError("RomM authentication requires a token or username/password.")
-        self.headers = {"Authorization": f"Bearer {self.token}"}
+        self.headers = {**self.cf_headers, "Authorization": f"Bearer {self.token}"}
 
     def _authenticate(self, username: Optional[str], password: Optional[str]) -> str:
         if not username or not password:
@@ -33,6 +46,7 @@ class RommClient:
                 "password": password,
             },
             timeout=30.0,
+            headers=self.cf_headers,
         )
         response.raise_for_status()
         payload = response.json()

@@ -1,6 +1,18 @@
-from typing import Any, Dict, List, Optional
-import httpx
 import os
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
 
 
 class SynologyClient:
@@ -13,6 +25,7 @@ class SynologyClient:
         self.verify_ssl = verify_ssl
         self.sid: Optional[str] = None
         self.api_info: Dict[str, Any] = {}
+        self.headers = _cloudflare_access_headers()
 
     def _request(
         self,
@@ -35,7 +48,7 @@ class SynologyClient:
         if self.sid and api != "SYNO.API.Auth":
             query_params["_sid"] = self.sid
 
-        with httpx.Client(verify=self.verify_ssl) as client:
+        with httpx.Client(verify=self.verify_ssl, headers=self.headers) as client:
             if files:
                 response = client.post(url, params=query_params, files=files)
             else:
@@ -213,7 +226,7 @@ class SynologyClient:
             "mode": mode,
             "_sid": self.sid,
         }
-        with httpx.Client(verify=self.verify_ssl) as client:
+        with httpx.Client(verify=self.verify_ssl, headers=self.headers) as client:
             response = client.get(url, params=params)
             response.raise_for_status()
             return response

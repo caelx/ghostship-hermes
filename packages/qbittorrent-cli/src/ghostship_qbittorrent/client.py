@@ -1,5 +1,17 @@
 from typing import Any, Dict, List, Optional
 import httpx
+import os
+
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
 
 
 class QBitClient:
@@ -15,13 +27,14 @@ class QBitClient:
         self.username = username
         self.password = password
         self.cookies: Optional[httpx.Cookies] = None
+        self.headers = _cloudflare_access_headers()
 
     def login(self) -> bool:
         if not self.username or not self.password:
             return True
         url = f"{self.base_url}/auth/login"
         data = {"username": self.username, "password": self.password}
-        with httpx.Client() as client:
+        with httpx.Client(headers=self.headers) as client:
             response = client.post(url, data=data)
             response.raise_for_status()
             if response.text == "Ok.":
@@ -46,7 +59,7 @@ class QBitClient:
             self.login()
 
         url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(cookies=self.cookies) as client:
+        with httpx.Client(cookies=self.cookies, headers=self.headers) as client:
             if method == "POST":
                 response = client.post(url, data=data, params=params, files=files)
             else:

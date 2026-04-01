@@ -94,25 +94,41 @@ writeShellApplication {
 
     ensure_runtime_directories() {
       install -d -m 1777 /tmp
-      install -d -m 0755 "$HOME" "$HERMES_HOME" "$HERMES_HOME/profiles" "$GHOSTSHIP_STATE_DIR" "$GHOSTSHIP_SERVICES_DIR" "$GHOSTSHIP_WWW_DIR" "$GHOSTSHIP_API_DIR" "$GHOSTSHIP_CADDY_DIR" "$GHOSTSHIP_HONCHO_SHARED_DIR"
+      install -d -m 0755 "$HOME" "$HERMES_HOME" "$HERMES_HOME/profiles" "$GHOSTSHIP_STATE_DIR" "$GHOSTSHIP_SERVICES_DIR" "$GHOSTSHIP_WWW_DIR" "$GHOSTSHIP_API_DIR" "$GHOSTSHIP_CADDY_DIR"
       touch "$GHOSTSHIP_API_DIR/profiles.json"
+    }
+
+    honcho_shared_has_content() {
+      [ -d "$GHOSTSHIP_HONCHO_SHARED_DIR" ] || return 1
+      if find "$GHOSTSHIP_HONCHO_SHARED_DIR" -mindepth 1 -print -quit | grep -q .; then
+        return 0
+      fi
+      return 1
     }
 
     ensure_honcho_layout() {
       local compat_link="$HOME/.honcho"
 
-      install -d -m 0755 "$GHOSTSHIP_HONCHO_SHARED_DIR"
-
       if [ -d "$compat_link" ] && [ ! -L "$compat_link" ]; then
+        install -d -m 0755 "$GHOSTSHIP_HONCHO_SHARED_DIR"
         rsync -a "$compat_link/" "$GHOSTSHIP_HONCHO_SHARED_DIR/"
         rm -rf "$compat_link"
-      elif [ -L "$compat_link" ] && [ "$(readlink -f "$compat_link")" != "$GHOSTSHIP_HONCHO_SHARED_DIR" ]; then
+        ln -s "$GHOSTSHIP_HONCHO_SHARED_DIR" "$compat_link"
+        return 0
+      fi
+
+      if [ -L "$compat_link" ]; then
+        if [ "$(readlink -f "$compat_link")" = "$GHOSTSHIP_HONCHO_SHARED_DIR" ]; then
+          return 0
+        fi
         rm -f "$compat_link"
       fi
 
-      if [ ! -e "$compat_link" ]; then
+      if honcho_shared_has_content; then
         ln -s "$GHOSTSHIP_HONCHO_SHARED_DIR" "$compat_link"
       fi
+
+      return 0
     }
 
     write_if_changed() {

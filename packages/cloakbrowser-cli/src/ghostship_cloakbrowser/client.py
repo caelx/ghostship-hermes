@@ -1,12 +1,24 @@
 from typing import Any, Dict, List, Optional
 import httpx
+import os
+
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
 
 
 class CloakBrowserClient:
     def __init__(self, base_url: str, token: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self.token = token
-        self.headers = {}
+        self.headers = _cloudflare_access_headers()
         if token:
             self.headers["Authorization"] = f"Bearer {token}"
 

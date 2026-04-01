@@ -1,5 +1,17 @@
 from typing import Any, Dict, List, Optional
 import httpx
+import os
+
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
 
 
 class NZBGetClient:
@@ -13,10 +25,11 @@ class NZBGetClient:
         if not self.base_url.endswith("/jsonrpc"):
             self.base_url = f"{self.base_url}/jsonrpc"
         self.auth = (username, password) if username and password else None
+        self.headers = _cloudflare_access_headers()
 
     def _request(self, method: str, params: Optional[List[Any]] = None) -> Any:
         payload = {"version": "1.1", "method": method, "params": params or []}
-        with httpx.Client(auth=self.auth) as client:
+        with httpx.Client(auth=self.auth, headers=self.headers) as client:
             response = client.post(self.base_url, json=payload)
             response.raise_for_status()
             data = response.json()

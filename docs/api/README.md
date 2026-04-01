@@ -18,8 +18,10 @@ The repo uses a hybrid model:
 | `ghostship-grimmory` | `docs/api/grimmory.md` | None | Official Grimmory repository source code |
 | `ghostship-nzbget` | `docs/api/nzbget.md` | None | Official RPC reference |
 | `ghostship-plex` | `docs/api/plex.md` | None | Official URL command docs plus repo summary |
+| `ghostship-pricebuddy` | `docs/api/pricebuddy.md` | None | Official docs plus upstream tests/source code |
 | `ghostship-prowlarr` | `docs/api/prowlarr.md` | `docs/api/prowlarr-openapi.json` | Official OpenAPI + repo summary |
 | `ghostship-pyload-ng` | `docs/api/pyload-ng.md` | `docs/api/pyload-openapi.json` | Official OpenAPI + repo summary |
+| `ghostship-rss-bridge` | `docs/api/rss-bridge.md` | None | Official docs and source code |
 | `ghostship-qbittorrent` | `docs/api/qbittorrent.md` | None | Official WebUI wiki |
 | `ghostship-radarr` | `docs/api/radarr.md` | `docs/api/radarr-openapi.json` | Official OpenAPI + repo summary |
 | `ghostship-romm` | `docs/api/romm.md` | `docs/api/romm-openapi.json` | Official OpenAPI + repo summary |
@@ -49,4 +51,6 @@ The repo uses a hybrid model:
 - `Official WebUI wiki`: upstream publishes the API contract in a maintained wiki rather than a machine-readable spec.
 - `Official Synology PDF guides + repo summary`: upstream publishes PDF developer guides, and the repo sheet organizes them into a current endpoint and namespace reference.
 - `Official Grimmory repository source code`: the canonical contract was derived directly from the official upstream backend controllers because no repo-published machine-readable schema was available.
+- `Official docs and source code`: upstream publishes narrative documentation, and the repo confirmed the callable surface directly from the implementation.
+- `Official docs plus upstream tests/source code`: upstream publishes narrative docs, but the practical endpoint contract and field shapes had to be confirmed from upstream tests and implementation.
 - `Official docs plus upstream/community verification`: no raw spec exists and the repo had to confirm the live auth or response shape from additional material.

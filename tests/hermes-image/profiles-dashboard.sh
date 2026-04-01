@@ -132,6 +132,16 @@ docker exec "$container_name" bash -lc 'command -v rg jq python python3 gh tmux 
 docker exec "$container_name" bash -lc 'hermes honcho --help >/dev/null'
 docker exec "$container_name" bash -lc 'python -c "import honcho"'
 docker exec "$container_name" bash -lc '/home/hermes/.hermes/hermes-agent/venv/bin/python -c "import honcho"'
-docker exec "$container_name" bash -lc 'test -L /home/hermes/.honcho'
-docker exec "$container_name" bash -lc 'test "$(readlink -f /home/hermes/.honcho)" = "/home/hermes/.hermes/shared/honcho"'
-docker exec "$container_name" bash -lc 'test -d /home/hermes/.hermes/shared/honcho'
+docker exec "$container_name" bash -lc 'test ! -e /home/hermes/.honcho'
+docker exec "$container_name" bash -lc 'python - <<"PY"
+from pathlib import Path
+Path("/home/hermes/.honcho").mkdir(parents=True, exist_ok=True)
+Path("/home/hermes/.honcho/config.json").write_text("{\"base_url\":\"https://honcho.example\"}\n")
+PY'
+docker exec "$container_name" bash -lc 'for i in $(seq 1 10); do if [ -L /home/hermes/.honcho ] && [ "$(readlink -f /home/hermes/.honcho)" = "/home/hermes/.hermes/shared/honcho" ] && [ -f /home/hermes/.hermes/shared/honcho/config.json ]; then exit 0; fi; sleep 1; done; exit 1'
+docker exec "$container_name" bash -lc 'python - <<"PY"
+import json
+from pathlib import Path
+config = json.loads(Path("/home/hermes/.hermes/shared/honcho/config.json").read_text())
+assert config["base_url"] == "https://honcho.example"
+PY'

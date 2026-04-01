@@ -57,7 +57,13 @@
 - NZBGet’s automation contract is JSON-RPC over `/jsonrpc` with HTTP Basic auth rather than a REST resource model.
 - Synology has official PDF guides for both DSM login and File Station. The DSM guide explicitly documents `enable_syno_token=yes`, `sid`, `synotoken`, and `SynoToken`, while the File Station guide provides the broader namespace inventory beyond the subset used by `ghostship-synology`.
 - Grimmory source-of-truth is the official `grimmory-tools/grimmory` repository. It is the successor to BookLore, and its backend API surface should be documented from that repo's controllers rather than from unrelated `grimoire` services.
+- Cloudflare Access service-token headers for Ghostship app probes should stay test-only: use `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID` and `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET` in the utilities, and let the live-test harness derive them from local-only `.envrc` values instead of making the runtime container depend on Cloudflare headers.
+- The live integration suite should distinguish real client bugs from service-side conditions. The current Ghostship deployment exposes several read-only constraints that should skip rather than fail utility regression tests: RomM credentials only allow `heartbeat` and `config`, Grimmory becomes more stable when a bearer is cached once per session instead of logging in on every CLI call, pyLoad still returns `401 Invalid API credentials` without valid API auth, FlareSolverr may be absent from DNS, and Prowlarr search can time out on upstream indexer latency.
 - User preference: always clean up old Docker test containers and stale local Docker artifacts after verification work, and leave local Docker state tidy when tests are complete.
+
+- PriceBuddy publishes authenticated API docs at `/docs/api`, but the raw OpenAPI export is token-gated in practice; when no token-authenticated export is available, document the surface from upstream tests and handlers instead of inventing a spec mirror.
+- RSS-Bridge is action-driven rather than CRUD-driven. For this repo, “create a feed” means generating a canonical `action=display` URL from the bridge schema, not persisting a server-side feed object.
+- The deployed RSS-Bridge instance does not use one uniform parameter schema shape. Some bridges expose `parameters` as a dict of contexts, while others return a legacy list of parameter groups that should be treated as the global context; `ghostship-rss-bridge` needs to support both.
 
 ## Documentation Requirements
 

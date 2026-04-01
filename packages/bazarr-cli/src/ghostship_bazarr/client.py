@@ -1,5 +1,17 @@
 from typing import Any, Dict, List, Optional
 import httpx
+import os
+
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
 
 
 class BazarrClient:
@@ -8,7 +20,8 @@ class BazarrClient:
         if not self.base_url.endswith("/api"):
             self.base_url = f"{self.base_url}/api"
         self.api_key = api_key
-        self.headers = {"X-Api-Key": self.api_key}
+        self.headers = _cloudflare_access_headers()
+        self.headers["X-Api-Key"] = self.api_key
 
     def _request(
         self,

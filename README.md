@@ -39,6 +39,8 @@ This repository provides a unified environment for running Hermes with a pre-con
 - `ghostship-synology`: Synology File Station management (search, mkdir, rm, etc.)
 - `ghostship-flaresolverr`: Cloudflare protection bypass
 - `ghostship-cloakbrowser`: CloakBrowser profile management
+- `ghostship-pricebuddy`: typed PriceBuddy product, source, store, and tag automation
+- `ghostship-rss-bridge`: typed RSS-Bridge discovery, schema inspection, feed URL generation, and wrapped display fetching
 
 ## Getting Started
 
@@ -85,7 +87,7 @@ After the container starts:
 - Honcho is not active by default. It only becomes active after you actually configure it in a profile with `HONCHO_API_KEY`, optional `HONCHO_BASE_URL`, and optional `HONCHO_ENVIRONMENT`, or by writing a profile-local `honcho.json`.
 - Prefer environment variables in the relevant Hermes profile `.env` so each Hermes profile can opt in independently.
 - Profile-local Honcho config can live at `HERMES_HOME/honcho.json`, which persists with each Hermes profile under `~/.hermes`.
-- The legacy compatibility path `~/.honcho/config.json` is also persisted under Hermes storage at `~/.hermes/shared/honcho/config.json`, but it is kept as a fallback rather than the primary configuration path.
+- The legacy compatibility path `~/.honcho/config.json` is also persisted under Hermes storage at `~/.hermes/shared/honcho/config.json`, but it is created lazily only when compatibility state exists and is kept as a fallback rather than the primary configuration path.
 
 ## Hermes Usage
 
@@ -189,6 +191,8 @@ All `ghostship-` utilities require specific environment variables. Set these bef
 | `ghostship-flaresolverr` | `FLARESOLVERR_URL` |
 | `ghostship-pyload-ng` | `PYLOAD_URL`, `PYLOAD_USER`, `PYLOAD_PASS` |
 | `ghostship-cloakbrowser` | `CLOAKBROWSER_URL`, optional `CLOAKBROWSER_TOKEN` matching manager `AUTH_TOKEN` |
+| `ghostship-pricebuddy` | `PRICEBUDDY_URL`, `PRICEBUDDY_TOKEN` |
+| `ghostship-rss-bridge` | `RSS_BRIDGE_URL` |
 
 Canonical API references for every `ghostship-*` utility now live in [docs/api/README.md](docs/api/README.md), using raw upstream specs where available and repo-owned full reference sheets everywhere else.
 
@@ -206,6 +210,21 @@ Default skills are stored in `skills/` and seeded into the Hermes runtime `~/.he
 2. Lock a utility: `python3 scripts/python_utility.py lock packages/<utility>-cli`
 3. Test a utility: `python3 scripts/python_utility.py test packages/<utility>-cli`
 4. Build a utility: `python3 scripts/python_utility.py build packages/<utility>-cli`
+
+## Live Integration Tests
+
+The repo also includes a read-only live integration suite for the deployed Ghostship services:
+
+```bash
+nix develop -c python -m pytest tests/live/test_live_services.py -q
+```
+
+Notes:
+
+- Keep `.envrc` local-only; it is intentionally ignored by Git.
+- The live harness sources `.envrc` directly and maps any local `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` values into test-only `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID` / `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET` env vars for subprocesses. The runtime container does not depend on those headers.
+- The suite is non-writing by policy for the existing utilities. The new `ghostship-pricebuddy` live coverage is allowed to create, update, and delete disposable test resources when `PRICEBUDDY_TOKEN` is configured.
+- `ghostship-rss-bridge` live coverage remains read-only because the upstream service is action-driven and does not persist feed objects server-side.
 
 ## Security
 

@@ -1,5 +1,17 @@
 import httpx
+import os
 from typing import Any, Optional
+
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
 
 
 class FlareSolverrClient:
@@ -9,10 +21,11 @@ class FlareSolverrClient:
              self.v1_url = f"{self.base_url}/v1"
         else:
              self.v1_url = self.base_url
+        self.headers = _cloudflare_access_headers()
 
     def _post(self, cmd: str, **kwargs: Any) -> dict[str, Any]:
         payload = {"cmd": cmd, **kwargs}
-        response = httpx.post(self.v1_url, json=payload, timeout=60.0)
+        response = httpx.post(self.v1_url, json=payload, timeout=60.0, headers=self.headers)
         response.raise_for_status()
         return response.json()
 

@@ -15,17 +15,24 @@ def echo_json(data: Any, pretty: bool = False):
 
 def get_client() -> PyLoadClient:
     base_url = os.getenv("PYLOAD_URL")
-    username = os.getenv("PYLOAD_USER")
-    password = os.getenv("PYLOAD_PASS")
+    username = os.getenv("PYLOAD_USER") or None
+    password = os.getenv("PYLOAD_PASS") or None
 
-    if not base_url or not username or not password:
+    if not base_url:
         print(
-            "Error: PYLOAD_URL, PYLOAD_USER, and PYLOAD_PASS environment variables must be set.",
+            "Error: PYLOAD_URL environment variable must be set.",
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
 
-    return PyLoadClient(base_url, username, password)
+    if (username is None) != (password is None):
+        print(
+            "Error: PYLOAD_USER and PYLOAD_PASS must both be set, or both be omitted.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=1)
+
+    return PyLoadClient(base_url, username=username, password=password)
 
 
 @app.command()

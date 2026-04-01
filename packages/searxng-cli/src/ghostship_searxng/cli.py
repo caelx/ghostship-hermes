@@ -6,6 +6,18 @@ from typing import Any, Optional
 import httpx
 import typer
 
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
+
+
 app = typer.Typer(no_args_is_help=True)
 search_app = typer.Typer(no_args_is_help=True)
 app.add_typer(search_app, name="search")
@@ -34,6 +46,7 @@ def search_searxng(
             "safesearch": safe_search,
         },
         timeout=timeout,
+        headers=_cloudflare_access_headers(),
     )
     response.raise_for_status()
     payload = response.json()

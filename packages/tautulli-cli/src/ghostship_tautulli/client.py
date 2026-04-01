@@ -1,5 +1,18 @@
 from typing import Any, Dict, List, Optional
 import httpx
+import os
+
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
+
 
 class TautulliClient:
     def __init__(self, base_url: str, api_key: str):
@@ -7,6 +20,7 @@ class TautulliClient:
         if not self.base_url.endswith("/api/v2"):
             self.base_url = f"{self.base_url}/api/v2"
         self.api_key = api_key
+        self.headers = _cloudflare_access_headers()
 
     def _request(self, cmd: str, **kwargs) -> Any:
         params = {
@@ -14,7 +28,7 @@ class TautulliClient:
             "cmd": cmd
         }
         params.update(kwargs)
-        with httpx.Client() as client:
+        with httpx.Client(headers=self.headers) as client:
             response = client.get(self.base_url, params=params)
             response.raise_for_status()
             data = response.json()

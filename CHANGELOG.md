@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added first-wave full-surface utilities for PriceBuddy and RSS-Bridge, including typed clients, CLI help/docs, RSS-Bridge feed URL generation, local `.envrc` stubs, new service skills, and initial live coverage with token-gated PriceBuddy write-path checks.
+- Added a broad non-writing live integration suite under `tests/live/` for the deployed Ghostship services, fixed the Synology and Prowlarr client regressions it exposed, cached Grimmory bearer auth once per test session, and isolated Cloudflare Access headers behind test-only `GHOSTSHIP_TEST_CF_ACCESS_*` env vars so the runtime container does not depend on them.
 - Fixed the scheduled Hermes release updater to authenticate GitHub API requests with `GITHUB_TOKEN`, avoiding anonymous release-API rate limit failures in GitHub Actions.
 - Added direct Honcho support to the Hermes image by shipping the `honcho-ai` SDK in the container, enabling `hermes honcho ...` against external Honcho instances without extra host installs, lazily persisting the Honcho compatibility config under Hermes storage, and documenting explicit env-first per-profile Honcho setup.
 - Refined the Hermes profile dashboard branding by adding the upstream Hermes logo, bottom-aligning the `ghostship-hermes` wordmark beside it, renaming the gateway status labels to `Gateway On` and `Gateway Off`, and stopping the 5-second profile poll from reloading the active terminal iframe unnecessarily.

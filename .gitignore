@@ -1,5 +1,7 @@
 .direnv/
 .env
+.envrc
+.envrc.local
 .hermes/
 **/.pytest_cache/
 **/.ruff_cache/

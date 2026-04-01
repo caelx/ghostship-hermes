@@ -1,11 +1,29 @@
 from typing import Any, Dict, List, Optional
 import httpx
+import os
+
+
+def _cloudflare_access_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
+    if client_id:
+        headers["CF-Access-Client-Id"] = client_id
+    if client_secret:
+        headers["CF-Access-Client-Secret"] = client_secret
+    return headers
 
 
 class PyLoadClient:
-    def __init__(self, base_url: str, username: str, password: str):
+    def __init__(
+        self,
+        base_url: str,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ):
         self.base_url = base_url.rstrip("/")
-        self.auth = (username, password)
+        self.auth = (username, password) if username and password else None
+        self.headers = _cloudflare_access_headers()
 
     def _request(
         self,
@@ -15,7 +33,7 @@ class PyLoadClient:
         json_data: Optional[Dict[str, Any]] = None,
     ) -> Any:
         url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(auth=self.auth) as client:
+        with httpx.Client(auth=self.auth, headers=self.headers) as client:
             if method == "POST":
                 response = client.post(url, params=params, json=json_data)
             elif method == "DELETE":
@@ -71,8 +89,8 @@ class PyLoadClient:
         return self._request("api/stop_all_downloads", method="POST")
 
     # Accounts
-    def get_accounts(self) -> Any:
-        return self._request("api/get_accounts")
+    def get_accounts(self, refresh: bool = False) -> Any:
+        return self._request("api/get_accounts", params={"refresh": str(refresh).lower()})
 
     def add_account(self, plugin: str, login: str, password: str) -> Any:
         return self._request(

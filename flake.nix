@@ -40,6 +40,8 @@
           ghostshipFlaresolverr = pkgs.callPackage ./packages/flaresolverr-cli/package.nix { };
           ghostshipPyloadNg = pkgs.callPackage ./packages/pyload-ng-cli/package.nix { };
           ghostshipCloakbrowser = pkgs.callPackage ./packages/cloakbrowser-cli/package.nix { };
+          ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { };
+          ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { };
           honchoAi = pkgs.callPackage ./packages/honcho-ai/package.nix { };
 
           hermesRelease = lib.strings.removeSuffix "\n" (
@@ -65,6 +67,8 @@
             ghostshipFlaresolverr
             ghostshipPyloadNg
             ghostshipCloakbrowser
+            ghostshipPricebuddy
+            ghostshipRssBridge
           ];
         in
         {
@@ -83,6 +87,8 @@
           ghostship-flaresolverr = ghostshipFlaresolverr;
           ghostship-pyload-ng = ghostshipPyloadNg;
           ghostship-cloakbrowser = ghostshipCloakbrowser;
+          ghostship-pricebuddy = ghostshipPricebuddy;
+          ghostship-rss-bridge = ghostshipRssBridge;
 
           ghostship-hermes-runtime = ghostshipHermesRuntime;
 
@@ -123,6 +129,8 @@
             ghostship-flaresolverr
             ghostship-pyload-ng
             ghostship-cloakbrowser
+            ghostship-pricebuddy
+            ghostship-rss-bridge
             ghostship-hermes-runtime
             ghostship-hermes-image;
         }
@@ -164,7 +172,7 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src''${PYTHONPATH:+:$PYTHONPATH}"
+              export PYTHONPATH="$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }
