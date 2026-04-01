@@ -1,55 +1,43 @@
 ---
 name: bazarr
-description: Manage subtitles via Bazarr. Output is native JSON.
+description: Use when you need subtitle and system data from Bazarr via exact API/client method names.
 ---
 
-# Bazarr Skill
+# ghostship-bazarr
 
-The `ghostship-bazarr` utility allows agents to manage subtitle requirements for movies and TV series via the Bazarr API.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Configure the utility with:
+- `BAZARR_URL`
+- `BAZARR_API_KEY`
+- Prefer the dedicated snake_case command first. Use `request` only as fallback.
 
-## Structure
-
-- **Skill Document:** `skills/bazarr/SKILL.md` (this file)
-- **Package Directory:** `packages/bazarr-cli/`
-- **README:** `packages/bazarr-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `BAZARR_URL`: The base URL of the Bazarr instance.
-- `BAZARR_API_KEY`: The API key for authentication.
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-bazarr info`
-Get system status information, including version and Python environment.
-
-#### `ghostship-bazarr list-series`
-List all TV series in the library and their monitoring status for subtitles.
-
-#### `ghostship-bazarr history [--media episodes|movies]`
-Get subtitle download history.
-- `--media`: Filter by `episodes` (default) or `movies`.
-
-#### `ghostship-bazarr blacklist [--media episodes|movies]`
-Get blocklisted subtitles (downloads that failed or were rejected).
-- `--media`: Filter by `episodes` (default) or `movies`.
+## Common Commands
+- `ghostship-bazarr request`
+- `ghostship-bazarr get_badges`
+- `ghostship-bazarr get_episodes`
+- `ghostship-bazarr get_wanted_episodes`
+- `ghostship-bazarr get_movies`
+- `ghostship-bazarr get_wanted_movies`
+- `ghostship-bazarr get_series`
+- `ghostship-bazarr get_providers`
+- `ghostship-bazarr get_subtitles`
+- `ghostship-bazarr get_system_health`
+- `ghostship-bazarr get_system_jobs`
+- `ghostship-bazarr get_system_tasks`
+- `ghostship-bazarr get_system_status`
+- `ghostship-bazarr search_subtitles_missing`
+- `ghostship-bazarr get_episodes_history`
+- `ghostship-bazarr get_movies_history`
+- `ghostship-bazarr get_episodes_blacklist`
+- `ghostship-bazarr get_movies_blacklist`
 
 ## Examples
-
 ```bash
-# Check system status
-ghostship-bazarr info
-
-# List series to check subtitle status
-ghostship-bazarr list-series --pretty
+ghostship-bazarr get_system_status --pretty
 ```
-
-## Agent Guidance
-
-- Use `list-series` to identify which shows are currently being managed by Bazarr.
-- Agents can use this tool to verify if subtitles are missing or being searched for when users report issues with media playback.
+```bash
+ghostship-bazarr get_episodes --series-id 123 --pretty
+```
+```bash
+ghostship-bazarr request GET system/status
+```

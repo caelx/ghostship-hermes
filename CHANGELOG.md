@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Standardized the `ghostship-*` CLI contract around exact snake_case API/client method names with no compatibility aliases, expanded the remaining service CLIs to expose their full client surfaces, refreshed their package READMEs and skills, and updated the live suite to use the canonical commands.
 - Added first-wave full-surface utilities for PriceBuddy and RSS-Bridge, including typed clients, CLI help/docs, RSS-Bridge feed URL generation, local `.envrc` stubs, new service skills, and initial live coverage with token-gated PriceBuddy write-path checks.
 - Added a broad non-writing live integration suite under `tests/live/` for the deployed Ghostship services, fixed the Synology and Prowlarr client regressions it exposed, cached Grimmory bearer auth once per test session, and isolated Cloudflare Access headers behind test-only `GHOSTSHIP_TEST_CF_ACCESS_*` env vars so the runtime container does not depend on them.
 - Fixed the scheduled Hermes release updater to authenticate GitHub API requests with `GITHUB_TOKEN`, avoiding anonymous release-API rate limit failures in GitHub Actions.
@@ -12,7 +13,7 @@ All notable changes to this project will be documented in this file.
 - Replaced the single public `ttyd` entrypoint with a Caddy dashboard that proxies same-origin per-profile Hermes terminals, and added a Docker integration test covering multiple profiles, iframe routing, and profile-scoped gateway startup.
 - Stopped advertising `/nix` as an automatic Docker volume because mounting an empty volume over `/nix` on a fresh Nix-built image hides or copies the store and can stall container startup.
 - Pinned Hermes to `v2026.3.30` so the container can use the upstream native profile model (`hermes profile ...`, `hermes -p ...`) for multi-agent routing.
-- Added the repo-managed `hermes-nix`, `hermes-agent-browser`, and `current-environment` skills so Hermes can learn the container’s Nix-first workflow, CloakBrowser-only browser automation path, and persistence/runtime model from inside the image.
+- Added the repo-managed `hermes-nix`, `agent-browser`, and `current-environment` skills so Hermes can learn the container’s Nix-first workflow, CloakBrowser-only browser automation path, and persistence/runtime model from inside the image.
 - Expanded the image bundle with common operator tools and debuggers, including `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, `fzf`, `entr`, and related utilities.
 - Fixed the RomM and Grimmory CLIs to authenticate via their live login flows by default, while still accepting direct bearer token overrides.
 - Fixed `ghostship-cloakbrowser` request URL construction and clarified that its auth token is a static server-side `AUTH_TOKEN`, not a generated session token.

@@ -1,6 +1,9 @@
-from typing import Any, Dict, List, Optional
-import httpx
+from __future__ import annotations
+
+from typing import Any
 import os
+
+import httpx
 
 
 def _cloudflare_access_headers() -> dict[str, str]:
@@ -15,211 +18,166 @@ def _cloudflare_access_headers() -> dict[str, str]:
 
 
 class CloakBrowserClient:
-    def __init__(self, base_url: str, token: Optional[str] = None):
+    def __init__(self, base_url: str, token: str | None = None):
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.headers = _cloudflare_access_headers()
         if token:
             self.headers["Authorization"] = f"Bearer {token}"
 
-    def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-
-    def _post(
+    def request(
         self,
+        method: str,
         path: str,
-        json_data: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
+        *,
+        params: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | list[Any] | None = None,
     ) -> Any:
         url = f"{self.base_url}/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
-            response = client.post(url, json=json_data, params=params)
+            response = client.request(method.upper(), url, params=params, json=json_data)
             response.raise_for_status()
+            if not response.content:
+                return {"status": "success"}
             return response.json()
 
-    def _delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.delete(url, params=params)
-            response.raise_for_status()
-            return response.status_code == 200
+    def get_auth_status(self) -> dict[str, Any]:
+        return self.request("GET", "/api/auth/status")
 
-    def _put(
-        self,
-        path: str,
-        json_data: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.put(url, json=json_data)
-            response.raise_for_status()
-            return response.json()
+    def login(self, token: str) -> dict[str, Any]:
+        return self.request("POST", "/api/auth/login", json_data={"token": token})
 
-    def get_auth_status(self) -> Dict[str, Any]:
-        return self._get("/api/auth/status")
+    def logout(self) -> dict[str, Any]:
+        return self.request("POST", "/api/auth/logout")
 
-    def login(self, token: str) -> Dict[str, Any]:
-        return self._post("/api/auth/login", json_data={"token": token})
+    def get_system_status(self) -> dict[str, Any]:
+        return self.request("GET", "/api/status")
 
-    def logout(self) -> Dict[str, Any]:
-        return self._post("/api/auth/logout")
+    def list_profiles(self) -> list[dict[str, Any]]:
+        return self.request("GET", "/api/profiles")
 
-    def get_system_status(self) -> Dict[str, Any]:
-        return self._get("/api/status")
-
-    def list_profiles(self) -> List[Dict[str, Any]]:
-        return self._get("/api/profiles")
-
-    def get_profile(self, profile_id: str) -> Dict[str, Any]:
-        return self._get(f"/api/profiles/{profile_id}")
+    def get_profile(self, profile_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/api/profiles/{profile_id}")
 
     def create_profile(
         self,
         name: str,
-        fingerprint_seed: Optional[int] = None,
-        proxy: Optional[str] = None,
-        timezone: Optional[str] = None,
-        locale: Optional[str] = None,
+        fingerprint_seed: int | None = None,
+        proxy: str | None = None,
+        timezone: str | None = None,
+        locale: str | None = None,
         platform: str = "windows",
-        user_agent: Optional[str] = None,
+        user_agent: str | None = None,
         screen_width: int = 1920,
         screen_height: int = 1080,
-        gpu_vendor: Optional[str] = None,
-        gpu_renderer: Optional[str] = None,
-        hardware_concurrency: Optional[int] = None,
+        gpu_vendor: str | None = None,
+        gpu_renderer: str | None = None,
+        hardware_concurrency: int | None = None,
         humanize: bool = False,
         human_preset: str = "default",
         headless: bool = False,
         geoip: bool = False,
         clipboard_sync: bool = True,
-        color_scheme: Optional[str] = None,
-        notes: Optional[str] = None,
-        tags: Optional[List[Dict[str, str]]] = None,
-    ) -> Dict[str, Any]:
-        data = {"name": name}
-        if fingerprint_seed is not None:
-            data["fingerprint_seed"] = fingerprint_seed
-        if proxy is not None:
-            data["proxy"] = proxy
-        if timezone is not None:
-            data["timezone"] = timezone
-        if locale is not None:
-            data["locale"] = locale
-        data["platform"] = platform
-        if user_agent is not None:
-            data["user_agent"] = user_agent
-        data["screen_width"] = screen_width
-        data["screen_height"] = screen_height
-        if gpu_vendor is not None:
-            data["gpu_vendor"] = gpu_vendor
-        if gpu_renderer is not None:
-            data["gpu_renderer"] = gpu_renderer
-        if hardware_concurrency is not None:
-            data["hardware_concurrency"] = hardware_concurrency
-        data["humanize"] = humanize
-        data["human_preset"] = human_preset
-        data["headless"] = headless
-        data["geoip"] = geoip
-        data["clipboard_sync"] = clipboard_sync
-        if color_scheme is not None:
-            data["color_scheme"] = color_scheme
-        if notes is not None:
-            data["notes"] = notes
-        if tags is not None:
-            data["tags"] = tags
-        return self._post("/api/profiles", json_data=data)
+        color_scheme: str | None = None,
+        notes: str | None = None,
+        tags: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "name": name,
+            "platform": platform,
+            "screen_width": screen_width,
+            "screen_height": screen_height,
+            "humanize": humanize,
+            "human_preset": human_preset,
+            "headless": headless,
+            "geoip": geoip,
+            "clipboard_sync": clipboard_sync,
+        }
+        optional_values = {
+            "fingerprint_seed": fingerprint_seed,
+            "proxy": proxy,
+            "timezone": timezone,
+            "locale": locale,
+            "user_agent": user_agent,
+            "gpu_vendor": gpu_vendor,
+            "gpu_renderer": gpu_renderer,
+            "hardware_concurrency": hardware_concurrency,
+            "color_scheme": color_scheme,
+            "notes": notes,
+            "tags": tags,
+        }
+        data.update({key: value for key, value in optional_values.items() if value is not None})
+        return self.request("POST", "/api/profiles", json_data=data)
 
     def update_profile(
         self,
         profile_id: str,
-        name: Optional[str] = None,
-        fingerprint_seed: Optional[int] = None,
-        proxy: Optional[str] = None,
-        timezone: Optional[str] = None,
-        locale: Optional[str] = None,
-        platform: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        screen_width: Optional[int] = None,
-        screen_height: Optional[int] = None,
-        gpu_vendor: Optional[str] = None,
-        gpu_renderer: Optional[str] = None,
-        hardware_concurrency: Optional[int] = None,
-        humanize: Optional[bool] = None,
-        human_preset: Optional[str] = None,
-        headless: Optional[bool] = None,
-        geoip: Optional[bool] = None,
-        clipboard_sync: Optional[bool] = None,
-        color_scheme: Optional[str] = None,
-        notes: Optional[str] = None,
-        tags: Optional[List[Dict[str, str]]] = None,
-    ) -> Dict[str, Any]:
-        data = {}
-        if name is not None:
-            data["name"] = name
-        if fingerprint_seed is not None:
-            data["fingerprint_seed"] = fingerprint_seed
-        if proxy is not None:
-            data["proxy"] = proxy
-        if timezone is not None:
-            data["timezone"] = timezone
-        if locale is not None:
-            data["locale"] = locale
-        if platform is not None:
-            data["platform"] = platform
-        if user_agent is not None:
-            data["user_agent"] = user_agent
-        if screen_width is not None:
-            data["screen_width"] = screen_width
-        if screen_height is not None:
-            data["screen_height"] = screen_height
-        if gpu_vendor is not None:
-            data["gpu_vendor"] = gpu_vendor
-        if gpu_renderer is not None:
-            data["gpu_renderer"] = gpu_renderer
-        if hardware_concurrency is not None:
-            data["hardware_concurrency"] = hardware_concurrency
-        if humanize is not None:
-            data["humanize"] = humanize
-        if human_preset is not None:
-            data["human_preset"] = human_preset
-        if headless is not None:
-            data["headless"] = headless
-        if geoip is not None:
-            data["geoip"] = geoip
-        if clipboard_sync is not None:
-            data["clipboard_sync"] = clipboard_sync
-        if color_scheme is not None:
-            data["color_scheme"] = color_scheme
-        if notes is not None:
-            data["notes"] = notes
-        if tags is not None:
-            data["tags"] = tags
-        return self._put(f"/api/profiles/{profile_id}", json_data=data)
+        name: str | None = None,
+        fingerprint_seed: int | None = None,
+        proxy: str | None = None,
+        timezone: str | None = None,
+        locale: str | None = None,
+        platform: str | None = None,
+        user_agent: str | None = None,
+        screen_width: int | None = None,
+        screen_height: int | None = None,
+        gpu_vendor: str | None = None,
+        gpu_renderer: str | None = None,
+        hardware_concurrency: int | None = None,
+        humanize: bool | None = None,
+        human_preset: str | None = None,
+        headless: bool | None = None,
+        geoip: bool | None = None,
+        clipboard_sync: bool | None = None,
+        color_scheme: str | None = None,
+        notes: str | None = None,
+        tags: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        data = {
+            key: value
+            for key, value in {
+                "name": name,
+                "fingerprint_seed": fingerprint_seed,
+                "proxy": proxy,
+                "timezone": timezone,
+                "locale": locale,
+                "platform": platform,
+                "user_agent": user_agent,
+                "screen_width": screen_width,
+                "screen_height": screen_height,
+                "gpu_vendor": gpu_vendor,
+                "gpu_renderer": gpu_renderer,
+                "hardware_concurrency": hardware_concurrency,
+                "humanize": humanize,
+                "human_preset": human_preset,
+                "headless": headless,
+                "geoip": geoip,
+                "clipboard_sync": clipboard_sync,
+                "color_scheme": color_scheme,
+                "notes": notes,
+                "tags": tags,
+            }.items()
+            if value is not None
+        }
+        return self.request("PUT", f"/api/profiles/{profile_id}", json_data=data)
 
-    def delete_profile(self, profile_id: str) -> bool:
-        return self._delete(f"/api/profiles/{profile_id}")
+    def delete_profile(self, profile_id: str) -> Any:
+        return self.request("DELETE", f"/api/profiles/{profile_id}")
 
-    def launch_profile(self, profile_id: str) -> Dict[str, Any]:
-        return self._post(f"/api/profiles/{profile_id}/launch")
+    def launch_profile(self, profile_id: str) -> dict[str, Any]:
+        return self.request("POST", f"/api/profiles/{profile_id}/launch")
 
-    def stop_profile(self, profile_id: str) -> Dict[str, Any]:
-        return self._post(f"/api/profiles/{profile_id}/stop")
+    def stop_profile(self, profile_id: str) -> Any:
+        return self.request("POST", f"/api/profiles/{profile_id}/stop")
 
-    def get_profile_status(self, profile_id: str) -> Dict[str, Any]:
-        return self._get(f"/api/profiles/{profile_id}/status")
+    def get_profile_status(self, profile_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/api/profiles/{profile_id}/status")
 
-    def get_clipboard(self, profile_id: str) -> Dict[str, Any]:
-        return self._get(f"/api/profiles/{profile_id}/clipboard")
+    def get_clipboard(self, profile_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/api/profiles/{profile_id}/clipboard")
 
-    def set_clipboard(self, profile_id: str, text: str) -> Dict[str, Any]:
-        return self._post(
-            f"/api/profiles/{profile_id}/clipboard",
-            json_data={"text": text},
-        )
+    def set_clipboard(self, profile_id: str, text: str) -> Any:
+        return self.request("POST", f"/api/profiles/{profile_id}/clipboard", json_data={"text": text})
 
-    def get_cdp_info(self, profile_id: str) -> Dict[str, Any]:
-        return self._get(f"/api/profiles/{profile_id}/cdp")
+    def get_cdp_info(self, profile_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/api/profiles/{profile_id}/cdp")

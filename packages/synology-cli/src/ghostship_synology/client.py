@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -16,44 +18,42 @@ def _cloudflare_access_headers() -> dict[str, str]:
 
 
 class SynologyClient:
-    def __init__(
-        self, base_url: str, username: str, password: str, verify_ssl: bool = True
-    ):
+    def __init__(self, base_url: str, username: str, password: str, verify_ssl: bool = True):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
         self.verify_ssl = verify_ssl
-        self.sid: Optional[str] = None
-        self.api_info: Dict[str, Any] = {}
+        self.sid: str | None = None
+        self.api_info: dict[str, Any] = {}
         self.headers = _cloudflare_access_headers()
 
-    def _request(
+    def call(
         self,
         api: str,
         method: str,
-        version: int,
-        path: str,
-        params: Optional[Dict[str, Any]] = None,
-        files: Optional[Dict[str, Any]] = None,
+        *,
+        version: int | None = None,
+        path: str | None = None,
+        params: dict[str, Any] | None = None,
+        http_method: str | None = None,
+        files: dict[str, Any] | None = None,
+        use_sid: bool = True,
     ) -> Any:
-        url = f"{self.base_url}/webapi/{path}"
-        query_params = {
-            "api": api,
-            "version": version,
-            "method": method,
-        }
+        info = self.api_info.get(api, {})
+        resolved_version = version if version is not None else info.get("maxVersion", 1)
+        resolved_path = path if path is not None else info.get("path", "entry.cgi")
+        query_params = {"api": api, "version": resolved_version, "method": method}
         if params:
             query_params.update(params)
-
-        if self.sid and api != "SYNO.API.Auth":
+        if use_sid and self.sid and api != "SYNO.API.Auth":
             query_params["_sid"] = self.sid
-
+        transport_method = (http_method or ("POST" if files else "GET")).upper()
+        url = f"{self.base_url}/webapi/{resolved_path}"
         with httpx.Client(verify=self.verify_ssl, headers=self.headers) as client:
-            if files:
+            if transport_method == "POST":
                 response = client.post(url, params=query_params, files=files)
             else:
                 response = client.get(url, params=query_params)
-
             response.raise_for_status()
             data = response.json()
             if not data.get("success"):
@@ -62,164 +62,88 @@ class SynologyClient:
             return data.get("data")
 
     def get_info(self, query: str = "all") -> Any:
-        data = self._request("SYNO.API.Info", "query", 1, "query.cgi", {"query": query})
+        data = self.call("SYNO.API.Info", "query", version=1, path="query.cgi", params={"query": query}, use_sid=False)
         self.api_info.update(data)
         return data
 
     def login(self) -> str:
-        # First get info if not already fetched
         if not self.api_info:
             self.get_info()
-
         auth_info = self.api_info.get("SYNO.API.Auth", {})
-        version = auth_info.get("maxVersion", 6)
-        path = auth_info.get("path", "auth.cgi")
-
-        params = {
-            "account": self.username,
-            "passwd": self.password,
-            "session": "FileStation",
-            "format": "sid",
-        }
-        data = self._request("SYNO.API.Auth", "login", version, path, params)
+        data = self.call(
+            "SYNO.API.Auth",
+            "login",
+            version=auth_info.get("maxVersion", 6),
+            path=auth_info.get("path", "auth.cgi"),
+            params={
+                "account": self.username,
+                "passwd": self.password,
+                "session": "FileStation",
+                "format": "sid",
+            },
+            use_sid=False,
+        )
         self.sid = data.get("sid")
-        return self.sid
+        return self.sid or ""
 
     def logout(self) -> bool:
         if not self.sid:
             return True
         auth_info = self.api_info.get("SYNO.API.Auth", {})
-        version = auth_info.get("maxVersion", 6)
-        path = auth_info.get("path", "auth.cgi")
-        self._request(
-            "SYNO.API.Auth", "logout", version, path, {"session": "FileStation"}
+        self.call(
+            "SYNO.API.Auth",
+            "logout",
+            version=auth_info.get("maxVersion", 6),
+            path=auth_info.get("path", "auth.cgi"),
+            params={"session": "FileStation"},
+            use_sid=False,
         )
         self.sid = None
         return True
 
-    # File Station List
     def list_shares(self) -> Any:
-        api = "SYNO.FileStation.List"
-        info = self.api_info.get(api, {})
-        return self._request(
-            api, "list_share", info.get("maxVersion", 2), info.get("path", "entry.cgi")
-        )
+        return self.call("SYNO.FileStation.List", "list_share")
 
-    def list_files(
-        self, folder_path: str, offset: int = 0, limit: int = 100, sort_by: str = "name"
-    ) -> Any:
-        api = "SYNO.FileStation.List"
-        info = self.api_info.get(api, {})
-        params = {
-            "folder_path": folder_path,
-            "offset": offset,
-            "limit": limit,
-            "sort_by": sort_by,
-        }
-        return self._request(
-            api,
+    def list_files(self, folder_path: str, offset: int = 0, limit: int = 100, sort_by: str = "name") -> Any:
+        return self.call(
+            "SYNO.FileStation.List",
             "list",
-            info.get("maxVersion", 2),
-            info.get("path", "entry.cgi"),
-            params,
+            params={"folder_path": folder_path, "offset": offset, "limit": limit, "sort_by": sort_by},
         )
 
     def get_file_info(self, path: str) -> Any:
-        api = "SYNO.FileStation.List"
-        info = self.api_info.get(api, {})
-        return self._request(
-            api,
-            "getinfo",
-            info.get("maxVersion", 2),
-            info.get("path", "entry.cgi"),
-            {"path": path},
-        )
+        return self.call("SYNO.FileStation.List", "getinfo", params={"path": path})
 
-    # File Station Search
-    def search_start(
-        self, folder_path: str, pattern: str, recursive: bool = True
-    ) -> str:
-        api = "SYNO.FileStation.Search"
-        info = self.api_info.get(api, {})
-        params = {
-            "folder_path": folder_path,
-            "pattern": pattern,
-            "recursive": str(recursive).lower(),
-        }
-        data = self._request(
-            api,
+    def search_start(self, folder_path: str, pattern: str, recursive: bool = True) -> str:
+        data = self.call(
+            "SYNO.FileStation.Search",
             "start",
-            info.get("maxVersion", 2),
-            info.get("path", "entry.cgi"),
-            params,
+            params={"folder_path": folder_path, "pattern": pattern, "recursive": str(recursive).lower()},
         )
         return data.get("taskid")
 
     def search_list(self, taskid: str, offset: int = 0, limit: int = 100) -> Any:
-        api = "SYNO.FileStation.Search"
-        info = self.api_info.get(api, {})
-        params = {"taskid": taskid, "offset": offset, "limit": limit}
-        return self._request(
-            api,
-            "list",
-            info.get("maxVersion", 2),
-            info.get("path", "entry.cgi"),
-            params,
-        )
+        return self.call("SYNO.FileStation.Search", "list", params={"taskid": taskid, "offset": offset, "limit": limit})
 
-    # File Station Create Folder
-    def create_folder(
-        self, folder_path: str, name: str, force_parent: bool = False
-    ) -> Any:
-        api = "SYNO.FileStation.CreateFolder"
-        info = self.api_info.get(api, {})
-        params = {
-            "folder_path": folder_path,
-            "name": name,
-            "force_parent": str(force_parent).lower(),
-        }
-        return self._request(
-            api,
+    def create_folder(self, folder_path: str, name: str, force_parent: bool = False) -> Any:
+        return self.call(
+            "SYNO.FileStation.CreateFolder",
             "create",
-            info.get("maxVersion", 2),
-            info.get("path", "entry.cgi"),
-            params,
+            params={"folder_path": folder_path, "name": name, "force_parent": str(force_parent).lower()},
         )
 
-    # File Station Rename
     def rename(self, path: str, name: str) -> Any:
-        api = "SYNO.FileStation.Rename"
-        info = self.api_info.get(api, {})
-        params = {"path": path, "name": name}
-        return self._request(
-            api,
-            "rename",
-            info.get("maxVersion", 2),
-            info.get("path", "entry.cgi"),
-            params,
-        )
+        return self.call("SYNO.FileStation.Rename", "rename", params={"path": path, "name": name})
 
-    # File Station Delete
     def delete(self, path: str, recursive: bool = True) -> str:
-        api = "SYNO.FileStation.Delete"
-        info = self.api_info.get(api, {})
-        params = {"path": path, "recursive": str(recursive).lower()}
-        data = self._request(
-            api,
-            "start",
-            info.get("maxVersion", 2),
-            info.get("path", "entry.cgi"),
-            params,
-        )
+        data = self.call("SYNO.FileStation.Delete", "start", params={"path": path, "recursive": str(recursive).lower()})
         return data.get("taskid")
 
-    # File Station Download
     def download_file(self, path: str, mode: str = "download") -> httpx.Response:
-        api = "SYNO.FileStation.Download"
-        info = self.api_info.get(api, {})
+        info = self.api_info.get("SYNO.FileStation.Download", {})
         url = f"{self.base_url}/webapi/{info.get('path', 'entry.cgi')}"
         params = {
-            "api": api,
+            "api": "SYNO.FileStation.Download",
             "version": info.get("maxVersion", 2),
             "method": "download",
             "path": path,
@@ -231,61 +155,31 @@ class SynologyClient:
             response.raise_for_status()
             return response
 
-    # File Station Upload
-    def upload_file(
-        self, folder_path: str, file_path: str, create_parents: bool = True
-    ) -> Any:
-        api = "SYNO.FileStation.Upload"
-        info = self.api_info.get(api, {})
-        url = f"{self.base_url}/webapi/{info.get('path', 'entry.cgi')}"
-        params = {
-            "api": api,
-            "version": info.get("maxVersion", 2),
-            "method": "upload",
-            "path": folder_path,
-            "create_parents": str(create_parents).lower(),
-            "_sid": self.sid,
-        }
-        with httpx.Client(verify=self.verify_ssl) as client:
-            with open(file_path, "rb") as f:
-                files = {"file": (file_path.split("/")[-1], f)}
-                response = client.post(url, params=params, files=files)
-            response.raise_for_status()
-            return response.json()
+    def upload_file(self, folder_path: str, file_path: str, create_parents: bool = True) -> Any:
+        info = self.api_info.get("SYNO.FileStation.Upload", {})
+        with open(file_path, "rb") as handle:
+            return self.call(
+                "SYNO.FileStation.Upload",
+                "upload",
+                version=info.get("maxVersion", 2),
+                path=info.get("path", "entry.cgi"),
+                params={"path": folder_path, "create_parents": str(create_parents).lower()},
+                http_method="POST",
+                files={"file": (file_path.split("/")[-1], handle)},
+            )
 
-    # File Station Copy/Move
     def copy(self, path: str, destination: str, overwrite: bool = True) -> Any:
-        api = "SYNO.FileStation.CopyMove"
-        info = self.api_info.get(api, {})
-        params = {
-            "api": api,
-            "version": info.get("maxVersion", 2),
-            "method": "copy",
-            "path": path,
-            "destination": destination,
-            "overwrite": str(overwrite).lower(),
-            "_sid": self.sid,
-        }
-        url = f"{self.base_url}/webapi/{info.get('path', 'entry.cgi')}"
-        with httpx.Client(verify=self.verify_ssl) as client:
-            response = client.post(url, params=params)
-            response.raise_for_status()
-            return response.json()
+        return self.call(
+            "SYNO.FileStation.CopyMove",
+            "copy",
+            params={"path": path, "destination": destination, "overwrite": str(overwrite).lower()},
+            http_method="POST",
+        )
 
     def move(self, path: str, destination: str, overwrite: bool = True) -> Any:
-        api = "SYNO.FileStation.CopyMove"
-        info = self.api_info.get(api, {})
-        params = {
-            "api": api,
-            "version": info.get("maxVersion", 2),
-            "method": "move",
-            "path": path,
-            "destination": destination,
-            "overwrite": str(overwrite).lower(),
-            "_sid": self.sid,
-        }
-        url = f"{self.base_url}/webapi/{info.get('path', 'entry.cgi')}"
-        with httpx.Client(verify=self.verify_ssl) as client:
-            response = client.post(url, params=params)
-            response.raise_for_status()
-            return response.json()
+        return self.call(
+            "SYNO.FileStation.CopyMove",
+            "move",
+            params={"path": path, "destination": destination, "overwrite": str(overwrite).lower()},
+            http_method="POST",
+        )

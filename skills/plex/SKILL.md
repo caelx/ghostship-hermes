@@ -1,78 +1,45 @@
 ---
 name: plex
-description: Manage Plex Media Server library, sessions, and settings. Output is native JSON.
+description: Use when you need Plex server, library, metadata, playlist, or session endpoints by their direct client method names.
 ---
 
-# Plex Skill
+# ghostship-plex
 
-The `ghostship-plex` utility allows agents to manage a Plex Media Server, including library management, metadata retrieval, session monitoring, maintenance tasks, and server preferences.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Configure the utility with:
+- `PLEX_URL`
+- `PLEX_TOKEN`
+- Prefer the dedicated snake_case command first. Use `request` only as fallback.
 
-## Structure
-
-- **Skill Document:** `skills/plex/SKILL.md` (this file)
-- **Package Directory:** `packages/plex-cli/`
-- **README:** `packages/plex-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `PLEX_URL`: The base URL of the Plex Media Server (e.g., `http://192.168.1.100:32400`).
-- `PLEX_TOKEN`: Your Plex authentication token.
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-plex info`
-Get server identity and status information, including version and machine identifier.
-
-#### `ghostship-plex libraries`
-List all library sections configured on the server.
-
-#### `ghostship-plex library <section_id>`
-List all items (metadata) within a specific library section.
-
-#### `ghostship-plex refresh [--id <id>]`
-Refresh one or all library sections to discover new media.
-
-#### `ghostship-plex sessions`
-View active media playback sessions, including user details, titles, and progress.
-
-#### `ghostship-plex metadata <rating_key> [--children]`
-Get detailed metadata for a specific media item.
-- `--children`: List children of the item (e.g., episodes of a show, tracks of an album).
-
-#### `ghostship-plex playlists`
-List all playlists on the server.
-
-#### `ghostship-plex collections <section_id>`
-List all collections within a specific library section.
-
-#### `ghostship-plex prefs`
-Get all server preferences and settings.
-
-#### `ghostship-plex tasks`
-List scheduled maintenance (Butler) tasks and their status.
-
-#### `ghostship-plex terminate-session <session_id>`
-Terminate an active streaming session by its ID.
-- `session_id`: The session ID to terminate (get from `sessions`).
+## Common Commands
+- `ghostship-plex request`
+- `ghostship-plex get_identity`
+- `ghostship-plex get_server_info`
+- `ghostship-plex get_status_sessions`
+- `ghostship-plex get_activities`
+- `ghostship-plex get_library_sections`
+- `ghostship-plex get_library_section`
+- `ghostship-plex get_library_filters`
+- `ghostship-plex get_library_sorts`
+- `ghostship-plex refresh_library`
+- `ghostship-plex get_metadata`
+- `ghostship-plex get_metadata_children`
+- `ghostship-plex get_playlists`
+- `ghostship-plex get_playlist_items`
+- `ghostship-plex get_collections`
+- `ghostship-plex get_preferences`
+- `ghostship-plex get_butler_tasks`
+- `ghostship-plex get_statistics`
+- `ghostship-plex terminate_session`
+- `ghostship-plex get_session`
 
 ## Examples
-
 ```bash
-# Search for a specific movie in library 1
-ghostship-plex library 1 --pretty
-
-# Check if anyone is watching a specific item
-ghostship-plex sessions --pretty
+ghostship-plex get_server_info --pretty
 ```
-
-## Agent Guidance
-
-- Use `libraries` to find the `section_id` for other commands.
-- `metadata --children` is essential for navigating TV show hierarchies (Show -> Season -> Episode).
-- Preferences (`prefs`) can be used to check server configuration like remote access or transcoder settings.
-- The `rating_key` is the unique identifier for items within Plex libraries.
+```bash
+ghostship-plex get_library_sections --pretty
+```
+```bash
+ghostship-plex get_metadata 12345
+```

@@ -1,157 +1,41 @@
 # ghostship-cloakbrowser
 
-CLI utility for CloakBrowser Manager API.
+`ghostship-cloakbrowser` is a JSON-first CLI for its service API. Commands mirror the client/API method names exactly. No compatibility aliases are provided.
 
-## Environment Variables
+## Environment
+- `CLOAKBROWSER_URL`
+- `CLOAKBROWSER_TOKEN (optional)`
 
-- `CLOAKBROWSER_URL`: The base URL of your CloakBrowser Manager instance (default: `http://localhost:8080`).
-- `CLOAKBROWSER_TOKEN`: Optional static auth token. If the manager was started with `AUTH_TOKEN=...`, set `CLOAKBROWSER_TOKEN` to that same exact value. Omit it when manager auth is disabled.
-
-## Authentication Notes
-
-- CloakBrowser Manager does not mint bearer tokens from username/password.
-- Authentication is optional and server-side. When enabled, the manager compares the incoming bearer token to its configured `AUTH_TOKEN`.
-- Upstream keeps `GET /api/status` unauthenticated so Docker and other health checks can probe the manager without credentials.
-
-## Contract
-
-- executable name: `ghostship-cloakbrowser`
-- Python package name: `ghostship-cloakbrowser`
-- import package: `ghostship_cloakbrowser`
-- output: JSON by default
+## Command Contract
+- Primary commands use the exact snake_case client method names.
+- Use `request` only for endpoints that are not covered by a dedicated wrapper yet.
+- Output is JSON by default.
 
 ## Commands
+- `ghostship-cloakbrowser request`
+- `ghostship-cloakbrowser get_system_status`
+- `ghostship-cloakbrowser auth_status`
+- `ghostship-cloakbrowser auth_login`
+- `ghostship-cloakbrowser auth_logout`
+- `ghostship-cloakbrowser list_profiles`
+- `ghostship-cloakbrowser get_profile`
+- `ghostship-cloakbrowser create_profile`
+- `ghostship-cloakbrowser update_profile`
+- `ghostship-cloakbrowser delete_profile`
+- `ghostship-cloakbrowser launch_profile`
+- `ghostship-cloakbrowser stop_profile`
+- `ghostship-cloakbrowser get_profile_status`
+- `ghostship-cloakbrowser get_clipboard`
+- `ghostship-cloakbrowser set_clipboard`
+- `ghostship-cloakbrowser get_cdp_info`
 
-### auth-status
-Report whether manager auth is enabled and whether the current client is authenticated.
+## Examples
 ```bash
-ghostship-cloakbrowser auth-status
+ghostship-cloakbrowser list_profiles
 ```
-
-### status
-Get system status information (running count, binary version, total profiles).
 ```bash
-ghostship-cloakbrowser status
+ghostship-cloakbrowser create_profile automation --platform windows --humanize
 ```
-
-### list
-List all profiles with their status and CDP URLs.
 ```bash
-ghostship-cloakbrowser list
-```
-
-### get
-Get detailed information for a specific profile.
-```bash
-ghostship-cloakbrowser get <profile-id>
-```
-
-### create
-Create a new browser profile.
-```bash
-ghostship-cloakbrowser create <name> [options]
-```
-
-Options:
-- `--fingerprint-seed`: Fingerprint seed number
-- `--proxy`: Proxy URL (e.g., `http://user:pass@host:port`)
-- `--timezone`: Timezone (e.g., `America/New_York`)
-- `--locale`: Locale (e.g., `en-US`)
-- `--platform`: Platform (`windows`, `macos`, `linux`)
-- `--user-agent`: Custom user agent string
-- `--screen-width`: Screen width (default: 1920)
-- `--screen-height`: Screen height (default: 1080)
-- `--gpu-vendor`: GPU vendor
-- `--gpu-renderer`: GPU renderer
-- `--hardware-concurrency`: Hardware concurrency (CPU cores)
-- `--humanize`: Enable humanization
-- `--human-preset`: Human preset (`default`, `careful`)
-- `--headless`: Run in headless mode
-- `--geoip`: Use geoip-based settings
-- `--clipboard-sync/--no-clipboard-sync`: Enable clipboard sync
-- `--color-scheme`: Color scheme (`light`, `dark`, `no-preference`)
-- `--notes`: Profile notes
-
-### update
-Update an existing browser profile.
-```bash
-ghostship-cloakbrowser update <profile-id> [options]
-```
-
-### delete
-Delete a browser profile.
-```bash
-ghostship-cloakbrowser delete <profile-id>
-```
-
-### launch
-Launch a browser profile.
-```bash
-ghostship-cloakbrowser launch <profile-id>
-```
-
-Returns CDP URL for Playwright/Puppeteer connection:
-```json
-{
-  "profile_id": "abc123",
-  "status": "running",
-  "vnc_ws_port": 6080,
-  "display": ":1",
-  "cdp_url": "/api/profiles/abc123/cdp"
-}
-```
-
-### stop
-Stop a running browser profile.
-```bash
-ghostship-cloakbrowser stop <profile-id>
-```
-
-### profile-status
-Get status of a specific profile.
-```bash
-ghostship-cloakbrowser profile-status <profile-id>
-```
-
-### clipboard-get
-Get clipboard text from a running profile.
-```bash
-ghostship-cloakbrowser clipboard-get <profile-id>
-```
-
-### clipboard-set
-Set clipboard text in a running profile.
-```bash
-ghostship-cloakbrowser clipboard-set <profile-id> --text <text>
-```
-
-### cdp-info
-Get CDP connection info for a profile.
-```bash
-ghostship-cloakbrowser cdp-info <profile-id>
-```
-
-Returns:
-```json
-{
-  "cdp_url": "/api/profiles/abc123/cdp",
-  "usage": "playwright.chromium.connect_over_cdp('http://<host>/api/profiles/abc123/cdp')"
-}
-```
-
-## Development
-
-Lock dependencies:
-```fish
-python3 ../../scripts/python_utility.py lock .
-```
-
-Run tests:
-```fish
-python3 ../../scripts/python_utility.py test .
-```
-
-Build wheel and sdist:
-```fish
-python3 ../../scripts/python_utility.py build .
+ghostship-cloakbrowser get_cdp_info profile-123
 ```

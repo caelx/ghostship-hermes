@@ -1,72 +1,40 @@
 ---
 name: grimmory
-description: Manage book library via Grimmory. Output is native JSON.
+description: Use when you need Grimmory or BookLore reads and maintenance operations through direct client method names.
 ---
 
-# Grimmory Skill
+# ghostship-grimmory
 
-The `ghostship-grimmory` utility allows agents to manage a book library via the Grimmory API (formerly BookLore). It supports listing books, libraries, authors, shelves, and triggering scans.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Configure the utility with:
+- `GRIMMORY_URL`
+- `GRIMMORY_TOKEN or GRIMMORY_USERNAME and GRIMMORY_PASSWORD`
+- Prefer the dedicated snake_case command first. Use `request` only as fallback.
 
-## Prerequisites
-
-The following environment variables must be configured:
-- `GRIMMORY_URL`: The base URL of the Grimmory or BookLore instance.
-- Preferred: `GRIMMORY_USERNAME` and `GRIMMORY_PASSWORD`. The CLI exchanges these at `POST /api/v1/auth/login`.
-- Optional override: `GRIMMORY_TOKEN` if you already have a bearer token.
-
-## Structure
-
-- **Skill Document:** `skills/grimmory/SKILL.md` (this file)
-- **Package Directory:** `packages/grimmory-cli/`
-- **README:** `packages/grimmory-cli/README.md`
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-grimmory info`
-Get system version and status information.
-
-#### `ghostship-grimmory list-books`
-List books in the library.
-- `--page`: Page number (default: 0).
-- `--size`: Records per page (default: 20).
-- `--library-id`: Optional filter by library.
-
-#### `ghostship-grimmory get-book <id>`
-Get detailed metadata for a specific book.
-
-#### `ghostship-grimmory list-libraries`
-List all configured libraries and their paths.
-
-#### `ghostship-grimmory scan`
-Trigger a background scan of all configured libraries.
-
-#### `ghostship-grimmory list-authors`
-List all authors in the system.
-
-#### `ghostship-grimmory list-shelves`
-List all user-created shelves.
-
-#### `ghostship-grimmory list-tasks`
-List background tasks (e.g., ongoing scans, metadata updates).
+## Common Commands
+- `ghostship-grimmory request`
+- `ghostship-grimmory get_books`
+- `ghostship-grimmory get_book`
+- `ghostship-grimmory download_book`
+- `ghostship-grimmory get_libraries`
+- `ghostship-grimmory get_library`
+- `ghostship-grimmory scan_libraries`
+- `ghostship-grimmory refresh_library`
+- `ghostship-grimmory get_authors`
+- `ghostship-grimmory get_author`
+- `ghostship-grimmory get_shelves`
+- `ghostship-grimmory get_shelf_books`
+- `ghostship-grimmory get_tasks`
+- `ghostship-grimmory cancel_task`
+- `ghostship-grimmory get_version`
 
 ## Examples
-
 ```bash
-# Search for books (JSON processing recommended)
-ghostship-grimmory list-books --pretty
-
-# Start a library scan
-ghostship-grimmory scan
+ghostship-grimmory get_books --page 0 --size 20 --pretty
 ```
-
-## Agent Guidance
-
-- Grimmory is used for digital book collections (EPUB, PDF, etc.).
-- Default to `GRIMMORY_USERNAME` and `GRIMMORY_PASSWORD` unless the user already has a bearer token. Treat `GRIMMORY_TOKEN` as an override rather than the primary auth path.
-- Use `list-libraries` to understand the library structure before filtering `list-books`.
-- Trigger a `scan` if the filesystem has changed.
-- Use `list-tasks` to monitor the progress of a scan.
+```bash
+ghostship-grimmory get_library 1
+```
+```bash
+ghostship-grimmory scan_libraries
+```

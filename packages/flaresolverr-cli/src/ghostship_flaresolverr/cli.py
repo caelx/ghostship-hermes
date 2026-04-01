@@ -1,101 +1,68 @@
+from __future__ import annotations
+
 import json
 import os
-import sys
+from typing import Any
+
 import typer
-from typing import Optional, Any
+
 from .client import FlareSolverrClient
 
-app = typer.Typer(help="FlareSolverr CLI interface.")
+app = typer.Typer(help="FlareSolverr CLI interface.", no_args_is_help=True)
 
 
-def echo_json(data: Any, pretty: bool = False):
-    indent = 2 if pretty else None
-    typer.echo(json.dumps(data, indent=indent))
+def echo_json(data: Any, pretty: bool = False) -> None:
+    typer.echo(json.dumps(data, indent=2 if pretty else None))
+
+
+def _parse_json_option(value: str | None, option_name: str) -> Any:
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{option_name} must be valid JSON: {exc}") from exc
 
 
 def get_client() -> FlareSolverrClient:
     base_url = os.getenv("FLARESOLVERR_URL")
     if not base_url:
-        print(
-            "Error: FLARESOLVERR_URL environment variable must be set.", file=sys.stderr
-        )
-        raise typer.Exit(code=1)
+        raise typer.Exit("FLARESOLVERR_URL environment variable must be set.")
     return FlareSolverrClient(base_url)
 
 
-@app.command()
-def get(
-    url: str,
-    session: Optional[str] = typer.Option(None, "--session"),
-    pretty: bool = typer.Option(False, "--pretty"),
-):
-    """Perform a GET request via FlareSolverr."""
-    client = get_client()
-    try:
-        data = client.request_get(url, session=session)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+@app.command("command")
+def command(cmd: str, params_json: str | None = typer.Option(None, "--params-json"), pretty: bool = typer.Option(False, "--pretty")) -> None:
+    kwargs = _parse_json_option(params_json, "--params-json") or {}
+    echo_json(get_client().command(cmd, **kwargs), pretty=pretty)
 
 
-@app.command()
-def post(
-    url: str,
-    post_data: str,
-    session: Optional[str] = typer.Option(None, "--session"),
-    pretty: bool = typer.Option(False, "--pretty"),
-):
-    """Perform a POST request via FlareSolverr."""
-    client = get_client()
-    try:
-        data = client.request_post(url, post_data, session=session)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+@app.command("request_get")
+def request_get(url: str, session: str | None = typer.Option(None, "--session"), pretty: bool = typer.Option(False, "--pretty")) -> None:
+    echo_json(get_client().request_get(url, session=session), pretty=pretty)
 
 
-@app.command()
-def create_session(
-    session: Optional[str] = typer.Option(None, "--session"),
-    pretty: bool = typer.Option(False, "--pretty"),
-):
-    """Create a new FlareSolverr session."""
-    client = get_client()
-    try:
-        data = client.sessions_create(session=session)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+@app.command("request_post")
+def request_post(url: str, post_data: str, session: str | None = typer.Option(None, "--session"), pretty: bool = typer.Option(False, "--pretty")) -> None:
+    echo_json(get_client().request_post(url, post_data, session=session), pretty=pretty)
 
 
-@app.command()
-def list_sessions(pretty: bool = typer.Option(False, "--pretty")):
-    """List all FlareSolverr sessions."""
-    client = get_client()
-    try:
-        data = client.sessions_list()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+@app.command("sessions_create")
+def sessions_create(session: str | None = typer.Option(None, "--session"), pretty: bool = typer.Option(False, "--pretty")) -> None:
+    echo_json(get_client().sessions_create(session=session), pretty=pretty)
 
 
-@app.command()
-def destroy_session(session: str, pretty: bool = typer.Option(False, "--pretty")):
-    """Destroy a FlareSolverr session."""
-    client = get_client()
-    try:
-        data = client.sessions_destroy(session)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+@app.command("sessions_list")
+def sessions_list(pretty: bool = typer.Option(False, "--pretty")) -> None:
+    echo_json(get_client().sessions_list(), pretty=pretty)
 
 
-def main():
+@app.command("sessions_destroy")
+def sessions_destroy(session: str, pretty: bool = typer.Option(False, "--pretty")) -> None:
+    echo_json(get_client().sessions_destroy(session), pretty=pretty)
+
+
+def main() -> None:
     app()
 
 

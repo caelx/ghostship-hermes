@@ -1,6 +1,9 @@
-from typing import Any, Dict, List, Optional
-import httpx
+from __future__ import annotations
+
+from typing import Any
 import os
+
+import httpx
 
 
 def _cloudflare_access_headers() -> dict[str, str]:
@@ -23,33 +26,35 @@ class BazarrClient:
         self.headers = _cloudflare_access_headers()
         self.headers["X-Api-Key"] = self.api_key
 
-    def _request(
+    def request(
         self,
+        method: str,
         path: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
+        *,
+        params: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | list[Any] | None = None,
     ) -> Any:
         url = f"{self.base_url}/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
-            if method == "POST":
-                response = client.post(url, params=params, json=json_data)
-            elif method == "PUT":
-                response = client.put(url, params=params, json=json_data)
-            elif method == "DELETE":
-                response = client.delete(url, params=params)
-            else:
-                response = client.get(url, params=params)
-
+            response = client.request(method.upper(), url, params=params, json=json_data)
             response.raise_for_status()
             if not response.content:
                 return {"status": "success"}
             return response.json()
 
+    def _request(
+        self,
+        path: str,
+        method: str = "GET",
+        params: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | list[Any] | None = None,
+    ) -> Any:
+        return self.request(method, path, params=params, json_data=json_data)
+
     def get_badges(self) -> Any:
         return self._request("badges")
 
-    def get_episodes(self, series_id: Optional[int] = None) -> Any:
+    def get_episodes(self, series_id: int | None = None) -> Any:
         params = {}
         if series_id:
             params["seriesid[]"] = [series_id]
@@ -88,14 +93,12 @@ class BazarrClient:
     def search_subtitles_missing(self) -> Any:
         return self._request("subtitles/search/missing", method="POST")
 
-    # History
     def get_episodes_history(self) -> Any:
         return self._request("episodes/history")
 
     def get_movies_history(self) -> Any:
         return self._request("movies/history")
 
-    # Blacklist
     def get_episodes_blacklist(self) -> Any:
         return self._request("episodes/blacklist")
 

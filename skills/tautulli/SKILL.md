@@ -1,71 +1,40 @@
 ---
 name: tautulli
-description: Monitor Plex activity and history via Tautulli. Output is native JSON.
+description: Use when you need Tautulli history, activity, user, or control endpoints through exact method-name commands.
 ---
 
-# Tautulli Skill
+# ghostship-tautulli
 
-The `ghostship-tautulli` utility allows agents to monitor Plex Media Server activity, playback history, and user statistics via the Tautulli API. It provides a more analytical view of Plex usage than the native Plex API.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Configure the utility with:
+- `TAUTULLI_URL`
+- `TAUTULLI_API_KEY`
+- Prefer the dedicated snake_case command first. Use `call` only as fallback.
 
-## Structure
-
-- **Skill Document:** `skills/tautulli/SKILL.md` (this file)
-- **Package Directory:** `packages/tautulli-cli/`
-- **README:** `packages/tautulli-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `TAUTULLI_URL`: The base URL of the Tautulli instance.
-- `TAUTULLI_API_KEY`: The API key for authentication.
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-tautulli info`
-Get Tautulli server information and connection status to Plex.
-
-#### `ghostship-tautulli activity`
-Get current streaming activity, including progress, state, and user details.
-
-#### `ghostship-tautulli history`
-Get playback history.
-- `--page`: Page number (default: 1).
-- `--length`: Number of records per page (default: 10).
-- `--search`: Search for specific titles or users in history.
-
-#### `ghostship-tautulli users`
-List all users tracked by Tautulli.
-
-#### `ghostship-tautulli user-stats <user_id>`
-Get detailed playback and watch time statistics for a specific user.
-
-#### `ghostship-tautulli libraries`
-List all library sections tracked by Tautulli.
-
-#### `ghostship-tautulli search <query>`
-Search for media items via Tautulli (querying the Plex database).
-
-#### `ghostship-tautulli terminate <session_id> [--message <msg>]`
-Terminate an active streaming session.
-- `--message`: Optional message to display to the user on their Plex client.
+## Common Commands
+- `ghostship-tautulli call`
+- `ghostship-tautulli get_server_status`
+- `ghostship-tautulli get_tautulli_info`
+- `ghostship-tautulli get_status`
+- `ghostship-tautulli get_activity`
+- `ghostship-tautulli terminate_session`
+- `ghostship-tautulli get_history`
+- `ghostship-tautulli get_libraries`
+- `ghostship-tautulli get_library_user_stats`
+- `ghostship-tautulli get_users`
+- `ghostship-tautulli get_user_player_stats`
+- `ghostship-tautulli get_user_watch_time_stats`
+- `ghostship-tautulli get_metadata`
+- `ghostship-tautulli search`
+- `ghostship-tautulli restart`
 
 ## Examples
-
 ```bash
-# Check what's being watched right now
-ghostship-tautulli activity --pretty
-
-# Find how much a user has watched
-ghostship-tautulli user-stats 123 --pretty
+ghostship-tautulli get_tautulli_info --pretty
 ```
-
-## Agent Guidance
-
-- Use `activity` for real-time monitoring.
-- `user-stats` is excellent for understanding a user's preferences and most-watched content.
-- Use `search` when you need to find where a specific item is located across all libraries.
-- Tautulli's `user_id` corresponds to the Plex user ID.
+```bash
+ghostship-tautulli get_activity --pretty
+```
+```bash
+ghostship-tautulli get_users --pretty
+```

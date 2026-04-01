@@ -1,211 +1,123 @@
-import typer
-import os
+from __future__ import annotations
+
 import json
+import os
 import sys
-from typing import Optional, List, Any
+from typing import Any
+
+import typer
+
 from .client import PyLoadClient
 
-app = typer.Typer(help="pyLoad-ng CLI interface.")
+app = typer.Typer(help="pyLoad-ng CLI interface.", no_args_is_help=True)
 
 
 def echo_json(data: Any, pretty: bool = False):
-    indent = 2 if pretty else None
-    typer.echo(json.dumps(data, indent=indent))
+    typer.echo(json.dumps(data, indent=2 if pretty else None))
+
+
+def _parse_json_option(value: str | None, option_name: str) -> Any:
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{option_name} must be valid JSON: {exc}") from exc
 
 
 def get_client() -> PyLoadClient:
     base_url = os.getenv("PYLOAD_URL")
-    username = os.getenv("PYLOAD_USER") or None
-    password = os.getenv("PYLOAD_PASS") or None
-
+    username = os.getenv("PYLOAD_USER")
+    password = os.getenv("PYLOAD_PASS")
     if not base_url:
-        print(
-            "Error: PYLOAD_URL environment variable must be set.",
-            file=sys.stderr,
-        )
+        print("Error: PYLOAD_URL environment variable must be set.", file=sys.stderr)
         raise typer.Exit(code=1)
-
-    if (username is None) != (password is None):
-        print(
-            "Error: PYLOAD_USER and PYLOAD_PASS must both be set, or both be omitted.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
-    return PyLoadClient(base_url, username=username, password=password)
+    return PyLoadClient(base_url, username, password)
 
 
-@app.command()
-def status(
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Get server status information."""
-    client = get_client()
-    try:
-        data = client.get_server_status()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching status: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("request")
+def request(method: str, path: str, param_json: str | None = typer.Option(None, "--param-json"), body_json: str | None = typer.Option(None, "--body-json"), pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().request(method, path, params=_parse_json_option(param_json, "--param-json"), json_data=_parse_json_option(body_json, "--body-json")), pretty=pretty)
 
 
-@app.command()
-def downloads(
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Get currently running downloads."""
-    client = get_client()
-    try:
-        data = client.get_downloads()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching downloads: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("get_server_status")
+def get_server_status(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_server_status(), pretty=pretty)
 
 
-@app.command()
-def queue(
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """List packages in the queue."""
-    client = get_client()
-    try:
-        data = client.get_queue()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching queue: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("get_downloads")
+def get_downloads(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_downloads(), pretty=pretty)
 
 
-@app.command()
-def add(
-    name: str = typer.Argument(..., help="Package name"),
-    links: List[str] = typer.Argument(..., help="List of URLs to add"),
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Add a new package with links."""
-    client = get_client()
-    try:
-        data = client.add_package(name, links)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error adding package: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("get_queue")
+def get_queue(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_queue(), pretty=pretty)
 
 
-@app.command()
-def add_to_package(
-    package_id: int = typer.Argument(..., help="Package ID"),
-    links: List[str] = typer.Argument(..., help="List of URLs to add"),
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Add links to an existing package."""
-    client = get_client()
-    try:
-        data = client.add_files(package_id, links)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error adding files: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("add_package")
+def add_package(name: str, links_json: str = typer.Option(..., "--links-json"), pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().add_package(name, _parse_json_option(links_json, "--links-json")), pretty=pretty)
 
 
-@app.command()
-def delete(
-    package_ids: List[int] = typer.Argument(..., help="List of package IDs to delete"),
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Delete packages."""
-    client = get_client()
-    try:
-        data = client.delete_packages(package_ids)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error deleting packages: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("add_files")
+def add_files(package_id: int, links_json: str = typer.Option(..., "--links-json"), pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().add_files(package_id, _parse_json_option(links_json, "--links-json")), pretty=pretty)
 
 
-@app.command()
-def pause(
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Toggle the pause state of the server."""
-    client = get_client()
-    try:
-        data = client.toggle_pause()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error toggling pause: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("delete_packages")
+def delete_packages(package_ids_json: str = typer.Option(..., "--package-ids-json"), pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().delete_packages(_parse_json_option(package_ids_json, "--package-ids-json")), pretty=pretty)
 
 
-@app.command()
-def delete_finished(
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Delete finished downloads."""
-    client = get_client()
-    try:
-        data = client.delete_finished()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error deleting finished: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("toggle_pause")
+def toggle_pause(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().toggle_pause(), pretty=pretty)
 
 
-@app.command()
-def restart_failed(
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Restart failed downloads."""
-    client = get_client()
-    try:
-        data = client.restart_failed()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error restarting failed: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("get_config")
+def get_config(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_config(), pretty=pretty)
 
 
-@app.command()
-def accounts(
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """List configured download accounts."""
-    client = get_client()
-    try:
-        data = client.get_accounts()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching accounts: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("delete_finished")
+def delete_finished(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().delete_finished(), pretty=pretty)
 
 
-@app.command()
-def version(
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Get pyLoad server version."""
-    client = get_client()
-    try:
-        data = client.get_server_version()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching version: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("restart_failed")
+def restart_failed(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().restart_failed(), pretty=pretty)
 
 
-@app.command()
-def freespace(
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
-):
-    """Get free disk space."""
-    client = get_client()
-    try:
-        data = client.get_free_space()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching free space: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("stop_all_downloads")
+def stop_all_downloads(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().stop_all_downloads(), pretty=pretty)
+
+
+@app.command("get_accounts")
+def get_accounts(refresh: bool = typer.Option(False, "--refresh"), pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_accounts(refresh=refresh), pretty=pretty)
+
+
+@app.command("add_account")
+def add_account(plugin: str, login: str, password: str, pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().add_account(plugin, login, password), pretty=pretty)
+
+
+@app.command("remove_account")
+def remove_account(plugin: str, login: str, pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().remove_account(plugin, login), pretty=pretty)
+
+
+@app.command("get_server_version")
+def get_server_version(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_server_version(), pretty=pretty)
+
+
+@app.command("get_free_space")
+def get_free_space(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_free_space(), pretty=pretty)
 
 
 def main():

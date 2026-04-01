@@ -196,12 +196,14 @@ All `ghostship-` utilities require specific environment variables. Set these bef
 
 Canonical API references for every `ghostship-*` utility now live in [docs/api/README.md](docs/api/README.md), using raw upstream specs where available and repo-owned full reference sheets everywhere else.
 
+All `ghostship-*` CLIs now follow one contract: dedicated commands mirror the underlying client/API method names exactly in snake_case, and generic passthrough (`request` or `call`) is only the escape hatch for uncovered endpoints.
+
 ## Skills
 
 Default skills are stored in `skills/` and seeded into the Hermes runtime `~/.hermes/skills` on first start without overwriting user-managed content. In addition to service-specific skills, the image now ships:
 
 - `hermes-nix`: how to run missing tools, do `nix profile` user installs, and rebuild repo tools without root
-- `hermes-agent-browser`: how to use `agent-browser` only through CloakBrowser-backed profiles
+- `agent-browser`: how to use `agent-browser` only through CloakBrowser-backed profiles
 - `current-environment`: how the Caddy dashboard, `ttyd`, `s6`, persistence, and safe self-restart behavior work in this container
 
 ## Local Development

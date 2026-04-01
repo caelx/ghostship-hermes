@@ -1,6 +1,9 @@
-from typing import Any, Dict, List, Optional
-import httpx
+from __future__ import annotations
+
+from typing import Any
 import os
+
+import httpx
 
 
 def _cloudflare_access_headers() -> dict[str, str]:
@@ -21,75 +24,58 @@ class SonarrClient:
         self.headers = _cloudflare_access_headers()
         self.headers["X-Api-Key"] = self.api_key
 
-    def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/api/v3/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-
-    def _post(
+    def request(
         self,
+        method: str,
         path: str,
-        json_data: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
+        *,
+        params: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | list[Any] | None = None,
     ) -> Any:
         url = f"{self.base_url}/api/v3/{path.lstrip('/')}"
         with httpx.Client(headers=self.headers) as client:
-            response = client.post(url, json=json_data, params=params)
+            response = client.request(method.upper(), url, params=params, json=json_data)
             response.raise_for_status()
+            if not response.content:
+                return {"status": "success"}
             return response.json()
 
-    def _put(self, path: str, json_data: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/api/v3/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.put(url, json=json_data)
-            response.raise_for_status()
-            return response.json()
-
-    def _delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/api/v3/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.delete(url, params=params)
-            response.raise_for_status()
-            return response.status_code == 200
-
-    # Series
-    def get_series(self, series_id: Optional[int] = None) -> Any:
+    def get_series(self, series_id: int | None = None) -> Any:
         path = "series" if series_id is None else f"series/{series_id}"
-        return self._get(path)
+        return self.request("GET", path)
 
     def lookup_series(self, term: str) -> Any:
-        return self._get("series/lookup", params={"term": term})
+        return self.request("GET", "series/lookup", params={"term": term})
 
-    def add_series(self, series_data: Dict[str, Any]) -> Any:
-        return self._post("series", json_data=series_data)
+    def add_series(self, series_data: dict[str, Any]) -> Any:
+        return self.request("POST", "series", json_data=series_data)
 
-    def update_series(self, series_data: Dict[str, Any]) -> Any:
-        return self._put("series", json_data=series_data)
+    def update_series(self, series_data: dict[str, Any]) -> Any:
+        return self.request("PUT", "series", json_data=series_data)
 
     def delete_series(self, series_id: int, delete_files: bool = False) -> Any:
-        return self._delete(f"series/{series_id}", params={"deleteFiles": delete_files})
+        return self.request(
+            "DELETE",
+            f"series/{series_id}",
+            params={"deleteFiles": str(delete_files).lower()},
+        )
 
-    # Episode
     def get_episodes(self, series_id: int) -> Any:
-        return self._get("episode", params={"seriesId": series_id})
+        return self.request("GET", "episode", params={"seriesId": series_id})
 
     def get_episode(self, episode_id: int) -> Any:
-        return self._get(f"episode/{episode_id}")
+        return self.request("GET", f"episode/{episode_id}")
 
-    def update_episode(self, episode_data: Dict[str, Any]) -> Any:
-        return self._put("episode", json_data=episode_data)
+    def update_episode(self, episode_data: dict[str, Any]) -> Any:
+        return self.request("PUT", "episode", json_data=episode_data)
 
-    # Command
     def get_commands(self) -> Any:
-        return self._get("command")
+        return self.request("GET", "command")
 
-    def run_command(self, name: str, **kwargs) -> Any:
+    def run_command(self, name: str, **kwargs: Any) -> Any:
         payload = {"name": name, **kwargs}
-        return self._post("command", json_data=payload)
+        return self.request("POST", "command", json_data=payload)
 
-    # Queue
     def get_queue(
         self,
         page: int = 1,
@@ -97,15 +83,17 @@ class SonarrClient:
         sort_key: str = "timeleft",
         sort_direction: str = "ascending",
     ) -> Any:
-        params = {
-            "page": page,
-            "pageSize": page_size,
-            "sortKey": sort_key,
-            "sortDirection": sort_direction,
-        }
-        return self._get("queue", params=params)
+        return self.request(
+            "GET",
+            "queue",
+            params={
+                "page": page,
+                "pageSize": page_size,
+                "sortKey": sort_key,
+                "sortDirection": sort_direction,
+            },
+        )
 
-    # History
     def get_history(
         self,
         page: int = 1,
@@ -113,19 +101,20 @@ class SonarrClient:
         sort_key: str = "date",
         sort_direction: str = "descending",
     ) -> Any:
-        params = {
-            "page": page,
-            "pageSize": page_size,
-            "sortKey": sort_key,
-            "sortDirection": sort_direction,
-        }
-        return self._get("history", params=params)
+        return self.request(
+            "GET",
+            "history",
+            params={
+                "page": page,
+                "pageSize": page_size,
+                "sortKey": sort_key,
+                "sortDirection": sort_direction,
+            },
+        )
 
-    # System
     def get_status(self) -> Any:
-        return self._get("system/status")
+        return self.request("GET", "system/status")
 
-    # Wanted/Missing
     def get_wanted_missing(
         self,
         page: int = 1,
@@ -133,35 +122,31 @@ class SonarrClient:
         sort_key: str = "airDateUtc",
         sort_direction: str = "descending",
     ) -> Any:
-        params = {
-            "page": page,
-            "pageSize": page_size,
-            "sortKey": sort_key,
-            "sortDirection": sort_direction,
-        }
-        return self._get("wanted/missing", params=params)
+        return self.request(
+            "GET",
+            "wanted/missing",
+            params={
+                "page": page,
+                "pageSize": page_size,
+                "sortKey": sort_key,
+                "sortDirection": sort_direction,
+            },
+        )
 
     def get_wanted_cutoff(self, page: int = 1, page_size: int = 10) -> Any:
-        params = {"page": page, "pageSize": page_size}
-        return self._get("wanted/cutoff", params=params)
+        return self.request("GET", "wanted/cutoff", params={"page": page, "pageSize": page_size})
 
-    # Blocklist
     def get_blocklist(self, page: int = 1, page_size: int = 10) -> Any:
-        params = {"page": page, "pageSize": page_size}
-        return self._get("blocklist", params=params)
+        return self.request("GET", "blocklist", params={"page": page, "pageSize": page_size})
 
     def get_blocklist_series(self, page: int = 1, page_size: int = 10) -> Any:
-        params = {"page": page, "pageSize": page_size}
-        return self._get("history/series", params=params)
+        return self.request("GET", "history/series", params={"page": page, "pageSize": page_size})
 
-    # Tag
     def get_tags(self) -> Any:
-        return self._get("tag")
+        return self.request("GET", "tag")
 
-    # Root folder
     def get_root_folders(self) -> Any:
-        return self._get("rootfolder")
+        return self.request("GET", "rootfolder")
 
-    # Quality profiles
     def get_quality_profiles(self) -> Any:
-        return self._get("qualityprofile")
+        return self.request("GET", "qualityprofile")

@@ -1,15 +1,42 @@
 # ghostship-romm
 
-CLI utility for Romm API.
+`ghostship-romm` is a JSON-first CLI for its service API. Commands mirror the client/API method names exactly. No compatibility aliases are provided.
 
-## Environment Variables
+## Environment
+- `ROMM_URL`
+- `ROMM_TOKEN or ROMM_USERNAME and ROMM_PASSWORD`
 
-- `ROMM_URL`: The base URL of your RomM instance (e.g., `http://localhost:8080`).
-- Preferred: `ROMM_USERNAME` and `ROMM_PASSWORD`. The CLI exchanges these at `POST /api/token` and uses the returned bearer token.
-- Optional override: `ROMM_TOKEN` if you already have a valid RomM bearer token.
+## Command Contract
+- Primary commands use the exact snake_case client method names.
+- Use `request` only for endpoints that are not covered by a dedicated wrapper yet.
+- Output is JSON by default.
 
-## Authentication Notes
+## Commands
+- `ghostship-romm request`
+- `ghostship-romm get_heartbeat`
+- `ghostship-romm get_platforms`
+- `ghostship-romm get_libraries`
+- `ghostship-romm get_roms`
+- `ghostship-romm get_rom`
+- `ghostship-romm update_rom`
+- `ghostship-romm delete_rom`
+- `ghostship-romm get_scans`
+- `ghostship-romm start_scan`
+- `ghostship-romm get_collections`
+- `ghostship-romm get_config`
+- `ghostship-romm get_saves`
+- `ghostship-romm get_saves_summary`
+- `ghostship-romm get_save`
+- `ghostship-romm get_users`
+- `ghostship-romm get_user_me`
 
-- RomM v4.7.0 uses an OAuth password-grant style token endpoint at `/api/token`.
-- The CLI is stateless: it authenticates at startup, uses the bearer token for the requested call, and exits.
-- `ROMM_TOKEN` is treated as an override for automation flows that already manage bearer tokens themselves.
+## Examples
+```bash
+ghostship-romm get_heartbeat --pretty
+```
+```bash
+ghostship-romm get_roms --page-size 5 --pretty
+```
+```bash
+ghostship-romm get_collections --pretty
+```

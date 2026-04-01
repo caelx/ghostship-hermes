@@ -1,39 +1,23 @@
 # ghostship-searxng
 
-`ghostship-searxng` is the first repo-local Python utility packaged for `ghostship-hermes`.
+`ghostship-searxng` is a JSON-first CLI for its service API. Commands mirror the client/API method names exactly. No compatibility aliases are provided.
 
-## Environment Variables
+## Environment
+- `SEARXNG_URL`
 
-- `SEARXNG_URL`: The base URL of your SearXNG instance (default: `http://localhost:8080`).
+## Command Contract
+- Primary commands use the exact snake_case client method names.
+- Use `request` only for endpoints that are not covered by a dedicated wrapper yet.
+- Output is JSON by default.
 
-## Contract
+## Commands
+- `ghostship-searxng request`
+- `ghostship-searxng search web`
 
-- executable name: `ghostship-searxng`
-- Python package name: `ghostship-searxng`
-- import package: `ghostship_searxng`
-- CLI shape: `ghostship-searxng search web <query> [flags]`
-- machine-readable mode: `--json`
-
-## Development
-
-Lock dependencies:
-
-```fish
-python3 ../../scripts/python_utility.py lock .
+## Examples
+```bash
+ghostship-searxng search web "ghostship hermes" --limit 3 --pretty
 ```
-
-Run tests:
-
-```fish
-python3 ../../scripts/python_utility.py test .
+```bash
+ghostship-searxng request search --param q=test --param format=json
 ```
-
-Build wheel and sdist:
-
-```fish
-python3 ../../scripts/python_utility.py build .
-```
-
-## Integration Testing
-
-Set `SEARXNG_BASE_URL` to enable the live integration test.

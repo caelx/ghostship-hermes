@@ -1,165 +1,143 @@
-import typer
-import os
+from __future__ import annotations
+
 import json
+import os
 import sys
-from typing import Optional, List, Any
+from typing import Any
+
+import typer
+
 from .client import NZBGetClient
 
-app = typer.Typer(help="NZBGet CLI interface.")
+app = typer.Typer(help="NZBGet CLI interface.", no_args_is_help=True)
 
 
 def echo_json(data: Any, pretty: bool = False):
-    indent = 2 if pretty else None
-    typer.echo(json.dumps(data, indent=indent))
+    typer.echo(json.dumps(data, indent=2 if pretty else None))
+
+
+def _parse_json_option(value: str | None, option_name: str) -> Any:
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{option_name} must be valid JSON: {exc}") from exc
 
 
 def get_client() -> NZBGetClient:
     base_url = os.getenv("NZBGET_URL")
     username = os.getenv("NZBGET_USER")
     password = os.getenv("NZBGET_PASS")
-
     if not base_url:
         print("Error: NZBGET_URL environment variable must be set.", file=sys.stderr)
         raise typer.Exit(code=1)
-
     return NZBGetClient(base_url, username, password)
 
 
-@app.command()
-def info(pretty: bool = typer.Option(False, "--pretty")):
-    """Get global status information."""
-    client = get_client()
-    try:
-        data = client.get_status()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching status: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("call")
+def call(method: str, params_json: str | None = typer.Option(None, "--params-json"), pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().call(method, params=_parse_json_option(params_json, "--params-json")), pretty=pretty)
 
 
-@app.command()
-def version(pretty: bool = typer.Option(False, "--pretty")):
-    """Get NZBGet version."""
-    client = get_client()
-    try:
-        data = client.get_version()
-        echo_json({"version": data}, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching version: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+@app.command("get_version")
+def get_version(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"version": get_client().get_version()}, pretty=pretty)
 
 
-@app.command()
-def list_queue(pretty: bool = typer.Option(False, "--pretty")):
-    """List all downloads in the queue."""
-    client = get_client()
-    try:
-        groups = client.list_groups()
-        echo_json(groups, pretty=pretty)
-    except Exception as e:
-        print(f"Error listing queue: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def list_files(nzb_id: int, pretty: bool = typer.Option(False, "--pretty")):
-    """List files in a specific NZB group."""
-    client = get_client()
-    try:
-        data = client.list_files(nzb_id)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error listing files: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def history(pretty: bool = typer.Option(False, "--pretty")):
-    """Get download history."""
-    client = get_client()
-    try:
-        data = client.get_history()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching history: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def add(
-    url: str,
-    category: str = typer.Option("", "--category", "-c"),
-    priority: int = typer.Option(0, "--priority", "-p"),
-    pretty: bool = typer.Option(False, "--pretty"),
-):
-    """Add an NZB URL to the queue."""
-    client = get_client()
-    try:
-        nzbid = client.append_url(url, category=category, priority=priority)
-        echo_json({"status": "success", "nzbid": nzbid}, pretty=pretty)
-    except Exception as e:
-        print(f"Error adding NZB: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def pause(pretty: bool = typer.Option(False, "--pretty")):
-    """Pause NZBGet download queue."""
-    client = get_client()
-    try:
-        success = client.pause_download()
-        echo_json({"status": "success" if success else "failed"}, pretty=pretty)
-    except Exception as e:
-        print(f"Error pausing NZBGet: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def resume(pretty: bool = typer.Option(False, "--pretty")):
-    """Resume NZBGet download queue."""
-    client = get_client()
-    try:
-        success = client.resume_download()
-        echo_json({"status": "success" if success else "failed"}, pretty=pretty)
-    except Exception as e:
-        print(f"Error resuming NZBGet: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def rate(limit_kb: int, pretty: bool = typer.Option(False, "--pretty")):
-    """Set download speed limit in KB/s (0 for unlimited)."""
-    client = get_client()
-    try:
-        success = client.set_rate(limit_kb)
-        echo_json({"status": "success" if success else "failed"}, pretty=pretty)
-    except Exception as e:
-        print(f"Error setting rate: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def config(pretty: bool = typer.Option(False, "--pretty")):
-    """Get NZBGet configuration."""
-    client = get_client()
-    try:
-        data = client.get_config()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching config: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-
-@app.command()
+@app.command("shutdown")
 def shutdown(pretty: bool = typer.Option(False, "--pretty")):
-    """Shutdown NZBGet."""
-    client = get_client()
-    try:
-        success = client.shutdown()
-        echo_json({"status": "success" if success else "failed"}, pretty=pretty)
-    except Exception as e:
-        print(f"Error shutting down: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    echo_json({"ok": get_client().shutdown()}, pretty=pretty)
+
+
+@app.command("reload")
+def reload(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().reload()}, pretty=pretty)
+
+
+@app.command("get_status")
+def get_status(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_status(), pretty=pretty)
+
+
+@app.command("list_groups")
+def list_groups(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().list_groups(), pretty=pretty)
+
+
+@app.command("list_files")
+def list_files(nzb_id: int, pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().list_files(nzb_id), pretty=pretty)
+
+
+@app.command("get_history")
+def get_history(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_history(), pretty=pretty)
+
+
+@app.command("append_url")
+def append_url(url: str, category: str = typer.Option("", "--category"), priority: int = typer.Option(0, "--priority"), top: bool = typer.Option(False, "--top"), pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"nzbid": get_client().append_url(url, category=category, priority=priority, top=top)}, pretty=pretty)
+
+
+@app.command("edit_queue")
+def edit_queue(command: str, offset: int, size: int, ids_json: str = typer.Option(..., "--ids-json"), pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().edit_queue(command, offset, size, _parse_json_option(ids_json, "--ids-json"))}, pretty=pretty)
+
+
+@app.command("disk_scan")
+def disk_scan(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().disk_scan()}, pretty=pretty)
+
+
+@app.command("get_log")
+def get_log(id_from: int, count: int, pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_log(id_from, count), pretty=pretty)
+
+
+@app.command("set_rate")
+def set_rate(limit_kb: int, pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().set_rate(limit_kb)}, pretty=pretty)
+
+
+@app.command("pause_download")
+def pause_download(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().pause_download()}, pretty=pretty)
+
+
+@app.command("resume_download")
+def resume_download(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().resume_download()}, pretty=pretty)
+
+
+@app.command("pause_post")
+def pause_post(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().pause_post()}, pretty=pretty)
+
+
+@app.command("resume_post")
+def resume_post(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().resume_post()}, pretty=pretty)
+
+
+@app.command("pause_scan")
+def pause_scan(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().pause_scan()}, pretty=pretty)
+
+
+@app.command("resume_scan")
+def resume_scan(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().resume_scan()}, pretty=pretty)
+
+
+@app.command("get_config")
+def get_config(pretty: bool = typer.Option(False, "--pretty")):
+    echo_json(get_client().get_config(), pretty=pretty)
+
+
+@app.command("save_config")
+def save_config(config_json: str = typer.Option(..., "--config-json"), pretty: bool = typer.Option(False, "--pretty")):
+    echo_json({"ok": get_client().save_config(_parse_json_option(config_json, "--config-json"))}, pretty=pretty)
 
 
 def main():

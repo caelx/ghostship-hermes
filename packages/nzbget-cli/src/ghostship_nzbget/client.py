@@ -1,6 +1,9 @@
-from typing import Any, Dict, List, Optional
-import httpx
+from __future__ import annotations
+
+from typing import Any
 import os
+
+import httpx
 
 
 def _cloudflare_access_headers() -> dict[str, str]:
@@ -15,19 +18,14 @@ def _cloudflare_access_headers() -> dict[str, str]:
 
 
 class NZBGetClient:
-    def __init__(
-        self,
-        base_url: str,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-    ):
+    def __init__(self, base_url: str, username: str | None = None, password: str | None = None):
         self.base_url = base_url.rstrip("/")
         if not self.base_url.endswith("/jsonrpc"):
             self.base_url = f"{self.base_url}/jsonrpc"
         self.auth = (username, password) if username and password else None
         self.headers = _cloudflare_access_headers()
 
-    def _request(self, method: str, params: Optional[List[Any]] = None) -> Any:
+    def call(self, method: str, params: list[Any] | None = None) -> Any:
         payload = {"version": "1.1", "method": method, "params": params or []}
         with httpx.Client(auth=self.auth, headers=self.headers) as client:
             response = client.post(self.base_url, json=payload)
@@ -37,7 +35,9 @@ class NZBGetClient:
                 raise Exception(f"NZBGet API Error: {data['error']}")
             return data.get("result")
 
-    # Program Control
+    def _request(self, method: str, params: list[Any] | None = None) -> Any:
+        return self.call(method, params=params)
+
     def get_version(self) -> str:
         return self._request("version")
 
@@ -47,7 +47,6 @@ class NZBGetClient:
     def reload(self) -> bool:
         return self._request("reload")
 
-    # Queue and History
     def get_status(self) -> Any:
         return self._request("status")
 
@@ -60,25 +59,18 @@ class NZBGetClient:
     def get_history(self) -> Any:
         return self._request("history")
 
-    def append_url(
-        self, url: str, category: str = "", priority: int = 0, top: bool = False
-    ) -> int:
-        # string append(string Filename, string Content, string Category, int Priority, bool Top, bool Paused, string DupeKey, int DupeScore, string DupeMode)
-        return self._request(
-            "append", [url, "", category, priority, top, False, "", 0, "SCORE"]
-        )
+    def append_url(self, url: str, category: str = "", priority: int = 0, top: bool = False) -> int:
+        return self._request("append", [url, "", category, priority, top, False, "", 0, "SCORE"])
 
-    def edit_queue(self, command: str, offset: int, size: int, ids: List[int]) -> bool:
+    def edit_queue(self, command: str, offset: int, size: int, ids: list[int]) -> bool:
         return self._request("editqueue", [command, offset, size, ids])
 
     def disk_scan(self) -> bool:
         return self._request("scan")
 
-    # Status and Logging
     def get_log(self, id_from: int, count: int) -> Any:
         return self._request("log", [id_from, count])
 
-    # Pause and Speed Limit
     def set_rate(self, limit_kb: int) -> bool:
         return self._request("rate", [limit_kb])
 
@@ -100,10 +92,8 @@ class NZBGetClient:
     def resume_scan(self) -> bool:
         return self._request("resumescan")
 
-    # Configuration
     def get_config(self) -> Any:
         return self._request("config")
 
-    def save_config(self, config: List[Dict[str, str]]) -> bool:
-        # bool saveconfig(struct[] Config)
+    def save_config(self, config: list[dict[str, str]]) -> bool:
         return self._request("saveconfig", [config])

@@ -1,10 +1,43 @@
 # ghostship-synology
 
-CLI utility for Synology API.
+`ghostship-synology` is a JSON-first CLI for its service API. Commands mirror the client/API method names exactly. No compatibility aliases are provided.
 
-## Environment Variables
+## Environment
+- `SYNOLOGY_URL`
+- `SYNOLOGY_USER`
+- `SYNOLOGY_PASS`
+- `SYNOLOGY_VERIFY_SSL (optional)`
 
-- `SYNOLOGY_URL`: The base URL of your Synology DSM instance (e.g., `http://localhost:5000`).
-- `SYNOLOGY_USER`: Your Synology username.
-- `SYNOLOGY_PASS`: Your Synology password.
-- `SYNOLOGY_VERIFY_SSL`: Whether to verify SSL certificates (default: `true`).
+## Command Contract
+- Primary commands use the exact snake_case client method names.
+- Use `call` only for endpoints that are not covered by a dedicated wrapper yet.
+- Output is JSON by default.
+
+## Commands
+- `ghostship-synology call`
+- `ghostship-synology get_info`
+- `ghostship-synology login`
+- `ghostship-synology logout`
+- `ghostship-synology list_shares`
+- `ghostship-synology list_files`
+- `ghostship-synology get_file_info`
+- `ghostship-synology search_start`
+- `ghostship-synology search_list`
+- `ghostship-synology create_folder`
+- `ghostship-synology rename`
+- `ghostship-synology delete`
+- `ghostship-synology download_file`
+- `ghostship-synology upload_file`
+- `ghostship-synology copy`
+- `ghostship-synology move`
+
+## Examples
+```bash
+ghostship-synology list_shares --pretty
+```
+```bash
+ghostship-synology list_files /video --limit 10 --pretty
+```
+```bash
+ghostship-synology get_file_info /video/movie.mkv
+```

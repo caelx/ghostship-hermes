@@ -1,30 +1,49 @@
+from __future__ import annotations
+
 from typer.testing import CliRunner
-from ghostship_flaresolverr.cli import app
-from unittest.mock import patch, MagicMock
-import json
+
+from ghostship_flaresolverr import cli
+
 
 runner = CliRunner()
 
-@patch("ghostship_flaresolverr.cli.FlareSolverrClient")
-def test_get(mock_client_class):
-    mock_client = MagicMock()
-    mock_client_class.return_value = mock_client
-    mock_client.request_get.return_value = {"status": "ok", "solution": {"response": "html"}}
 
-    result = runner.invoke(app, ["get", "https://example.com"])
+class DummyClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+    def command(self, cmd: str, **kwargs):
+        self.calls.append(("command", (cmd,), kwargs))
+        return {"cmd": cmd, "kwargs": kwargs}
+
+    def __getattr__(self, name: str):
+        if name in {"request_get", "request_post", "sessions_create", "sessions_list", "sessions_destroy"}:
+            def _method(*args, **kwargs):
+                self.calls.append((name, args, kwargs))
+                return {"name": name, "args": list(args), "kwargs": kwargs}
+            return _method
+        raise AttributeError(name)
+
+
+def test_command(monkeypatch) -> None:
+    client = DummyClient()
+    monkeypatch.setattr(cli, "get_client", lambda: client)
+    result = runner.invoke(cli.app, ["command", "sessions.list"])
     assert result.exit_code == 0
-    data = json.loads(result.output)
-    assert data["status"] == "ok"
-    mock_client.request_get.assert_called_once_with("https://example.com", session=None)
+    assert client.calls[-1] == ("command", ("sessions.list",), {})
 
-@patch("ghostship_flaresolverr.cli.FlareSolverrClient")
-def test_list_sessions(mock_client_class):
-    mock_client = MagicMock()
-    mock_client_class.return_value = mock_client
-    mock_client.sessions_list.return_value = {"status": "ok", "sessions": ["session1"]}
 
-    result = runner.invoke(app, ["list-sessions"])
-    assert result.exit_code == 0
-    data = json.loads(result.output)
-    assert "sessions" in data
-    assert data["sessions"] == ["session1"]
+def test_canonical_commands(monkeypatch) -> None:
+    client = DummyClient()
+    monkeypatch.setattr(cli, "get_client", lambda: client)
+    commands = [
+        (["request_get", "https://example.com", "--session", "a"], "request_get", ("https://example.com",), {"session": "a"}),
+        (["request_post", "https://example.com", "body", "--session", "b"], "request_post", ("https://example.com", "body"), {"session": "b"}),
+        (["sessions_create", "--session", "c"], "sessions_create", (), {"session": "c"}),
+        (["sessions_list"], "sessions_list", (), {}),
+        (["sessions_destroy", "d"], "sessions_destroy", ("d",), {}),
+    ]
+    for argv, name, args, kwargs in commands:
+        result = runner.invoke(cli.app, argv)
+        assert result.exit_code == 0, result.stdout
+        assert client.calls[-1] == (name, args, kwargs)

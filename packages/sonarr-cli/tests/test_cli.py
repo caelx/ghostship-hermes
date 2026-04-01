@@ -1,17 +1,44 @@
+from __future__ import annotations
+
 from typer.testing import CliRunner
-import json
-from unittest.mock import patch, MagicMock
-from ghostship_sonarr.cli import app
+
+from ghostship_sonarr import cli
+
 
 runner = CliRunner()
 
-@patch("ghostship_sonarr.cli.SonarrClient")
-@patch.dict("os.environ", {"SONARR_URL": "http://localhost:8989", "SONARR_API_KEY": "test_key"})
-def test_info(mock_client):
-    mock_instance = mock_client.return_value
-    mock_instance.get_status.return_value = {"version": "3.0.0", "osName": "linux", "startupPath": "/app"}
-    
-    result = runner.invoke(app, ["info", "--json"])
+
+class DummyClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+    def get_status(self) -> dict[str, str]:
+        self.calls.append(("get_status", (), {}))
+        return {"version": "3.0.0"}
+
+    def request(self, method: str, path: str, *, params=None, json_data=None):
+        self.calls.append(("request", (method, path), {"params": params, "json_data": json_data}))
+        return {"method": method, "path": path, "params": params, "json_data": json_data}
+
+
+def test_info(monkeypatch) -> None:
+    client = DummyClient()
+    monkeypatch.setattr(cli, "get_client", lambda: client)
+    result = runner.invoke(cli.app, ["get_status"])
     assert result.exit_code == 0
-    data = json.loads(result.stdout)
-    assert data["version"] == "3.0.0"
+    assert result.stdout.strip() == '{"version": "3.0.0"}'
+    assert client.calls == [("get_status", (), {})]
+
+
+def test_request(monkeypatch) -> None:
+    client = DummyClient()
+    monkeypatch.setattr(cli, "get_client", lambda: client)
+    result = runner.invoke(
+        cli.app,
+        ["request", "GET", "queue", "--param", "page=2", "--body-json", '{"name":"x"}'],
+    )
+    assert result.exit_code == 0
+    assert '"path": "queue"' in result.stdout
+    assert client.calls == [
+        ("request", ("GET", "queue"), {"params": {"page": "2"}, "json_data": {"name": "x"}})
+    ]
