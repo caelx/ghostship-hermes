@@ -41,11 +41,15 @@ def command_lock(project_dir: Path) -> None:
 
 def command_test(project_dir: Path) -> None:
     env = os.environ.copy()
-    src_dir = project_dir / "src"
+    src_paths = [
+        project_dir / "src",
+        Path(__file__).resolve().parent.parent / "packages/ghostship-cli-contract/src",
+    ]
+    joined_src = ":".join(str(path) for path in src_paths if path.exists())
     env["PYTHONPATH"] = (
-        f"{src_dir}:{env['PYTHONPATH']}"
+        f"{joined_src}:{env['PYTHONPATH']}"
         if env.get("PYTHONPATH")
-        else str(src_dir)
+        else joined_src
     )
     run(
         [

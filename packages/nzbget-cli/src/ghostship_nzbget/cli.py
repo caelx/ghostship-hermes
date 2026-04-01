@@ -1,170 +1,171 @@
-import typer
+from __future__ import annotations
+
 import os
-import json
-import sys
-from typing import Optional, List, Any
+from typing import Any
+
+import typer
+
+from ghostship_cli_contract import DEFAULT_TIMEOUT, echo_json, parse_json_option, require_env, run_app, run_cli_command
+
 from .client import NZBGetClient
 
-app = typer.Typer(help="NZBGet CLI interface.")
+app = typer.Typer(help='NZBGet CLI interface.', no_args_is_help=True)
+APP_STATE = {'timeout': DEFAULT_TIMEOUT}
 
 
-def echo_json(data: Any, pretty: bool = False):
-    indent = 2 if pretty else None
-    typer.echo(json.dumps(data, indent=indent))
+@app.callback()
+def app_callback(timeout: float = typer.Option(DEFAULT_TIMEOUT, '--timeout', help='Hard timeout in seconds for all API calls in this invocation.')) -> None:
+    APP_STATE['timeout'] = timeout
 
 
 def get_client() -> NZBGetClient:
-    base_url = os.getenv("NZBGET_URL")
-    username = os.getenv("NZBGET_USER")
-    password = os.getenv("NZBGET_PASS")
-
-    if not base_url:
-        print("Error: NZBGET_URL environment variable must be set.", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-    return NZBGetClient(base_url, username, password)
+    return NZBGetClient(require_env('NZBGET_URL', os.getenv('NZBGET_URL')), os.getenv('NZBGET_USER'), os.getenv('NZBGET_PASS'), default_timeout=APP_STATE['timeout'])
 
 
-@app.command()
-def info(pretty: bool = typer.Option(False, "--pretty")):
-    """Get global status information."""
+def _emit(data: Any, pretty: bool) -> None:
+    echo_json(data, pretty=pretty)
+
+
+def _run(execute, *, pretty: bool) -> None:
+    _emit(run_cli_command(None, execute, timeout=APP_STATE['timeout']), pretty)
+
+
+def _run_write(build_request, execute, *, dry_run: bool, pretty: bool) -> None:
+    _emit(run_cli_command(build_request, execute, timeout=APP_STATE['timeout'], dry_run=dry_run), pretty)
+
+
+@app.command('call')
+def call(method: str, params_json: str | None = typer.Option(None, '--params-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        data = client.get_status()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching status: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    params = parse_json_option(params_json, '--params-json')
+    _run_write(lambda: client.build_call(method, params=params), lambda timeout: client.call(method, params=params, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def version(pretty: bool = typer.Option(False, "--pretty")):
-    """Get NZBGet version."""
+@app.command('get_version')
+def get_version(pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        data = client.get_version()
-        echo_json({"version": data}, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching version: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: {'version': client.get_version(timeout=timeout)}, pretty=pretty)
 
 
-@app.command()
-def list_queue(pretty: bool = typer.Option(False, "--pretty")):
-    """List all downloads in the queue."""
+@app.command('shutdown')
+def shutdown(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        groups = client.list_groups()
-        echo_json(groups, pretty=pretty)
-    except Exception as e:
-        print(f"Error listing queue: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run_write(lambda: client.build_shutdown(), lambda timeout: client.shutdown(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def list_files(nzb_id: int, pretty: bool = typer.Option(False, "--pretty")):
-    """List files in a specific NZB group."""
+@app.command('reload')
+def reload(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        data = client.list_files(nzb_id)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error listing files: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run_write(lambda: client.build_reload(), lambda timeout: client.reload(timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def history(pretty: bool = typer.Option(False, "--pretty")):
-    """Get download history."""
+@app.command('get_status')
+def get_status(pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        data = client.get_history()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching history: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_status(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def add(
-    url: str,
-    category: str = typer.Option("", "--category", "-c"),
-    priority: int = typer.Option(0, "--priority", "-p"),
-    pretty: bool = typer.Option(False, "--pretty"),
-):
-    """Add an NZB URL to the queue."""
+@app.command('list_groups')
+def list_groups(pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        nzbid = client.append_url(url, category=category, priority=priority)
-        echo_json({"status": "success", "nzbid": nzbid}, pretty=pretty)
-    except Exception as e:
-        print(f"Error adding NZB: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.list_groups(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def pause(pretty: bool = typer.Option(False, "--pretty")):
-    """Pause NZBGet download queue."""
+@app.command('list_files')
+def list_files(nzb_id: int, pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        success = client.pause_download()
-        echo_json({"status": "success" if success else "failed"}, pretty=pretty)
-    except Exception as e:
-        print(f"Error pausing NZBGet: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.list_files(nzb_id, timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def resume(pretty: bool = typer.Option(False, "--pretty")):
-    """Resume NZBGet download queue."""
+@app.command('get_history')
+def get_history(pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        success = client.resume_download()
-        echo_json({"status": "success" if success else "failed"}, pretty=pretty)
-    except Exception as e:
-        print(f"Error resuming NZBGet: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_history(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def rate(limit_kb: int, pretty: bool = typer.Option(False, "--pretty")):
-    """Set download speed limit in KB/s (0 for unlimited)."""
+@app.command('append_url')
+def append_url(url: str, category: str = typer.Option('', '--category'), priority: int = typer.Option(0, '--priority'), top: bool = typer.Option(False, '--top'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        success = client.set_rate(limit_kb)
-        echo_json({"status": "success" if success else "failed"}, pretty=pretty)
-    except Exception as e:
-        print(f"Error setting rate: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run_write(lambda: client.build_append_url(url, category=category, priority=priority, top=top), lambda timeout: client.append_url(url, category=category, priority=priority, top=top, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def config(pretty: bool = typer.Option(False, "--pretty")):
-    """Get NZBGet configuration."""
+@app.command('edit_queue')
+def edit_queue(command: str, offset: int, size: int, ids_json: str = typer.Option(..., '--ids-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        data = client.get_config()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching config: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    ids = parse_json_option(ids_json, '--ids-json')
+    _run_write(lambda: client.build_edit_queue(command, offset, size, ids), lambda timeout: client.edit_queue(command, offset, size, ids, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def shutdown(pretty: bool = typer.Option(False, "--pretty")):
-    """Shutdown NZBGet."""
+@app.command('disk_scan')
+def disk_scan(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
     client = get_client()
-    try:
-        success = client.shutdown()
-        echo_json({"status": "success" if success else "failed"}, pretty=pretty)
-    except Exception as e:
-        print(f"Error shutting down: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run_write(lambda: client.build_disk_scan(), lambda timeout: client.disk_scan(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('get_log')
+def get_log(id_from: int = typer.Option(0, '--id-from'), count: int = typer.Option(10, '--count'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run(lambda timeout: client.get_log(id_from, count, timeout=timeout), pretty=pretty)
+
+
+@app.command('set_rate')
+def set_rate(limit_kb: int, dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_set_rate(limit_kb), lambda timeout: client.set_rate(limit_kb, timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('pause_download')
+def pause_download(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_pause_download(), lambda timeout: client.pause_download(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('resume_download')
+def resume_download(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_resume_download(), lambda timeout: client.resume_download(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('pause_post')
+def pause_post(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_pause_post(), lambda timeout: client.pause_post(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('resume_post')
+def resume_post(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_resume_post(), lambda timeout: client.resume_post(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('pause_scan')
+def pause_scan(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_pause_scan(), lambda timeout: client.pause_scan(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('resume_scan')
+def resume_scan(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run_write(lambda: client.build_resume_scan(), lambda timeout: client.resume_scan(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('get_config')
+def get_config(pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    _run(lambda timeout: client.get_config(timeout=timeout), pretty=pretty)
+
+
+@app.command('save_config')
+def save_config(config_json: str = typer.Option(..., '--config-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')):
+    client = get_client()
+    config = parse_json_option(config_json, '--config-json')
+    _run_write(lambda: client.build_save_config(config), lambda timeout: client.save_config(config, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
 def main():
-    app()
+    run_app(app)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

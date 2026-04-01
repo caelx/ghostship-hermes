@@ -1,225 +1,144 @@
-from typing import Any, Dict, List, Optional
-import httpx
-import os
+from __future__ import annotations
+
+from typing import Any
+
+from ghostship_cli_contract import BaseHttpClient, RequestSpec
 
 
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
-
-
-class CloakBrowserClient:
-    def __init__(self, base_url: str, token: Optional[str] = None):
-        self.base_url = base_url.rstrip("/")
-        self.token = token
-        self.headers = _cloudflare_access_headers()
+class CloakBrowserClient(BaseHttpClient):
+    def __init__(self, base_url: str, token: str | None = None, *, default_timeout: float = 30.0):
+        headers: dict[str, str] = {}
         if token:
-            self.headers["Authorization"] = f"Bearer {token}"
+            headers['Authorization'] = f'Bearer {token}'
+        super().__init__(base_url.rstrip('/'), default_headers=headers, default_timeout=default_timeout)
 
-    def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
+    def build_request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> RequestSpec:
+        return self.build_request_spec(method, path, params=params, json_body=json_data, timeout=timeout)
 
-    def _post(
-        self,
-        path: str,
-        json_data: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.post(url, json=json_data, params=params)
-            response.raise_for_status()
-            return response.json()
+    def request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_request(method, path, params=params, json_data=json_data, timeout=timeout)
+        return self.request_json(spec.method, spec.path, params=spec.params, json_body=spec.json_body, timeout=spec.timeout)
 
-    def _delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.delete(url, params=params)
-            response.raise_for_status()
-            return response.status_code == 200
+    def get_auth_status(self, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('GET', '/api/auth/status', timeout=timeout)
 
-    def _put(
-        self,
-        path: str,
-        json_data: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.put(url, json=json_data)
-            response.raise_for_status()
-            return response.json()
+    def auth_login(self, token: str, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('POST', '/api/auth/login', json_data={'token': token}, timeout=timeout)
 
-    def get_auth_status(self) -> Dict[str, Any]:
-        return self._get("/api/auth/status")
+    def auth_logout(self, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('POST', '/api/auth/logout', timeout=timeout)
 
-    def login(self, token: str) -> Dict[str, Any]:
-        return self._post("/api/auth/login", json_data={"token": token})
+    def get_system_status(self, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('GET', '/api/status', timeout=timeout)
 
-    def logout(self) -> Dict[str, Any]:
-        return self._post("/api/auth/logout")
+    def list_profiles(self, timeout: float | None = None) -> list[dict[str, Any]]:
+        return self.request('GET', '/api/profiles', timeout=timeout)
 
-    def get_system_status(self) -> Dict[str, Any]:
-        return self._get("/api/status")
+    def get_profile(self, profile_id: str, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('GET', f'/api/profiles/{profile_id}', timeout=timeout)
 
-    def list_profiles(self) -> List[Dict[str, Any]]:
-        return self._get("/api/profiles")
+    def build_create_profile(self, **kwargs: Any) -> RequestSpec:
+        return self.build_request('POST', '/api/profiles', json_data=_profile_payload(**kwargs))
 
-    def get_profile(self, profile_id: str) -> Dict[str, Any]:
-        return self._get(f"/api/profiles/{profile_id}")
+    def create_profile(self, timeout: float | None = None, **kwargs: Any) -> dict[str, Any]:
+        spec = self.build_create_profile(**kwargs)
+        return self.request(spec.method, spec.path, json_data=spec.json_body, timeout=timeout)
 
-    def create_profile(
-        self,
-        name: str,
-        fingerprint_seed: Optional[int] = None,
-        proxy: Optional[str] = None,
-        timezone: Optional[str] = None,
-        locale: Optional[str] = None,
-        platform: str = "windows",
-        user_agent: Optional[str] = None,
-        screen_width: int = 1920,
-        screen_height: int = 1080,
-        gpu_vendor: Optional[str] = None,
-        gpu_renderer: Optional[str] = None,
-        hardware_concurrency: Optional[int] = None,
-        humanize: bool = False,
-        human_preset: str = "default",
-        headless: bool = False,
-        geoip: bool = False,
-        clipboard_sync: bool = True,
-        color_scheme: Optional[str] = None,
-        notes: Optional[str] = None,
-        tags: Optional[List[Dict[str, str]]] = None,
-    ) -> Dict[str, Any]:
-        data = {"name": name}
-        if fingerprint_seed is not None:
-            data["fingerprint_seed"] = fingerprint_seed
-        if proxy is not None:
-            data["proxy"] = proxy
-        if timezone is not None:
-            data["timezone"] = timezone
-        if locale is not None:
-            data["locale"] = locale
-        data["platform"] = platform
-        if user_agent is not None:
-            data["user_agent"] = user_agent
-        data["screen_width"] = screen_width
-        data["screen_height"] = screen_height
-        if gpu_vendor is not None:
-            data["gpu_vendor"] = gpu_vendor
-        if gpu_renderer is not None:
-            data["gpu_renderer"] = gpu_renderer
-        if hardware_concurrency is not None:
-            data["hardware_concurrency"] = hardware_concurrency
-        data["humanize"] = humanize
-        data["human_preset"] = human_preset
-        data["headless"] = headless
-        data["geoip"] = geoip
-        data["clipboard_sync"] = clipboard_sync
-        if color_scheme is not None:
-            data["color_scheme"] = color_scheme
-        if notes is not None:
-            data["notes"] = notes
-        if tags is not None:
-            data["tags"] = tags
-        return self._post("/api/profiles", json_data=data)
+    def build_update_profile(self, profile_id: str, **kwargs: Any) -> RequestSpec:
+        return self.build_request('PUT', f'/api/profiles/{profile_id}', json_data=_profile_update_payload(**kwargs))
 
-    def update_profile(
-        self,
-        profile_id: str,
-        name: Optional[str] = None,
-        fingerprint_seed: Optional[int] = None,
-        proxy: Optional[str] = None,
-        timezone: Optional[str] = None,
-        locale: Optional[str] = None,
-        platform: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        screen_width: Optional[int] = None,
-        screen_height: Optional[int] = None,
-        gpu_vendor: Optional[str] = None,
-        gpu_renderer: Optional[str] = None,
-        hardware_concurrency: Optional[int] = None,
-        humanize: Optional[bool] = None,
-        human_preset: Optional[str] = None,
-        headless: Optional[bool] = None,
-        geoip: Optional[bool] = None,
-        clipboard_sync: Optional[bool] = None,
-        color_scheme: Optional[str] = None,
-        notes: Optional[str] = None,
-        tags: Optional[List[Dict[str, str]]] = None,
-    ) -> Dict[str, Any]:
-        data = {}
-        if name is not None:
-            data["name"] = name
-        if fingerprint_seed is not None:
-            data["fingerprint_seed"] = fingerprint_seed
-        if proxy is not None:
-            data["proxy"] = proxy
-        if timezone is not None:
-            data["timezone"] = timezone
-        if locale is not None:
-            data["locale"] = locale
-        if platform is not None:
-            data["platform"] = platform
-        if user_agent is not None:
-            data["user_agent"] = user_agent
-        if screen_width is not None:
-            data["screen_width"] = screen_width
-        if screen_height is not None:
-            data["screen_height"] = screen_height
-        if gpu_vendor is not None:
-            data["gpu_vendor"] = gpu_vendor
-        if gpu_renderer is not None:
-            data["gpu_renderer"] = gpu_renderer
-        if hardware_concurrency is not None:
-            data["hardware_concurrency"] = hardware_concurrency
-        if humanize is not None:
-            data["humanize"] = humanize
-        if human_preset is not None:
-            data["human_preset"] = human_preset
-        if headless is not None:
-            data["headless"] = headless
-        if geoip is not None:
-            data["geoip"] = geoip
-        if clipboard_sync is not None:
-            data["clipboard_sync"] = clipboard_sync
-        if color_scheme is not None:
-            data["color_scheme"] = color_scheme
-        if notes is not None:
-            data["notes"] = notes
-        if tags is not None:
-            data["tags"] = tags
-        return self._put(f"/api/profiles/{profile_id}", json_data=data)
+    def update_profile(self, profile_id: str, timeout: float | None = None, **kwargs: Any) -> dict[str, Any]:
+        spec = self.build_update_profile(profile_id, **kwargs)
+        return self.request(spec.method, spec.path, json_data=spec.json_body, timeout=timeout)
 
-    def delete_profile(self, profile_id: str) -> bool:
-        return self._delete(f"/api/profiles/{profile_id}")
+    def build_delete_profile(self, profile_id: str) -> RequestSpec:
+        return self.build_request('DELETE', f'/api/profiles/{profile_id}')
 
-    def launch_profile(self, profile_id: str) -> Dict[str, Any]:
-        return self._post(f"/api/profiles/{profile_id}/launch")
+    def delete_profile(self, profile_id: str, timeout: float | None = None) -> Any:
+        spec = self.build_delete_profile(profile_id)
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def stop_profile(self, profile_id: str) -> Dict[str, Any]:
-        return self._post(f"/api/profiles/{profile_id}/stop")
+    def build_launch_profile(self, profile_id: str) -> RequestSpec:
+        return self.build_request('POST', f'/api/profiles/{profile_id}/launch')
 
-    def get_profile_status(self, profile_id: str) -> Dict[str, Any]:
-        return self._get(f"/api/profiles/{profile_id}/status")
+    def launch_profile(self, profile_id: str, timeout: float | None = None) -> dict[str, Any]:
+        spec = self.build_launch_profile(profile_id)
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def get_clipboard(self, profile_id: str) -> Dict[str, Any]:
-        return self._get(f"/api/profiles/{profile_id}/clipboard")
+    def build_stop_profile(self, profile_id: str) -> RequestSpec:
+        return self.build_request('POST', f'/api/profiles/{profile_id}/stop')
 
-    def set_clipboard(self, profile_id: str, text: str) -> Dict[str, Any]:
-        return self._post(
-            f"/api/profiles/{profile_id}/clipboard",
-            json_data={"text": text},
-        )
+    def stop_profile(self, profile_id: str, timeout: float | None = None) -> Any:
+        spec = self.build_stop_profile(profile_id)
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def get_cdp_info(self, profile_id: str) -> Dict[str, Any]:
-        return self._get(f"/api/profiles/{profile_id}/cdp")
+    def get_profile_status(self, profile_id: str, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('GET', f'/api/profiles/{profile_id}/status', timeout=timeout)
+
+    def get_clipboard(self, profile_id: str, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('GET', f'/api/profiles/{profile_id}/clipboard', timeout=timeout)
+
+    def build_set_clipboard(self, profile_id: str, text: str) -> RequestSpec:
+        return self.build_request('POST', f'/api/profiles/{profile_id}/clipboard', json_data={'text': text})
+
+    def set_clipboard(self, profile_id: str, text: str, timeout: float | None = None) -> Any:
+        spec = self.build_set_clipboard(profile_id, text)
+        return self.request(spec.method, spec.path, json_data=spec.json_body, timeout=timeout)
+
+    def get_cdp_info(self, profile_id: str, timeout: float | None = None) -> dict[str, Any]:
+        return self.request('GET', f'/api/profiles/{profile_id}/cdp', timeout=timeout)
+
+
+def _profile_payload(
+    *,
+    name: str,
+    fingerprint_seed: int | None = None,
+    proxy: str | None = None,
+    timezone: str | None = None,
+    locale: str | None = None,
+    platform: str = 'windows',
+    user_agent: str | None = None,
+    screen_width: int = 1920,
+    screen_height: int = 1080,
+    gpu_vendor: str | None = None,
+    gpu_renderer: str | None = None,
+    hardware_concurrency: int | None = None,
+    humanize: bool = False,
+    human_preset: str = 'default',
+    headless: bool = False,
+    geoip: bool = False,
+    clipboard_sync: bool = True,
+    color_scheme: str | None = None,
+    notes: str | None = None,
+    tags: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        'name': name,
+        'platform': platform,
+        'screen_width': screen_width,
+        'screen_height': screen_height,
+        'humanize': humanize,
+        'human_preset': human_preset,
+        'headless': headless,
+        'geoip': geoip,
+        'clipboard_sync': clipboard_sync,
+    }
+    optional_values = {
+        'fingerprint_seed': fingerprint_seed,
+        'proxy': proxy,
+        'timezone': timezone,
+        'locale': locale,
+        'user_agent': user_agent,
+        'gpu_vendor': gpu_vendor,
+        'gpu_renderer': gpu_renderer,
+        'hardware_concurrency': hardware_concurrency,
+        'color_scheme': color_scheme,
+        'notes': notes,
+        'tags': tags,
+    }
+    data.update({key: value for key, value in optional_values.items() if value is not None})
+    return data
+
+
+def _profile_update_payload(**kwargs: Any) -> dict[str, Any]:
+    return {key: value for key, value in kwargs.items() if value is not None}

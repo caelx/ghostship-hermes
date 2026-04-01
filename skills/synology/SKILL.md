@@ -1,109 +1,45 @@
 ---
 name: synology
-description: Manage files on Synology NAS via File Station. Output is native JSON.
+description: Use when you need Synology File Station operations exposed directly as method-name commands.
 ---
 
-# Synology Skill
+# ghostship-synology
 
-The `ghostship-synology` utility allows agents to manage files and folders on a Synology NAS using the File Station API. It supports listing shares, managing files (upload/download/rename/delete), and searching.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
+- Configure the utility with:
+- `SYNOLOGY_URL`
+- `SYNOLOGY_USER`
+- `SYNOLOGY_PASS`
+- `SYNOLOGY_VERIFY_SSL (optional)`
+- Prefer the dedicated snake_case command first. Use `call` only as fallback.
 
-## Structure
-
-- **Skill Document:** `skills/synology/SKILL.md` (this file)
-- **Package Directory:** `packages/synology-cli/`
-- **README:** `packages/synology-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `SYNOLOGY_URL`: The base URL of the Synology NAS (e.g., `https://192.168.1.10:5001`).
-- `SYNOLOGY_USER`: Your DSM username.
-- `SYNOLOGY_PASS`: Your DSM password.
-- `SYNOLOGY_VERIFY_SSL`: Set to `false` if using self-signed certificates (default: `true`).
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-synology list-shares`
-List all shared folders available on the NAS.
-
-#### `ghostship-synology list-files <path>`
-List files and subfolders in a specific path.
-- `path`: The folder path (e.g., `/video`).
-- `--offset`: Starting index (default: 0).
-- `--limit`: Max items to return (default: 100).
-
-#### `ghostship-synology info <path>`
-Get detailed information (size, owner, timestamps) for a file or folder.
-
-#### `ghostship-synology download <path>`
-Download a file from the NAS to the local system.
-- `path`: The file path on the NAS.
-- `--output`: Local destination path (default: current directory).
-
-#### `ghostship-synology search <folder_path> <pattern>`
-Start an asynchronous search for files.
-- `folder_path`: The folder to search within.
-- `pattern`: The search pattern (e.g., `*.mkv`).
-- `--no-recursive`: Disable recursive search (default: recursive).
-
-#### `ghostship-synology search-results <taskid>`
-Retrieve results from a search task started with `search`.
-
-#### `ghostship-synology mkdir <path> <name>`
-Create a new folder.
-- `path`: The parent folder path.
-- `name`: The name of the new folder.
-- `--parents`: Create parent folders if they don't exist.
-
-#### `ghostship-synology rename <path> <name>`
-Rename a file or folder.
-- `path`: Current path of the item.
-- `name`: New name for the item.
-
-#### `ghostship-synology rm <path>`
-Delete a file or folder.
-- `--no-recursive`: Disable recursive delete for folders.
-
-#### `ghostship-synology upload <folder_path> <file_path> [--parents|--no-parents]`
-Upload a local file to the NAS.
-- `folder_path`: Destination folder on the NAS.
-- `file_path`: Local file path to upload.
-- `--parents/--no-parents`: Create parent folders if needed (default: true).
-
-#### `ghostship-synology copy <path> <destination> [--overwrite|--no-overwrite]`
-Copy a file or folder to another location.
-- `path`: Source path on the NAS.
-- `destination`: Destination path on the NAS.
-- `--overwrite/--no-overwrite`: Overwrite if destination exists (default: true).
-
-#### `ghostship-synology move <path> <destination> [--overwrite|--no-overwrite]`
-Move a file or folder to another location.
-- `path`: Source path on the NAS.
-- `destination`: Destination path on the NAS.
-- `--overwrite/--no-overwrite`: Overwrite if destination exists (default: true).
+## Common Commands
+- `ghostship-synology call`
+- `ghostship-synology get_info`
+- `ghostship-synology login`
+- `ghostship-synology logout`
+- `ghostship-synology list_shares`
+- `ghostship-synology list_files`
+- `ghostship-synology get_file_info`
+- `ghostship-synology search_start`
+- `ghostship-synology search_list`
+- `ghostship-synology create_folder`
+- `ghostship-synology rename`
+- `ghostship-synology delete`
+- `ghostship-synology download_file`
+- `ghostship-synology upload_file`
+- `ghostship-synology copy`
+- `ghostship-synology move`
 
 ## Examples
-
 ```bash
-# List all shared folders
-ghostship-synology list-shares --pretty
-
-# Search for a file
-ghostship-synology search "/video" "matrix"
-# Use the taskid from above to get results
-ghostship-synology search-results "task_123"
-
-# Download a file
-ghostship-synology download "/video/movie.mp4" --output "/home/hermes/downloads/"
+ghostship-synology list_shares --pretty
 ```
-
-## Agent Guidance
-
-- Use `list-shares` first to understand the top-level directory structure.
-- Searching is asynchronous; always check `search-results` after starting a `search`.
-- When downloading, ensure the agent has write permissions to the destination directory.
-- The utility handles login and logout automatically for each command.
+```bash
+ghostship-synology list_files /video --limit 10 --pretty
+```
+```bash
+ghostship-synology get_file_info /video/movie.mkv
+```

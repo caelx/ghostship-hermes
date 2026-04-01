@@ -1,86 +1,44 @@
 ---
 name: romm
-description: Manage ROM library via Romm. Output is native JSON.
+description: Use when you need RomM library, ROM, scan, save, and user operations through direct client method names.
 ---
 
-# Romm Skill
+# ghostship-romm
 
-The `ghostship-romm` utility allows agents to manage a ROM and game library via the Romm API (v4.7.0+). It supports library scanning, metadata retrieval, and platform management.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
+- Configure the utility with:
+- `ROMM_URL`
+- `ROMM_TOKEN or ROMM_USERNAME and ROMM_PASSWORD`
+- Prefer the dedicated snake_case command first. Use `request` only as fallback.
 
-## Structure
-
-- **Skill Document:** `skills/romm/SKILL.md` (this file)
-- **Package Directory:** `packages/romm-cli/`
-- **README:** `packages/romm-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `ROMM_URL`: The base URL of the Romm instance.
-- Preferred: `ROMM_USERNAME` and `ROMM_PASSWORD`. The CLI exchanges these at `POST /api/token`.
-- Optional override: `ROMM_TOKEN` if you already have a bearer token.
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-romm heartbeat`
-Check the API heartbeat and basic configuration.
-
-#### `ghostship-romm list-roms`
-List ROMs in the library.
-- `--page`: Page number (default: 1).
-- `--page-size`: Records per page (default: 24).
-- `--platform`: Optional platform slug to filter by.
-
-#### `ghostship-romm get-rom <id>`
-Get detailed information for a specific ROM by its ID.
-
-#### `ghostship-romm platforms`
-List all available platforms and their game counts.
-
-#### `ghostship-romm list-collections`
-List all user collections.
-
-#### `ghostship-romm scan [--id <id>]`
-Start a library scan.
-- `--id`: Optional library ID to scan a specific library.
-
-#### `ghostship-romm config`
-Get the Romm system configuration.
-
-#### `ghostship-romm saves [--page <n>] [--page-size <n>]`
-List save files in the library.
-- `--page`: Page number (default: 1).
-- `--page-size`: Records per page (default: 24).
-
-#### `ghostship-romm saves-summary`
-Get a summary of all save files across all platforms.
-
-#### `ghostship-romm users`
-List all users on the Romm instance.
-
-#### `ghostship-romm me`
-Get current authenticated user information.
+## Common Commands
+- `ghostship-romm request`
+- `ghostship-romm get_heartbeat`
+- `ghostship-romm get_platforms`
+- `ghostship-romm get_libraries`
+- `ghostship-romm get_roms`
+- `ghostship-romm get_rom`
+- `ghostship-romm update_rom`
+- `ghostship-romm delete_rom`
+- `ghostship-romm get_scans`
+- `ghostship-romm start_scan`
+- `ghostship-romm get_collections`
+- `ghostship-romm get_config`
+- `ghostship-romm get_saves`
+- `ghostship-romm get_saves_summary`
+- `ghostship-romm get_save`
+- `ghostship-romm get_users`
+- `ghostship-romm get_user_me`
 
 ## Examples
-
 ```bash
-# Check connectivity
-ghostship-romm heartbeat
-
-# List SNES games
-ghostship-romm list-roms --platform snes --pretty
-
-# Start a scan
-ghostship-romm scan
+ghostship-romm get_heartbeat --pretty
 ```
-
-## Agent Guidance
-
-- Default to `ROMM_USERNAME` and `ROMM_PASSWORD` unless the user already has a fresh bearer token. RomM v4.7.0 does not use a repo-managed static token as the primary auth path.
-- Use `heartbeat` to verify the service is up and the token is valid.
-- `list-roms` and `get-rom` provide extensive metadata including file paths and release years.
-- When helping users find games, `platforms` can be used to see which consoles are supported.
+```bash
+ghostship-romm get_roms --page-size 5 --pretty
+```
+```bash
+ghostship-romm get_collections --pretty
+```

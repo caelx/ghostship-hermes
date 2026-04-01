@@ -1,202 +1,164 @@
-import typer
+from __future__ import annotations
+
 import os
-import json
-import sys
-from typing import Optional, List, Any
+from typing import Any
+
+import typer
+
+from ghostship_cli_contract import DEFAULT_TIMEOUT, echo_json, parse_json_option, parse_params, require_env, run_app, run_cli_command
+
 from .client import PlexClient
 
-app = typer.Typer(help="Plex Media Server CLI interface.")
+app = typer.Typer(help='Plex Media Server CLI interface.', no_args_is_help=True)
+APP_STATE = {'timeout': DEFAULT_TIMEOUT}
 
 
-def echo_json(data: Any, pretty: bool = False):
-    indent = 2 if pretty else None
-    typer.echo(json.dumps(data, indent=indent))
+@app.callback()
+def app_callback(timeout: float = typer.Option(DEFAULT_TIMEOUT, '--timeout', help='Hard timeout in seconds for all API calls in this invocation.')) -> None:
+    APP_STATE['timeout'] = timeout
 
 
 def get_client() -> PlexClient:
-    base_url = os.getenv("PLEX_URL")
-    token = os.getenv("PLEX_TOKEN")
-    if not base_url or not token:
-        print(
-            "Error: PLEX_URL and PLEX_TOKEN environment variables must be set.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-    return PlexClient(base_url, token)
+    return PlexClient(require_env('PLEX_URL', os.getenv('PLEX_URL')), require_env('PLEX_TOKEN', os.getenv('PLEX_TOKEN')), default_timeout=APP_STATE['timeout'])
 
 
-@app.command()
-def info(pretty: bool = typer.Option(False, "--pretty")):
-    """Get server identity and status information."""
+def _emit(data: Any, pretty: bool) -> None:
+    echo_json(data, pretty=pretty)
+
+
+def _run(execute, *, pretty: bool) -> None:
+    _emit(run_cli_command(None, execute, timeout=APP_STATE['timeout']), pretty)
+
+
+def _run_write(build_request, execute, *, dry_run: bool, pretty: bool) -> None:
+    _emit(run_cli_command(build_request, execute, timeout=APP_STATE['timeout'], dry_run=dry_run), pretty)
+
+
+@app.command('request')
+def request(method: str, path: str, param: list[str] = typer.Option([], '--param'), body_json: str | None = typer.Option(None, '--body-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = {
-            "identity": client.get_identity().get("MediaContainer", {}),
-            "server": client.get_server_info().get("MediaContainer", {}),
-        }
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching info: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    params = parse_params(param) or None
+    payload = parse_json_option(body_json, '--body-json')
+    _run_write(lambda: client.build_request(method, path, params=params, json_data=payload), lambda timeout: client.request(method, path, params=params, json_data=payload, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def libraries(pretty: bool = typer.Option(False, "--pretty")):
-    """List all library sections on the server."""
+@app.command('get_identity')
+def get_identity(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = (
-            client.get_library_sections().get("MediaContainer", {}).get("Directory", [])
-        )
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching libraries: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_identity(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def library(section_id: int, pretty: bool = typer.Option(False, "--pretty")):
-    """List all items in a library section."""
+@app.command('get_server_info')
+def get_server_info(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = (
-            client.get_library_section(section_id)
-            .get("MediaContainer", {})
-            .get("Metadata", [])
-        )
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching library {section_id}: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_server_info(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def refresh(
-    section_id: Optional[int] = typer.Option(None, "--id", help="Library section ID"),
-    pretty: bool = typer.Option(False, "--pretty"),
-):
-    """Refresh one or all libraries."""
+@app.command('get_status_sessions')
+def get_status_sessions(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        client.refresh_library(section_id)
-        echo_json({"status": "success", "section_id": section_id}, pretty=pretty)
-    except Exception as e:
-        print(f"Error refreshing libraries: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_status_sessions(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def sessions(pretty: bool = typer.Option(False, "--pretty")):
-    """View active media playback sessions."""
+@app.command('get_activities')
+def get_activities(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = (
-            client.get_status_sessions().get("MediaContainer", {}).get("Metadata", [])
-        )
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching sessions: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_activities(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def terminate_session(session_id: int, pretty: bool = typer.Option(False, "--pretty")):
-    """Terminate an active session by session ID."""
+@app.command('get_library_sections')
+def get_library_sections(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.terminate_session(session_id)
-        echo_json({"status": "success", "session_id": session_id}, pretty=pretty)
-    except Exception as e:
-        print(f"Error terminating session: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_library_sections(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def metadata(
-    rating_key: int,
-    children: bool = typer.Option(False, "--children"),
-    pretty: bool = typer.Option(False, "--pretty"),
-):
-    """Get metadata for a specific media item."""
+@app.command('get_library_section')
+def get_library_section(section_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        if children:
-            data = (
-                client.get_metadata_children(rating_key)
-                .get("MediaContainer", {})
-                .get("Metadata", [])
-            )
-        else:
-            data = (
-                client.get_metadata(rating_key)
-                .get("MediaContainer", {})
-                .get("Metadata", [{}])[0]
-            )
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching metadata {rating_key}: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_library_section(section_id, timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def playlists(pretty: bool = typer.Option(False, "--pretty")):
-    """List all playlists."""
+@app.command('get_library_filters')
+def get_library_filters(section_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_playlists().get("MediaContainer", {}).get("Metadata", [])
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching playlists: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_library_filters(section_id, timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def collections(section_id: int, pretty: bool = typer.Option(False, "--pretty")):
-    """List collections in a library section."""
+@app.command('get_library_sorts')
+def get_library_sorts(section_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = (
-            client.get_collections(section_id)
-            .get("MediaContainer", {})
-            .get("Metadata", [])
-        )
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(
-            f"Error fetching collections for section {section_id}: {e}", file=sys.stderr
-        )
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_library_sorts(section_id, timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def prefs(pretty: bool = typer.Option(False, "--pretty")):
-    """Get server preferences."""
+@app.command('refresh_library')
+def refresh_library(section_id: int | None = typer.Option(None, '--section-id'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_preferences().get("MediaContainer", {}).get("Setting", [])
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching preferences: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run_write(lambda: client.build_refresh_library(section_id), lambda timeout: client.refresh_library(section_id, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def tasks(pretty: bool = typer.Option(False, "--pretty")):
-    """List scheduled maintenance (Butler) tasks."""
+@app.command('get_metadata')
+def get_metadata(rating_key: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = (
-            client.get_butler_tasks().get("MediaContainer", {}).get(" butlerTask", [])
-        )
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching butler tasks: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_metadata(rating_key, timeout=timeout), pretty=pretty)
 
 
-def main():
-    app()
+@app.command('get_metadata_children')
+def get_metadata_children(rating_key: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_metadata_children(rating_key, timeout=timeout), pretty=pretty)
 
 
-if __name__ == "__main__":
+@app.command('get_playlists')
+def get_playlists(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_playlists(timeout=timeout), pretty=pretty)
+
+
+@app.command('get_playlist_items')
+def get_playlist_items(playlist_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_playlist_items(playlist_id, timeout=timeout), pretty=pretty)
+
+
+@app.command('get_collections')
+def get_collections(section_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_collections(section_id, timeout=timeout), pretty=pretty)
+
+
+@app.command('get_preferences')
+def get_preferences(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_preferences(timeout=timeout), pretty=pretty)
+
+
+@app.command('get_butler_tasks')
+def get_butler_tasks(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_butler_tasks(timeout=timeout), pretty=pretty)
+
+
+@app.command('get_statistics')
+def get_statistics(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_statistics(timeout=timeout), pretty=pretty)
+
+
+@app.command('terminate_session')
+def terminate_session(session_id: int, dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run_write(lambda: client.build_terminate_session(session_id), lambda timeout: client.terminate_session(session_id, timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+@app.command('get_session')
+def get_session(session_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_session(session_id, timeout=timeout), pretty=pretty)
+
+
+def main() -> None:
+    run_app(app)
+
+
+if __name__ == '__main__':
     main()

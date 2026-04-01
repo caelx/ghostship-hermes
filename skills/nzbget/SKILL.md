@@ -1,82 +1,49 @@
 ---
 name: nzbget
-description: Manage NZBGet download queue and server. Output is native JSON.
+description: Use when you need NZBGet JSON-RPC methods exposed directly as snake_case commands.
 ---
 
-# NZBGet Skill
+# ghostship-nzbget
 
-The `ghostship-nzbget` utility allows agents to manage the NZBGet download queue, add new NZB URLs, and control the server state (pause/resume/rate/shutdown).
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
+- Configure the utility with:
+- `NZBGET_URL`
+- `NZBGET_USER`
+- `NZBGET_PASS`
+- Prefer the dedicated snake_case command first. Use `call` only as fallback.
 
-## Structure
-
-- **Skill Document:** `skills/nzbget/SKILL.md` (this file)
-- **Package Directory:** `packages/nzbget-cli/`
-- **README:** `packages/nzbget-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `NZBGET_URL`: The base URL of the NZBGet instance (e.g., `http://localhost:6789`).
-- `NZBGET_USER`: The username for authentication.
-- `NZBGET_PASS`: The password for authentication.
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-nzbget info`
-Get global status information, including download speed, remaining size, and server state.
-
-#### `ghostship-nzbget version`
-Get NZBGet version.
-
-#### `ghostship-nzbget list-queue`
-List all downloads currently in the queue.
-
-#### `ghostship-nzbget list-files <nzb_id>`
-List files in a specific NZB group.
-
-#### `ghostship-nzbget history`
-Get download history.
-
-#### `ghostship-nzbget add <url>`
-Add an NZB URL to the download queue.
-- `url`: The URL of the NZB file.
-- `--category`: Optional category for the download.
-- `--priority`: Optional priority (default: 0).
-
-#### `ghostship-nzbget pause`
-Pause the NZBGet download queue.
-
-#### `ghostship-nzbget resume`
-Resume the NZBGet download queue.
-
-#### `ghostship-nzbget rate <limit_kb>`
-Set download speed limit in KB/s (0 for unlimited).
-
-#### `ghostship-nzbget config`
-Get the NZBGet system configuration.
-
-#### `ghostship-nzbget shutdown`
-Shutdown the NZBGet server.
+## Common Commands
+- `ghostship-nzbget call`
+- `ghostship-nzbget get_version`
+- `ghostship-nzbget shutdown`
+- `ghostship-nzbget reload`
+- `ghostship-nzbget get_status`
+- `ghostship-nzbget list_groups`
+- `ghostship-nzbget list_files`
+- `ghostship-nzbget get_history`
+- `ghostship-nzbget append_url`
+- `ghostship-nzbget edit_queue`
+- `ghostship-nzbget disk_scan`
+- `ghostship-nzbget get_log`
+- `ghostship-nzbget set_rate`
+- `ghostship-nzbget pause_download`
+- `ghostship-nzbget resume_download`
+- `ghostship-nzbget pause_post`
+- `ghostship-nzbget resume_post`
+- `ghostship-nzbget pause_scan`
+- `ghostship-nzbget resume_scan`
+- `ghostship-nzbget get_config`
+- `ghostship-nzbget save_config`
 
 ## Examples
-
 ```bash
-# Check status and speed
-ghostship-nzbget info --pretty
-
-# Add a new download
-ghostship-nzbget add "https://example.com/file.nzb" --category movies
-
-# Set speed limit to 5MB/s
-ghostship-nzbget rate 5120
+ghostship-nzbget get_status --pretty
 ```
-
-## Agent Guidance
-
-- Use `info` to check if the server is paused before reporting download issues to the user.
-- The `nzbid` returned by `add` can be used to track the specific download or list its files using `list-files`.
-- Be cautious with the `shutdown` command as it will stop the service entirely.
+```bash
+ghostship-nzbget list_groups --pretty
+```
+```bash
+ghostship-nzbget call version
+```

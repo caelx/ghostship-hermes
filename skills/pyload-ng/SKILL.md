@@ -1,82 +1,45 @@
 ---
 name: pyload-ng
-description: Manage downloads and packages via the pyLoad-ng API. Output is native JSON.
+description: Use when you need pyLoad-ng REST operations exposed directly as exact method-name commands.
 ---
 
-# pyLoad-ng Skill
+# ghostship-pyload-ng
 
-The `ghostship-pyload-ng` utility allows agents to manage downloads, packages, and server status via the pyLoad-ng REST API.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
+- Configure the utility with:
+- `PYLOAD_URL`
+- `PYLOAD_USER (optional)`
+- `PYLOAD_PASS (optional)`
+- Prefer the dedicated snake_case command first. Use `request` only as fallback.
 
-## Structure
-
-- **Skill Document:** `skills/pyload-ng/SKILL.md` (this file)
-- **Package Directory:** `packages/pyload-ng-cli/`
-- **README:** `packages/pyload-ng-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `PYLOAD_URL`: The base URL of the pyLoad-ng instance (e.g., `http://localhost:8000`).
-- `PYLOAD_USER`: Your pyLoad-ng username.
-- `PYLOAD_PASS`: Your pyLoad-ng password.
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-pyload-ng status`
-Get general information about the current status of pyLoad.
-
-#### `ghostship-pyload-ng downloads`
-Get status of all currently running downloads.
-
-#### `ghostship-pyload-ng queue`
-List all packages in the queue.
-
-#### `ghostship-pyload-ng add <name> <links...>`
-Add a new package with the specified name and list of URLs.
-
-#### `ghostship-pyload-ng add-to-package <package_id> <links...>`
-Add one or more links to an existing package.
-
-#### `ghostship-pyload-ng delete <package_ids...>`
-Delete one or more packages by their IDs.
-
-#### `ghostship-pyload-ng pause`
-Toggle the pause/resume state of the server.
-
-#### `ghostship-pyload-ng delete-finished`
-Delete all completed downloads from the queue.
-
-#### `ghostship-pyload-ng restart-failed`
-Restart all failed downloads.
-
-#### `ghostship-pyload-ng accounts`
-List all configured download accounts (e.g., hosting providers).
-
-#### `ghostship-pyload-ng version`
-Get the pyLoad server version information.
-
-#### `ghostship-pyload-ng freespace`
-Get available disk space on the server.
+## Common Commands
+- `ghostship-pyload-ng request`
+- `ghostship-pyload-ng get_server_status`
+- `ghostship-pyload-ng get_downloads`
+- `ghostship-pyload-ng get_queue`
+- `ghostship-pyload-ng add_package`
+- `ghostship-pyload-ng add_files`
+- `ghostship-pyload-ng delete_packages`
+- `ghostship-pyload-ng toggle_pause`
+- `ghostship-pyload-ng get_config`
+- `ghostship-pyload-ng delete_finished`
+- `ghostship-pyload-ng restart_failed`
+- `ghostship-pyload-ng stop_all_downloads`
+- `ghostship-pyload-ng get_accounts`
+- `ghostship-pyload-ng add_account`
+- `ghostship-pyload-ng remove_account`
+- `ghostship-pyload-ng get_server_version`
+- `ghostship-pyload-ng get_free_space`
 
 ## Examples
-
 ```bash
-# Check server status
-ghostship-pyload-ng status --pretty
-
-# Add a new download package
-ghostship-pyload-ng add "My Files" "http://example.com/file1.zip" "http://example.com/file2.zip"
-
-# List current downloads
-ghostship-pyload-ng downloads --pretty
+ghostship-pyload-ng get_server_status --pretty
 ```
-
-## Agent Guidance
-
-- Use `ghostship-pyload-ng status` to check if the server is paused or to see global download speeds.
-- Use `ghostship-pyload-ng queue` to find `package_id`s for management tasks.
-- For many links, prefer creating a package via `add` rather than adding to existing ones individually.
+```bash
+ghostship-pyload-ng get_queue --pretty
+```
+```bash
+ghostship-pyload-ng get_accounts --refresh
+```

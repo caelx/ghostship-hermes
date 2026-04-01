@@ -1,93 +1,46 @@
-from typing import Any, Dict, List, Optional
-import httpx
-import os
+from __future__ import annotations
+
+from typing import Any
+
+from ghostship_cli_contract import BaseHttpClient
 
 
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
+class ProwlarrClient(BaseHttpClient):
+    def __init__(self, base_url: str, api_key: str, *, default_timeout: float = 30.0):
+        super().__init__(base_url, default_headers={"X-Api-Key": api_key}, default_timeout=default_timeout)
 
+    def build_request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None):
+        return self.build_request_spec(method, f"/api/v1/{path.lstrip('/')}", params=params, json_body=json_data, timeout=timeout)
 
-class ProwlarrClient:
-    def __init__(self, base_url: str, api_key: str):
-        self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
-        self.headers = _cloudflare_access_headers()
-        self.headers["X-Api-Key"] = self.api_key
+    def request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> Any:
+        return self.request_json(method, f"/api/v1/{path.lstrip('/')}", params=params, json_body=json_data, timeout=timeout)
 
-    def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/api/v1/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-
-    def _post(
-        self,
-        path: str,
-        json_data: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        url = f"{self.base_url}/api/v1/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.post(url, json=json_data, params=params)
-            response.raise_for_status()
-            return response.json()
-
-    def _put(self, path: str, json_data: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/api/v1/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.put(url, json=json_data)
-            response.raise_for_status()
-            return response.json()
-
-    def _delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        url = f"{self.base_url}/api/v1/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            response = client.delete(url, params=params)
-            response.raise_for_status()
-            return response.status_code == 200
-
-    # Indexer
-    def get_indexers(self, indexer_id: Optional[int] = None) -> Any:
+    def get_indexers(self, indexer_id: int | None = None, *, timeout: float | None = None) -> Any:
         path = "indexer" if indexer_id is None else f"indexer/{indexer_id}"
-        return self._get(path)
+        return self.request("GET", path, timeout=timeout)
 
-    # Search
-    def search(self, query: str, categories: Optional[List[int]] = None) -> Any:
-        params = {"query": query}
+    def search(self, query: str, categories: list[int] | None = None, *, timeout: float | None = None) -> Any:
+        params: dict[str, Any] = {"query": query}
         if categories:
             params["categories"] = categories
-        return self._get("search", params=params)
+        return self.request("GET", "search", params=params, timeout=timeout)
 
-    # Applications
-    def get_applications(self, app_id: Optional[int] = None) -> Any:
+    def get_applications(self, app_id: int | None = None, *, timeout: float | None = None) -> Any:
         path = "applications" if app_id is None else f"applications/{app_id}"
-        return self._get(path)
+        return self.request("GET", path, timeout=timeout)
 
-    # History
-    def get_history(self, page: int = 1, page_size: int = 10) -> Any:
-        params = {"page": page, "pageSize": page_size}
-        return self._get("history", params=params)
+    def get_history(self, page: int = 1, page_size: int = 10, *, timeout: float | None = None) -> Any:
+        return self.request("GET", "history", params={"page": page, "pageSize": page_size}, timeout=timeout)
 
-    # System
-    def get_status(self) -> Any:
-        return self._get("system/status")
+    def get_status(self, *, timeout: float | None = None) -> Any:
+        return self.request("GET", "system/status", timeout=timeout)
 
-    # Command
-    def run_command(self, name: str, **kwargs) -> Any:
+    def run_command(self, name: str, *, timeout: float | None = None, **kwargs: Any) -> Any:
         payload = {"name": name, **kwargs}
-        return self._post("command", json_data=payload)
+        return self.request("POST", "command", json_data=payload, timeout=timeout)
 
-    # Indexer Stats
-    def get_indexer_stats(self) -> Any:
-        return self._get("indexerstats")
+    def get_indexer_stats(self, *, timeout: float | None = None) -> Any:
+        return self.request("GET", "indexerstats", timeout=timeout)
 
-    def get_indexer_status(self) -> Any:
-        return self._get("indexerstatus")
+    def get_indexer_status(self, *, timeout: float | None = None) -> Any:
+        return self.request("GET", "indexerstatus", timeout=timeout)

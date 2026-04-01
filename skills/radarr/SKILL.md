@@ -1,102 +1,45 @@
 ---
 name: radarr
-description: Manage movie library via Radarr. Output is native JSON.
+description: Use when you need Radarr movie and queue endpoints via exact client method names.
 ---
 
-# Radarr Skill
+# ghostship-radarr
 
-The `ghostship-radarr` utility allows agents to manage a movie library, search for new content, and monitor download progress.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
+- Configure the utility with:
+- `RADARR_URL`
+- `RADARR_API_KEY`
+- Prefer the dedicated snake_case command first. Use `request` only as fallback.
 
-## Structure
-
-- **Skill Document:** `skills/radarr/SKILL.md` (this file)
-- **Package Directory:** `packages/radarr-cli/`
-- **README:** `packages/radarr-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `RADARR_URL`: The base URL of the Radarr instance.
-- `RADARR_API_KEY`: The API key for authentication.
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-radarr info`
-Get system status and version information.
-
-#### `ghostship-radarr list-movies`
-List all movies currently in the library.
-
-#### `ghostship-radarr lookup "<term>"`
-Search for a movie by name to get its metadata and ID (TMDB).
-
-#### `ghostship-radarr get-movie <id>`
-Get detailed information for a specific movie by its internal Radarr ID.
-
-#### `ghostship-radarr add <tmdb_id> <title>`
-Add a new movie to the library.
-- `tmdb_id`: The TMDB ID from `lookup`.
-- `title`: The title of the movie.
-- `--quality-profile-id`: ID of the quality profile (default: 1).
-- `--root-folder-path`: Path where files will be stored (default: `/movies`).
-- `--monitored`: Whether to monitor for the movie (default: `True`).
-
-#### `ghostship-radarr history`
-View the history of recent events (downloads, imports, etc.).
-- `--page`: Page number (default: 1).
-- `--page-size`: Records per page (default: 10).
-
-#### `ghostship-radarr queue`
-View current download and import queue.
-
-#### `ghostship-radarr command <name>`
-Trigger a long-running system command.
-- `name`: Command name (e.g., `MoviesSearch`, `RescanMovie`).
-- `--args`: Optional JSON string of arguments for the command.
-
-#### `ghostship-radarr missing`
-List movies that are missing from the library.
-- `--page`: Page number (default: 1).
-- `--page-size`: Records per page (default: 10).
-
-#### `ghostship-radarr blocklist`
-List blocklisted releases (failed downloads).
-- `--page`: Page number (default: 1).
-- `--page-size`: Records per page (default: 10).
-
-#### `ghostship-radarr tags`
-List all tags in the system.
-
-#### `ghostship-radarr rootfolders`
-List root folders configured in Radarr.
-
-#### `ghostship-radarr profiles`
-List quality profiles available for movies.
+## Common Commands
+- `ghostship-radarr request`
+- `ghostship-radarr get_status`
+- `ghostship-radarr get_movies`
+- `ghostship-radarr lookup_movie`
+- `ghostship-radarr add_movie`
+- `ghostship-radarr update_movie`
+- `ghostship-radarr delete_movie`
+- `ghostship-radarr get_commands`
+- `ghostship-radarr run_command`
+- `ghostship-radarr get_queue`
+- `ghostship-radarr get_history`
+- `ghostship-radarr get_wanted_missing`
+- `ghostship-radarr get_wanted_cutoff`
+- `ghostship-radarr get_blocklist`
+- `ghostship-radarr get_blocklist_movie`
+- `ghostship-radarr get_tags`
+- `ghostship-radarr get_root_folders`
+- `ghostship-radarr get_quality_profiles`
 
 ## Examples
-
 ```bash
-# Search for a movie
-ghostship-radarr lookup "Inception"
-
-# Add a movie (using TMDB ID from lookup)
-ghostship-radarr add 27205 "Inception"
-
-# List movies in library
-ghostship-radarr list-movies --pretty
+ghostship-radarr get_status --pretty
 ```
-
-## Agent Guidance
-
-- Use `lookup` before `add` to ensure the correct `tmdb_id` and title are used.
-- Monitor `queue` to check if content is being downloaded.
-- Use `history` to verify if content was successfully imported.
-- When adding content, ensure the `root-folder-path` is consistent with the server's filesystem layout.
-- Use `missing` to find movies that haven't been downloaded yet.
-- Use `blocklist` to see failed downloads that have been blocked.
-- Use `tags` to organize content and filter by tags later.
-- Use `profiles` to check available quality profiles before adding movies.
+```bash
+ghostship-radarr lookup_movie inception --pretty
+```
+```bash
+ghostship-radarr get_movies --pretty
+```

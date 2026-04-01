@@ -1,98 +1,82 @@
-from typing import Any, Dict, List, Optional
-import httpx
-import os
+from __future__ import annotations
+
+from typing import Any
+
+from ghostship_cli_contract import BaseHttpClient, HttpStatusError, RequestSpec
 
 
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
-
-
-class TautulliClient:
-    def __init__(self, base_url: str, api_key: str):
-        self.base_url = base_url.rstrip("/")
-        if not self.base_url.endswith("/api/v2"):
-            self.base_url = f"{self.base_url}/api/v2"
+class TautulliClient(BaseHttpClient):
+    def __init__(self, base_url: str, api_key: str, *, default_timeout: float = 30.0):
+        base = base_url.rstrip('/')
+        if not base.endswith('/api/v2'):
+            base = f'{base}/api/v2'
+        super().__init__(base, default_timeout=default_timeout)
         self.api_key = api_key
-        self.headers = _cloudflare_access_headers()
 
-    def _request(self, cmd: str, **kwargs) -> Any:
-        params = {
-            "apikey": self.api_key,
-            "cmd": cmd
-        }
-        params.update(kwargs)
-        with httpx.Client(headers=self.headers) as client:
-            response = client.get(self.base_url, params=params)
-            response.raise_for_status()
-            data = response.json()
-            if data.get("response", {}).get("result") != "success":
-                raise Exception(f"Tautulli API Error: {data.get('response', {}).get('message')}")
-            return data.get("response", {}).get("data")
+    def build_call(self, cmd: str, **kwargs: Any) -> RequestSpec:
+        params = {'apikey': self.api_key, 'cmd': cmd}
+        params.update({key: value for key, value in kwargs.items() if value is not None})
+        return self.build_request_spec('GET', '', params=params)
 
-    # Status and Info
-    def get_server_status(self) -> Any:
-        return self._request("server_status")
+    def call(self, cmd: str, timeout: float | None = None, **kwargs: Any) -> Any:
+        spec = self.build_call(cmd, **kwargs)
+        payload = self.request_json(spec.method, spec.path, params=spec.params, timeout=timeout if timeout is not None else spec.timeout)
+        response = payload.get('response', {})
+        if response.get('result') != 'success':
+            raise HttpStatusError('remote service returned API error', status_code=200, details=response.get('message'))
+        return response.get('data')
 
-    def get_tautulli_info(self) -> Any:
-        return self._request("get_tautulli_info")
+    def get_server_status(self, timeout: float | None = None) -> Any:
+        return self.call('server_status', timeout=timeout)
 
-    def get_status(self) -> Any:
-        return self._request("status")
+    def get_tautulli_info(self, timeout: float | None = None) -> Any:
+        return self.call('get_tautulli_info', timeout=timeout)
 
-    # Activity
-    def get_activity(self) -> Any:
-        return self._request("get_activity")
+    def get_status(self, timeout: float | None = None) -> Any:
+        return self.call('status', timeout=timeout)
 
-    def terminate_session(self, session_id: str, message: Optional[str] = None) -> Any:
-        kwargs = {"session_id": session_id}
+    def get_activity(self, timeout: float | None = None) -> Any:
+        return self.call('get_activity', timeout=timeout)
+
+    def build_terminate_session(self, session_id: str, message: str | None = None) -> RequestSpec:
+        kwargs: dict[str, Any] = {'session_id': session_id}
         if message:
-            kwargs["message"] = message
-        return self._request("terminate_session", **kwargs)
+            kwargs['message'] = message
+        return self.build_call('terminate_session', **kwargs)
 
-    # History
-    def get_history(self, page: int = 1, length: int = 10, search: Optional[str] = None, order_column: str = "date", order_dir: str = "desc") -> Any:
-        kwargs = {
-            "start": (page - 1) * length,
-            "length": length,
-            "order_column": order_column,
-            "order_dir": order_dir
-        }
+    def terminate_session(self, session_id: str, message: str | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_terminate_session(session_id, message=message)
+        return self.call(spec.params['cmd'], timeout=timeout, **{k: v for k, v in spec.params.items() if k not in {'apikey', 'cmd'}})
+
+    def get_history(self, page: int = 1, length: int = 10, search: str | None = None, order_column: str = 'date', order_dir: str = 'desc', timeout: float | None = None) -> Any:
+        kwargs: dict[str, Any] = {'start': (page - 1) * length, 'length': length, 'order_column': order_column, 'order_dir': order_dir}
         if search:
-            kwargs["search"] = search
-        return self._request("get_history", **kwargs)
+            kwargs['search'] = search
+        return self.call('get_history', timeout=timeout, **kwargs)
 
-    # Library
-    def get_libraries(self) -> Any:
-        return self._request("get_libraries")
+    def get_libraries(self, timeout: float | None = None) -> Any:
+        return self.call('get_libraries', timeout=timeout)
 
-    def get_library_user_stats(self, section_id: int) -> Any:
-        return self._request("get_library_user_stats", section_id=section_id)
+    def get_library_user_stats(self, section_id: int, timeout: float | None = None) -> Any:
+        return self.call('get_library_user_stats', timeout=timeout, section_id=section_id)
 
-    # Users
-    def get_users(self) -> Any:
-        return self._request("get_users")
+    def get_users(self, timeout: float | None = None) -> Any:
+        return self.call('get_users', timeout=timeout)
 
-    def get_user_player_stats(self, user_id: int) -> Any:
-        return self._request("get_user_player_stats", user_id=user_id)
+    def get_user_player_stats(self, user_id: int, timeout: float | None = None) -> Any:
+        return self.call('get_user_player_stats', timeout=timeout, user_id=user_id)
 
-    def get_user_watch_time_stats(self, user_id: int) -> Any:
-        return self._request("get_user_watch_time_stats", user_id=user_id)
+    def get_user_watch_time_stats(self, user_id: int, timeout: float | None = None) -> Any:
+        return self.call('get_user_watch_time_stats', timeout=timeout, user_id=user_id)
 
-    # Metadata
-    def get_metadata(self, rating_key: int) -> Any:
-        return self._request("get_metadata", rating_key=rating_key)
+    def get_metadata(self, rating_key: int, timeout: float | None = None) -> Any:
+        return self.call('get_metadata', timeout=timeout, rating_key=rating_key)
 
-    # Search
-    def search(self, query: str, limit: int = 10) -> Any:
-        return self._request("search", query=query, limit=limit)
+    def search(self, query: str, limit: int = 10, timeout: float | None = None) -> Any:
+        return self.call('search', timeout=timeout, query=query, limit=limit)
 
-    # System
-    def restart(self) -> Any:
-        return self._request("restart")
+    def build_restart(self) -> RequestSpec:
+        return self.build_call('restart')
+
+    def restart(self, timeout: float | None = None) -> Any:
+        return self.call('restart', timeout=timeout)

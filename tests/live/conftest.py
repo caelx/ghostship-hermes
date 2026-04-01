@@ -15,15 +15,45 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIRS = sorted(str(path) for path in REPO_ROOT.glob("packages/*-cli/src"))
 
 
-def _load_envrc() -> dict[str, str]:
+def _find_envrc() -> tuple[Path | None, Path]:
     envrc = REPO_ROOT / ".envrc"
-    if not envrc.is_file():
+    if envrc.is_file():
+        return envrc, REPO_ROOT
+
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+    except subprocess.CalledProcessError:
+        return None, REPO_ROOT
+
+    for line in result.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        candidate_root = Path(line.split(" ", 1)[1])
+        if candidate_root == REPO_ROOT:
+            continue
+        candidate_envrc = candidate_root / ".envrc"
+        if candidate_envrc.is_file():
+            return candidate_envrc, candidate_root
+
+    return None, REPO_ROOT
+
+
+def _load_envrc() -> dict[str, str]:
+    envrc, envrc_root = _find_envrc()
+    if envrc is None:
         return os.environ.copy()
 
-    command = "set -a; source ./.envrc >/dev/null 2>&1; env -0"
+    command = f"set -a; source {envrc.name} >/dev/null 2>&1; env -0"
     result = subprocess.run(
         ["bash", "-lc", command],
-        cwd=REPO_ROOT,
+        cwd=envrc_root,
         check=True,
         capture_output=True,
         text=False,
@@ -118,7 +148,10 @@ def cli_runner(live_env: dict[str, str]):
             raise AssertionError(f"{module} {' '.join(args)} failed: {message}")
 
         stdout = result.stdout.strip()
-        assert stdout, f"{module} {' '.join(args)} returned no output"
+        stderr = result.stderr.strip()
+        if not stdout:
+            message = stderr or f"{module} {' '.join(args)} returned no output"
+            raise AssertionError(message)
         try:
             return json.loads(stdout)
         except json.JSONDecodeError as exc:

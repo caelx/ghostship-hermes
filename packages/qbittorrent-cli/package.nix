@@ -1,4 +1,4 @@
-{ python311Packages }:
+{ python311Packages, ghostshipCliContract }:
 python311Packages.buildPythonApplication {
   pname = "ghostship-qbittorrent";
   version = "0.1.0";
@@ -10,6 +10,7 @@ python311Packages.buildPythonApplication {
   ];
 
   dependencies = with python311Packages; [
+    ghostshipCliContract
     httpx
     typer
   ];

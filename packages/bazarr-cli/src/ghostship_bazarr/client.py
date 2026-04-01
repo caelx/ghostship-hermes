@@ -1,103 +1,76 @@
-from typing import Any, Dict, List, Optional
-import httpx
-import os
+from __future__ import annotations
+
+from typing import Any
+
+from ghostship_cli_contract import BaseHttpClient
 
 
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
+class BazarrClient(BaseHttpClient):
+    def __init__(self, base_url: str, api_key: str, *, default_timeout: float = 30.0):
+        normalized = base_url.rstrip("/")
+        if not normalized.endswith("/api"):
+            normalized = f"{normalized}/api"
+        super().__init__(normalized, default_headers={"X-Api-Key": api_key}, default_timeout=default_timeout)
 
+    def build_request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None):
+        return self.build_request_spec(method, f"/{path.lstrip('/')}", params=params, json_body=json_data, timeout=timeout)
 
-class BazarrClient:
-    def __init__(self, base_url: str, api_key: str):
-        self.base_url = base_url.rstrip("/")
-        if not self.base_url.endswith("/api"):
-            self.base_url = f"{self.base_url}/api"
-        self.api_key = api_key
-        self.headers = _cloudflare_access_headers()
-        self.headers["X-Api-Key"] = self.api_key
+    def request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> Any:
+        return self.request_json(method, f"/{path.lstrip('/')}", params=params, json_body=json_data, timeout=timeout)
 
-    def _request(
-        self,
-        path: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            if method == "POST":
-                response = client.post(url, params=params, json=json_data)
-            elif method == "PUT":
-                response = client.put(url, params=params, json=json_data)
-            elif method == "DELETE":
-                response = client.delete(url, params=params)
-            else:
-                response = client.get(url, params=params)
+    def _request(self, path: str, method: str = "GET", params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, *, timeout: float | None = None) -> Any:
+        return self.request(method, path, params=params, json_data=json_data, timeout=timeout)
 
-            response.raise_for_status()
-            if not response.content:
-                return {"status": "success"}
-            return response.json()
+    def get_badges(self, *, timeout: float | None = None) -> Any:
+        return self._request("badges", timeout=timeout)
 
-    def get_badges(self) -> Any:
-        return self._request("badges")
-
-    def get_episodes(self, series_id: Optional[int] = None) -> Any:
+    def get_episodes(self, series_id: int | None = None, *, timeout: float | None = None) -> Any:
         params = {}
         if series_id:
             params["seriesid[]"] = [series_id]
-        return self._request("episodes", params=params)
+        return self._request("episodes", params=params, timeout=timeout)
 
-    def get_wanted_episodes(self) -> Any:
-        return self._request("episodes/wanted")
+    def get_wanted_episodes(self, *, timeout: float | None = None) -> Any:
+        return self._request("episodes/wanted", timeout=timeout)
 
-    def get_movies(self) -> Any:
-        return self._request("movies")
+    def get_movies(self, *, timeout: float | None = None) -> Any:
+        return self._request("movies", timeout=timeout)
 
-    def get_wanted_movies(self) -> Any:
-        return self._request("movies/wanted")
+    def get_wanted_movies(self, *, timeout: float | None = None) -> Any:
+        return self._request("movies/wanted", timeout=timeout)
 
-    def get_series(self) -> Any:
-        return self._request("series")
+    def get_series(self, *, timeout: float | None = None) -> Any:
+        return self._request("series", timeout=timeout)
 
-    def get_providers(self) -> Any:
-        return self._request("providers")
+    def get_providers(self, *, timeout: float | None = None) -> Any:
+        return self._request("providers", timeout=timeout)
 
-    def get_subtitles(self) -> Any:
-        return self._request("subtitles")
+    def get_subtitles(self, *, timeout: float | None = None) -> Any:
+        return self._request("subtitles", timeout=timeout)
 
-    def get_system_health(self) -> Any:
-        return self._request("system/health")
+    def get_system_health(self, *, timeout: float | None = None) -> Any:
+        return self._request("system/health", timeout=timeout)
 
-    def get_system_jobs(self) -> Any:
-        return self._request("system/jobs")
+    def get_system_jobs(self, *, timeout: float | None = None) -> Any:
+        return self._request("system/jobs", timeout=timeout)
 
-    def get_system_tasks(self) -> Any:
-        return self._request("system/tasks")
+    def get_system_tasks(self, *, timeout: float | None = None) -> Any:
+        return self._request("system/tasks", timeout=timeout)
 
-    def get_system_status(self) -> Any:
-        return self._request("system/status")
+    def get_system_status(self, *, timeout: float | None = None) -> Any:
+        return self._request("system/status", timeout=timeout)
 
-    def search_subtitles_missing(self) -> Any:
-        return self._request("subtitles/search/missing", method="POST")
+    def search_subtitles_missing(self, *, timeout: float | None = None) -> Any:
+        return self._request("subtitles/search/missing", method="POST", timeout=timeout)
 
-    # History
-    def get_episodes_history(self) -> Any:
-        return self._request("episodes/history")
+    def get_episodes_history(self, *, timeout: float | None = None) -> Any:
+        return self._request("episodes/history", timeout=timeout)
 
-    def get_movies_history(self) -> Any:
-        return self._request("movies/history")
+    def get_movies_history(self, *, timeout: float | None = None) -> Any:
+        return self._request("movies/history", timeout=timeout)
 
-    # Blacklist
-    def get_episodes_blacklist(self) -> Any:
-        return self._request("episodes/blacklist")
+    def get_episodes_blacklist(self, *, timeout: float | None = None) -> Any:
+        return self._request("episodes/blacklist", timeout=timeout)
 
-    def get_movies_blacklist(self) -> Any:
-        return self._request("movies/blacklist")
+    def get_movies_blacklist(self, *, timeout: float | None = None) -> Any:
+        return self._request("movies/blacklist", timeout=timeout)

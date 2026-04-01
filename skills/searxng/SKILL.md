@@ -1,50 +1,25 @@
 ---
 name: searxng
-description: Search the web via SearXNG. Output is native JSON.
+description: Use when you need SearXNG search results or raw JSON endpoint access.
 ---
 
-# SearXNG Skill
+# ghostship-searxng
 
-The `ghostship-searxng` utility allows agents to perform web searches across multiple categories using a SearXNG instance.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
+- Configure the utility with:
+- `SEARXNG_URL`
+- Prefer the dedicated snake_case command first. Use `request` only as fallback.
 
-## Structure
-
-- **Skill Document:** `skills/searxng/SKILL.md` (this file)
-- **Package Directory:** `packages/searxng-cli/`
-- **README:** `packages/searxng-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `SEARXNG_URL`: The base URL of the SearXNG instance (e.g., `http://localhost:8080`).
-
-## Usage
-
-All commands output native JSON. Use `--pretty` for human-readable output.
-
-### Commands
-
-#### `ghostship-searxng search web "<query>"`
-Perform a web search.
-- `query`: The search term.
-- `--category`: The search category (default: `general`). Common categories: `general`, `images`, `news`, `science`, `it`.
-- `--limit`: Number of results to return (default: `5`).
-- `--language`: Language code (default: `all`).
-- `--safe-search`: Safe search filter (0: Off, 1: Moderate, 2: Strict). Default: `1`.
-- `--pretty`: Pretty print the JSON output.
+## Common Commands
+- `ghostship-searxng request`
+- `ghostship-searxng search web`
 
 ## Examples
-
 ```bash
-# Basic search
-ghostship-searxng search web "nixos hermes"
-
-# news search with limit
-ghostship-searxng search web "current events" --category news --limit 3 --pretty
+ghostship-searxng search web "ghostship hermes" --limit 3 --pretty
 ```
-
-## Agent Guidance
-
-- Use SearXNG to gather information from the internet when internal knowledge is insufficient.
-- Prefer specific categories like `it` or `science` for technical queries to improve result relevance.
-- Always handle the JSON response, which includes `query`, `number_of_results`, and a list of `results` with `title` and `url`.
+```bash
+ghostship-searxng request search --param q=test --param format=json
+```

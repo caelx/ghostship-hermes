@@ -70,7 +70,7 @@ nix shell nixpkgs#gh -c gh --version
 nix shell nixpkgs#tmux -c tmux -V
 nix profile install nixpkgs#ripgrep nixpkgs#jq nixpkgs#python3 nixpkgs#gh nixpkgs#tmux
 nix build .#packages.x86_64-linux.ghostship-hermes-image
-nix run .#ghostship-cloakbrowser -- list
+nix run .#ghostship-cloakbrowser -- list_profiles
 ```
 
 ## Common Agent Scenarios

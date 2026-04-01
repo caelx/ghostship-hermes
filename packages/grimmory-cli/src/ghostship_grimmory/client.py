@@ -1,136 +1,92 @@
-from typing import Any, Dict, Optional
+from __future__ import annotations
 
-import httpx
-import os
+from typing import Any
 
-
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
+from ghostship_cli_contract import BaseHttpClient, ConfigError, RequestSpec
 
 
-class GrimmoryClient:
-    def __init__(
-        self,
-        base_url: str,
-        token: Optional[str] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-    ):
-        normalized_base_url = base_url.rstrip("/")
-        if normalized_base_url.endswith("/api/v1"):
-            self.base_url = normalized_base_url[: -len("/api/v1")]
-            self.api_base_url = normalized_base_url
+class GrimmoryClient(BaseHttpClient):
+    def __init__(self, base_url: str, token: str | None = None, username: str | None = None, password: str | None = None, *, default_timeout: float = 30.0):
+        normalized_base_url = base_url.rstrip('/')
+        if normalized_base_url.endswith('/api/v1'):
+            api_base_url = normalized_base_url
         else:
-            self.base_url = normalized_base_url
-            self.api_base_url = f"{normalized_base_url}/api/v1"
+            api_base_url = f'{normalized_base_url}/api/v1'
+        resolved_token = token or self._authenticate(api_base_url, username=username, password=password, timeout=default_timeout)
+        if not resolved_token:
+            raise ConfigError('Grimmory authentication requires a token or username/password.')
+        super().__init__(api_base_url, default_headers={'Authorization': f'Bearer {resolved_token}'}, default_timeout=default_timeout)
 
-        self.cf_headers = _cloudflare_access_headers()
-        self.token = token or self._authenticate(username=username, password=password)
-        if not self.token:
-            raise ValueError(
-                "Grimmory authentication requires a token or username/password."
-            )
-        self.headers = {**self.cf_headers, "Authorization": f"Bearer {self.token}"}
-
-    def _authenticate(self, username: Optional[str], password: Optional[str]) -> str:
+    @staticmethod
+    def _authenticate(api_base_url: str, *, username: str | None, password: str | None, timeout: float) -> str:
         if not username or not password:
-            raise ValueError(
-                "Set GRIMMORY_TOKEN or GRIMMORY_USERNAME and GRIMMORY_PASSWORD."
-            )
-
-        response = httpx.post(
-            f"{self.api_base_url}/auth/login",
-            json={"username": username, "password": password},
-            timeout=30.0,
-            headers=self.cf_headers,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        token = payload.get("accessToken") or payload.get("access_token")
+            raise ConfigError('Set GRIMMORY_TOKEN or GRIMMORY_USERNAME and GRIMMORY_PASSWORD.')
+        payload = BaseHttpClient(api_base_url, default_timeout=timeout).request_json('POST', '/auth/login', json_body={'username': username, 'password': password}, timeout=timeout)
+        token = payload.get('accessToken') or payload.get('access_token')
         if not token:
-            raise ValueError(
-                "Grimmory /api/v1/auth/login response did not include an access token."
-            )
-        return token
+            raise ConfigError('Grimmory /api/v1/auth/login response did not include an access token.')
+        return str(token)
 
-    def _request(
-        self,
-        path: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        url = f"{self.api_base_url}/{path.lstrip('/')}"
+    def build_request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> RequestSpec:
+        return self.build_request_spec(method, path, params=params, json_body=json_data, timeout=timeout)
 
-        with httpx.Client(headers=self.headers) as client:
-            if method == "POST":
-                response = client.post(url, json=json_data, params=params)
-            elif method == "PUT":
-                response = client.put(url, json=json_data, params=params)
-            elif method == "DELETE":
-                response = client.delete(url, params=params)
-            else:
-                response = client.get(url, params=params)
-            
-            response.raise_for_status()
-            if not response.content:
-                return {"status": "success"}
-            return response.json()
+    def request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_request(method, path, params=params, json_data=json_data, timeout=timeout)
+        return self.request_json(spec.method, spec.path, params=spec.params, json_body=spec.json_body, timeout=spec.timeout)
 
-    # Books
-    def get_books(self, page: int = 0, size: int = 20, library_id: Optional[int] = None) -> Any:
-        params = {"page": page, "size": size}
-        if library_id:
-            params["libraryId"] = library_id
-        return self._request("books", params=params)
+    def get_books(self, page: int = 0, size: int = 20, library_id: int | None = None, timeout: float | None = None) -> Any:
+        params = {'page': page, 'size': size}
+        if library_id is not None:
+            params['libraryId'] = library_id
+        return self.request('GET', 'books', params=params, timeout=timeout)
 
-    def get_book(self, book_id: int) -> Any:
-        return self._request(f"books/{book_id}")
+    def get_book(self, book_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'books/{book_id}', timeout=timeout)
 
-    def download_book(self, book_id: int) -> Any:
-        return self._request(f"books/{book_id}/download")
+    def download_book(self, book_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'books/{book_id}/download', timeout=timeout)
 
-    # Libraries
-    def get_libraries(self) -> Any:
-        return self._request("libraries")
+    def get_libraries(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'libraries', timeout=timeout)
 
-    def get_library(self, library_id: int) -> Any:
-        return self._request(f"libraries/{library_id}")
+    def get_library(self, library_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'libraries/{library_id}', timeout=timeout)
 
-    def scan_libraries(self) -> Any:
-        return self._request("libraries/scan", method="POST")
+    def build_scan_libraries(self) -> RequestSpec:
+        return self.build_request('POST', 'libraries/scan')
 
-    def refresh_library(self, library_id: int) -> Any:
-        return self._request(f"libraries/{library_id}/refresh", method="PUT")
+    def scan_libraries(self, timeout: float | None = None) -> Any:
+        spec = self.build_scan_libraries()
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    # Authors
-    def get_authors(self, page: int = 0, size: int = 20) -> Any:
-        return self._request("authors", params={"page": page, "size": size})
+    def build_refresh_library(self, library_id: int) -> RequestSpec:
+        return self.build_request('PUT', f'libraries/{library_id}/refresh')
 
-    def get_author(self, author_id: int) -> Any:
-        return self._request(f"authors/{author_id}")
+    def refresh_library(self, library_id: int, timeout: float | None = None) -> Any:
+        spec = self.build_refresh_library(library_id)
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    # Shelves
-    def get_shelves(self) -> Any:
-        return self._request("shelves")
+    def get_authors(self, page: int = 0, size: int = 20, timeout: float | None = None) -> Any:
+        return self.request('GET', 'authors', params={'page': page, 'size': size}, timeout=timeout)
 
-    def get_shelf_books(self, shelf_id: int) -> Any:
-        return self._request(f"shelves/{shelf_id}/books")
+    def get_author(self, author_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'authors/{author_id}', timeout=timeout)
 
-    # Tasks
-    def get_tasks(self) -> Any:
-        return self._request("tasks")
+    def get_shelves(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'shelves', timeout=timeout)
 
-    def cancel_task(self, task_id: str) -> Any:
-        return self._request(f"tasks/{task_id}/cancel", method="DELETE")
+    def get_shelf_books(self, shelf_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'shelves/{shelf_id}/books', timeout=timeout)
 
-    # Version
-    def get_version(self) -> Any:
-        return self._request("version")
+    def get_tasks(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'tasks', timeout=timeout)
+
+    def build_cancel_task(self, task_id: str) -> RequestSpec:
+        return self.build_request('DELETE', f'tasks/{task_id}/cancel')
+
+    def cancel_task(self, task_id: str, timeout: float | None = None) -> Any:
+        spec = self.build_cancel_task(task_id)
+        return self.request(spec.method, spec.path, timeout=timeout)
+
+    def get_version(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'version', timeout=timeout)

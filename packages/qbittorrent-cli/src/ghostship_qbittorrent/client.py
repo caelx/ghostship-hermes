@@ -1,174 +1,170 @@
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
+
+from typing import Any
+import json
+
 import httpx
-import os
+
+from ghostship_cli_contract import BaseHttpClient, ConfigError, RequestSpec, TimeoutError, TransportError, HttpStatusError
 
 
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
-
-
-class QBitClient:
-    def __init__(
-        self,
-        base_url: str,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-    ):
-        self.base_url = base_url.rstrip("/")
-        if "/api/v2" not in self.base_url:
-            self.base_url = f"{self.base_url}/api/v2"
+class QBitClient(BaseHttpClient):
+    def __init__(self, base_url: str, username: str | None = None, password: str | None = None, *, default_timeout: float = 30.0):
+        base = base_url.rstrip('/')
+        if '/api/v2' not in base:
+            base = f'{base}/api/v2'
+        super().__init__(base, default_timeout=default_timeout)
         self.username = username
         self.password = password
-        self.cookies: Optional[httpx.Cookies] = None
-        self.headers = _cloudflare_access_headers()
+        self.cookies: httpx.Cookies | None = None
 
-    def login(self) -> bool:
-        if not self.username or not self.password:
+    def _ensure_login(self, timeout: float) -> None:
+        if self.cookies is not None or not (self.username and self.password):
+            return
+        url = f'{self.base_url}/auth/login'
+        try:
+            with httpx.Client(headers=self.default_headers, timeout=timeout) as client:
+                response = client.post(url, data={'username': self.username, 'password': self.password})
+        except httpx.TimeoutException as exc:
+            raise TimeoutError(f'request timed out after {timeout} seconds', details={'method': 'POST', 'path': '/auth/login', 'timeout': timeout}) from exc
+        except httpx.HTTPError as exc:
+            raise TransportError(str(exc), details={'method': 'POST', 'path': '/auth/login'}) from exc
+        if response.is_error:
+            raise HttpStatusError(f'remote service returned HTTP {response.status_code}', status_code=response.status_code, details=response.text or None)
+        if response.text != 'Ok.':
+            raise ConfigError('qBittorrent login failed with the supplied credentials.')
+        self.cookies = response.cookies
+
+    def _client(self, timeout: float) -> httpx.Client:
+        self._ensure_login(timeout)
+        return httpx.Client(headers=self.default_headers, timeout=timeout, cookies=self.cookies, transport=self.transport, follow_redirects=self.follow_redirects)
+
+    def build_request(self, method: str, path: str, *, params: dict[str, Any] | None = None, data: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> RequestSpec:
+        return self.build_request_spec(method, path, params=params, form_data=data, json_body=json_data, timeout=timeout)
+
+    def request(self, method: str, path: str, *, params: dict[str, Any] | None = None, data: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_request(method, path, params=params, data=data, json_data=json_data, timeout=timeout)
+        response = BaseHttpClient.request(self, spec)
+        if not response.content:
+            return {'status': 'success'}
+        try:
+            return response.json()
+        except ValueError:
+            return response.text
+
+    def build_login(self) -> RequestSpec:
+        return self.build_request('POST', 'auth/login', data={'username': self.username, 'password': self.password})
+
+    def login(self, timeout: float | None = None) -> bool:
+        self._ensure_login(timeout or self.default_timeout)
+        return True
+
+    def build_logout(self) -> RequestSpec:
+        return self.build_request('POST', 'auth/logout')
+
+    def logout(self, timeout: float | None = None) -> bool:
+        if not (self.username and self.password):
             return True
-        url = f"{self.base_url}/auth/login"
-        data = {"username": self.username, "password": self.password}
-        with httpx.Client(headers=self.headers) as client:
-            response = client.post(url, data=data)
-            response.raise_for_status()
-            if response.text == "Ok.":
-                self.cookies = response.cookies
-                return True
-            return False
+        result = self.request('POST', 'auth/logout', timeout=timeout)
+        return result == 'Ok.' or result.get('status') == 'success'
 
-    def logout(self) -> bool:
-        if not self.username or not self.password:
-            return True
-        return self._request("auth/logout", method="POST") == "Ok."
+    def get_app_version(self, timeout: float | None = None) -> str:
+        return self.request('GET', 'app/version', timeout=timeout)
 
-    def _request(
-        self,
-        path: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        data: Optional[Dict[str, Any]] = None,
-        files: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        if not self.cookies and self.username and self.password:
-            self.login()
+    def get_api_version(self, timeout: float | None = None) -> str:
+        return self.request('GET', 'app/webapiVersion', timeout=timeout)
 
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(cookies=self.cookies, headers=self.headers) as client:
-            if method == "POST":
-                response = client.post(url, data=data, params=params, files=files)
-            else:
-                response = client.get(url, params=params)
+    def build_shutdown(self) -> RequestSpec:
+        return self.build_request('POST', 'app/shutdown')
 
-            response.raise_for_status()
-            if not response.content:
-                return {"status": "success"}
-            try:
-                return response.json()
-            except:
-                return response.text
+    def shutdown(self, timeout: float | None = None) -> bool:
+        return self.request('POST', 'app/shutdown', timeout=timeout) == 'Ok.'
 
-    # Application
-    def get_app_version(self) -> str:
-        return self._request("app/version")
+    def get_preferences(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'app/preferences', timeout=timeout)
 
-    def get_api_version(self) -> str:
-        return self._request("app/webapiVersion")
+    def build_set_preferences(self, prefs: dict[str, Any]) -> RequestSpec:
+        return self.build_request('POST', 'app/setPreferences', data={'json': json.dumps(prefs)})
 
-    def shutdown(self) -> bool:
-        return self._request("app/shutdown", method="POST") == "Ok."
+    def set_preferences(self, prefs: dict[str, Any], timeout: float | None = None) -> bool:
+        return self.request('POST', 'app/setPreferences', data={'json': json.dumps(prefs)}, timeout=timeout) == 'Ok.'
 
-    def get_preferences(self) -> Any:
-        return self._request("app/preferences")
+    def get_log(self, last_known_id: int = -1, timeout: float | None = None) -> Any:
+        return self.request('GET', 'log/main', params={'last_id': last_known_id}, timeout=timeout)
 
-    def set_preferences(self, prefs: Dict[str, Any]) -> bool:
-        data = {"json": json.dumps(prefs)}
-        return self._request("app/setPreferences", method="POST", data=data) == "Ok."
+    def get_main_data(self, rid: int = 0, timeout: float | None = None) -> Any:
+        return self.request('GET', 'sync/maindata', params={'rid': rid}, timeout=timeout)
 
-    # Log
-    def get_log(self, last_known_id: int = -1) -> Any:
-        return self._request("log/main", params={"last_id": last_known_id})
+    def get_transfer_info(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'transfer/info', timeout=timeout)
 
-    # Sync
-    def get_main_data(self, rid: int = 0) -> Any:
-        return self._request("sync/maindata", params={"rid": rid})
+    def get_speed_limits_mode(self, timeout: float | None = None) -> int:
+        return int(self.request('GET', 'transfer/speedLimitsMode', timeout=timeout))
 
-    # Transfer info
-    def get_transfer_info(self) -> Any:
-        return self._request("transfer/info")
+    def build_toggle_speed_limits_mode(self) -> RequestSpec:
+        return self.build_request('POST', 'transfer/toggleSpeedLimitsMode')
 
-    def get_speed_limits_mode(self) -> int:
-        return int(self._request("transfer/speedLimitsMode"))
+    def toggle_speed_limits_mode(self, timeout: float | None = None) -> bool:
+        return self.request('POST', 'transfer/toggleSpeedLimitsMode', timeout=timeout) == 'Ok.'
 
-    def toggle_speed_limits_mode(self) -> bool:
-        return self._request("transfer/toggleSpeedLimitsMode", method="POST") == "Ok."
-
-    # Torrent management
-    def get_torrents(
-        self,
-        filter_type: Optional[str] = None,
-        category: Optional[str] = None,
-        sort: Optional[str] = None,
-        reverse: bool = False,
-    ) -> Any:
+    def get_torrents(self, filter_type: str | None = None, category: str | None = None, sort: str | None = None, reverse: bool = False, timeout: float | None = None) -> Any:
         params = {}
         if filter_type:
-            params["filter"] = filter_type
+            params['filter'] = filter_type
         if category:
-            params["category"] = category
+            params['category'] = category
         if sort:
-            params["sort"] = sort
+            params['sort'] = sort
         if reverse:
-            params["reverse"] = str(reverse).lower()
-        return self._request("torrents/info", params=params)
+            params['reverse'] = str(reverse).lower()
+        return self.request('GET', 'torrents/info', params=params or None, timeout=timeout)
 
-    def add_torrent(
-        self,
-        urls: List[str],
-        save_path: Optional[str] = None,
-        category: Optional[str] = None,
-    ) -> bool:
-        data = {"urls": "\n".join(urls)}
+    def build_add_torrent(self, urls: list[str], save_path: str | None = None, category: str | None = None) -> RequestSpec:
+        data = {'urls': '\n'.join(urls)}
         if save_path:
-            data["savepath"] = save_path
+            data['savepath'] = save_path
         if category:
-            data["category"] = category
-        return self._request("torrents/add", method="POST", data=data) == "Ok."
+            data['category'] = category
+        return self.build_request('POST', 'torrents/add', data=data)
 
-    def delete_torrents(self, hashes: List[str], delete_files: bool = False) -> bool:
-        data = {"hashes": "|".join(hashes), "deleteFiles": str(delete_files).lower()}
-        return self._request("torrents/delete", method="POST", data=data) == "Ok."
+    def add_torrent(self, urls: list[str], save_path: str | None = None, category: str | None = None, timeout: float | None = None) -> bool:
+        spec = self.build_add_torrent(urls, save_path=save_path, category=category)
+        return self.request(spec.method, spec.path, data=spec.form_data, timeout=timeout) == 'Ok.'
 
-    def pause_torrents(self, hashes: List[str]) -> bool:
-        data = {"hashes": "|".join(hashes)}
-        return self._request("torrents/pause", method="POST", data=data) == "Ok."
+    def build_delete_torrents(self, hashes: list[str], delete_files: bool = False) -> RequestSpec:
+        return self.build_request('POST', 'torrents/delete', data={'hashes': '|'.join(hashes), 'deleteFiles': str(delete_files).lower()})
 
-    def resume_torrents(self, hashes: List[str]) -> bool:
-        data = {"hashes": "|".join(hashes)}
-        return self._request("torrents/resume", method="POST", data=data) == "Ok."
+    def delete_torrents(self, hashes: list[str], delete_files: bool = False, timeout: float | None = None) -> bool:
+        spec = self.build_delete_torrents(hashes, delete_files=delete_files)
+        return self.request(spec.method, spec.path, data=spec.form_data, timeout=timeout) == 'Ok.'
 
-    # Search
-    def search_start(
-        self, pattern: str, category: str = "all", plugins: str = "all"
-    ) -> Any:
-        data = {"pattern": pattern, "category": category, "plugins": plugins}
-        return self._request("search/start", method="POST", data=data)
+    def build_pause_torrents(self, hashes: list[str]) -> RequestSpec:
+        return self.build_request('POST', 'torrents/pause', data={'hashes': '|'.join(hashes)})
 
-    def search_status(self, search_id: Optional[int] = None) -> Any:
-        params = {}
-        if search_id is not None:
-            params["id"] = search_id
-        return self._request("search/status", params=params)
+    def pause_torrents(self, hashes: list[str], timeout: float | None = None) -> bool:
+        spec = self.build_pause_torrents(hashes)
+        return self.request(spec.method, spec.path, data=spec.form_data, timeout=timeout) == 'Ok.'
 
-    def search_results(self, search_id: int, limit: int = 10, offset: int = 0) -> Any:
-        params = {"id": search_id, "limit": limit, "offset": offset}
-        return self._request("search/results", params=params)
+    def build_resume_torrents(self, hashes: list[str]) -> RequestSpec:
+        return self.build_request('POST', 'torrents/resume', data={'hashes': '|'.join(hashes)})
 
-    # RSS
-    def get_rss_data(self, with_data: bool = True) -> Any:
-        return self._request("rss/items", params={"withData": str(with_data).lower()})
+    def resume_torrents(self, hashes: list[str], timeout: float | None = None) -> bool:
+        spec = self.build_resume_torrents(hashes)
+        return self.request(spec.method, spec.path, data=spec.form_data, timeout=timeout) == 'Ok.'
+
+    def build_search_start(self, pattern: str, category: str = 'all', plugins: str = 'all') -> RequestSpec:
+        return self.build_request('POST', 'search/start', data={'pattern': pattern, 'category': category, 'plugins': plugins})
+
+    def search_start(self, pattern: str, category: str = 'all', plugins: str = 'all', timeout: float | None = None) -> Any:
+        spec = self.build_search_start(pattern, category=category, plugins=plugins)
+        return self.request(spec.method, spec.path, data=spec.form_data, timeout=timeout)
+
+    def search_status(self, search_id: int | None = None, timeout: float | None = None) -> Any:
+        params = {'id': search_id} if search_id is not None else None
+        return self.request('GET', 'search/status', params=params, timeout=timeout)
+
+    def search_results(self, search_id: int, limit: int = 10, offset: int = 0, timeout: float | None = None) -> Any:
+        return self.request('GET', 'search/results', params={'id': search_id, 'limit': limit, 'offset': offset}, timeout=timeout)
+
+    def get_rss_data(self, with_data: bool = True, timeout: float | None = None) -> Any:
+        return self.request('GET', 'rss/items', params={'withData': str(with_data).lower()}, timeout=timeout)

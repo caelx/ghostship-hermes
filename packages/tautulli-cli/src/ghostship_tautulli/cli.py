@@ -1,122 +1,133 @@
-import typer
+from __future__ import annotations
+
 import os
-import json
-import sys
-from typing import Optional, List, Any
+from typing import Any
+
+import typer
+
+from ghostship_cli_contract import DEFAULT_TIMEOUT, echo_json, parse_json_option, require_env, run_app, run_cli_command
+
 from .client import TautulliClient
 
-app = typer.Typer(help="Tautulli CLI interface.")
+app = typer.Typer(help='Tautulli CLI interface.', no_args_is_help=True)
+APP_STATE = {'timeout': DEFAULT_TIMEOUT}
 
-def echo_json(data: Any, pretty: bool = False):
-    indent = 2 if pretty else None
-    typer.echo(json.dumps(data, indent=indent))
+
+@app.callback()
+def app_callback(timeout: float = typer.Option(DEFAULT_TIMEOUT, '--timeout', help='Hard timeout in seconds for all API calls in this invocation.')) -> None:
+    APP_STATE['timeout'] = timeout
+
 
 def get_client() -> TautulliClient:
-    base_url = os.getenv("TAUTULLI_URL")
-    api_key = os.getenv("TAUTULLI_API_KEY")
-    
-    if not base_url or not api_key:
-        print("Error: TAUTULLI_URL and TAUTULLI_API_KEY environment variables must be set.", file=sys.stderr)
-        raise typer.Exit(code=1)
-    
-    return TautulliClient(base_url, api_key)
+    return TautulliClient(require_env('TAUTULLI_URL', os.getenv('TAUTULLI_URL')), require_env('TAUTULLI_API_KEY', os.getenv('TAUTULLI_API_KEY')), default_timeout=APP_STATE['timeout'])
 
-@app.command()
-def info(pretty: bool = typer.Option(False, "--pretty")):
-    """Get Tautulli server information."""
+
+def _emit(data: Any, pretty: bool) -> None:
+    echo_json(data, pretty=pretty)
+
+
+def _run(execute, *, pretty: bool) -> None:
+    _emit(run_cli_command(None, execute, timeout=APP_STATE['timeout']), pretty)
+
+
+def _run_write(build_request, execute, *, dry_run: bool, pretty: bool) -> None:
+    _emit(run_cli_command(build_request, execute, timeout=APP_STATE['timeout'], dry_run=dry_run), pretty)
+
+
+@app.command('call')
+def call(cmd: str, args_json: str | None = typer.Option(None, '--args-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = {
-            "tautulli": client.get_tautulli_info(),
-            "server_status": client.get_server_status()
-        }
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching info: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    args = parse_json_option(args_json, '--args-json') or {}
+    _run_write(lambda: client.build_call(cmd, **args), lambda timeout: client.call(cmd, timeout=timeout, **args), dry_run=dry_run, pretty=pretty)
 
-@app.command()
-def activity(pretty: bool = typer.Option(False, "--pretty")):
-    """Get current streaming activity."""
+
+@app.command('get_server_status')
+def get_server_status(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_activity()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching activity: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_server_status(timeout=timeout), pretty=pretty)
 
-@app.command()
-def history(page: int = 1, length: int = 10, search: Optional[str] = None, pretty: bool = typer.Option(False, "--pretty")):
-    """Get playback history."""
+
+@app.command('get_tautulli_info')
+def get_tautulli_info(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_history(page=page, length=length, search=search)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching history: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_tautulli_info(timeout=timeout), pretty=pretty)
 
-@app.command()
-def users(pretty: bool = typer.Option(False, "--pretty")):
-    """Get all users."""
+
+@app.command('get_status')
+def get_status(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_users()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching users: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_status(timeout=timeout), pretty=pretty)
 
-@app.command()
-def user_stats(user_id: int, pretty: bool = typer.Option(False, "--pretty")):
-    """Get statistics for a specific user."""
+
+@app.command('get_activity')
+def get_activity(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = {
-            "player_stats": client.get_user_player_stats(user_id),
-            "watch_time_stats": client.get_user_watch_time_stats(user_id)
-        }
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching user stats for {user_id}: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_activity(timeout=timeout), pretty=pretty)
 
-@app.command()
-def libraries(pretty: bool = typer.Option(False, "--pretty")):
-    """Get all libraries."""
+
+@app.command('terminate_session')
+def terminate_session(session_id: str, message: str | None = typer.Option(None, '--message'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_libraries()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error fetching libraries: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run_write(lambda: client.build_terminate_session(session_id, message=message), lambda timeout: client.terminate_session(session_id, message=message, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
-@app.command()
-def search(query: str, limit: int = 10, pretty: bool = typer.Option(False, "--pretty")):
-    """Search for media via Tautulli."""
+
+@app.command('get_history')
+def get_history(page: int = typer.Option(1, '--page'), length: int = typer.Option(10, '--length'), search: str | None = typer.Option(None, '--search'), order_column: str = typer.Option('date', '--order-column'), order_dir: str = typer.Option('desc', '--order-dir'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.search(query, limit=limit)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error searching: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_history(page=page, length=length, search=search, order_column=order_column, order_dir=order_dir, timeout=timeout), pretty=pretty)
 
-@app.command()
-def terminate(session_id: str, message: Optional[str] = None, pretty: bool = typer.Option(False, "--pretty")):
-    """Terminate a streaming session."""
+
+@app.command('get_libraries')
+def get_libraries(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.terminate_session(session_id, message=message)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        print(f"Error terminating session {session_id}: {e}", file=sys.stderr)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_libraries(timeout=timeout), pretty=pretty)
 
-def main():
-    app()
 
-if __name__ == "__main__":
+@app.command('get_library_user_stats')
+def get_library_user_stats(section_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_library_user_stats(section_id, timeout=timeout), pretty=pretty)
+
+
+@app.command('get_users')
+def get_users(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_users(timeout=timeout), pretty=pretty)
+
+
+@app.command('get_user_player_stats')
+def get_user_player_stats(user_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_user_player_stats(user_id, timeout=timeout), pretty=pretty)
+
+
+@app.command('get_user_watch_time_stats')
+def get_user_watch_time_stats(user_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_user_watch_time_stats(user_id, timeout=timeout), pretty=pretty)
+
+
+@app.command('get_metadata')
+def get_metadata(rating_key: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_metadata(rating_key, timeout=timeout), pretty=pretty)
+
+
+@app.command('search')
+def search(query: str, limit: int = typer.Option(10, '--limit'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.search(query, limit=limit, timeout=timeout), pretty=pretty)
+
+
+@app.command('restart')
+def restart(dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run_write(lambda: client.build_restart(), lambda timeout: client.restart(timeout=timeout), dry_run=dry_run, pretty=pretty)
+
+
+def main() -> None:
+    run_app(app)
+
+
+if __name__ == '__main__':
     main()

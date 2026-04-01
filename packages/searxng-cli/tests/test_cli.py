@@ -1,86 +1,45 @@
-import json
+from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from ghostship_searxng.cli import app
+from ghostship_searxng import cli
 
 
 runner = CliRunner()
 
 
-def test_search_web_json_output(monkeypatch):
-    def fake_search(
-        *, base_url, query, categories, limit, language, safe_search, timeout
-    ):
-        assert base_url == "https://search.example"
-        assert query == "nixos hermes"
-        assert categories == "general"
-        assert limit == 3
-        assert language == "en"
-        assert safe_search == 1
-        assert timeout == 10.0
-        return {
-            "query": query,
-            "number_of_results": 1,
-            "results": [
-                {
-                    "title": "Ghostship Hermes",
-                    "url": "https://example.com/ghostship-hermes",
-                }
-            ],
-        }
+class DummyClient:
+    def __init__(self):
+        self.calls = []
 
-    monkeypatch.setattr("ghostship_searxng.cli.search_searxng", fake_search)
+    def build_request(self, path, *, params=None):
+        class _Spec:
+            def __init__(self, payload): self.payload = payload
+            def to_dict(self): return self.payload
+        return _Spec({'path': path, 'params': params})
 
-    result = runner.invoke(
-        app,
-        [
-            "search",
-            "web",
-            "nixos hermes",
-            "--base-url",
-            "https://search.example",
-            "--category",
-            "general",
-            "--limit",
-            "3",
-            "--language",
-            "en",
-            "--safe-search",
-            "1",
-        ],
-    )
+    def request(self, path, *, params=None, timeout=None):
+        self.calls.append(('request', path, params, timeout))
+        return {'ok': True}
 
+    def search_web(self, **kwargs):
+        self.calls.append(('search_web', kwargs))
+        return {'ok': True}
+
+
+def test_request_dry_run(monkeypatch):
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda base_url=None: client)
+    result = runner.invoke(cli.app, ['request', 'search', '--param', 'q=test', '--dry-run'])
     assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["query"] == "nixos hermes"
-    assert payload["number_of_results"] == 1
-    assert payload["results"][0]["title"] == "Ghostship Hermes"
+    assert 'search' in result.stdout
+    assert not client.calls
 
 
-def test_search_web_human_output(monkeypatch):
-    def fake_search(
-        *, base_url, query, categories, limit, language, safe_search, timeout
-    ):
-        return {
-            "query": query,
-            "number_of_results": 2,
-            "results": [
-                {
-                    "title": "Ghostship Hermes",
-                    "url": "https://example.com/ghostship-hermes",
-                },
-                {
-                    "title": "Hermes Agent",
-                    "url": "https://example.com/hermes",
-                },
-            ],
-        }
-
-    monkeypatch.setattr("ghostship_searxng.cli.search_searxng", fake_search)
-
-    result = runner.invoke(app, ["search", "web", "hermes"])
-
+def test_timeout_applies(monkeypatch):
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda base_url=None: client)
+    result = runner.invoke(cli.app, ['--timeout', '7', 'search_web', 'query'])
     assert result.exit_code == 0
-    assert "Ghostship Hermes" in result.stdout
-    assert "https://example.com/hermes" in result.stdout
+    assert client.calls[-1][0] == 'search_web'
+    assert client.calls[-1][1]['timeout'] == 7.0

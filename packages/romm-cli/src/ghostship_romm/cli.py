@@ -1,196 +1,155 @@
-import json
+from __future__ import annotations
+
 import os
-import sys
-from typing import Any, Optional
+from typing import Any
 
 import typer
 
+from ghostship_cli_contract import DEFAULT_TIMEOUT, echo_json, parse_json_option, parse_params, require_env, run_app, run_cli_command
+
 from .client import RommClient
 
-HELP_TEXT = """Romm (ROM Manager) CLI interface.
+HELP_TEXT = """RomM CLI interface.
 
 Auth:
-- Set ROMM_URL to the RomM base URL.
-- Preferred: set ROMM_USERNAME and ROMM_PASSWORD. The CLI exchanges them at /api/token.
-- Optional override: set ROMM_TOKEN if you already have a bearer token.
+- Set ROMM_URL.
+- Preferred: set ROMM_USERNAME and ROMM_PASSWORD.
+- Optional override: set ROMM_TOKEN.
 """
 
 app = typer.Typer(help=HELP_TEXT, no_args_is_help=True)
+APP_STATE = {'timeout': DEFAULT_TIMEOUT}
 
 
-def echo_json(data: Any, pretty: bool = False):
-    indent = 2 if pretty else None
-    typer.echo(json.dumps(data, indent=indent))
+@app.callback()
+def app_callback(timeout: float = typer.Option(DEFAULT_TIMEOUT, '--timeout', help='Hard timeout in seconds for all API calls in this invocation.')) -> None:
+    APP_STATE['timeout'] = timeout
 
 
 def get_client() -> RommClient:
-    base_url = os.getenv("ROMM_URL")
-    token = os.getenv("ROMM_TOKEN")
-    username = os.getenv("ROMM_USERNAME")
-    password = os.getenv("ROMM_PASSWORD")
-
-    if not base_url:
-        print(
-            "Error: ROMM_URL must be set.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
-    if not token and not (username and password):
-        print(
-            "Error: set ROMM_TOKEN or ROMM_USERNAME and ROMM_PASSWORD.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
-    return RommClient(base_url, token=token, username=username, password=password)
+    return RommClient(require_env('ROMM_URL', os.getenv('ROMM_URL')), token=os.getenv('ROMM_TOKEN'), username=os.getenv('ROMM_USERNAME'), password=os.getenv('ROMM_PASSWORD'), default_timeout=APP_STATE['timeout'])
 
 
-@app.command()
-def heartbeat(pretty: bool = typer.Option(False, "--pretty")):
-    """Check Romm API heartbeat."""
+def _emit(data: Any, pretty: bool) -> None:
+    echo_json(data, pretty=pretty)
+
+
+def _run(execute, *, pretty: bool) -> None:
+    _emit(run_cli_command(None, execute, timeout=APP_STATE['timeout']), pretty)
+
+
+def _run_write(build_request, execute, *, dry_run: bool, pretty: bool) -> None:
+    _emit(run_cli_command(build_request, execute, timeout=APP_STATE['timeout'], dry_run=dry_run), pretty)
+
+
+@app.command('request')
+def request(method: str, path: str, param: list[str] = typer.Option([], '--param'), body_json: str | None = typer.Option(None, '--body-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_heartbeat()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    params = parse_params(param) or None
+    payload = parse_json_option(body_json, '--body-json')
+    _run_write(lambda: client.build_request(method, path, params=params, json_data=payload), lambda timeout: client.request(method, path, params=params, json_data=payload, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def list_roms(
-    page: int = 1,
-    page_size: int = 24,
-    platform: Optional[str] = None,
-    pretty: bool = typer.Option(False, "--pretty"),
-):
-    """List ROMs in the library."""
+@app.command('get_heartbeat')
+def get_heartbeat(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_roms(page=page, page_size=page_size, platform=platform)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_heartbeat(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def get_rom(rom_id: int, pretty: bool = typer.Option(False, "--pretty")):
-    """Get detailed information for a ROM."""
+@app.command('get_platforms')
+def get_platforms(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_rom(rom_id)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_platforms(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def platforms(pretty: bool = typer.Option(False, "--pretty")):
-    """List all available platforms."""
+@app.command('get_libraries')
+def get_libraries(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_platforms()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_libraries(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def scan(
-    library_id: Optional[int] = typer.Option(None, "--id", help="Library ID to scan"),
-    pretty: bool = typer.Option(False, "--pretty"),
-):
-    """Start a library scan."""
+@app.command('get_roms')
+def get_roms(page: int = typer.Option(1, '--page'), page_size: int = typer.Option(24, '--page-size'), platform: str | None = typer.Option(None, '--platform'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.start_scan(library_id)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_roms(page=page, page_size=page_size, platform=platform, timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def list_collections(pretty: bool = typer.Option(False, "--pretty")):
-    """List all collections."""
+@app.command('get_rom')
+def get_rom(rom_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_collections()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_rom(rom_id, timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def config(pretty: bool = typer.Option(False, "--pretty")):
-    """Get Romm configuration."""
+@app.command('update_rom')
+def update_rom(rom_id: int, body_json: str = typer.Option(..., '--body-json'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_config()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    data = parse_json_option(body_json, '--body-json')
+    _run_write(lambda: client.build_update_rom(rom_id, data), lambda timeout: client.update_rom(rom_id, data, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def saves(
-    page: int = 1, page_size: int = 24, pretty: bool = typer.Option(False, "--pretty")
-):
-    """List save files."""
+@app.command('delete_rom')
+def delete_rom(rom_id: int, dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_saves(page=page, page_size=page_size)
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    _run_write(lambda: client.build_delete_rom(rom_id), lambda timeout: client.delete_rom(rom_id, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def saves_summary(pretty: bool = typer.Option(False, "--pretty")):
-    """Get save files summary."""
+@app.command('get_scans')
+def get_scans(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_saves_summary()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_scans(timeout=timeout), pretty=pretty)
 
 
-@app.command()
-def users(pretty: bool = typer.Option(False, "--pretty")):
-    """List users."""
+@app.command('start_scan')
+def start_scan(library_id: int | None = typer.Option(None, '--library-id'), dry_run: bool = typer.Option(False, '--dry-run'), pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_users()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    _run_write(lambda: client.build_start_scan(library_id), lambda timeout: client.start_scan(library_id, timeout=timeout), dry_run=dry_run, pretty=pretty)
 
 
-@app.command()
-def me(pretty: bool = typer.Option(False, "--pretty")):
-    """Get current user info."""
+@app.command('get_collections')
+def get_collections(pretty: bool = typer.Option(False, '--pretty')) -> None:
     client = get_client()
-    try:
-        data = client.get_user_me()
-        echo_json(data, pretty=pretty)
-    except Exception as e:
-        echo_json({"error": str(e)}, pretty=pretty)
-        raise typer.Exit(code=1)
+    _run(lambda timeout: client.get_collections(timeout=timeout), pretty=pretty)
 
 
-def main():
-    app()
+@app.command('get_config')
+def get_config(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_config(timeout=timeout), pretty=pretty)
 
 
-if __name__ == "__main__":
+@app.command('get_saves')
+def get_saves(page: int = typer.Option(1, '--page'), page_size: int = typer.Option(24, '--page-size'), pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_saves(page=page, page_size=page_size, timeout=timeout), pretty=pretty)
+
+
+@app.command('get_saves_summary')
+def get_saves_summary(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_saves_summary(timeout=timeout), pretty=pretty)
+
+
+@app.command('get_save')
+def get_save(save_id: int, pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_save(save_id, timeout=timeout), pretty=pretty)
+
+
+@app.command('get_users')
+def get_users(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_users(timeout=timeout), pretty=pretty)
+
+
+@app.command('get_user_me')
+def get_user_me(pretty: bool = typer.Option(False, '--pretty')) -> None:
+    client = get_client()
+    _run(lambda timeout: client.get_user_me(timeout=timeout), pretty=pretty)
+
+
+def main() -> None:
+    run_app(app)
+
+
+if __name__ == '__main__':
     main()

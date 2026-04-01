@@ -1,37 +1,25 @@
+from __future__ import annotations
+
 from ghostship_romm.client import RommClient
 
 
-class DummyResponse:
-    def __init__(self, payload):
-        self._payload = payload
+class DummyRommClient(RommClient):
+    def __init__(self) -> None:
+        super().__init__('https://romm.example', token='secret')
+        self.calls = []
 
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return self._payload
+    def request(self, method: str, path: str, *, params=None, json_data=None, timeout=None):
+        self.calls.append((method, path, {'params': params, 'json_data': json_data, 'timeout': timeout}))
+        return {'ok': True}
 
 
-def test_password_auth_fetches_token(monkeypatch):
-    captured = {}
-
-    def fake_post(url, data=None, timeout=None):
-        captured["url"] = url
-        captured["data"] = data
-        return DummyResponse(
-            {
-                "access_token": "romm-access-token",
-                "token_type": "bearer",
-                "expires": 3600,
-            }
-        )
-
-    monkeypatch.setattr("ghostship_romm.client.httpx.post", fake_post)
-
-    client = RommClient("http://romm.local", username="alice", password="secret")
-
-    assert client.headers["Authorization"] == "Bearer romm-access-token"
-    assert captured["url"] == "http://romm.local/api/token"
-    assert captured["data"]["grant_type"] == "password"
-    assert captured["data"]["username"] == "alice"
-    assert captured["data"]["password"] == "secret"
+def test_wrappers_delegate_to_request() -> None:
+    client = DummyRommClient()
+    client.get_heartbeat(timeout=1)
+    client.update_rom(5, {'title': 'demo'}, timeout=2)
+    client.start_scan(timeout=3)
+    assert client.calls == [
+        ('GET', 'heartbeat', {'params': None, 'json_data': None, 'timeout': 1}),
+        ('PUT', '/roms/5', {'params': None, 'json_data': {'title': 'demo'}, 'timeout': 2}),
+        ('POST', '/scans', {'params': None, 'json_data': None, 'timeout': 3}),
+    ]

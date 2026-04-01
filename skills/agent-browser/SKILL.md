@@ -1,5 +1,5 @@
 ---
-name: hermes-agent-browser
+name: agent-browser
 description: Use agent-browser with CloakBrowser-launched profiles and CDP endpoints inside the Hermes container.
 ---
 
@@ -20,7 +20,7 @@ Use this skill when Hermes needs browser automation through CloakBrowser profile
 
 ## Workflow
 
-1. List profiles with `ghostship-cloakbrowser list`.
+1. List profiles with `ghostship-cloakbrowser list_profiles`.
 2. Launch the chosen profile.
 3. Copy the returned CDP URL.
 4. Connect `agent-browser` to that URL.
@@ -36,11 +36,11 @@ Use this skill when Hermes needs browser automation through CloakBrowser profile
 
 ## Common Commands
 
-- `ghostship-cloakbrowser auth-status`
-- `ghostship-cloakbrowser list`
-- `ghostship-cloakbrowser launch <profile-id>`
-- `ghostship-cloakbrowser profile-status <profile-id>`
-- `ghostship-cloakbrowser stop <profile-id>`
+- `ghostship-cloakbrowser auth_status`
+- `ghostship-cloakbrowser list_profiles`
+- `ghostship-cloakbrowser launch_profile <profile-id>`
+- `ghostship-cloakbrowser get_profile_status <profile-id>`
+- `ghostship-cloakbrowser stop_profile <profile-id>`
 - `agent-browser snapshot -i`
 - `agent-browser click @e1`
 - `agent-browser fill @e2 "text"`

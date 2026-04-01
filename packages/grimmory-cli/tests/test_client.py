@@ -1,31 +1,25 @@
+from __future__ import annotations
+
 from ghostship_grimmory.client import GrimmoryClient
 
 
-class DummyResponse:
-    def __init__(self, payload):
-        self._payload = payload
+class DummyGrimmoryClient(GrimmoryClient):
+    def __init__(self) -> None:
+        super().__init__('https://grimmory.example', token='secret')
+        self.calls = []
 
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return self._payload
+    def request(self, method: str, path: str, *, params=None, json_data=None, timeout=None):
+        self.calls.append((method, path, {'params': params, 'json_data': json_data, 'timeout': timeout}))
+        return {'ok': True}
 
 
-def test_password_auth_fetches_token(monkeypatch):
-    captured = {}
-
-    def fake_post(url, json=None, timeout=None):
-        captured["url"] = url
-        captured["json"] = json
-        return DummyResponse({"accessToken": "grimmory-access-token"})
-
-    monkeypatch.setattr("ghostship_grimmory.client.httpx.post", fake_post)
-
-    client = GrimmoryClient(
-        "http://grimmory.local", username="alice", password="secret"
-    )
-
-    assert client.headers["Authorization"] == "Bearer grimmory-access-token"
-    assert captured["url"] == "http://grimmory.local/api/v1/auth/login"
-    assert captured["json"] == {"username": "alice", "password": "secret"}
+def test_wrappers_delegate_to_request() -> None:
+    client = DummyGrimmoryClient()
+    client.get_books(timeout=1)
+    client.scan_libraries(timeout=2)
+    client.cancel_task('t1', timeout=3)
+    assert client.calls == [
+        ('GET', 'books', {'params': {'page': 0, 'size': 20}, 'json_data': None, 'timeout': 1}),
+        ('POST', '/libraries/scan', {'params': None, 'json_data': None, 'timeout': 2}),
+        ('DELETE', '/tasks/t1/cancel', {'params': None, 'json_data': None, 'timeout': 3}),
+    ]

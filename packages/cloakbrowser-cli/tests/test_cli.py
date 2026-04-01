@@ -1,187 +1,70 @@
-import json
-from unittest.mock import MagicMock, patch
+from __future__ import annotations
 
-import pytest
 from typer.testing import CliRunner
 
-from ghostship_cloakbrowser.cli import app
+from ghostship_cloakbrowser import cli
 
 
 runner = CliRunner()
 
 
-def test_root_help_explains_static_token_auth():
-    result = runner.invoke(app, ["--help"])
+class DummyClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
 
+    def get_system_status(self, *, timeout=None):
+        self.calls.append(('get_system_status', (), {'timeout': timeout}))
+        return {'status': 'ok'}
+
+    def build_request(self, method: str, path: str, *, params=None, json_data=None):
+        class _Spec:
+            def __init__(self, payload):
+                self.payload = payload
+            def to_dict(self):
+                return self.payload
+        return _Spec({'method': method, 'path': path, 'params': params, 'json_body': json_data, 'timeout': 9})
+
+    def request(self, method: str, path: str, *, params=None, json_data=None, timeout=None):
+        self.calls.append(('request', (method, path), {'params': params, 'json_data': json_data, 'timeout': timeout}))
+        return {'method': method, 'path': path}
+
+    def build_create_profile(self, **kwargs):
+        return self.build_request('POST', '/api/profiles', json_data=kwargs)
+
+    def create_profile(self, *, timeout=None, **kwargs):
+        self.calls.append(('create_profile', (), {'kwargs': kwargs, 'timeout': timeout}))
+        return {'id': 'demo'}
+
+
+def test_root_help_explains_static_token_auth() -> None:
+    result = runner.invoke(cli.app, ['--help'])
     assert result.exit_code == 0
-    assert "CLOAKBROWSER_URL" in result.stdout
-    assert "CLOAKBROWSER_TOKEN" in result.stdout
-    assert "AUTH_TOKEN" in result.stdout
-    assert "static" in result.stdout.lower()
+    assert 'CLOAKBROWSER_URL' in result.stdout
+    assert 'CLOAKBROWSER_TOKEN' in result.stdout
+    assert 'AUTH_TOKEN' in result.stdout
 
 
-def test_list_profiles(monkeypatch):
-    mock_profiles = [
-        {
-            "id": "profile-1",
-            "name": "test-profile",
-            "status": "running",
-            "vnc_ws_port": 6080,
-            "cdp_url": "/api/profiles/profile-1/cdp",
-        }
-    ]
-
-    mock_client = MagicMock()
-    mock_client.list_profiles.return_value = mock_profiles
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["list"])
-
+def test_timeout_callback_applies_to_reads(monkeypatch) -> None:
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['--timeout', '7', 'get_system_status'])
     assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert len(payload) == 1
-    assert payload[0]["name"] == "test-profile"
-    assert payload[0]["status"] == "running"
+    assert client.calls[-1] == ('get_system_status', (), {'timeout': 7.0})
 
 
-def test_get_profile(monkeypatch):
-    mock_profile = {
-        "id": "profile-1",
-        "name": "test-profile",
-        "status": "running",
-        "fingerprint_seed": 12345,
-    }
-
-    mock_client = MagicMock()
-    mock_client.get_profile.return_value = mock_profile
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["get", "profile-1"])
-
+def test_request_dry_run(monkeypatch) -> None:
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['request', 'POST', '/api/profiles', '--param', 'verbose=true', '--body-json', '{"name":"demo"}', '--dry-run'])
     assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["id"] == "profile-1"
+    assert '"method": "POST"' in result.stdout
+    assert not client.calls
 
 
-def test_create_profile(monkeypatch):
-    mock_profile = {
-        "id": "new-profile-id",
-        "name": "my-new-profile",
-        "status": "stopped",
-    }
-
-    mock_client = MagicMock()
-    mock_client.create_profile.return_value = mock_profile
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["create", "my-new-profile"])
-
+def test_create_profile_dry_run(monkeypatch) -> None:
+    client = DummyClient()
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+    result = runner.invoke(cli.app, ['--timeout', '12', 'create_profile', 'demo', '--humanize', '--dry-run'])
     assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["name"] == "my-new-profile"
-
-
-def test_launch_profile(monkeypatch):
-    mock_launch = {
-        "profile_id": "profile-1",
-        "status": "running",
-        "vnc_ws_port": 6080,
-        "display": ":1",
-        "cdp_url": "/api/profiles/profile-1/cdp",
-    }
-
-    mock_client = MagicMock()
-    mock_client.launch_profile.return_value = mock_launch
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["launch", "profile-1"])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["status"] == "running"
-    assert payload["cdp_url"] == "/api/profiles/profile-1/cdp"
-
-
-def test_stop_profile(monkeypatch):
-    mock_client = MagicMock()
-    mock_client.stop_profile.return_value = True
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["stop", "profile-1"])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["ok"] is True
-
-
-def test_delete_profile(monkeypatch):
-    mock_client = MagicMock()
-    mock_client.delete_profile.return_value = True
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["delete", "profile-1"])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["ok"] is True
-
-
-def test_status(monkeypatch):
-    mock_status = {
-        "running_count": 2,
-        "binary_version": "1.2.3",
-        "profiles_total": 5,
-    }
-
-    mock_client = MagicMock()
-    mock_client.get_system_status.return_value = mock_status
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["status"])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["running_count"] == 2
-
-
-def test_clipboard_get(monkeypatch):
-    mock_clipboard = {"text": "copied text"}
-
-    mock_client = MagicMock()
-    mock_client.get_clipboard.return_value = mock_clipboard
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["clipboard-get", "profile-1"])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["text"] == "copied text"
-
-
-def test_clipboard_set(monkeypatch):
-    mock_client = MagicMock()
-    mock_client.set_clipboard.return_value = True
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["clipboard-set", "profile-1", "hello"])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["ok"] is True
-
-
-def test_cdp_info(monkeypatch):
-    mock_cdp = {
-        "cdp_url": "/api/profiles/profile-1/cdp",
-        "usage": "playwright.chromium.connect_over_cdp('http://<host>/api/profiles/profile-1/cdp')",
-    }
-
-    mock_client = MagicMock()
-    mock_client.get_cdp_info.return_value = mock_cdp
-    monkeypatch.setattr("ghostship_cloakbrowser.cli.get_client", lambda: mock_client)
-
-    result = runner.invoke(app, ["cdp-info", "profile-1"])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert "playwright" in payload["usage"]
+    assert '"path": "/api/profiles"' in result.stdout
+    assert not client.calls

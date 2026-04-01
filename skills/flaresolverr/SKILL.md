@@ -1,62 +1,32 @@
 ---
 name: flaresolverr
-description: Bypass Cloudflare protection via FlareSolverr. Output is native JSON.
+description: Use when you need FlareSolverr request or session commands with names that match the client methods.
 ---
 
-# FlareSolverr Skill
+# ghostship-flaresolverr
 
-The `ghostship-flaresolverr` utility allows agents to perform HTTP requests through a FlareSolverr instance to bypass Cloudflare and other bot protection services.
+- Commands mirror the API/client method names exactly. Do not guess aliases.
+- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
+- Configure the utility with:
+- `FLARESOLVERR_URL`
+- Prefer the dedicated snake_case command first.
 
-## Structure
-
-- **Skill Document:** `skills/flaresolverr/SKILL.md` (this file)
-- **Package Directory:** `packages/flaresolverr-cli/`
-- **README:** `packages/flaresolverr-cli/README.md`
-
-## Prerequisites
-
-The following environment variables must be configured:
-- `FLARESOLVERR_URL`: The base URL of the FlareSolverr instance (default: `http://localhost:8191`).
-
-## Usage
-
-All commands output native JSON.
-
-### Commands
-
-#### `ghostship-flaresolverr get <url>`
-Perform a GET request.
-- `url`: The target URL.
-- `--session`: Optional session ID to use.
-
-#### `ghostship-flaresolverr post <url> <data>`
-Perform a POST request.
-- `url`: The target URL.
-- `data`: POST data string.
-- `--session`: Optional session ID to use.
-
-#### `ghostship-flaresolverr create-session`
-Create a new browser session.
-
-#### `ghostship-flaresolverr list-sessions`
-List all active browser sessions.
-
-#### `ghostship-flaresolverr destroy-session <id>`
-Destroy a specific browser session.
-- `id`: The session ID to destroy.
+## Common Commands
+- `ghostship-flaresolverr command`
+- `ghostship-flaresolverr request_get`
+- `ghostship-flaresolverr request_post`
+- `ghostship-flaresolverr sessions_create`
+- `ghostship-flaresolverr sessions_list`
+- `ghostship-flaresolverr sessions_destroy`
 
 ## Examples
-
 ```bash
-# Perform a protected GET request
-ghostship-flaresolverr get "https://example.com" --pretty
-
-# Create a session for multiple requests
-ghostship-flaresolverr create-session
+ghostship-flaresolverr sessions_list
 ```
-
-## Agent Guidance
-
-- Use FlareSolverr when direct HTTP requests return Cloudflare challenge pages (403 or 503 errors).
-- Using sessions can improve performance for multiple requests to the same site.
-- The output includes the `solution` which contains `cookies`, `userAgent`, and `response` HTML.
+```bash
+ghostship-flaresolverr request_get https://example.com --pretty
+```
+```bash
+ghostship-flaresolverr command sessions.list
+```

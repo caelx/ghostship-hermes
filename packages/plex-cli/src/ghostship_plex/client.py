@@ -1,115 +1,84 @@
-from typing import Any, Dict, List, Optional
-import httpx
-import os
+from __future__ import annotations
+
+from typing import Any
+
+from ghostship_cli_contract import BaseHttpClient, RequestSpec
 
 
-def _cloudflare_access_headers() -> dict[str, str]:
-    headers: dict[str, str] = {}
-    client_id = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID")
-    client_secret = os.getenv("GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET")
-    if client_id:
-        headers["CF-Access-Client-Id"] = client_id
-    if client_secret:
-        headers["CF-Access-Client-Secret"] = client_secret
-    return headers
+class PlexClient(BaseHttpClient):
+    def __init__(self, base_url: str, token: str, *, default_timeout: float = 30.0):
+        headers = {'X-Plex-Token': token, 'Accept': 'application/json'}
+        super().__init__(base_url.rstrip('/'), default_headers=headers, default_timeout=default_timeout)
 
+    def build_request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> RequestSpec:
+        return self.build_request_spec(method, path, params=params, json_body=json_data, timeout=timeout)
 
-class PlexClient:
-    def __init__(self, base_url: str, token: str):
-        self.base_url = base_url.rstrip("/")
-        self.token = token
-        self.headers = _cloudflare_access_headers()
-        self.headers.update({"X-Plex-Token": self.token, "Accept": "application/json"})
+    def request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_request(method, path, params=params, json_data=json_data, timeout=timeout)
+        return self.request_json(spec.method, spec.path, params=spec.params, json_body=spec.json_body, timeout=spec.timeout)
 
-    def _request(
-        self,
-        path: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        url = f"{self.base_url}/{path.lstrip('/')}"
-        with httpx.Client(headers=self.headers) as client:
-            if method == "POST":
-                response = client.post(url, params=params, json=json_data)
-            elif method == "PUT":
-                response = client.put(url, params=params, json=json_data)
-            elif method == "DELETE":
-                response = client.delete(url, params=params)
-            else:
-                response = client.get(url, params=params)
+    def get_identity(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'identity', timeout=timeout)
 
-            response.raise_for_status()
-            if response.status_code in [201, 204] or not response.content:
-                return {"status": "success"}
-            return response.json()
+    def get_server_info(self, timeout: float | None = None) -> Any:
+        return self.request('GET', '', timeout=timeout)
 
-    # Identity and Status
-    def get_identity(self) -> Any:
-        return self._request("identity")
+    def get_status_sessions(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'status/sessions', timeout=timeout)
 
-    def get_server_info(self) -> Any:
-        return self._request("")
+    def get_activities(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'activities', timeout=timeout)
 
-    def get_status_sessions(self) -> Any:
-        return self._request("status/sessions")
+    def get_library_sections(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'library/sections', timeout=timeout)
 
-    def get_activities(self) -> Any:
-        return self._request("activities")
+    def get_library_section(self, section_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'library/sections/{section_id}/all', timeout=timeout)
 
-    # Library
-    def get_library_sections(self) -> Any:
-        return self._request("library/sections")
+    def get_library_filters(self, section_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'library/sections/{section_id}/filters', timeout=timeout)
 
-    def get_library_section(self, section_id: int) -> Any:
-        return self._request(f"library/sections/{section_id}/all")
+    def get_library_sorts(self, section_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'library/sections/{section_id}/sorts', timeout=timeout)
 
-    def get_library_filters(self, section_id: int) -> Any:
-        return self._request(f"library/sections/{section_id}/filters")
+    def build_refresh_library(self, section_id: int | None = None) -> RequestSpec:
+        path = 'library/sections/all/refresh' if section_id is None else f'library/sections/{section_id}/refresh'
+        return self.build_request('GET', path)
 
-    def get_library_sorts(self, section_id: int) -> Any:
-        return self._request(f"library/sections/{section_id}/sorts")
+    def refresh_library(self, section_id: int | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_refresh_library(section_id)
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def refresh_library(self, section_id: Optional[int] = None) -> Any:
-        path = (
-            "library/sections/all/refresh"
-            if section_id is None
-            else f"library/sections/{section_id}/refresh"
-        )
-        return self._request(path)
+    def get_metadata(self, rating_key: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'library/metadata/{rating_key}', timeout=timeout)
 
-    def get_metadata(self, rating_key: int) -> Any:
-        return self._request(f"library/metadata/{rating_key}")
+    def get_metadata_children(self, rating_key: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'library/metadata/{rating_key}/children', timeout=timeout)
 
-    def get_metadata_children(self, rating_key: int) -> Any:
-        return self._request(f"library/metadata/{rating_key}/children")
+    def get_playlists(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'playlists', timeout=timeout)
 
-    # Playlists
-    def get_playlists(self) -> Any:
-        return self._request("playlists")
+    def get_playlist_items(self, playlist_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'playlists/{playlist_id}/items', timeout=timeout)
 
-    def get_playlist_items(self, playlist_id: int) -> Any:
-        return self._request(f"playlists/{playlist_id}/items")
+    def get_collections(self, section_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'library/sections/{section_id}/collections', timeout=timeout)
 
-    # Collections
-    def get_collections(self, section_id: int) -> Any:
-        return self._request(f"library/sections/{section_id}/collections")
+    def get_preferences(self, timeout: float | None = None) -> Any:
+        return self.request('GET', ':/prefs', timeout=timeout)
 
-    # Preferences
-    def get_preferences(self) -> Any:
-        return self._request(":/prefs")
+    def get_butler_tasks(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'butler', timeout=timeout)
 
-    # Scheduled Tasks (Butler)
-    def get_butler_tasks(self) -> Any:
-        return self._request("butler")
+    def get_statistics(self, timeout: float | None = None) -> Any:
+        return self.request('GET', 'statistics/resources', params={'timespan': 6}, timeout=timeout)
 
-    # System
-    def get_statistics(self) -> Any:
-        return self._request("statistics/resources", params={"timespan": 6})
+    def build_terminate_session(self, session_id: int) -> RequestSpec:
+        return self.build_request('PUT', f'library/terminate/{session_id}')
 
-    # Sessions
-    def terminate_session(self, session_id: int) -> Any:
-        return self._request(f"library/terminate/{session_id}", method="PUT")
+    def terminate_session(self, session_id: int, timeout: float | None = None) -> Any:
+        spec = self.build_terminate_session(session_id)
+        return self.request(spec.method, spec.path, timeout=timeout)
 
-    def get_session(self, session_id: int) -> Any:
-        return self._request(f"sessions/{session_id}")
+    def get_session(self, session_id: int, timeout: float | None = None) -> Any:
+        return self.request('GET', f'sessions/{session_id}', timeout=timeout)
