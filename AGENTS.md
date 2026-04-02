@@ -73,6 +73,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Caddy does not auto-discover local `ttyd` processes. Generate route tables and iframe manifests from the Hermes profile set.
 - `s6-svscan` does not notice new service directories automatically after startup. The profile reconciler must call `s6-svscanctl -a`.
 - For this container, the supported `agent-browser` path is CloakBrowser-backed profiles only: two default profiles plus one default VPN-backed profile that is more CAPTCHA-prone.
+- Skills copied from a Nix-store source tree inherit read-only modes unless the runtime explicitly `chmod`s the copied files writable. Skill seeding must leave `~/.hermes/skills` user-editable after first start.
 - Mounting an empty Docker volume over `/nix` on a fresh Nix-built image is unsafe: it can hide or copy the image store and stall `docker run`.
 - In bash with `set -e`, helper functions that stream via `while read` must end with `return 0`, or the final `read` can terminate reconciliation loops after state truncation.
 - In bash with `set -e`, idempotent helpers like `write_if_changed` must also return `0` on no-op paths.
@@ -81,6 +82,8 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 
 - Scheduled GitHub release polling must authenticate with `GITHUB_TOKEN` or `GH_TOKEN`; anonymous `api.github.com` release queries can hit rate limits and break Actions.
 - Hermes is not packaged in the inspected `nixos-25.11` nixpkgs tree, while `ttyd`, `codex`, `gemini-cli`, and `opencode` are.
+- `googleworkspace/cli` already ships a usable upstream flake and a large upstream `skills/` tree. Keep the pinned flake input revision and the vendored `vendor/googleworkspace-cli/skills/` snapshot aligned to the same upstream commit.
+- Local flake evaluation only sees git-tracked files. Stage new Nix files and vendored trees before relying on `nix flake check` or `nix build` in a worktree.
 - On the current `x86_64` dev host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired correctly and rely on arm64 runners for full arm builds.
 - Git worktrees do not carry ignored local `.envrc` files by default. Live-test helpers should check the current worktree first, then another repo worktree with `.envrc`.
 - Cloudflare Access service-token headers are test-only. Use `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID` and `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET` in utilities, and derive them from local `.envrc` values in the live-test harness.
@@ -88,6 +91,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 ### Service And API Integration
 
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
+- For a dedicated personal Gmail account on an unverified testing-mode OAuth app, `gws auth login` should use narrow scopes like `gmail` or `gmail,calendar,drive`; the broad upstream `recommended` preset can fail consent.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.
 - CloakBrowser Manager auth uses the server `AUTH_TOKEN` as `Authorization: Bearer <token>`; `/api/status` stays unauthenticated for health checks.
 - `ghostship-cloakbrowser` previously built URLs without the slash before `api`; valid credentials still failed until that was fixed.

@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added the upstream Google Workspace CLI `gws` as a pinned flake-managed image dependency, vendored the full upstream Google Workspace skill catalog into `vendor/googleworkspace-cli/skills`, exposed a combined `ghostship-hermes-skills` flake output for seeded defaults, rewrote `hermes-nix` to be explicitly flake-first, and documented narrow-scope Gmail auth guidance for dedicated testing-mode personal accounts.
 - Fixed the GitHub Actions flake/image build regression by pinning `ghostship-flaresolverr` to the same `python311Packages` set as the shared `ghostship-cli-contract`, eliminating the Python 3.13 vs 3.11 package-set mismatch that broke `nix flake check` and image evaluation on GitHub.
 - Standardized the `ghostship-*` CLI contract around exact snake_case API/client method names with no compatibility aliases, a shared `--timeout` flag with a `30` second default, consistent JSON error envelopes and exit codes, and `--dry-run` request rendering for write/delete operations.
 - Expanded the remaining service CLIs to use the shared contract package, refreshed their package READMEs and skills, and updated the live suite to use the canonical commands.
