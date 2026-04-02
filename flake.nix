@@ -3,10 +3,11 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    googleworkspace-cli.url = "github:googleworkspace/cli/v0.22.5";
   };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, googleworkspace-cli }:
     let
       lib = nixpkgs.lib;
       systems = [
@@ -44,6 +45,8 @@
           ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
           honchoAi = pkgs.callPackage ./packages/honcho-ai/package.nix { };
+          googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
+          ghostshipHermesSkills = pkgs.callPackage ./packages/hermes-image/skills.nix { };
 
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
@@ -91,15 +94,19 @@
           ghostship-cloakbrowser = ghostshipCloakbrowser;
           ghostship-pricebuddy = ghostshipPricebuddy;
           ghostship-rss-bridge = ghostshipRssBridge;
+          gws = googleWorkspaceCli;
+          ghostship-hermes-skills = ghostshipHermesSkills;
 
           ghostship-hermes-runtime = ghostshipHermesRuntime;
 
           ghostship-hermes-image = pkgs.callPackage ./packages/hermes-image/image.nix {
             inherit
               ghostshipHermesRuntime
+              ghostshipHermesSkills
               hermesRelease
               pkgs
               honchoAi
+              googleWorkspaceCli
               ;
             ghostshipUtilities = allUtilities;
           };
@@ -134,6 +141,8 @@
             ghostship-cloakbrowser
             ghostship-pricebuddy
             ghostship-rss-bridge
+            gws
+            ghostship-hermes-skills
             ghostship-hermes-runtime
             ghostship-hermes-image;
         }
@@ -146,6 +155,7 @@
             inherit system;
             config.allowUnfree = true;
           };
+          googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
           pythonEnv = pkgs.python311.withPackages (
             ps: with ps; [
               hatchling
@@ -165,6 +175,7 @@
               fd
               gh
               git
+              googleWorkspaceCli
               jq
               nodejs_22
               pythonEnv

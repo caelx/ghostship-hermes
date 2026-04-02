@@ -1,6 +1,6 @@
 # ghostship-hermes
 
-`ghostship-hermes` is a Nix-first monorepo for building and publishing the `caelx` Hermes container image. The image runs Hermes behind a Caddy dashboard on port `7681`, seeds repo-managed skills on first start, persists Hermes state in `/home/hermes/.hermes` and `/nix`, and bundles repo-owned `ghostship-*` utilities plus a curated operator toolchain for agent-friendly workflows.
+`ghostship-hermes` is a Nix-first monorepo for building and publishing the `caelx` Hermes container image. The image runs Hermes behind a Caddy dashboard on port `7681`, seeds repo-managed and vendored skills on first start, persists Hermes state in `/home/hermes/.hermes` and `/nix`, and bundles repo-owned `ghostship-*` utilities plus a curated operator toolchain for agent-friendly workflows.
 
 Canonical image references:
 
@@ -13,10 +13,11 @@ Canonical image references:
 - Caddy on port `7681` is the public interface. It serves a profile dashboard and reverse-proxies same-origin `ttyd` terminals for each Hermes profile.
 - Hermes is bootstrapped at container start from the pinned upstream release in `packages/hermes-image/hermes-release.txt`.
 - Hermes is installed into the final `/home/hermes/.hermes/hermes-agent` path during bootstrap so the generated launchers and imports do not depend on a temporary build directory.
-- Repo-managed skills are seeded into `~/.hermes/skills` on first start without overwriting user-managed content.
+- Repo-managed and vendored skills are seeded into `~/.hermes/skills` on first start without overwriting user-managed content.
 - Hermes state is persisted in `/home/hermes/.hermes`, and `/nix` is mounted separately so ad hoc `nix shell` usage survives container restarts.
 - The runtime is supervised by `s6`: Caddy is the only public web service, profile-specific `ttyd` terminals are created dynamically for the default and named Hermes profiles, profile-specific gateways start automatically when messaging credentials appear, and unconfigured profiles fall back to a shell instead of a dead reconnect screen.
 - The runtime includes curated `ghostship-*` utilities so Hermes can call them from the same environment.
+- The runtime also includes the upstream Google Workspace CLI `gws`, packaged from a pinned flake input and paired with a broad vendored Google Workspace skill set.
 - Upstream Hermes Honcho support is available in the container out of the box for connecting Hermes to an external Honcho instance, with the `honcho-ai` SDK available to Hermes and env-first configuration preferred for container use.
 
 ## Overview
@@ -156,7 +157,7 @@ The published manifest list and per-architecture image tags follow the same nami
 - **Interface**: Caddy on port `7681` serves a profile dashboard and same-origin proxied `ttyd` terminals
 - **Persistence**: `/home/hermes/.hermes` is the safe default Docker volume; `/nix` persistence is deployment-specific because replacing `/nix` with an empty Docker volume hides or copies the image’s Nix store
 - **Bootstrap Resilience**: The entrypoint creates `/tmp` and defaults `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` to `/etc/ssl/certs/ca-bundle.crt` so bootstrap `git`, `uv`, and Nix operations inherit a working CA bundle
-- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, and more
+- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `gws`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, and more
 - **Output Standard**: All `ghostship-` utilities output native JSON. Use `--pretty` for human-readable output.
 
 ## Python Utility Workflow
@@ -198,9 +199,49 @@ Canonical API references for every `ghostship-*` utility now live in [docs/api/R
 
 All `ghostship-*` CLIs now follow one contract: dedicated commands mirror the underlying client/API method names exactly in snake_case, generic passthrough (`request` or `call`) is only the escape hatch for uncovered endpoints, every invocation accepts `--timeout` with a default hard timeout of `30` seconds, and write/delete commands expose `--dry-run` to print the exact request object without touching the remote service.
 
+## Google Workspace CLI
+
+The image ships the upstream Google Workspace CLI as `gws`, built from the repo flake through the pinned `googleworkspace/cli` input. The vendored skill snapshot that matches that CLI lives under `vendor/googleworkspace-cli/skills/`, with pinned source metadata in `vendor/googleworkspace-cli/source.json`.
+
+Inside the container, use `gws` directly:
+
+```fish
+gws --help
+gws gmail +triage
+```
+
+Use the repo flake only when maintaining or verifying the packaged integration from the repository checkout:
+
+```fish
+nix build .#gws
+nix build .#packages.x86_64-linux.ghostship-hermes-skills
+```
+
+For a dedicated agent Gmail account, prefer a narrow-scope login instead of the broad preset:
+
+```fish
+gws auth login -s gmail
+gws auth login -s gmail,calendar,drive
+```
+
+If the Google OAuth app is still in testing mode and the account is a personal `@gmail.com` address, avoid the upstream `recommended` preset. Google can reject the consent flow when too many scopes are requested from an unverified app. Use only the scopes the agent actually needs.
+
+You can also provide credentials non-interactively:
+
+```fish
+set -x GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE /home/hermes/.config/gws/credentials.json
+gws gmail +triage
+```
+
+When refreshing this integration, update the pinned flake input and the vendored `vendor/googleworkspace-cli/skills/` snapshot together so the seeded skills stay aligned with the packaged CLI.
+
 ## Skills
 
-Default skills are stored in `skills/` and seeded into the Hermes runtime `~/.hermes/skills` on first start without overwriting user-managed content. The repo-managed pack now treats service skills as short operator workflows instead of flat command catalogs: each service skill is written around inspect, diagnose, mutate, and verify sequences with trigger-rich descriptions and fallback passthrough guidance only when the typed CLI does not cover an endpoint.
+Default skills are sourced from the repo-local `skills/` tree and the vendored `vendor/googleworkspace-cli/skills/` tree, then seeded into the Hermes runtime `~/.hermes/skills` on first start without overwriting user-managed content.
+
+The repo-managed Ghostship pack treats service skills as short operator workflows instead of flat command catalogs: each service skill is written around inspect, diagnose, mutate, and verify sequences with trigger-rich descriptions and passthrough guidance only when the typed CLI does not cover an endpoint.
+
+The local Ghostship skills continue to cover container-specific guidance:
 
 In addition to the service-specific skills, the image ships:
 
@@ -210,12 +251,17 @@ In addition to the service-specific skills, the image ships:
 
 When browser automation needs container-specific setup, pair the upstream `agent-browser` skill with the repo `cloakbrowser` and `current-environment` skills for profile lifecycle and runtime constraints.
 
+The vendored Google Workspace set adds the upstream `gws-*` service skills plus the upstream persona and recipe skills for Gmail, Drive, Calendar, Docs, Sheets, and related workflows.
+
 ## Local Development
 
 1. Enter the shell: `direnv allow`
 2. Lock a utility: `python3 scripts/python_utility.py lock packages/<utility>-cli`
 3. Test a utility: `python3 scripts/python_utility.py test packages/<utility>-cli`
 4. Build a utility: `python3 scripts/python_utility.py build packages/<utility>-cli`
+5. Build the flake-packaged Google Workspace CLI: `nix build .#gws`
+6. Build the combined seeded skill tree: `nix build .#packages.x86_64-linux.ghostship-hermes-skills`
+7. Build the image: `nix build .#packages.x86_64-linux.ghostship-hermes-image`
 
 ## Live Integration Tests
 

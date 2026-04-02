@@ -1,60 +1,85 @@
 ---
 name: hermes-nix
-description: Use Nix inside the Hermes container to run missing tools, install durable user packages, build repo outputs, and choose the right path between one-off shells, persistent profiles, and image rebuilds without sudo.
+description: Use Nix inside the Hermes container with flake-first workflows for repo tools, image builds, one-off commands, and persistent user installs without sudo.
 ---
 
 # Hermes Nix Skill
 
-Use this skill when a tool is missing, when a package should survive container restarts, or when repo outputs need to be built or run through the flake.
+Hermes runs in a container with no `sudo`, but `/nix` persists across restarts. Prefer flake-native Nix commands first: use repo outputs for repo-managed tools and images, use `nix shell` or `nix run` for one-off packages, and reserve `nix profile install` for tools that must persist for the current user across restarts.
 
 ## Start Here
 
-- Missing command for a one-off task: `command -v <tool>`, then `nix shell nixpkgs#<pkg> -c <tool> ...`
-- Need the tool again later: `nix profile install nixpkgs#<pkg>`
-- Need a repo-owned utility or image change: use the repo flake outputs with `nix build` or `nix run`
-- Need durable behavior across deployments: update the repo and rebuild instead of patching the container by hand
+- Prefer repo flake outputs first: `nix run .#...`, `nix build .#...`, `nix develop`.
+- Prefer `nix shell nixpkgs#pkg -c cmd` for one-off commands that are not already in the repo flake.
+- Prefer `nix run nixpkgs#pkg -- args` for app-style packages from nixpkgs.
+- Use `nix profile install` only for explicit persistent user installs.
+- Never use `apt`, `dnf`, `apk`, or `sudo`.
+- If a command exists in the container image, use it directly; otherwise install or run it with Nix.
+- Use `/nix` as the durable store for user-scoped packages. Runtime changes elsewhere are not durable unless they live in `/home/hermes/.hermes`.
 
-## Operating Rules
+## Flake-First Workflow
 
-- Prefer `nix shell nixpkgs#pkg -c cmd` for one-off use.
-- Prefer `nix run nixpkgs#pkg -- args` for app-style invocations.
-- Prefer `nix profile install nixpkgs#pkg` for packages that should survive restarts.
-- Use repo outputs for repo-owned tools: `nix build .#...`, `nix run .#...`.
-- Do not use `apt`, `dnf`, `apk`, or `sudo`.
-- If a tool already exists in the image, use it directly instead of reinstalling it.
+1. Check `command -v`.
+2. If the tool or image is repo-managed, use a repo flake output first.
+3. If the tool is missing but available in nixpkgs, use `nix shell` or `nix run`.
+4. If you need it every session, install it with `nix profile install`.
+5. If you are changing a repo-managed package, rebuild the relevant flake output instead of patching the running container by hand.
+6. If still missing, inspect `nix search nixpkgs <name>`.
 
-## Missing Tool Workflow
+## Repo Output Workflow
 
-1. `command -v <tool>`
-2. If absent, use `nix shell nixpkgs#<pkg> -c <tool> ...`
-3. If the task will recur, `nix profile install nixpkgs#<pkg>`
-4. If the tool is repo-owned, build or run the repo flake output instead
-5. If package discovery is the blocker, `nix search nixpkgs <name>`
+Use this when the tool, skills tree, or image belongs to this repo.
+
+- Enter the repo dev shell:
+  - `nix develop`
+- Run a repo-managed tool that is not already installed in the image:
+  - `nix run .#ghostship-cloakbrowser -- list_profiles`
+- Build a repo-managed package:
+  - `nix build .#packages.x86_64-linux.ghostship-hermes-runtime`
+  - `nix build .#packages.x86_64-linux.ghostship-hermes-skills`
+  - `nix build .#packages.x86_64-linux.ghostship-hermes-image`
+
+If a tool is already bundled in the image, use it directly. For example, use `gws --help` inside the Hermes container instead of `nix run .#gws`.
+
+If the change affects the published container, rebuild the image output. Do not treat `nix profile install .#...` as the default for repo development.
 
 ## Durable Install Workflow
 
-- Install user-scoped packages that should survive restarts:
+Use this only when a package should be available every time Hermes starts for the current user, but it does not need to be baked into the image.
+
+- Install a package for the current user:
   - `nix profile install nixpkgs#ripgrep`
   - `nix profile install nixpkgs#ripgrep nixpkgs#jq nixpkgs#gh`
 - Audit or clean up the user profile:
   - `nix profile list`
   - `nix profile upgrade --all`
-  - `nix profile remove <name-or-index>`
+- `nix profile remove <name-or-index>`
 - Use this path for convenience tools, not for repo changes that belong in the image.
 
-## Repo Output Workflow
+## One-Off Tool Workflow
 
-- Build a packaged utility:
-  - `nix build .#packages.x86_64-linux.<name>`
-- Run a repo app directly:
-  - `nix run .#<app> -- <args>`
-- Rebuild image-related outputs when the container behavior should change:
-  - `nix build .#packages.x86_64-linux.ghostship-hermes-image`
-- If the task changes the published environment, land it in the repo rather than relying on local profile installs.
+Use this when the tool is missing and it is not already available as a repo flake output.
+
+- `nix shell nixpkgs#ripgrep -c rg "pattern" .`
+- `nix shell nixpkgs#jq -c jq '.profiles' /run/ghostship-hermes/www/api/profiles.json`
+- `nix shell nixpkgs#python3 -c python3 script.py`
+- `nix run nixpkgs#gh -- auth status`
+
+This avoids mutating the container image and avoids asking for root.
+
+## Repo-Owned Utility Workflow
+
+- Edit the package source.
+- Test with the repo’s utility workflow or targeted package command.
+- Build with `nix build .#packages.<arch>.<name>` or run with `nix run .#<app>`.
+- Keep repo changes flake-first. Only use `nix profile install .#<package>` when you intentionally want a persistent user install outside the normal build workflow.
+- If the change affects the published container, update `packages/hermes-image/` and rebuild the image instead of trying to patch the running container by hand.
 
 ## Common Examples
 
 ```bash
+nix develop
+nix build .#packages.x86_64-linux.ghostship-hermes-skills
 nix shell nixpkgs#ripgrep -c rg --version
 nix shell nixpkgs#jq -c jq --version
 nix shell nixpkgs#python3 -c python3 --version
@@ -63,6 +88,25 @@ nix profile install nixpkgs#ripgrep nixpkgs#jq nixpkgs#gh
 nix build .#packages.x86_64-linux.ghostship-hermes-image
 nix run .#ghostship-cloakbrowser -- list_profiles
 ```
+
+## Common Agent Scenarios
+
+- If you need the bundled Google Workspace CLI:
+  - `gws gmail users getProfile --params '{"userId":"me"}'`
+- If you need the repo development environment:
+  - `nix develop`
+- If `rg` is missing:
+  - `nix shell nixpkgs#ripgrep -c rg "search-term" .`
+- If `jq` is missing:
+  - `nix shell nixpkgs#jq -c jq '.profiles' /run/ghostship-hermes/www/api/profiles.json`
+- If `python` is missing:
+  - `nix shell nixpkgs#python3 -c python3 --version`
+- If `gh` is missing:
+  - `nix shell nixpkgs#gh -c gh auth status`
+- If `tmux` is missing:
+  - `nix shell nixpkgs#tmux -c tmux -V`
+- If a tool is useful long-term:
+  - `nix profile install nixpkgs#<package>`
 
 ## Container Notes
 

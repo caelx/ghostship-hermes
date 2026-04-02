@@ -527,6 +527,7 @@ PY
           skill_name="$(basename "$skill_dir")"
           if [ ! -e "$target_dir/$skill_name" ]; then
             cp -R "$skill_dir" "$target_dir/$skill_name"
+            chmod -R u+rwX "$target_dir/$skill_name"
           fi
         done < <(find "$source_dir" -mindepth 1 -maxdepth 1 -type d | sort)
         ;;

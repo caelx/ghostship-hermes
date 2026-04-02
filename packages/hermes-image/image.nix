@@ -2,16 +2,13 @@
   dockerTools,
   pkgs,
   ghostshipHermesRuntime,
+  ghostshipHermesSkills,
   hermesRelease,
   ghostshipUtilities,
   honchoAi,
+  googleWorkspaceCli,
 }:
 let
-  skillsTree = builtins.path {
-    path = ../../skills;
-    name = "ghostship-hermes-skills";
-  };
-
   dashboardTree = builtins.path {
     path = ./rootfs/share/ghostship-hermes/dashboard;
     name = "ghostship-hermes-dashboard";
@@ -85,6 +82,7 @@ let
     codex
     gemini-cli
     opencode
+    googleWorkspaceCli
     honchoPython
     rootfs
   ] ++ ghostshipUtilities;
@@ -113,7 +111,7 @@ dockerTools.buildImage {
       "HOME=/home/hermes"
       "HERMES_HOME=/home/hermes/.hermes"
       "GHOSTSHIP_HERMES_REF=${hermesRelease}"
-      "GHOSTSHIP_DEFAULT_SKILLS=${skillsTree}"
+      "GHOSTSHIP_DEFAULT_SKILLS=${ghostshipHermesSkills}"
       "GHOSTSHIP_DASHBOARD_DIR=/usr/local/share/ghostship-hermes/dashboard"
       "NIX_CONFIG=experimental-features = nix-command flakes"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
