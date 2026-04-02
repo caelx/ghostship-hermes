@@ -1,4 +1,5 @@
 .direnv/
+.worktrees/
 .env
 .envrc
 .envrc.local
