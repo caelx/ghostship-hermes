@@ -1,45 +1,52 @@
 ---
 name: bazarr
-description: Use when you need subtitle and system data from Bazarr via exact API/client method names.
+description: Operate Bazarr from the Hermes image with `ghostship-bazarr`. Use when checking subtitle health, wanted subtitles, providers, history, blacklist state, or when launching subtitle search workflows through exact snake_case CLI operations.
 ---
 
-# ghostship-bazarr
+# Bazarr Skill
 
-- Commands mirror the API/client method names exactly. Do not guess aliases.
-- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
-- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
-- Configure the utility with:
+Use `ghostship-bazarr` for subtitle triage and search workflows around existing Sonarr or Radarr libraries.
+
+## Prerequisites
+
 - `BAZARR_URL`
 - `BAZARR_API_KEY`
-- Prefer the dedicated snake_case command first. Use `request` only as fallback.
 
-## Common Commands
-- `ghostship-bazarr request`
-- `ghostship-bazarr get_badges`
-- `ghostship-bazarr get_episodes`
-- `ghostship-bazarr get_wanted_episodes`
-- `ghostship-bazarr get_movies`
-- `ghostship-bazarr get_wanted_movies`
-- `ghostship-bazarr get_series`
-- `ghostship-bazarr get_providers`
-- `ghostship-bazarr get_subtitles`
-- `ghostship-bazarr get_system_health`
-- `ghostship-bazarr get_system_jobs`
-- `ghostship-bazarr get_system_tasks`
-- `ghostship-bazarr get_system_status`
-- `ghostship-bazarr search_subtitles_missing`
-- `ghostship-bazarr get_episodes_history`
-- `ghostship-bazarr get_movies_history`
-- `ghostship-bazarr get_episodes_blacklist`
-- `ghostship-bazarr get_movies_blacklist`
+## Operating Model
 
-## Examples
-```bash
-ghostship-bazarr get_system_status --pretty
-```
-```bash
-ghostship-bazarr get_episodes --series-id 123 --pretty
-```
-```bash
-ghostship-bazarr request GET system/status
-```
+- Prefer dedicated snake_case commands first.
+- Use `request` only for uncovered endpoints.
+- Every command accepts `--timeout`; default hard timeout is `30` seconds.
+- Where supported, write or delete operations expose `--dry-run`.
+
+## Start Here
+
+- Overall health: `ghostship-bazarr get_system_status`
+- Subtitle backlog: `ghostship-bazarr get_wanted_episodes`, `ghostship-bazarr get_wanted_movies`
+- Provider readiness: `ghostship-bazarr get_providers`
+- Search and rejection diagnosis: history and blacklist commands
+
+## Common Workflows
+
+- Diagnose missing subtitles:
+  - `get_wanted_episodes` or `get_wanted_movies`
+  - `get_providers`
+  - `get_subtitles`
+  - `get_system_health`
+- Investigate repeated failures:
+  - `get_episodes_history` or `get_movies_history`
+  - `get_episodes_blacklist` or `get_movies_blacklist`
+- Launch subtitle search:
+  - Inspect the target episode or movie set first.
+  - Run `search_subtitles_missing`.
+  - Re-read wanted lists or subtitle state to confirm improvement.
+
+## Mutation Guardrails
+
+- Read provider and subtitle state before kicking off searches.
+- Verify whether the issue is provider health, blacklist state, or missing media metadata before retrying searches.
+- Re-check wanted queues and subtitle results after actions.
+
+## Fallback
+
+- Use `ghostship-bazarr request` only when no dedicated command exists.

@@ -1,44 +1,57 @@
 ---
 name: romm
-description: Use when you need RomM library, ROM, scan, save, and user operations through direct client method names.
+description: Operate RomM from the Hermes image with `ghostship-romm`. Use when checking heartbeat, libraries, platforms, ROMs, saves, scans, collections, config, or user state, or when updating ROM metadata or starting scans through exact snake_case CLI operations.
 ---
 
-# ghostship-romm
+# RomM Skill
 
-- Commands mirror the API/client method names exactly. Do not guess aliases.
-- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
-- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
-- Configure the utility with:
+Use `ghostship-romm` for ROM library workflows that start with library inspection, then move into metadata or scan actions.
+
+## Prerequisites
+
 - `ROMM_URL`
-- `ROMM_TOKEN or ROMM_USERNAME and ROMM_PASSWORD`
-- Prefer the dedicated snake_case command first. Use `request` only as fallback.
+- `ROMM_TOKEN` or `ROMM_USERNAME` and `ROMM_PASSWORD`
 
-## Common Commands
-- `ghostship-romm request`
-- `ghostship-romm get_heartbeat`
-- `ghostship-romm get_platforms`
-- `ghostship-romm get_libraries`
-- `ghostship-romm get_roms`
-- `ghostship-romm get_rom`
-- `ghostship-romm update_rom`
-- `ghostship-romm delete_rom`
-- `ghostship-romm get_scans`
-- `ghostship-romm start_scan`
-- `ghostship-romm get_collections`
-- `ghostship-romm get_config`
-- `ghostship-romm get_saves`
-- `ghostship-romm get_saves_summary`
-- `ghostship-romm get_save`
-- `ghostship-romm get_users`
-- `ghostship-romm get_user_me`
+## Operating Model
 
-## Examples
-```bash
-ghostship-romm get_heartbeat --pretty
-```
-```bash
-ghostship-romm get_roms --page-size 5 --pretty
-```
-```bash
-ghostship-romm get_collections --pretty
-```
+- Prefer dedicated snake_case commands first.
+- Use `request` only for uncovered endpoints.
+- Every command accepts `--timeout`; default hard timeout is `30` seconds.
+- Write and delete operations support `--dry-run`.
+
+## Start Here
+
+- Health or auth check: `ghostship-romm get_heartbeat`, `ghostship-romm get_user_me`
+- Platform and library state: `ghostship-romm get_platforms`, `ghostship-romm get_libraries`
+- ROM inspection: `ghostship-romm get_roms`
+- Scan state: `ghostship-romm get_scans`
+
+## Common Workflows
+
+- Inspect a library:
+  - `get_platforms`
+  - `get_libraries`
+  - `get_roms`
+  - `get_rom <id>` for a specific title.
+- Diagnose scan or import state:
+  - `get_scans`
+  - `get_config`
+  - `get_collections` if the issue looks organization-related rather than scan-related.
+- Update ROM metadata:
+  - `get_rom <id>`
+  - `update_rom --dry-run ...`, then `update_rom ...`
+  - `get_rom <id>` again to verify.
+- Start a scan:
+  - Inspect current scan state first.
+  - `start_scan`
+  - Re-read `get_scans` to confirm the task was accepted.
+
+## Mutation Guardrails
+
+- Confirm ROM identifiers and current metadata before updating or deleting.
+- Use `--dry-run` for `update_rom` and `delete_rom`.
+- Re-read ROM or scan state after every mutation.
+
+## Fallback
+
+- Use `ghostship-romm request` only for uncovered endpoints.

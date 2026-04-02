@@ -64,6 +64,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Install Hermes into the final `/home/hermes/.hermes/hermes-agent` path, not an editable temp checkout. Editable installs leave launchers pointing at dead `/tmp/...` paths and tmux sessions exit.
 - `hermes chat` exits immediately with no provider configured. Browser sessions must fall back to a real shell instead of an empty tmux session.
 - Hermes `v2026.3.28` lacks native profiles; `v2026.3.30` adds `hermes profile ...` and `-p/--profile`, which the multi-profile dashboard depends on.
+- The repo `skills/agent-browser/SKILL.md` is intentionally copied from upstream unchanged; keep container-specific browser setup guidance in separate repo skills instead of patching the upstream skill body.
 
 ### Container And Supervisor Behavior
 
@@ -76,6 +77,11 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Mounting an empty Docker volume over `/nix` on a fresh Nix-built image is unsafe: it can hide or copy the image store and stall `docker run`.
 - In bash with `set -e`, helper functions that stream via `while read` must end with `return 0`, or the final `read` can terminate reconciliation loops after state truncation.
 - In bash with `set -e`, idempotent helpers like `write_if_changed` must also return `0` on no-op paths.
+
+### Skill Authoring
+
+- Repo-managed service skills should stay short, trigger-rich, and workflow-oriented: prioritize start-here guidance plus inspect -> dry-run -> mutate -> verify sequences over command dumps.
+- Use family-level structure for service wrappers, but keep domain-specific ordering and failure guidance inside each skill instead of mass-applying identical wording.
 
 ### Platform And CI
 

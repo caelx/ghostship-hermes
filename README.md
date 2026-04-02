@@ -200,11 +200,15 @@ All `ghostship-*` CLIs now follow one contract: dedicated commands mirror the un
 
 ## Skills
 
-Default skills are stored in `skills/` and seeded into the Hermes runtime `~/.hermes/skills` on first start without overwriting user-managed content. In addition to service-specific skills, the image now ships:
+Default skills are stored in `skills/` and seeded into the Hermes runtime `~/.hermes/skills` on first start without overwriting user-managed content. The repo-managed pack now treats service skills as short operator workflows instead of flat command catalogs: each service skill is written around inspect, diagnose, mutate, and verify sequences with trigger-rich descriptions and fallback passthrough guidance only when the typed CLI does not cover an endpoint.
 
-- `hermes-nix`: how to run missing tools, do `nix profile` user installs, and rebuild repo tools without root
-- `agent-browser`: how to use `agent-browser` only through CloakBrowser-backed profiles
-- `current-environment`: how the Caddy dashboard, `ttyd`, `s6`, persistence, and safe self-restart behavior work in this container
+In addition to the service-specific skills, the image ships:
+
+- `hermes-nix`: how to choose between one-off `nix shell` usage, durable `nix profile` installs, and repo/image rebuilds without root
+- `agent-browser`: the upstream browser automation skill copied through unchanged for general browser control workflows
+- `current-environment`: how the Caddy dashboard, `ttyd`, `s6`, persistence, and safe container recovery behavior work here
+
+When browser automation needs container-specific setup, pair the upstream `agent-browser` skill with the repo `cloakbrowser` and `current-environment` skills for profile lifecycle and runtime constraints.
 
 ## Local Development
 
