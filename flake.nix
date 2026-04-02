@@ -45,6 +45,7 @@
           ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
           honchoAi = pkgs.callPackage ./packages/honcho-ai/package.nix { };
+          bitwardenCli = pkgs.bitwarden-cli;
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
           ghostshipHermesSkills = pkgs.callPackage ./packages/hermes-image/skills.nix { };
 
@@ -94,6 +95,7 @@
           ghostship-cloakbrowser = ghostshipCloakbrowser;
           ghostship-pricebuddy = ghostshipPricebuddy;
           ghostship-rss-bridge = ghostshipRssBridge;
+          bw = bitwardenCli;
           gws = googleWorkspaceCli;
           ghostship-hermes-skills = ghostshipHermesSkills;
 
@@ -106,6 +108,7 @@
               hermesRelease
               pkgs
               honchoAi
+              bitwardenCli
               googleWorkspaceCli
               ;
             ghostshipUtilities = allUtilities;
@@ -141,6 +144,7 @@
             ghostship-cloakbrowser
             ghostship-pricebuddy
             ghostship-rss-bridge
+            bw
             gws
             ghostship-hermes-skills
             ghostship-hermes-runtime
@@ -155,6 +159,7 @@
             inherit system;
             config.allowUnfree = true;
           };
+          bitwardenCli = pkgs.bitwarden-cli;
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
           pythonEnv = pkgs.python311.withPackages (
             ps: with ps; [
@@ -175,6 +180,7 @@
               fd
               gh
               git
+              bitwardenCli
               googleWorkspaceCli
               jq
               nodejs_22

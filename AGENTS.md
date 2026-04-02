@@ -96,6 +96,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 
 ### Service And API Integration
 
+- The official Bitwarden CLI fits this container best as an env-driven workflow: keep `BITWARDENCLI_APPDATA_DIR` stable under `~/.hermes/bitwarden-cli`, inject `BW_CLIENTID`, `BW_CLIENTSECRET`, and `BW_PASSWORD` from the operator, and regenerate ephemeral `BW_SESSION` values with `bw unlock --passwordenv BW_PASSWORD --raw`.
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
 - For a dedicated personal Gmail account on an unverified testing-mode OAuth app, `gws auth login` should use narrow scopes like `gmail` or `gmail,calendar,drive`; the broad upstream `recommended` preset can fail consent.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.
