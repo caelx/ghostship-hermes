@@ -1,37 +1,49 @@
 ---
 name: rss-bridge
-description: Discover RSS-Bridge bridges, inspect typed bridge schemas, and generate feed URLs with ghostship-rss-bridge. Output is native JSON.
+description: Operate RSS-Bridge from the Hermes image with `ghostship-rss-bridge`. Use when discovering bridges, inspecting live parameter schemas, finding a bridge for a source URL, generating stable feed URLs, or fetching feed output through the typed CLI.
 ---
 
 # RSS-Bridge Skill
 
-Use `ghostship-rss-bridge` when you need to discover a bridge, inspect its parameters, or generate a feed URL for another tool to consume.
+Use `ghostship-rss-bridge` when you need to turn a site or content source into a canonical RSS-Bridge feed URL.
 
 ## Prerequisites
 
 - `RSS_BRIDGE_URL`
 
-## Contract
+## Start Here
 
-- Commands mirror the API/client method names exactly. Do not guess aliases.
-- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
+- Discover the live bridge inventory: `ghostship-rss-bridge list_bridges`
+- Inspect one bridge schema before building parameters: `ghostship-rss-bridge describe_bridge <bridge>`
+- Ask RSS-Bridge to suggest a bridge for a URL: `ghostship-rss-bridge find_feed <url>`
+- See supported output formats: `ghostship-rss-bridge list_known_formats`
 
-## Commands
+## Operating Model
 
-- `ghostship-rss-bridge list_bridges`
-- `ghostship-rss-bridge describe_bridge <bridge>`
-- `ghostship-rss-bridge list_contexts <bridge>`
-- `ghostship-rss-bridge list_known_formats`
-- `ghostship-rss-bridge build_url --bridge ... --param key=value`
-- `ghostship-rss-bridge find_feed <url>`
-- `ghostship-rss-bridge detect <url>`
-- `ghostship-rss-bridge display --bridge ... --param key=value`
-- `ghostship-rss-bridge fetch_url <url>`
+- Commands mirror the API/client method names exactly.
+- Every command accepts `--timeout`; default hard timeout is `30` seconds.
+- RSS-Bridge is action-driven, not CRUD-driven: “create a feed” means generating the right `action=display` URL.
+- Start from live bridge metadata instead of guessing parameter names or contexts.
 
-## Guidance
+## Common Workflows
 
-- RSS-Bridge does not create persistent server-side feed objects. “Creating a feed” means building a canonical `display` URL with the right bridge, context, format, and parameters.
-- Start with `list_bridges` and `describe_bridge` to inspect the live instance schema instead of guessing parameter names.
-- Use `find_feed` when you have a concrete URL and want RSS-Bridge to suggest candidate bridges automatically.
-- Use `build_url` when you already know the bridge and want a stable feed URL to hand to an RSS reader.
-- `display` and `fetch_url` wrap non-JSON feed payloads in JSON so the result stays agent-friendly.
+- Generate a feed URL when you already know the bridge:
+  - `describe_bridge <bridge>`
+  - `list_contexts <bridge>` if the bridge exposes multiple contexts
+  - `build_url --bridge <bridge> --param key=value ...`
+  - `fetch_url <url>` or `display --bridge ... --param ...` to verify the output
+- Discover a bridge from a source URL:
+  - `find_feed <url>`
+  - `describe_bridge <bridge>` on the suggested candidate
+  - `build_url ...` once the needed parameters are clear
+- Inspect output before handing it to another system:
+  - `display --bridge ... --param ...`
+  - `fetch_url <url>`
+  - Keep the JSON-wrapped response in view long enough to confirm the format and payload shape
+
+## Guardrails
+
+- Do not describe RSS-Bridge as storing server-side feed objects; it generates feed responses from URLs.
+- Always inspect the live schema with `describe_bridge` or `list_contexts` before composing parameters.
+- Prefer `build_url` for stable reusable feeds and `display` for quick validation.
+- Keep formats explicit when another tool depends on a specific output type.

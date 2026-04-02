@@ -1,67 +1,63 @@
 ---
 name: current-environment
-description: Describe how Hermes runs in this container, what persists, what resets, and how to recover safely.
+description: Understand how Hermes runs in this container, what persists, what resets, and which recovery path is safe before changing runtime behavior, files, terminals, or browser-exposed profile sessions.
 ---
 
 # Current Environment
 
-Hermes runs in a container behind a Caddy dashboard that proxies profile-specific `ttyd` terminals. `s6` supervises the web and background processes. Treat the runtime as non-root, ephemeral outside mounted volumes, and recoverable without restarting the container.
+Use this skill when you need to reason about what is durable in the Hermes container and which recovery path is safe.
 
-## What You Can Access
+## Start Here
 
-- Hermes state in `/home/hermes/.hermes`
-- Persistent Nix state and profiles in `/nix` in the intended deployment model
-- Bundled tools from the image
-- The browser dashboard on port `7681`
-- The profile terminals exposed through same-origin iframe routes like `/profiles/default/`
-- The Hermes CLI and gateway inside the container
-- Browser automation through CloakBrowser-backed profiles when a CDP endpoint is available
+- Need to know whether a file or install survives restart: check the persistence model first.
+- Need to recover a dead terminal or Hermes session: use the profile-terminal recovery flow, not a container restart.
+- Need to change runtime behavior durably: prefer repo or persistent-profile changes over interactive tweaks.
 
-## What You Cannot Assume
+## Persistence Model
 
-- `sudo` is not available
-- Host filesystem access is not available unless mounted
-- Host-level package managers are not available
-- Container-level runtime edits are not durable unless baked into the repo/image
-- `tmux` sessions do not survive container restarts
-- `s6` service tweaks made interactively do not survive restarts unless encoded in the image
-- Direct access to the per-profile `ttyd` backends is not the public contract; they are meant to stay behind the Caddy proxy
+- Persistent:
+  - `/home/hermes/.hermes`
+  - `/nix` in the intended deployment model
+- Ephemeral:
+  - `/tmp`
+  - live processes
+  - `ttyd` sessions
+  - `tmux` sessions
+  - interactive `s6` changes
+- If something should survive restart, put it in persistent profile state, install it via Nix, or bake it into the image.
 
-## Persistence
+## Runtime Boundaries
 
-- Persists: `/home/hermes/.hermes`, `/nix`
-- Ephemeral: `/tmp`, live processes, `ttyd` sessions, `tmux` sessions, interactive `s6` changes
-- If a tool install should survive restarts, use Nix user installs or update the image
-- Do not mount an empty Docker volume over `/nix` on a fresh image unless you know how that deployment preserves the Nix store. Replacing `/nix` blindly can hide or trigger a copy of the image store.
+- Hermes runs as a non-root user.
+- `sudo` is not available.
+- Host filesystem access only exists for mounted paths.
+- Container-level ad hoc edits are not durable unless encoded in the repo or persistent storage.
+- Browser automation is expected to use CloakBrowser-backed profiles when CDP details are needed.
 
-## `ttyd` Nuances
+## Profile Terminal Recovery
 
-- `ttyd` is the terminal transport behind each profile iframe; it is not the process manager.
-- Caddy serves the main dashboard and proxies `/profiles/<slug>/` to loopback-only `ttyd` processes.
-- Reconnecting to `ttyd` is not the same as resuming a killed process.
-- If the foreground command exits, the browser can land on a dead session or a plain shell.
-- If Hermes is unconfigured, the browser terminal should fall back to a shell.
-- A visible iframe is not proof that the profile process is healthy; verify behavior in the terminal itself.
+- Treat `/profiles/<slug>/` routes as browser access to `ttyd`, not as proof that Hermes itself is healthy.
+- If a foreground Hermes command exits, reconnecting to the iframe may only give you a dead session or a plain shell.
+- Recover a broken profile session by restarting the Hermes command in that profile terminal.
+- Prefer restarting the profile-specific foreground process over touching Caddy or the whole container.
+- Restart the container only for container-level failures, not ordinary session recovery.
 
-## Safe Self-Restart
+## Durable Change Workflow
 
-- Save work first.
-- Stop the foreground Hermes command cleanly.
-- Start a new `hermes chat` session in the same terminal, or reopen the profile route in the dashboard.
-- Do not restart the container for ordinary config or session recovery.
-- Do not rely on `tmux` or `s6` tweaks to persist.
-- If a profile-specific terminal is unhealthy, prefer restarting the Hermes command in that terminal over touching Caddy or the whole container.
-
-## Runtime Identity
-
-- The runtime UID/GID is configurable.
-- Do not assume `1000:1000`.
-- The container may run as your default app user, likely `3000:3000`.
-- Use the configured UID/GID when reasoning about file ownership and permissions.
+- For Hermes config, skills, and profile state: work under `/home/hermes/.hermes`.
+- For missing tools or persistent user installs: use Nix under `/nix`.
+- For service layout, supervisor behavior, or default bundled tooling: change the repo and rebuild the image.
+- Do not rely on interactive `s6` or `tmux` tweaks to persist.
 
 ## Service Model
 
-- `s6` is the supervisor for the dashboard and profile watchers.
-- Caddy is the only public HTTP service.
-- Profile `ttyd` services and profile gateway services are generated dynamically from Hermes profile state.
-- Runtime `s6` changes and running `tmux` sessions are transient; make durable changes in the repo or in persistent profile files.
+- `s6` supervises the dashboard and profile watcher services.
+- Caddy is the only public HTTP surface.
+- Profile `ttyd` terminals and gateway services are generated dynamically from Hermes profile state.
+- Direct `ttyd` loopback backends are implementation details; the Caddy routes are the intended interface.
+
+## Identity And Permissions
+
+- Runtime UID and GID are configurable.
+- Do not assume `1000:1000`.
+- Use the configured runtime identity when reasoning about ownership problems.

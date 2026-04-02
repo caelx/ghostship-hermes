@@ -1,45 +1,54 @@
 ---
 name: radarr
-description: Use when you need Radarr movie and queue endpoints via exact client method names.
+description: Operate Radarr from the Hermes image with `ghostship-radarr`. Use when diagnosing Radarr health, queue, history, wanted, or blocklist issues; looking up or adding movies; updating or deleting movies; or running Radarr commands through exact snake_case CLI operations.
 ---
 
-# ghostship-radarr
+# Radarr Skill
 
-- Commands mirror the API/client method names exactly. Do not guess aliases.
-- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
-- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
-- Configure the utility with:
+Use `ghostship-radarr` for Radarr workflows that inspect movie state first, then mutate and verify.
+
+## Prerequisites
+
 - `RADARR_URL`
 - `RADARR_API_KEY`
-- Prefer the dedicated snake_case command first. Use `request` only as fallback.
 
-## Common Commands
-- `ghostship-radarr request`
-- `ghostship-radarr get_status`
-- `ghostship-radarr get_movies`
-- `ghostship-radarr lookup_movie`
-- `ghostship-radarr add_movie`
-- `ghostship-radarr update_movie`
-- `ghostship-radarr delete_movie`
-- `ghostship-radarr get_commands`
-- `ghostship-radarr run_command`
-- `ghostship-radarr get_queue`
-- `ghostship-radarr get_history`
-- `ghostship-radarr get_wanted_missing`
-- `ghostship-radarr get_wanted_cutoff`
-- `ghostship-radarr get_blocklist`
-- `ghostship-radarr get_blocklist_movie`
-- `ghostship-radarr get_tags`
-- `ghostship-radarr get_root_folders`
-- `ghostship-radarr get_quality_profiles`
+## Operating Model
 
-## Examples
-```bash
-ghostship-radarr get_status --pretty
-```
-```bash
-ghostship-radarr lookup_movie inception --pretty
-```
-```bash
-ghostship-radarr get_movies --pretty
-```
+- Prefer dedicated snake_case commands first.
+- Use `request` only for uncovered endpoints.
+- Every command accepts `--timeout`; default hard timeout is `30` seconds.
+- Write and delete operations support `--dry-run`.
+
+## Start Here
+
+- Health or connectivity: `ghostship-radarr get_status`
+- Current movie library: `ghostship-radarr get_movies`
+- Add flow: `ghostship-radarr lookup_movie`
+- Missing or import diagnosis: `ghostship-radarr get_queue`, `ghostship-radarr get_history`, `ghostship-radarr get_wanted_missing`
+
+## Common Workflows
+
+- Add a movie:
+  - `lookup_movie "<title>"` to find the correct record.
+  - `get_root_folders` and `get_quality_profiles` before selecting IDs.
+  - `add_movie --dry-run ...`, then `add_movie ...`.
+  - `get_movies` or `get_queue` to verify the result.
+- Diagnose missing or rejected movies:
+  - `get_wanted_missing`
+  - `get_wanted_cutoff`
+  - `get_queue`
+  - `get_history`
+  - `get_blocklist` or `get_blocklist_movie` for rejection patterns.
+- Trigger background work:
+  - `get_commands`
+  - `run_command ...` after confirming the correct command name.
+
+## Mutation Guardrails
+
+- Confirm movie, root-folder, tag, and quality-profile IDs before mutating.
+- Use `--dry-run` for `add_movie`, `update_movie`, and `delete_movie`.
+- Re-read library or queue state after every mutation.
+
+## Fallback
+
+- Use `ghostship-radarr request` only for uncovered endpoints.

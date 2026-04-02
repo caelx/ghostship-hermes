@@ -1,45 +1,57 @@
 ---
 name: pyload-ng
-description: Use when you need pyLoad-ng REST operations exposed directly as exact method-name commands.
+description: Operate pyLoad-ng from the Hermes image with `ghostship-pyload-ng`. Use when checking server status, queue, downloads, accounts, config, free space, or when adding packages and files, deleting finished work, managing accounts, or toggling pause state through exact snake_case CLI operations.
 ---
 
-# ghostship-pyload-ng
+# pyLoad-ng Skill
 
-- Commands mirror the API/client method names exactly. Do not guess aliases.
-- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
-- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
-- Configure the utility with:
+Use `ghostship-pyload-ng` for download workflows that begin with queue and server inspection before mutating packages or accounts.
+
+## Prerequisites
+
 - `PYLOAD_URL`
-- `PYLOAD_USER (optional)`
-- `PYLOAD_PASS (optional)`
-- Prefer the dedicated snake_case command first. Use `request` only as fallback.
+- `PYLOAD_USER` and `PYLOAD_PASS` when auth is required
 
-## Common Commands
-- `ghostship-pyload-ng request`
-- `ghostship-pyload-ng get_server_status`
-- `ghostship-pyload-ng get_downloads`
-- `ghostship-pyload-ng get_queue`
-- `ghostship-pyload-ng add_package`
-- `ghostship-pyload-ng add_files`
-- `ghostship-pyload-ng delete_packages`
-- `ghostship-pyload-ng toggle_pause`
-- `ghostship-pyload-ng get_config`
-- `ghostship-pyload-ng delete_finished`
-- `ghostship-pyload-ng restart_failed`
-- `ghostship-pyload-ng stop_all_downloads`
-- `ghostship-pyload-ng get_accounts`
-- `ghostship-pyload-ng add_account`
-- `ghostship-pyload-ng remove_account`
-- `ghostship-pyload-ng get_server_version`
-- `ghostship-pyload-ng get_free_space`
+## Operating Model
 
-## Examples
-```bash
-ghostship-pyload-ng get_server_status --pretty
-```
-```bash
-ghostship-pyload-ng get_queue --pretty
-```
-```bash
-ghostship-pyload-ng get_accounts --refresh
-```
+- Prefer dedicated snake_case commands first.
+- Use `request` only for uncovered endpoints.
+- Every command accepts `--timeout`; default hard timeout is `30` seconds.
+- Write and delete operations support `--dry-run`.
+
+## Start Here
+
+- Server health: `ghostship-pyload-ng get_server_status`, `ghostship-pyload-ng get_server_version`, `ghostship-pyload-ng get_free_space`
+- Queue and downloads: `ghostship-pyload-ng get_queue`, `ghostship-pyload-ng get_downloads`
+- Account state: `ghostship-pyload-ng get_accounts`
+- Troubleshooting: `ghostship-pyload-ng get_config`
+
+## Common Workflows
+
+- Diagnose a stuck downloader:
+  - `get_server_status`
+  - `get_queue`
+  - `get_downloads`
+  - `get_accounts`
+- Add download work:
+  - `add_package --dry-run ...` or `add_files --dry-run ...`
+  - execute once the request shape is correct
+  - `get_queue` to verify acceptance
+- Clean up or retry:
+  - Inspect current queue or completed state first.
+  - `delete_finished --dry-run ...` or `restart_failed --dry-run ...`
+  - Re-read queue or downloads afterward.
+- Manage accounts:
+  - `get_accounts`
+  - `add_account --dry-run ...` or `remove_account --dry-run ...`
+  - Re-read account state to verify.
+
+## Mutation Guardrails
+
+- Confirm package or account targets before mutating.
+- Use `--dry-run` for adds, deletions, retries, and account changes.
+- Treat `stop_all_downloads` and `toggle_pause` as explicit operator actions after reading current server status.
+
+## Fallback
+
+- Use `ghostship-pyload-ng request` only for uncovered endpoints.

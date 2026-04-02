@@ -1,45 +1,64 @@
 ---
 name: synology
-description: Use when you need Synology File Station operations exposed directly as method-name commands.
+description: Operate Synology DSM File Station from the Hermes image with `ghostship-synology`. Use when inspecting shares, browsing or searching files, reading file metadata, uploading or downloading content, or performing guarded folder and file mutations through exact CLI operations.
 ---
 
-# ghostship-synology
+# Synology Skill
 
-- Commands mirror the API/client method names exactly. Do not guess aliases.
-- Every invocation accepts `--timeout`; default hard timeout is `30` seconds.
-- Where the service exposes write/delete operations, those commands support `--dry-run` and print the exact request object without calling the API.
-- Configure the utility with:
+Use `ghostship-synology` for File Station workflows that begin with share discovery and end with explicit path verification.
+
+## Prerequisites
+
 - `SYNOLOGY_URL`
 - `SYNOLOGY_USER`
 - `SYNOLOGY_PASS`
-- `SYNOLOGY_VERIFY_SSL (optional)`
-- Prefer the dedicated snake_case command first. Use `call` only as fallback.
+- `SYNOLOGY_VERIFY_SSL` when you need to override TLS verification behavior
 
-## Common Commands
-- `ghostship-synology call`
-- `ghostship-synology get_info`
-- `ghostship-synology login`
-- `ghostship-synology logout`
-- `ghostship-synology list_shares`
-- `ghostship-synology list_files`
-- `ghostship-synology get_file_info`
-- `ghostship-synology search_start`
-- `ghostship-synology search_list`
-- `ghostship-synology create_folder`
-- `ghostship-synology rename`
-- `ghostship-synology delete`
-- `ghostship-synology download_file`
-- `ghostship-synology upload_file`
-- `ghostship-synology copy`
-- `ghostship-synology move`
+## Operating Model
 
-## Examples
-```bash
-ghostship-synology list_shares --pretty
-```
-```bash
-ghostship-synology list_files /video --limit 10 --pretty
-```
-```bash
-ghostship-synology get_file_info /video/movie.mkv
-```
+- Prefer dedicated snake_case commands first.
+- Use `call` only for uncovered API methods.
+- Every command accepts `--timeout`; default hard timeout is `30` seconds.
+- Write and delete operations support `--dry-run`.
+- Path safety matters more than speed: inspect the target share and exact path before any mutation.
+
+## Start Here
+
+- Service and auth sanity check: `ghostship-synology get_info`, then `ghostship-synology login`
+- Discover available roots: `ghostship-synology list_shares`
+- Inspect a target directory before write activity: `ghostship-synology list_files <path>`
+- Inspect one object before rename, move, copy, or delete: `ghostship-synology get_file_info <path>`
+
+## Common Workflows
+
+- Browse and verify a target location:
+  - `get_info`
+  - `login`
+  - `list_shares`
+  - `list_files <path>` until you have the exact working path.
+- Upload or download content:
+  - `list_files <path>` or `get_file_info <path>` before transfer.
+  - `upload_file --dry-run ...`, then `upload_file ...` for uploads.
+  - `download_file <path> ...` only after confirming the exact source path.
+  - Re-run `list_files <path>` or `get_file_info <path>` after upload to confirm the result.
+- Reorganize files safely:
+  - `get_file_info <path>` for the source object.
+  - Inspect the destination with `list_files <target-dir>`.
+  - `copy --dry-run ...` or `move --dry-run ...`, then the real command.
+  - `rename --dry-run ...` or `delete --dry-run ...` only after confirming the full path.
+  - Verify both source and destination state after the mutation.
+- Search for a file before acting on it:
+  - `search_start ...`
+  - `search_list <task-id>` until the results stabilize.
+  - `get_file_info <path>` on the selected result before any copy, move, or delete.
+
+## Mutation Guardrails
+
+- Never mutate a path you have not just confirmed with `list_files` or `get_file_info`.
+- Use `--dry-run` for `create_folder`, `rename`, `delete`, `upload_file`, `copy`, and `move`.
+- Prefer copy over move when the workflow allows recovery from mistakes.
+- Verify post-state after every transfer or filesystem mutation.
+
+## Fallback
+
+- Use `ghostship-synology call` only when a dedicated command does not exist.
