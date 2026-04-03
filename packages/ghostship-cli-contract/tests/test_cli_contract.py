@@ -32,6 +32,17 @@ def test_request_spec_to_dict_omits_empty_fields() -> None:
     }
 
 
+def test_request_spec_to_dict_includes_raw_content() -> None:
+    spec = RequestSpec(method='POST', path='/api/import', timeout=30.0, content='https://example.com')
+
+    assert spec.to_dict() == {
+        'method': 'POST',
+        'path': '/api/import',
+        'timeout': 30.0,
+        'content': 'https://example.com',
+    }
+
+
 def test_render_dry_run_returns_jsonable_request() -> None:
     spec = RequestSpec(method='DELETE', path='/api/items/7', timeout=12.5, params={'force': 'true'})
 
@@ -92,6 +103,21 @@ def test_base_http_client_allows_timeout_override() -> None:
 
     assert client.request_json('GET', '/health', timeout=4.5) == {'ok': True}
     assert seen['url'] == 'https://example.test/health'
+
+
+def test_base_http_client_supports_raw_content_body() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen['content_type'] = request.headers.get('Content-Type')
+        seen['body'] = request.content.decode()
+        return httpx.Response(200, json={'ok': True})
+
+    transport = httpx.MockTransport(handler)
+    client = BaseHttpClient('https://example.test', transport=transport)
+
+    assert client.request_json('POST', '/import', content='https://example.com', headers={'Content-Type': 'text/plain'}) == {'ok': True}
+    assert seen == {'content_type': 'text/plain', 'body': 'https://example.com'}
 
 
 def test_base_http_client_raises_timeout_error() -> None:

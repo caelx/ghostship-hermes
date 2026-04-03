@@ -68,7 +68,9 @@ writeShellApplication {
       export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
       export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}"
       export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$HERMES_UID}"
-      export BITWARDENCLI_APPDATA_DIR="''${BITWARDENCLI_APPDATA_DIR:-$HERMES_HOME/bitwarden-cli}"
+      export GHOSTSHIP_BWS_DIR="''${GHOSTSHIP_BWS_DIR:-$HERMES_HOME/bws}"
+      export GHOSTSHIP_BWS_CONFIG_FILE="''${GHOSTSHIP_BWS_CONFIG_FILE:-$GHOSTSHIP_BWS_DIR/config}"
+      export BWS_CONFIG_FILE="''${BWS_CONFIG_FILE:-$GHOSTSHIP_BWS_CONFIG_FILE}"
       export FEED_DB_PATH="''${FEED_DB_PATH:-$HERMES_HOME/feed/feed.db}"
       export TERMINAL_CWD="''${TERMINAL_CWD:-$HOME}"
       export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-bundle.crt}"
@@ -127,7 +129,8 @@ writeShellApplication {
         "$HERMES_HOME" \
         "$HERMES_HOME/profiles" \
         "$HERMES_HOME/feed" \
-        "$BITWARDENCLI_APPDATA_DIR" \
+        "$GHOSTSHIP_BWS_DIR" \
+        "$GHOSTSHIP_BWS_DIR/state" \
         "$XDG_CONFIG_HOME" \
         "$XDG_DATA_HOME" \
         "$XDG_STATE_HOME" \
@@ -148,6 +151,24 @@ writeShellApplication {
         "$GHOSTSHIP_API_DIR" \
         "$GHOSTSHIP_CADDY_DIR"
       touch "$GHOSTSHIP_API_DIR/profiles.json"
+    }
+
+    ensure_bws_layout() {
+      if ! command -v bws >/dev/null 2>&1; then
+        return 0
+      fi
+
+      if [ "$(id -u)" -eq 0 ]; then
+        setpriv --reuid "$HERMES_UID" --regid "$HERMES_GID" --clear-groups --inh-caps -all env \
+          HOME="$HOME" \
+          HERMES_HOME="$HERMES_HOME" \
+          GHOSTSHIP_BWS_DIR="$GHOSTSHIP_BWS_DIR" \
+          BWS_CONFIG_FILE="$BWS_CONFIG_FILE" \
+          bws config state-dir "$GHOSTSHIP_BWS_DIR/state" >/dev/null
+        return 0
+      fi
+
+      BWS_CONFIG_FILE="$BWS_CONFIG_FILE" bws config state-dir "$GHOSTSHIP_BWS_DIR/state" >/dev/null
     }
 
     honcho_shared_has_content() {
@@ -610,6 +631,7 @@ EOF
 
       ensure_runtime_prereqs
       ensure_runtime_directories
+      ensure_bws_layout
       ensure_honcho_layout
 
       entries_file="$(mktemp)"

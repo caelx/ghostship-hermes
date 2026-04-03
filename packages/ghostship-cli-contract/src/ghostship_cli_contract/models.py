@@ -34,6 +34,7 @@ class RequestSpec:
     timeout: float
     params: dict[str, Any] | None = None
     json_body: Any = None
+    content: str | bytes | None = None
     form_data: dict[str, Any] | None = None
     files: dict[str, Any] | list[Any] | None = None
     headers: dict[str, Any] | None = None
@@ -47,6 +48,7 @@ class RequestSpec:
         optional = {
             'params': _copy_mapping(self.params),
             'json_body': self.json_body,
+            'content': self.content.decode('utf-8', errors='replace') if isinstance(self.content, bytes) else self.content,
             'form_data': _copy_mapping(self.form_data),
             'files': _serialize_file_value(self.files),
             'headers': _copy_mapping(self.headers),

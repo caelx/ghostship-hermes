@@ -104,7 +104,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 
 ### Service And API Integration
 
-- The official Bitwarden CLI fits this container best as an env-driven workflow: keep `BITWARDENCLI_APPDATA_DIR` stable under `~/.hermes/bitwarden-cli`, inject `BW_CLIENTID`, `BW_CLIENTSECRET`, and `BW_PASSWORD` from the operator, and regenerate ephemeral `BW_SESSION` values with `bw unlock --passwordenv BW_PASSWORD --raw`.
+- The Bitwarden Secrets Manager CLI fits this container best as an env-driven workflow: keep `BWS_CONFIG_FILE` stable under `~/.hermes/bws/config`, set `state_dir` to `~/.hermes/bws/state`, inject `BWS_ACCESS_TOKEN` from the operator, and use project/secret reads instead of `bw` unlock sessions.
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
 - For a dedicated personal Gmail account on an unverified testing-mode OAuth app, `gws auth login` should use narrow scopes like `gmail` or `gmail,calendar,drive`; the broad upstream `recommended` preset can fail consent.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.
@@ -117,6 +117,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - PriceBuddy exposes authenticated API docs at `/docs/api`, but the raw OpenAPI export is effectively token-gated. If no authenticated export is available, document the surface from upstream tests and handlers instead of inventing a spec mirror.
 - RSS-Bridge is action-driven, not CRUD-driven. “Create a feed” means generating a canonical `action=display` URL from bridge schema, not persisting a server-side object.
 - For RSS workflows in this image, keep `ghostship-rss-bridge` as the canonical feed URL generation layer and `feed` as the persistent subscription, fetch, search, and triage layer.
+- changedetection.io's stable upstream API source of truth is `docs/api-spec.yaml` in the official repo. Persist the repo mirror as `docs/api/changedetection-openapi.json`; treat `/api/v1/full-spec` as the live merged instance-specific extension surface.
 - The deployed RSS-Bridge instance returns two parameter shapes: a dict of contexts or a legacy list of parameter groups that should be treated as the global context.
 
 ### Testing And Known Service Conditions

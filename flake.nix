@@ -44,8 +44,9 @@
           ghostshipCloakbrowser = pkgs.callPackage ./packages/cloakbrowser-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipChangedetection = pkgs.callPackage ./packages/changedetection-cli/package.nix { inherit ghostshipCliContract; };
           honchoAi = pkgs.callPackage ./packages/honcho-ai/package.nix { };
-          bitwardenCli = pkgs.bitwarden-cli;
+          bitwardenSecretsCli = pkgs.bws;
           feed = pkgs.callPackage ./packages/feed/package.nix { };
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
           ghostshipHermesSkills = pkgs.callPackage ./packages/hermes-image/skills.nix { };
@@ -76,6 +77,7 @@
             ghostshipCloakbrowser
             ghostshipPricebuddy
             ghostshipRssBridge
+            ghostshipChangedetection
           ];
         in
         {
@@ -97,7 +99,8 @@
           ghostship-cloakbrowser = ghostshipCloakbrowser;
           ghostship-pricebuddy = ghostshipPricebuddy;
           ghostship-rss-bridge = ghostshipRssBridge;
-          bw = bitwardenCli;
+          ghostship-changedetection = ghostshipChangedetection;
+          bws = bitwardenSecretsCli;
           inherit feed;
           gws = googleWorkspaceCli;
           ghostship-hermes-skills = ghostshipHermesSkills;
@@ -113,7 +116,7 @@
               hermesRelease
               pkgs
               honchoAi
-              bitwardenCli
+              bitwardenSecretsCli
               feed
               googleWorkspaceCli
               ;
@@ -150,7 +153,8 @@
             ghostship-cloakbrowser
             ghostship-pricebuddy
             ghostship-rss-bridge
-            bw
+            ghostship-changedetection
+            bws
             feed
             gws
             ghostship-hermes-skills
@@ -167,7 +171,7 @@
             inherit system;
             config.allowUnfree = true;
           };
-          bitwardenCli = pkgs.bitwarden-cli;
+          bitwardenSecretsCli = pkgs.bws;
           feed = pkgs.callPackage ./packages/feed/package.nix { };
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
           pythonEnv = pkgs.python311.withPackages (
@@ -189,7 +193,7 @@
               fd
               gh
               git
-              bitwardenCli
+              bitwardenSecretsCli
               feed
               googleWorkspaceCli
               jq
@@ -202,7 +206,7 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src${PYTHONPATH:+:$PYTHONPATH}"
+              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src:$PWD/packages/changedetection-cli/src${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }
