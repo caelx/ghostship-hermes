@@ -1,6 +1,6 @@
 ---
 name: changedetection
-description: Manage changedetection.io with `ghostship-changedetection`. Use when you need full API coverage for watches, tags, notifications, search/import, history, or the live merged instance spec, and when service credentials are stored in Bitwarden Secrets Manager.
+description: Manage changedetection.io with `ghostship-changedetection`. Use when you need full API coverage for watches, tags, notifications, search/import, history, or the live merged instance spec, with `CHANGEDETECTION_API_KEY` sourced from Bitwarden Secrets Manager and local topology kept in env/config.
 ---
 
 # changedetection Skill
@@ -10,12 +10,14 @@ Use `ghostship-changedetection` for the full stable changedetection.io API surfa
 ## Prerequisites
 
 - `BWS_ACCESS_TOKEN`
-- Bitwarden secrets for `CHANGEDETECTION_URL` and `CHANGEDETECTION_API_KEY`
+- Local env/config for `CHANGEDETECTION_URL`
+- A Bitwarden secret for `CHANGEDETECTION_API_KEY`
 - `ghostship-changedetection` reads `CHANGEDETECTION_URL` and `CHANGEDETECTION_API_KEY`
 
 ## Operating Model
 
-- Fetch changedetection credentials from `bws` first.
+- Keep `CHANGEDETECTION_URL` in local env/config unless the URL itself contains credential material.
+- Fetch `CHANGEDETECTION_API_KEY` from `bws` just before use.
 - Prefer dedicated snake_case commands before `request`.
 - Follow the normal flow: inspect, `--dry-run`, mutate, verify.
 - `get_full_api_spec` returns the live merged YAML for the running instance. The repo’s stable upstream snapshot lives in `docs/api/changedetection-openapi.json`.
@@ -23,7 +25,7 @@ Use `ghostship-changedetection` for the full stable changedetection.io API surfa
 ## Start Here
 
 ```fish
-set -x CHANGEDETECTION_URL (bws secret get <changedetection-url-secret-id> | jq -r '.value')
+set -x CHANGEDETECTION_URL https://changedetection.example.com
 set -x CHANGEDETECTION_API_KEY (bws secret get <changedetection-api-key-secret-id> | jq -r '.value')
 
 ghostship-changedetection get_system_info --pretty

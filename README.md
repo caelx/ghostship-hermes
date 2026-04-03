@@ -204,12 +204,19 @@ For the standardized Python utility workflow, see [docs/python-utilities.md](doc
 
 - **Native JSON**: Utilities MUST output native JSON to stdout.
 - **Pretty Printing**: All utilities support `--pretty` for formatted JSON.
-- **Environment Config**: Utilities use environment variables (e.g., `SONARR_API_KEY`, `PLEX_TOKEN`) for configuration.
+- **Runtime Env Interface**: Utilities still consume environment variables at process launch time, but Bitwarden Secrets Manager is the durable source of truth for secrets by default.
 - **No Rich Formatting**: Human-readable tables and colors are avoided in favor of raw data.
 
 ## Environment Variables
 
-All `ghostship-` utilities require specific environment variables. Set these before running commands.
+All `ghostship-` utilities still use specific environment variables as their runtime interface. Treat those variables as process-scoped inputs, not as the preferred durable storage location for secrets.
+
+Use this default policy:
+
+- Keep `BWS_ACCESS_TOKEN` as the operator-injected bootstrap secret for Bitwarden Secrets Manager.
+- Keep service API keys, bearer tokens, passwords, cookie seeds, OAuth client secrets, and automation-compatible website credentials in Bitwarden Secrets Manager by default.
+- Keep service URLs, hostnames, ports, profile names, workspace paths, and similar local topology in profile `.env` files or other local env/config by default unless the value itself contains credential material.
+- Materialize only the secret values needed for the specific `ghostship-*` command or workflow you are about to run.
 
 | Utility | Variables |
 |---------|------------|
@@ -240,6 +247,14 @@ All `ghostship-*` CLIs now follow one contract: dedicated commands mirror the un
 
 The image ships the official Bitwarden Secrets Manager CLI as `bws` from nixpkgs. It is available directly on `PATH`, and its normal HOME-based config/state locations persist because the relevant home directories are symlinked into `/opt/data/home`.
 
+Use `bws` with this boundary:
+
+- `BWS_ACCESS_TOKEN` is the operator-injected bootstrap secret.
+- Bitwarden Secrets Manager is the source of truth for service credentials and website credentials that fit a machine-account or scripted workflow.
+- `ghostship-*` environment variables remain the runtime interface for child processes.
+- Local topology such as URLs, hosts, ports, profile names, and workspace paths stays in env/config by default.
+- Interactive-only auth models such as passkeys, WebAuthn prompts, and human SSO sessions are outside the default `bws` workflow.
+
 Inside the container, use `bws` directly:
 
 ```fish
@@ -256,16 +271,16 @@ If the account uses a self-hosted Bitwarden server, set the server URL before th
 set -x BWS_SERVER_URL https://vault.example.com
 ```
 
-The repo-managed `bitwarden` skill now assumes Secrets Manager semantics only: machine-account access tokens, projects, and secrets. It does not use `bw`, `BW_SESSION`, Password Manager item retrieval, or shared-collection vault flows.
+The repo-managed `bitwarden` skill now assumes Secrets Manager semantics only: machine-account access tokens, projects, and secrets. It does not use `bw`, `BW_SESSION`, Password Manager item retrieval, or shared-collection vault flows, and it prefers narrow per-command secret materialization over a broad shared shell environment.
 
 ## changedetection.io CLI
 
 The image ships `ghostship-changedetection` for the full stable upstream changedetection.io API surface, plus the unauthenticated live merged `/api/v1/full-spec` endpoint.
 
-Use `bws` to materialize the service secrets, then call the typed utility:
+Keep `CHANGEDETECTION_URL` in local env/config by default, then use `bws` to materialize the API key just before calling the typed utility:
 
 ```fish
-set -x CHANGEDETECTION_URL (bws secret get <changedetection-url-secret-id> | jq -r '.value')
+set -x CHANGEDETECTION_URL https://changedetection.example.com
 set -x CHANGEDETECTION_API_KEY (bws secret get <changedetection-api-key-secret-id> | jq -r '.value')
 
 ghostship-changedetection get_system_info --pretty
@@ -386,5 +401,5 @@ Notes:
 
 - Runs as non-root `hermes` user.
 - No in-container `sudo`.
-- Secrets should be provided via mounted `.env` or environment variables.
+- Keep durable service and website credentials in Bitwarden Secrets Manager by default, inject `BWS_ACCESS_TOKEN` from the operator, and treat utility environment variables as the runtime interface for the command being launched.
 - Runtime UID/GID is configurable with `HERMES_UID` and `HERMES_GID`; mounted volumes should be writable by the chosen identity.

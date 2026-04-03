@@ -109,6 +109,9 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 ### Service And API Integration
 
 - The Bitwarden Secrets Manager CLI fits this container best as an env-driven workflow: inject `BWS_ACCESS_TOKEN` from the operator, let `bws` use its normal HOME-based defaults, and persist that state through the `/opt/data/home` symlinked home tree instead of custom config-path overrides.
+- Treat `BWS_ACCESS_TOKEN` as the bootstrap secret, Bitwarden Secrets Manager as the default source of truth for service credentials and automation-compatible website credentials, and utility env vars as the runtime interface rather than the durable storage layer for those secrets.
+- Keep local topology such as service URLs, hostnames, ports, profile names, and workspace paths in env/config by default unless the value itself contains credential material.
+- Prefer per-command secret materialization from `bws` over exporting a broad long-lived shell environment with every service secret loaded at once.
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
 - For a dedicated personal Gmail account on an unverified testing-mode OAuth app, `gws auth login` should use narrow scopes like `gmail` or `gmail,calendar,drive`; the broad upstream `recommended` preset can fail consent.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.

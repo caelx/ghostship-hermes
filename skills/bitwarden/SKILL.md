@@ -1,6 +1,6 @@
 ---
 name: bitwarden
-description: Use the Bitwarden Secrets Manager CLI `bws` in the Hermes image to fetch operator-shared service secrets with a machine-account access token and project or secret workflows.
+description: Use the Bitwarden Secrets Manager CLI `bws` in the Hermes image to fetch operator-shared service and automation-compatible website secrets with a machine-account access token and narrow per-command materialization.
 ---
 
 # Bitwarden Skill
@@ -16,10 +16,15 @@ Use `bws` when you need project-scoped secrets from Bitwarden Secrets Manager.
 
 ## Operating Model
 
+- Treat `BWS_ACCESS_TOKEN` as the bootstrap secret injected by the operator.
 - Prefer project and secret commands, not Password Manager vault workflows.
+- Treat Bitwarden Secrets Manager as the default source of truth for service credentials and website credentials that fit a machine-account or scripted workflow.
+- Keep service URLs, hostnames, ports, profile names, and paths in local env/config by default unless the value itself contains credential material.
 - `bws` already defaults to JSON output.
 - Discover the right project and secret ids first, then fetch only the values you need.
+- Export or inject only the secret values needed for the command you are about to run.
 - Do not use `bw`, `BW_SESSION`, vault unlock flows, shared collections, or TOTP/item retrieval patterns here.
+- Do not treat interactive-only auth models such as passkeys, WebAuthn prompts, or human SSO sessions as normal `bws` workflows.
 
 ## Start Here
 
@@ -48,8 +53,13 @@ set -x BWS_SERVER_URL https://vault.example.com
 - Read a secret value:
   - Run `bws secret get <secret-id>`.
   - Extract the `value` field only when a downstream command needs the raw secret.
-- Export a service env var for a downstream CLI:
+- Keep local topology in env/config:
+  - Example: `set -x CHANGEDETECTION_URL https://changedetection.example.com`
+- Export a service secret env var for a downstream CLI:
   - `set -x CHANGEDETECTION_API_KEY (bws secret get <secret-id> | jq -r '.value')`
+- Use website credentials when they fit automation:
+  - Store usernames, passwords, bearer tokens, app passwords, or cookie seeds in Bitwarden.
+  - Fetch only the values needed for the browser or CLI workflow you are about to run.
 
 ## Guardrails
 
