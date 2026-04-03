@@ -82,6 +82,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Persisted user `systemd` units belong under `/opt/data/home/.config/systemd/user` and are exposed through `/home/hermes/.config/systemd/user`; repo-managed units should be installed as managed symlinks so local overrides can replace them cleanly.
 - For this container, the supported `agent-browser` path is CloakBrowser-backed profiles only: two default profiles plus one default VPN-backed profile that is more CAPTCHA-prone.
 - Skills copied from a Nix-store source tree inherit read-only modes unless the runtime explicitly `chmod`s the copied files writable. Skill seeding must leave `~/.hermes/skills` user-editable after first start.
+- When assembling the workstation seed in a derivation, `cp -R` from Nix-store trees also preserves read-only permissions; `chmod -R u+rwX "$out"` before removing or overlaying seeded subtrees.
 - Mounting an empty Docker volume over `/nix` on a fresh Nix-built image is unsafe: it can hide or copy the image store and stall `docker run`.
 - The official Hermes Docker image does not create a `~/.hermes -> /opt/data` symlink; it sets `HERMES_HOME=/opt/data` directly. Named profiles, wrappers, and user services are still HOME-anchored, so this repo must provide the persisted home facade itself.
 - Home-managed agent apps should install into versioned directories and flip stable symlinks only after a successful validation step.

@@ -33,6 +33,7 @@ in
 pkgs.runCommand "ghostship-hermes-workstation-seed" { } ''
   mkdir -p "$out"
   cp -R ${workstationSeedTree}/. "$out/"
+  chmod -R u+rwX "$out"
 
   mkdir -p "$out/.codex" "$out/.gemini" "$out/.opencode"
   rm -rf "$out/.codex/skills" "$out/.gemini/commands" "$out/.gemini/skills" "$out/.opencode/command" "$out/.opencode/skills"
