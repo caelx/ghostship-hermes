@@ -1,42 +1,39 @@
-# bitwarden-cli-skill Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-bitwarden-cli-runtime-and-skill. Update Purpose after archive.
-## Requirements
 ### Requirement: Hermes seeds a repo-managed Bitwarden skill
 The default Hermes skill inventory SHALL include a repo-managed Bitwarden skill that is copied into `~/.hermes/skills` on first start without overwriting an existing user-managed skill directory of the same name.
 
 #### Scenario: Fresh Hermes profile receives the Bitwarden skill
 - **WHEN** a fresh Hermes profile receives the default seeded skill tree
 - **THEN** the seeded skills include the repo-managed Bitwarden skill
+- **AND** the skill content describes the supported Bitwarden Secrets Manager workflow
 
 #### Scenario: Existing Bitwarden skill is preserved
 - **WHEN** a Bitwarden skill directory already exists in `~/.hermes/skills`
 - **THEN** runtime skill seeding leaves the existing directory unchanged
 
 ### Requirement: Bitwarden skill defines the official stateless auth workflow
-The repo-managed Bitwarden skill SHALL instruct agents to use Bitwarden's official environment-variable-driven flow with API-key login, password-based unlock, and ephemeral session export.
+The repo-managed Bitwarden skill SHALL instruct agents to use Bitwarden Secrets Manager's official access-token-driven workflow and SHALL not depend on Password Manager login, vault unlock, or `BW_SESSION`.
 
 #### Scenario: Skill documents the required environment variables
 - **WHEN** maintainers inspect the Bitwarden skill content
-- **THEN** the skill names `BW_CLIENTID`, `BW_CLIENTSECRET`, `BW_PASSWORD`, `BITWARDENCLI_APPDATA_DIR`, and `BW_SESSION`
-- **AND** the skill explains how each variable participates in the official `bw` workflow
+- **THEN** the skill names `BWS_ACCESS_TOKEN`
+- **AND** the skill explains the repo-defined Hermes-managed `bws` configuration/state path
 
-#### Scenario: Skill documents noninteractive login and unlock
+#### Scenario: Skill documents noninteractive secrets-manager auth
 - **WHEN** maintainers inspect the Bitwarden skill content
-- **THEN** the skill directs agents to use `bw login --apikey`
-- **AND** the skill directs agents to derive `BW_SESSION` from `bw unlock --passwordenv BW_PASSWORD --raw`
+- **THEN** the skill directs agents to authenticate with the official `bws` access-token workflow
+- **AND** the skill explicitly avoids `bw login`, `bw unlock`, and `BW_SESSION` as supported guidance
 
 ### Requirement: Bitwarden skill covers shared secret retrieval conventions
-The repo-managed Bitwarden skill SHALL describe how agents receive operator-shared credentials through a dedicated Bitwarden account and retrieve them with the official CLI.
+The repo-managed Bitwarden skill SHALL describe how agents receive operator-managed credentials through Bitwarden Secrets Manager machine-account access and retrieve project-scoped secrets with the official CLI.
 
-#### Scenario: Skill covers shared account usage
+#### Scenario: Skill covers machine-account usage
 - **WHEN** maintainers inspect the Bitwarden skill content
-- **THEN** the skill explains that the agent should use a dedicated Bitwarden account that receives shared credentials from the operator
-- **AND** the skill describes shared collections or equivalent supported sharing primitives as the expected sharing model
+- **THEN** the skill explains that the agent should use an operator-managed Secrets Manager machine account or equivalent access-token workflow
+- **AND** the skill describes project-scoped secrets as the supported sharing model
 
-#### Scenario: Skill covers sync-before-read retrieval
+#### Scenario: Skill covers JSON-friendly secret retrieval
 - **WHEN** maintainers inspect the Bitwarden skill content
-- **THEN** the skill tells agents to run `bw sync` before retrieving newly shared credentials
-- **AND** the skill prefers JSON-friendly retrieval patterns for downstream scripting
-
+- **THEN** the skill directs agents to use `bws` retrieval commands that return structured secret data suitable for downstream scripting
+- **AND** the skill describes changedetection credentials as a concrete service-secret workflow
