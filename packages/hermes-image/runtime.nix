@@ -10,6 +10,7 @@
   ffmpeg,
   findutils,
   git,
+  gawk,
   gnugrep,
   gnused,
   hermesRelease,
@@ -34,6 +35,7 @@ writeShellApplication {
     ffmpeg
     findutils
     git
+    gawk
     gnugrep
     gnused
     jq
@@ -385,6 +387,197 @@ writeShellApplication {
         cp "$source_file" "$target_file"
         chmod u+rw "$target_file"
       fi
+      return 0
+    }
+
+    strip_marked_block() {
+      local file="$1"
+      local begin="$2"
+      local end="$3"
+      local tmp_file
+
+      [ -f "$file" ] || return 0
+      tmp_file="$(mktemp)"
+      awk -v begin="$begin" -v end="$end" '
+        $0 == begin { skipping = 1; next }
+        $0 == end { skipping = 0; next }
+        !skipping { print }
+      ' "$file" > "$tmp_file"
+      mv "$tmp_file" "$file"
+      return 0
+    }
+
+    append_markdown_override() {
+      local source_file="$1"
+      local target_file="$2"
+      local block_id="$3"
+      local begin end tmp_file
+
+      [ -f "$source_file" ] || return 0
+      [ -f "$target_file" ] || return 0
+
+      begin="<!-- ghostship:$block_id:begin -->"
+      end="<!-- ghostship:$block_id:end -->"
+      strip_marked_block "$target_file" "$begin" "$end"
+
+      tmp_file="$(mktemp)"
+      {
+        cat "$target_file"
+        printf '\n%s\n' "$begin"
+        cat "$source_file"
+        printf '%s\n' "$end"
+      } > "$tmp_file"
+      mv "$tmp_file" "$target_file"
+      return 0
+    }
+
+    insert_toml_prompt_override() {
+      local source_file="$1"
+      local target_file="$2"
+      local block_id="$3"
+      local begin end tmp_file
+
+      [ -f "$source_file" ] || return 0
+      [ -f "$target_file" ] || return 0
+
+      begin="<!-- ghostship:$block_id:begin -->"
+      end="<!-- ghostship:$block_id:end -->"
+      strip_marked_block "$target_file" "$begin" "$end"
+
+      tmp_file="$(mktemp)"
+      awk -v begin="$begin" -v end="$end" -v src="$source_file" '
+        { lines[++count] = $0 }
+        END {
+          if (count == 0) {
+            exit 0
+          }
+
+          inserted = 0
+          for (index = 1; index <= count; index++) {
+            if (!inserted && index == count && lines[index] == "\"\"\"") {
+              print ""
+              print begin
+              while ((getline line < src) > 0) print line
+              close(src)
+              print end
+              print lines[index]
+              inserted = 1
+            } else {
+              print lines[index]
+            }
+          }
+
+          if (!inserted) {
+            print ""
+            print begin
+            while ((getline line < src) > 0) print line
+            close(src)
+            print end
+          }
+        }
+      ' "$target_file" > "$tmp_file"
+      mv "$tmp_file" "$target_file"
+      return 0
+    }
+
+    create_openspec_override_file() {
+      local key="$1"
+      local tmp_file
+
+      tmp_file="$(mktemp)"
+      case "$key" in
+        propose)
+          cat > "$tmp_file" <<'EOF'
+## Ghostship Override
+
+- Before `openspec new change`, use `using-git-worktrees` if it is available.
+- Create or reuse `.worktree/<name>/`.
+- Run the change creation and artifact generation flow from that worktree, not from `main`.
+EOF
+          ;;
+        apply)
+          cat > "$tmp_file" <<'EOF'
+## Ghostship Override
+
+- If implementation gets stuck on a bug, failing test, or unexpected behavior, use `systematic-debugging` if it is available.
+- Do root-cause-first debugging before proposing or applying fixes.
+EOF
+          ;;
+        archive)
+          cat > "$tmp_file" <<'EOF'
+## Ghostship Override
+
+- Before archive, commit the change branch and fast-forward merge it back into `main`.
+- Run the archive flow from the main worktree after that merge.
+- After archive succeeds, delete the change worktree with `git worktree remove <worktree-path>`.
+EOF
+          ;;
+        *)
+          rm -f "$tmp_file"
+          return 1
+          ;;
+      esac
+
+      printf '%s\n' "$tmp_file"
+      return 0
+    }
+
+    apply_ghostship_openspec_overrides() {
+      local project_root="$1"
+      local propose_override apply_override archive_override tool_dir
+
+      [ -d "$project_root/openspec" ] || return 0
+
+      propose_override="$(create_openspec_override_file propose)"
+      apply_override="$(create_openspec_override_file apply)"
+      archive_override="$(create_openspec_override_file archive)"
+
+      for tool_dir in .codex .gemini .opencode; do
+        append_markdown_override \
+          "$propose_override" \
+          "$project_root/$tool_dir/skills/openspec-propose/SKILL.md" \
+          "$tool_dir-openspec-propose"
+        append_markdown_override \
+          "$apply_override" \
+          "$project_root/$tool_dir/skills/openspec-apply-change/SKILL.md" \
+          "$tool_dir-openspec-apply-change"
+        append_markdown_override \
+          "$archive_override" \
+          "$project_root/$tool_dir/skills/openspec-archive-change/SKILL.md" \
+          "$tool_dir-openspec-archive-change"
+      done
+
+      if [ -d "$project_root/.gemini/commands/opsx" ]; then
+        insert_toml_prompt_override \
+          "$propose_override" \
+          "$project_root/.gemini/commands/opsx/propose.toml" \
+          "gemini-opsx-propose"
+        insert_toml_prompt_override \
+          "$apply_override" \
+          "$project_root/.gemini/commands/opsx/apply.toml" \
+          "gemini-opsx-apply"
+        insert_toml_prompt_override \
+          "$archive_override" \
+          "$project_root/.gemini/commands/opsx/archive.toml" \
+          "gemini-opsx-archive"
+      fi
+
+      if [ -d "$project_root/.opencode/command" ]; then
+        append_markdown_override \
+          "$propose_override" \
+          "$project_root/.opencode/command/opsx-propose.md" \
+          "opencode-opsx-propose"
+        append_markdown_override \
+          "$apply_override" \
+          "$project_root/.opencode/command/opsx-apply.md" \
+          "opencode-opsx-apply"
+        append_markdown_override \
+          "$archive_override" \
+          "$project_root/.opencode/command/opsx-archive.md" \
+          "opencode-opsx-archive"
+      fi
+
+      rm -f "$propose_override" "$apply_override" "$archive_override"
       return 0
     }
 
@@ -930,6 +1123,7 @@ EOF
             [ -n "$openspec_output" ] && printf '%s\n' "$openspec_output" >&2
             continue
           fi
+          apply_ghostship_openspec_overrides "$repo_root"
           [ -n "$openspec_output" ] && printf '%s\n' "$openspec_output" >&2
         done < <(find "$search_root" -path '*/openspec/config.yaml' -type f -not -path "$GHOSTSHIP_WORKSTATION_DIR/*" 2>/dev/null | sort)
       done

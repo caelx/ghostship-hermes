@@ -15,6 +15,7 @@ Canonical image references:
 - Hermes is installed into the final `/opt/data/hermes-agent` path during bootstrap so the generated launchers and imports do not depend on a temporary build directory.
 - Repo-managed and vendored Hermes skills are seeded into `~/.hermes/skills` on first start without overwriting user-managed content.
 - A repo-managed workstation seed mirrors the selected develop-environment defaults for `.agents`, Codex, Gemini CLI, Opencode, OpenSpec commands/skills, and user `systemd` units into persisted state under `/opt/data` and `/opt/data/home` without clobbering local edits.
+- The seeded OpenSpec `propose`, `apply`, and `archive` workflows are sourced from the repo-managed Codex, Gemini CLI, and Opencode trees so the workstation image stays aligned with the develop-environment overrides.
 - `/opt/data` is the canonical persisted Hermes volume. `/opt/data/home` backs the persisted home facade that is symlinked into `/home/hermes` on boot.
 - Persist `/workspace` as a separate work-products volume for repos, downloads, build artifacts, and long-lived work items.
 - Persist `/nix` as well if you want `nix build`, `nix shell`, and `nix profile install` outputs to survive container replacement. Use a safe pre-populated `/nix` mount such as a bind mount from an existing Nix host store, not a brand-new empty Docker volume over `/nix`.
@@ -178,7 +179,7 @@ The published manifest list and per-architecture image tags follow the same nami
 - **Interface**: Caddy on port `7681` serves a profile dashboard and same-origin proxied `ttyd` terminals
 - **Persistence**: `/opt/data` is the Hermes state root, `/opt/data/home` stores the persisted home-dotdir facade that gets symlinked into `/home/hermes`, `/workspace` is the separate persisted work/projects volume, and `/nix` should also be persisted when you want Nix-managed installs and build outputs to survive container replacement
 - **Runtime Model**: A systemd-based NixOS container bootstraps storage, then starts both system services and a persisted `hermes` user manager so `~/.config/systemd/user` survives under `/opt/data/home/.config/systemd/user`
-- **Updates**: `codex`, `gemini`, `opencode`, `openspec`, `skills`, global `skills.sh` skills, Gemini extensions, OpenSpec instruction trees, and opencode's generated OpenRouter free-model config are refreshed on boot and on timers while preserving the last working local state on failures
+- **Updates**: `codex`, `gemini`, `opencode`, `openspec`, `skills`, global `skills.sh` skills, Gemini extensions, OpenSpec instruction trees with the Ghostship `propose`/`apply`/`archive` overrides reapplied after refresh, and opencode's generated OpenRouter free-model config are refreshed on boot and on timers while preserving the last working local state on failures
 - **Bootstrap Resilience**: Bootstrap creates `/tmp` and defaults `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` to `/etc/ssl/certs/ca-bundle.crt` so bootstrap `git`, `uv`, npm, and Nix operations inherit a working CA bundle
 - **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `bws`, `feed`, `gws`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, `systemd`, and more
 - **Output Standard**: All `ghostship-` utilities output native JSON. Use `--pretty` for human-readable output.
