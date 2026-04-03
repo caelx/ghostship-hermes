@@ -94,6 +94,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Repo-managed service skills should stay short, trigger-rich, and workflow-oriented: prioritize start-here guidance plus inspect -> dry-run -> mutate -> verify sequences over command dumps.
 - Use family-level structure for service wrappers, but keep domain-specific ordering and failure guidance inside each skill instead of mass-applying identical wording.
 - The workstation seed should source the OpenSpec `propose`, `apply`, and `archive` Codex/Gemini/Opencode trees from the repo-root copies, and runtime `openspec update` refreshes should reapply the Ghostship override blocks so the image stays aligned with the develop environment.
+- The Hermes runtime OpenSpec override generator is authoritative for refreshed Ghostship instruction text inside the image; keep its worktree guidance aligned with the repo-managed `.worktrees/<name>/` policy.
 
 ### Platform And CI
 

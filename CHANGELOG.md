@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Defined a repo-wide secrets/config policy: `BWS_ACCESS_TOKEN` remains the bootstrap secret, Bitwarden Secrets Manager is now the documented default source of truth for service and automation-compatible website credentials, local topology such as URLs and ports stays in env/config by default, and the docs and repo-managed skills now describe utility env vars as the runtime interface rather than the durable secret store.
+- Fixed the Hermes runtime OpenSpec propose override to keep refreshed image instructions on `.worktrees/<name>/`, and removed the retired `brainstorming` skill from the curated workstation seed defaults shipped by the image.
 - Made `scripts/validate_workstation_persistence.sh` executable again and added a fast Docker-daemon preflight so the documented local validation command fails immediately with a clear message when Docker is installed but unusable from the current shell, including common WSL integration setups.
 - Pinned Hermes release updated to `v2026.4.3`.
 - Fixed the workstation-seed derivation overlay to make the copied seed tree writable before replacing the OpenSpec Codex/Gemini/Opencode subtrees, resolving the `Permission denied` failure that broke the `ghostship-hermes-workstation-seed` CI and image builds.

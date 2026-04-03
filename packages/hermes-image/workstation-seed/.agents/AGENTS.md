@@ -12,7 +12,6 @@ Use these defaults across repos unless a repo-level `AGENTS.md` overrides them.
 ## Research and planning
 
 - Research the current state before changing code or config.
-- Use the `brainstorming` skill for research when it is available.
 - Use `openspec-explore` when researching a repo to understand how it works.
 - If the work needs a plan, implement it in a git worktree.
 - If `using-git-worktrees` is available, activate it for planned work.

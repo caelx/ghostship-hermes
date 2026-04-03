@@ -4,7 +4,6 @@ sandbox_mode = "danger-full-access"
 project_doc_fallback_filenames = [".agents.md"]
 
 skills.config = [
-  { path = "/home/hermes/.agents/skills/brainstorming", enabled = true },
   { path = "/home/hermes/.agents/skills/find-skills", enabled = true },
   { path = "/home/hermes/.agents/skills/nix", enabled = true },
   { path = "/home/hermes/.agents/skills/python", enabled = true },
