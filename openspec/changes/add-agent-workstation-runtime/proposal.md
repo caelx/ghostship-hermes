@@ -1,33 +1,33 @@
 ## Why
 
-The current image is still documented and structured like a replaceable container runtime with curated tools, but the desired product is a persistent agent workstation that survives rebuilds and restarts with minimal disruption. The workstation needs the latest agent apps and mutable agent environment state to evolve over time, while keeping invocation latency local and cached instead of depending on live updates during every command.
+The current workstation change is centered on persisting `/home/hermes`, but upstream Hermes Docker semantics center on `HERMES_HOME=/opt/data`. Real Docker probes showed that default Hermes state persists in `/opt/data`, while named profiles, wrappers, and `~/.config` state do not, so the sprint needs to be rewritten around a Hermes-native persistence model that preserves both Hermes state and the wider agent workstation.
 
 ## What Changes
 
-- **BREAKING** Reframe the container from an `s6`-supervised Hermes runtime into a persistent agent workstation whose durable source of truth is the full `/home/hermes` profile.
-- **BREAKING** Replace the current `s6` service model with a `systemd`-based runtime that supports both system-level services and `hermes` user services/timers living under the persisted home profile.
-- Add a workstation home-state contract that treats `/home/hermes` as durable state across rebuilds and restarts, including app installs, configs, skills, plugins/extensions, updater metadata, and Hermes state.
-- Reuse Hermes' native profile model and service-install behavior where possible so profile aliases and persistent gateway services stay aligned with upstream expectations under `systemd`.
-- Add a workstation seeding flow that mirrors the repo-managed subset of the user's develop environment into `/home/hermes` non-destructively on boot.
-- Add boot-time and timer-driven update services that keep `codex`, `gemini-cli`, `opencode`, `openspec`, `skills`, installed skills, plugins/extensions, and the opencode OpenRouter free-model config current without doing live refreshes in the invocation hot path.
-- Rewrite the documentation around the new mental model: this image is an agent workstation optimized for maximum enablement and minimal disruption, not a mostly stateless appliance.
-- Require local persistence validation that proves the workstation survives container restart and replacement when `/home/hermes` is reused.
+- **BREAKING** Make `/opt/data` the canonical persisted Hermes volume and keep `HERMES_HOME=/opt/data` so the container matches upstream Hermes expectations.
+- **BREAKING** Replace the current “persist all of `/home/hermes`” contract with a split model: `/opt/data` for Hermes and persisted home state, `/workspace` for repos and work products, and persisted `/nix` support for Nix-installed tools and build outputs.
+- Add a persisted home facade rooted at `/opt/data/home`, with boot-time symlink repair from `/home/hermes` into that tree for `.hermes`, `.config`, `.local`, `.cache`, `.agents`, and related workstation directories.
+- Add non-destructive boot migration rules: copy files from image/runtime defaults only when the persisted destination is missing, never overwrite existing volume data, and only replace live home directories with symlinks after migration.
+- Keep `systemd`, the custom Ghostship Hermes dashboard stack, Hermes-native profile behavior, and Hermes-native `gateway install` behavior, but make their HOME-anchored state persist through the symlinked home facade.
+- Add a separate persisted `/workspace` mount for projects, build artifacts, downloads, and work items, exposed inside the user home as a normal workspace path.
+- Support persisted `/nix` so Hermes and the agent can install and run additional software with Nix across container rebuilds and restarts, while documenting the safe mount strategy for Nix-built images.
+- Rewrite docs and validation around the new contract, including local Docker tests that prove reused `/opt/data`, `/workspace`, and `/nix` preserve the intended state.
 
 ## Capabilities
 
 ### New Capabilities
-- `agent-workstation-home-state`: Define `/home/hermes` as the persistent workstation state root and document the single-writer, full-home persistence contract.
-- `agent-workstation-runtime`: Run the workstation on `systemd`, including support for `hermes` user services and timers stored under the persisted home profile.
-- `agent-workstation-seeding`: Mirror the selected develop-environment defaults into the workstation home on boot without clobbering user-managed state.
-- `agent-workstation-updates`: Keep installed agent apps and mutable agent assets current through boot-time and timer-driven updates while keeping invocation-time behavior local and cached.
+- `agent-workstation-home-state`: Define the canonical persistence layout across `/opt/data`, `/workspace`, and `/nix`, including the `/opt/data/home` facade and non-destructive boot migration rules.
+- `agent-workstation-runtime`: Run the workstation with `systemd` while keeping Hermes-native expectations intact, including `HERMES_HOME=/opt/data`, HOME-anchored profile behavior, and persistent user services.
+- `agent-workstation-seeding`: Seed repo-managed workstation defaults into the persisted `/opt/data` and `/opt/data/home` trees without overwriting existing persisted state.
+- `agent-workstation-updates`: Keep apps and mutable agent assets current through boot-time and timer-driven updates rooted in the persisted workstation layout.
 
 ### Modified Capabilities
 
 ## Impact
 
-- Container init, supervisor, and service layout under `packages/hermes-image/`
-- Runtime persistence and directory contracts for `/home/hermes`
-- Bootstrapping and update logic for `codex`, `gemini-cli`, `opencode`, `openspec`, and `skills`
-- Repo-managed skill/config seed content and how it is copied into the workstation home
-- Documentation in `README.md`, `CHANGELOG.md`, `AGENTS.md`, and runtime guidance skills
-- Local verification workflows for rebuild/restart persistence with a reused workstation home
+- Container runtime contract, environment variables, and volume layout in `packages/hermes-image/`
+- Boot-time directory creation, symlink repair, and migration logic for `/home/hermes`, `/opt/data`, `/workspace`, and `/nix`
+- Hermes profile persistence, `gateway install`, user `systemd` services, and wrapper path behavior
+- Placement of seeded skills, config, updater state, and managed app installs
+- Docker docs, README guidance, changelog entries, and runtime guidance skills
+- Local Docker validation flows for rebuild/restart continuity under the new persistence model

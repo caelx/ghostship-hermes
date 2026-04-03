@@ -1,21 +1,32 @@
 ## ADDED Requirements
 
-### Requirement: Workstation mirrors selected develop-environment defaults
-The workstation SHALL seed a repo-managed mirror of the selected develop-environment defaults into `/home/hermes`, including the shared `.agents` tree and agent app configuration defaults needed for Codex, Gemini CLI, Opencode, and OpenSpec.
+### Requirement: Workstation seeding targets persisted locations
+The workstation SHALL seed repo-managed defaults into persisted destinations under `/opt/data` and `/opt/data/home` rather than into ephemeral image paths under `/home/hermes`.
 
-#### Scenario: Fresh workstation receives develop defaults
-- **WHEN** a fresh persisted home is prepared for the workstation
-- **THEN** the boot seeding flow creates the repo-managed default `.agents` and app config content in `/home/hermes`
+#### Scenario: Fresh workstation receives defaults in persisted storage
+- **WHEN** a fresh workstation boots with an empty `/opt/data`
+- **THEN** the runtime seeds Hermes defaults into `/opt/data`
+- **AND** the runtime seeds HOME-anchored workstation defaults into `/opt/data/home`
 
-#### Scenario: Seed content comes from repo-managed sources
-- **WHEN** maintainers inspect the workstation bootstrap inputs
-- **THEN** the mirrored develop-environment defaults are sourced from repo-managed content in this repository
-- **AND** the runtime does not depend on a host-specific `/home/nixos/nixos-config` path
+### Requirement: Seeding is copy-if-missing and non-destructive
+The workstation SHALL copy defaults only when the persisted destination is missing and SHALL NOT overwrite existing persisted user content during boot.
 
-### Requirement: Workstation seeding distinguishes managed defaults from user-owned state
-The workstation SHALL document which seeded files remain managed by the image/bootstrap process and which become user-owned after their first creation.
+#### Scenario: Missing seed file is created
+- **WHEN** a repo-managed seed file does not exist in the persisted destination
+- **THEN** boot seeding creates it there
 
-#### Scenario: Docs identify managed versus user-owned paths
-- **WHEN** maintainers inspect the workstation seeding docs
-- **THEN** the docs explain how seeded defaults interact with later local edits
-- **AND** the docs identify any paths that remain managed and replaceable during future seed refreshes
+#### Scenario: Existing persisted file is preserved
+- **WHEN** the persisted destination already contains that file or directory
+- **THEN** boot seeding leaves the persisted content unchanged
+
+### Requirement: Seeded workstation defaults mirror the repo-managed develop environment subset
+The workstation SHALL seed the selected repo-managed develop-environment defaults needed for Hermes, `.agents`, Codex, Gemini CLI, Opencode, OpenSpec, and related agent assets.
+
+#### Scenario: Fresh persisted home receives the repo-managed defaults
+- **WHEN** a fresh `/opt/data/home` is prepared for the workstation
+- **THEN** the seeded `.agents` and app configuration defaults are created in the persisted home facade
+
+#### Scenario: Runtime does not depend on the host NixOS config tree
+- **WHEN** maintainers inspect the seeding inputs
+- **THEN** the runtime sources those defaults from repo-managed content in this repository
+- **AND** the runtime does not require a host-specific `/home/nixos/nixos-config` path
