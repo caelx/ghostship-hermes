@@ -31,9 +31,9 @@ class BaseHttpClient:
         self.transport = transport
         self.follow_redirects = follow_redirects
 
-    def build_request_spec(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_body: Any = None, form_data: dict[str, Any] | None = None, files: dict[str, Any] | list[Any] | None = None, headers: dict[str, Any] | None = None, timeout: float | None = None) -> RequestSpec:
+    def build_request_spec(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_body: Any = None, content: str | bytes | None = None, form_data: dict[str, Any] | None = None, files: dict[str, Any] | list[Any] | None = None, headers: dict[str, Any] | None = None, timeout: float | None = None) -> RequestSpec:
         merged_headers = {**self.default_headers, **(headers or {})}
-        return RequestSpec(method=method.upper(), path=path if path.startswith('/') else f'/{path}', timeout=float(timeout if timeout is not None else self.default_timeout), params=params, json_body=json_body, form_data=form_data, files=files, headers=merged_headers or None)
+        return RequestSpec(method=method.upper(), path=path if path.startswith('/') else f'/{path}', timeout=float(timeout if timeout is not None else self.default_timeout), params=params, json_body=json_body, content=content, form_data=form_data, files=files, headers=merged_headers or None)
 
     def _client(self, timeout: float) -> httpx.Client:
         return httpx.Client(headers=self.default_headers, timeout=timeout, transport=self.transport, follow_redirects=self.follow_redirects)
@@ -42,7 +42,8 @@ class BaseHttpClient:
         url = f"{self.base_url}{spec.path}"
         try:
             with self._client(spec.timeout) as client:
-                response = client.request(spec.method, url, params=spec.params, json=spec.json_body, data=spec.form_data, files=spec.files, headers=spec.headers)
+                body = spec.content if spec.content is not None else spec.form_data
+                response = client.request(spec.method, url, params=spec.params, json=spec.json_body, content=body, files=spec.files, headers=spec.headers)
         except httpx.TimeoutException as exc:
             raise TimeoutError(f"request timed out after {spec.timeout} seconds", details={"method": spec.method, "path": spec.path, "timeout": spec.timeout}) from exc
         except httpx.HTTPError as exc:
@@ -56,8 +57,8 @@ class BaseHttpClient:
             raise HttpStatusError(f"remote service returned HTTP {response.status_code}", status_code=response.status_code, details=details)
         return response
 
-    def request_json(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_body: Any = None, form_data: dict[str, Any] | None = None, files: dict[str, Any] | list[Any] | None = None, headers: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
-        spec = self.build_request_spec(method, path, params=params, json_body=json_body, form_data=form_data, files=files, headers=headers, timeout=timeout)
+    def request_json(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_body: Any = None, content: str | bytes | None = None, form_data: dict[str, Any] | None = None, files: dict[str, Any] | list[Any] | None = None, headers: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+        spec = self.build_request_spec(method, path, params=params, json_body=json_body, content=content, form_data=form_data, files=files, headers=headers, timeout=timeout)
         response = BaseHttpClient.request(self, spec)
         if not response.content:
             return {"status": "success"}

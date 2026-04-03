@@ -1,70 +1,58 @@
 ---
 name: bitwarden
-description: Use the official Bitwarden CLI `bw` in the Hermes image to receive operator-shared credentials through a dedicated Bitwarden account, with env-driven login, unlock, sync, and retrieval workflows.
+description: Use the Bitwarden Secrets Manager CLI `bws` in the Hermes image to fetch operator-shared service secrets with a machine-account access token, repo-managed config path, and project or secret workflows.
 ---
 
 # Bitwarden Skill
 
-Use `bw` when you need to authenticate to Bitwarden, sync shared collections, and retrieve passwords, notes, TOTP codes, or full items noninteractively.
+Use `bws` when you need project-scoped secrets from Bitwarden Secrets Manager.
 
-## Required Environment
+## Prerequisites
 
-- `BW_CLIENTID`
-- `BW_CLIENTSECRET`
-- `BW_PASSWORD`
-- `BITWARDENCLI_APPDATA_DIR`
-- `BW_SESSION`
+- `BWS_ACCESS_TOKEN`
+- Optional `BWS_SERVER_URL` for self-hosted Bitwarden
+- `BWS_CONFIG_FILE` defaults to `/home/hermes/.hermes/bws/config`
+- Hermes persists `bws` state under `/home/hermes/.hermes/bws/state`
 
-The image defaults `BITWARDENCLI_APPDATA_DIR` to `/home/hermes/.hermes/bitwarden-cli`. Keep secret values out of the image and inject them per container or per shell.
+## Operating Model
+
+- Prefer project and secret commands, not Password Manager vault workflows.
+- `bws` already defaults to JSON output.
+- Discover the right project and secret ids first, then fetch only the values you need.
+- Do not use `bw`, `BW_SESSION`, vault unlock flows, shared collections, or TOTP/item retrieval patterns here.
 
 ## Start Here
 
-- Check current state first: `bw status --response`
-- If the account uses a self-hosted Bitwarden server, configure it once before login: `bw config server https://vault.example.com`
-- Log in with the API key, not an interactive email/password prompt.
-- Unlock with `BW_PASSWORD` and export a fresh `BW_SESSION`.
-- Run `bw sync` before reading newly shared credentials.
-
-## Noninteractive Login Flow
-
 ```fish
-set -x BW_CLIENTID <client-id>
-set -x BW_CLIENTSECRET <client-secret>
-set -x BW_PASSWORD <master-password>
-set -x BITWARDENCLI_APPDATA_DIR /home/hermes/.hermes/bitwarden-cli
+set -x BWS_ACCESS_TOKEN <machine-account-access-token>
 
-bw login --apikey --nointeraction
-set -x BW_SESSION (bw unlock --passwordenv BW_PASSWORD --raw --nointeraction)
-bw sync --session "$BW_SESSION" --response
+bws project list
+bws secret list <project-id>
+bws secret get <secret-id>
 ```
 
-`BW_SESSION` is ephemeral. Regenerate it with `bw unlock --passwordenv BW_PASSWORD --raw --nointeraction` whenever a shell loses its session.
+If you use a self-hosted Bitwarden server, set the base URL before the first request:
 
-## Shared Secret Workflow
+```fish
+set -x BWS_SERVER_URL https://vault.example.com
+```
 
-- Use a dedicated Bitwarden account for the agent.
-- Share credentials to that account through Bitwarden shared collections or the equivalent supported organization-sharing flow.
-- Sync before reading newly shared items: `bw sync --session "$BW_SESSION" --response`
-- Discover available shared collections: `bw list collections --response --session "$BW_SESSION"`
-- Filter items by collection when you know the target scope: `bw list items --collectionid <collection-id> --response --session "$BW_SESSION"`
+## Common Workflows
 
-## Retrieval Patterns
-
-- Full item JSON: `bw get item <item-id-or-search-term> --response --session "$BW_SESSION"`
-- Password only: `bw get password <item-id-or-uri> --raw --session "$BW_SESSION"`
-- Notes only: `bw get notes <item-id-or-uri> --raw --session "$BW_SESSION"`
-- TOTP only: `bw get totp <item-id-or-uri> --raw --session "$BW_SESSION"`
-- Search before reading when the item id is unknown: `bw list items --search <term> --response --session "$BW_SESSION"`
-
-Prefer `--response` for structured output and `--raw` only when a downstream command needs the bare secret value.
+- Discover a project:
+  - Run `bws project list`.
+  - Pick the project that owns the service secrets you need.
+- Discover secret ids:
+  - Run `bws secret list <project-id>`.
+  - Read the JSON and identify the secret ids you actually need before fetching values.
+- Read a secret value:
+  - Run `bws secret get <secret-id>`.
+  - Extract the `value` field only when a downstream command needs the raw secret.
+- Export a service env var for a downstream CLI:
+  - `set -x CHANGEDETECTION_API_KEY (bws secret get <secret-id> | jq -r '.value')`
 
 ## Guardrails
 
-- Prefer `--nointeraction` so the agent fails fast instead of hanging on prompts.
-- Do not write Bitwarden credentials into repo files, image defaults, or committed `.env` files.
-- Lock the vault and clear the session when you are done:
-
-```fish
-bw lock
-set -e BW_SESSION
-```
+- Keep `BWS_ACCESS_TOKEN` out of committed files and image defaults.
+- Avoid dumping broad secret lists once the target ids are known.
+- Prefer per-command exports over leaving many secret values resident in the shell longer than needed.

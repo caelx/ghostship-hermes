@@ -18,7 +18,7 @@ Canonical image references:
 - The runtime is supervised by `s6`: Caddy is the only public web service, profile-specific `ttyd` terminals are created dynamically for the default and named Hermes profiles, profile-specific gateways start automatically when messaging credentials appear, and unconfigured profiles fall back to a shell instead of a dead reconnect screen.
 - The runtime includes curated `ghostship-*` utilities so Hermes can call them from the same environment.
 - The runtime includes upstream `feed` as the main persistent RSS reader and monitoring engine, with profile-scoped SQLite state under Hermes storage.
-- The runtime includes the official Bitwarden CLI `bw` with a repo-managed Bitwarden skill and a persistent appdata directory under `/home/hermes/.hermes/bitwarden-cli` for env-driven secret retrieval.
+- The runtime includes the Bitwarden Secrets Manager CLI `bws` with a repo-managed Bitwarden skill, a persistent config file at `/home/hermes/.hermes/bws/config`, and Hermes-managed state under `/home/hermes/.hermes/bws/state` for machine-account secret retrieval.
 - The runtime also includes the upstream Google Workspace CLI `gws`, packaged from a pinned flake input and paired with a broad vendored Google Workspace skill set.
 - Upstream Hermes Honcho support is available in the container out of the box for connecting Hermes to an external Honcho instance, with the `honcho-ai` SDK available to Hermes and env-first configuration preferred for container use.
 
@@ -43,6 +43,7 @@ This repository provides a unified environment for running Hermes with a pre-con
 - `ghostship-flaresolverr`: Cloudflare protection bypass
 - `ghostship-cloakbrowser`: CloakBrowser profile management
 - `ghostship-pricebuddy`: typed PriceBuddy product, source, store, and tag automation
+- `ghostship-changedetection`: full changedetection.io watch, tag, notification, import, history, and live-spec automation
 - `ghostship-rss-bridge`: typed RSS-Bridge discovery, schema inspection, feed URL generation, and wrapped display fetching
 
 Additional bundled upstream tools include:
@@ -163,7 +164,7 @@ The published manifest list and per-architecture image tags follow the same nami
 - **Interface**: Caddy on port `7681` serves a profile dashboard and same-origin proxied `ttyd` terminals
 - **Persistence**: `/home/hermes/.hermes` is the safe default Docker volume; `/nix` persistence is deployment-specific because replacing `/nix` with an empty Docker volume hides or copies the image’s Nix store
 - **Bootstrap Resilience**: The entrypoint creates `/tmp` and defaults `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` to `/etc/ssl/certs/ca-bundle.crt` so bootstrap `git`, `uv`, and Nix operations inherit a working CA bundle
-- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `bw`, `feed`, `gws`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, and more
+- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `bws`, `feed`, `gws`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, and more
 - **Output Standard**: All `ghostship-` utilities output native JSON. Use `--pretty` for human-readable output.
 
 ## Python Utility Workflow
@@ -199,55 +200,51 @@ All `ghostship-` utilities require specific environment variables. Set these bef
 | `ghostship-pyload-ng` | `PYLOAD_URL`, `PYLOAD_USER`, `PYLOAD_PASS` |
 | `ghostship-cloakbrowser` | `CLOAKBROWSER_URL`, optional `CLOAKBROWSER_TOKEN` matching manager `AUTH_TOKEN` |
 | `ghostship-pricebuddy` | `PRICEBUDDY_URL`, `PRICEBUDDY_TOKEN` |
+| `ghostship-changedetection` | `CHANGEDETECTION_URL`, `CHANGEDETECTION_API_KEY` |
 | `ghostship-rss-bridge` | `RSS_BRIDGE_URL` |
 
 Canonical API references for every `ghostship-*` utility now live in [docs/api/README.md](docs/api/README.md), using raw upstream specs where available and repo-owned full reference sheets everywhere else.
 
 All `ghostship-*` CLIs now follow one contract: dedicated commands mirror the underlying client/API method names exactly in snake_case, generic passthrough (`request` or `call`) is only the escape hatch for uncovered endpoints, every invocation accepts `--timeout` with a default hard timeout of `30` seconds, and write/delete commands expose `--dry-run` to print the exact request object without touching the remote service.
 
-## Bitwarden CLI
+## Bitwarden Secrets Manager CLI
 
-The image ships the official Bitwarden CLI as `bw` from nixpkgs. It is available directly on `PATH`, and the runtime defaults `BITWARDENCLI_APPDATA_DIR` to `/home/hermes/.hermes/bitwarden-cli` so local Bitwarden CLI state persists with Hermes.
+The image ships the official Bitwarden Secrets Manager CLI as `bws` from nixpkgs. It is available directly on `PATH`, the runtime defaults `BWS_CONFIG_FILE` to `/home/hermes/.hermes/bws/config`, and the runtime seeds `state_dir` to `/home/hermes/.hermes/bws/state` so local CLI state persists with Hermes.
 
-Inside the container, use `bw` directly:
-
-```fish
-bw status --response
-```
-
-For a dedicated agent account, inject the login secrets through the environment and use the official noninteractive flow:
+Inside the container, use `bws` directly:
 
 ```fish
-set -x BW_CLIENTID <client-id>
-set -x BW_CLIENTSECRET <client-secret>
-set -x BW_PASSWORD <master-password>
+set -x BWS_ACCESS_TOKEN <machine-account-access-token>
 
-bw login --apikey --nointeraction
-set -x BW_SESSION (bw unlock --passwordenv BW_PASSWORD --raw --nointeraction)
-bw sync --session "$BW_SESSION" --response
+bws project list
+bws secret list <project-id>
+bws secret get <secret-id>
 ```
 
-Use shared collections to deliver credentials to the dedicated agent account, then sync before reading newly shared items:
+If the account uses a self-hosted Bitwarden server, set the server URL before the first request:
 
 ```fish
-bw list collections --response --session "$BW_SESSION"
-bw list items --collectionid <collection-id> --response --session "$BW_SESSION"
-bw get item <item-id> --response --session "$BW_SESSION"
-bw get password <item-id-or-uri> --raw --session "$BW_SESSION"
+set -x BWS_SERVER_URL https://vault.example.com
 ```
 
-If the account uses a self-hosted Bitwarden server, configure it once before login:
+The repo-managed `bitwarden` skill now assumes Secrets Manager semantics only: machine-account access tokens, projects, and secrets. It does not use `bw`, `BW_SESSION`, Password Manager item retrieval, or shared-collection vault flows.
+
+## changedetection.io CLI
+
+The image ships `ghostship-changedetection` for the full stable upstream changedetection.io API surface, plus the unauthenticated live merged `/api/v1/full-spec` endpoint.
+
+Use `bws` to materialize the service secrets, then call the typed utility:
 
 ```fish
-bw config server https://vault.example.com
+set -x CHANGEDETECTION_URL (bws secret get <changedetection-url-secret-id> | jq -r '.value')
+set -x CHANGEDETECTION_API_KEY (bws secret get <changedetection-api-key-secret-id> | jq -r '.value')
+
+ghostship-changedetection get_system_info --pretty
+ghostship-changedetection list_watches --pretty
+ghostship-changedetection get_full_api_spec --pretty
 ```
 
-When the session is no longer needed:
-
-```fish
-bw lock
-set -e BW_SESSION
-```
+All stable upstream endpoints have dedicated snake_case wrappers. Use `request` only for future or deployment-specific parameters that are not covered by a dedicated command yet.
 
 ## Google Workspace CLI
 
@@ -317,7 +314,8 @@ The local Ghostship skills continue to cover container-specific guidance:
 
 In addition to the service-specific skills, the image ships:
 
-- `bitwarden`: how to authenticate with the official `bw` client, sync shared collections, and retrieve shared credentials with env-driven sessions
+- `bitwarden`: how to authenticate with `bws`, list projects and secrets, and export service credentials from Bitwarden Secrets Manager
+- `changedetection`: how to fetch changedetection credentials from `bws` and run the full inspect, `--dry-run`, mutate, and verify workflow with `ghostship-changedetection`
 - `feed`: how to turn direct or RSS-Bridge-generated feed URLs into durable monitored sources, scan unread entries, search history, and read full posts
 - `hermes-nix`: how to choose between one-off `nix shell` usage, durable `nix profile` installs, and repo/image rebuilds without root
 - `agent-browser`: the upstream browser automation skill copied through unchanged for general browser control workflows
@@ -333,11 +331,12 @@ The vendored Google Workspace set adds the upstream `gws-*` service skills plus 
 2. Lock a utility: `python3 scripts/python_utility.py lock packages/<utility>-cli`
 3. Test a utility: `python3 scripts/python_utility.py test packages/<utility>-cli`
 4. Build a utility: `python3 scripts/python_utility.py build packages/<utility>-cli`
-5. Build the flake-exposed Bitwarden CLI package: `nix build .#bw`
-6. Build the flake-packaged `feed` CLI: `nix build .#feed`
-7. Build the flake-packaged Google Workspace CLI: `nix build .#gws`
-8. Build the combined seeded skill tree: `nix build .#packages.x86_64-linux.ghostship-hermes-skills`
-9. Build the image: `nix build .#packages.x86_64-linux.ghostship-hermes-image`
+5. Build the flake-exposed Bitwarden Secrets Manager CLI package: `nix build .#bws`
+6. Build the flake-packaged changedetection CLI: `nix build .#ghostship-changedetection`
+7. Build the flake-packaged `feed` CLI: `nix build .#feed`
+8. Build the flake-packaged Google Workspace CLI: `nix build .#gws`
+9. Build the combined seeded skill tree: `nix build .#packages.x86_64-linux.ghostship-hermes-skills`
+10. Build the image: `nix build .#packages.x86_64-linux.ghostship-hermes-image`
 
 ## Live Integration Tests
 

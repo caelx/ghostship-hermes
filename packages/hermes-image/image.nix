@@ -6,7 +6,7 @@
   hermesRelease,
   ghostshipUtilities,
   honchoAi,
-  bitwardenCli,
+  bitwardenSecretsCli,
   feed,
   googleWorkspaceCli,
 }:
@@ -84,7 +84,7 @@ let
     codex
     gemini-cli
     opencode
-    bitwardenCli
+    bitwardenSecretsCli
     feed
     googleWorkspaceCli
     honchoPython
@@ -114,7 +114,9 @@ dockerTools.buildImage {
     Env = [
       "HOME=/home/hermes"
       "HERMES_HOME=/home/hermes/.hermes"
-      "BITWARDENCLI_APPDATA_DIR=/home/hermes/.hermes/bitwarden-cli"
+      "GHOSTSHIP_BWS_DIR=/home/hermes/.hermes/bws"
+      "GHOSTSHIP_BWS_CONFIG_FILE=/home/hermes/.hermes/bws/config"
+      "BWS_CONFIG_FILE=/home/hermes/.hermes/bws/config"
       "GHOSTSHIP_HERMES_REF=${hermesRelease}"
       "GHOSTSHIP_DEFAULT_SKILLS=${ghostshipHermesSkills}"
       "GHOSTSHIP_DASHBOARD_DIR=/usr/local/share/ghostship-hermes/dashboard"
