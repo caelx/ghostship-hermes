@@ -6,7 +6,6 @@
   ghostshipHermesWorkstationSeed,
   hermesRelease,
   ghostshipUtilities,
-  honchoAi,
   bitwardenSecretsCli,
   feed,
   googleWorkspaceCli,
@@ -21,8 +20,6 @@ let
     path = ./rootfs;
     name = "ghostship-hermes-rootfs";
   };
-
-  honchoPython = pkgs.python311.withPackages (_: [ honchoAi ]);
 
   imageContents = with pkgs; [
     bash
@@ -89,7 +86,6 @@ let
     bitwardenSecretsCli
     feed
     googleWorkspaceCli
-    honchoPython
     rootfs
   ] ++ ghostshipUtilities;
 in
@@ -109,7 +105,6 @@ dockerTools.buildImage {
     chmod 0755 usr/local/bin/ghostship-hermes-runtime
     cp -R ${dashboardTree}/. usr/local/share/ghostship-hermes/dashboard/
     cp -R ${ghostshipHermesWorkstationSeed}/. usr/local/share/ghostship-hermes/workstation-seed/
-    ln -s ${honchoPython}/bin/python3 usr/local/bin/python
   '';
   config = {
     WorkingDir = "/home/hermes";
@@ -117,25 +112,14 @@ dockerTools.buildImage {
     Cmd = [ "entrypoint" ];
     Env = [
       "HOME=/home/hermes"
-      "HERMES_HOME=/home/hermes/.hermes"
-      "GHOSTSHIP_BWS_DIR=/home/hermes/.hermes/bws"
-      "GHOSTSHIP_BWS_CONFIG_FILE=/home/hermes/.hermes/bws/config"
-      "BWS_CONFIG_FILE=/home/hermes/.hermes/bws/config"
-      "GHOSTSHIP_HERMES_REF=${hermesRelease}"
-      "GHOSTSHIP_DEFAULT_SKILLS=${ghostshipHermesSkills}"
-      "GHOSTSHIP_WORKSTATION_SEED=/usr/local/share/ghostship-hermes/workstation-seed"
-      "GHOSTSHIP_DASHBOARD_DIR=/usr/local/share/ghostship-hermes/dashboard"
-      "NIX_CONFIG=experimental-features = nix-command flakes"
-      "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-      "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-      "PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/home/hermes/.hermes/hermes-agent/venv/bin:/home/hermes/.hermes/hermes-agent/node_modules/.bin:/bin"
-      "PYTHONPATH=${honchoPython}/${pkgs.python311.sitePackages}"
+      "HERMES_HOME=/opt/data"
     ];
     ExposedPorts = {
       "7681/tcp" = { };
     };
     Volumes = {
-      "/home/hermes" = { };
+      "/opt/data" = { };
+      "/workspace" = { };
     };
     Labels = {
       "org.opencontainers.image.title" = "ghostship-hermes";

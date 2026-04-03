@@ -62,17 +62,17 @@ writeShellApplication {
       export HERMES_UID="''${HERMES_UID:-3000}"
       export HERMES_GID="''${HERMES_GID:-3000}"
       export HOME="''${HOME:-/home/hermes}"
-      export HERMES_HOME="''${HERMES_HOME:-$HOME/.hermes}"
+      export GHOSTSHIP_DATA_ROOT="''${GHOSTSHIP_DATA_ROOT:-/opt/data}"
+      export GHOSTSHIP_HOME_ROOT="''${GHOSTSHIP_HOME_ROOT:-$GHOSTSHIP_DATA_ROOT/home}"
+      export GHOSTSHIP_WORKSPACE_ROOT="''${GHOSTSHIP_WORKSPACE_ROOT:-/workspace}"
+      export HERMES_HOME="''${HERMES_HOME:-$GHOSTSHIP_DATA_ROOT}"
       export XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-$HOME/.config}"
       export XDG_DATA_HOME="''${XDG_DATA_HOME:-$HOME/.local/share}"
       export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
       export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}"
       export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$HERMES_UID}"
-      export GHOSTSHIP_BWS_DIR="''${GHOSTSHIP_BWS_DIR:-$HERMES_HOME/bws}"
-      export GHOSTSHIP_BWS_CONFIG_FILE="''${GHOSTSHIP_BWS_CONFIG_FILE:-$GHOSTSHIP_BWS_DIR/config}"
-      export BWS_CONFIG_FILE="''${BWS_CONFIG_FILE:-$GHOSTSHIP_BWS_CONFIG_FILE}"
       export FEED_DB_PATH="''${FEED_DB_PATH:-$HERMES_HOME/feed/feed.db}"
-      export TERMINAL_CWD="''${TERMINAL_CWD:-$HOME}"
+      export TERMINAL_CWD="''${TERMINAL_CWD:-$GHOSTSHIP_WORKSPACE_ROOT}"
       export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-bundle.crt}"
       export NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-$SSL_CERT_FILE}"
       export GHOSTSHIP_HERMES_REF="''${GHOSTSHIP_HERMES_REF:-${hermesRelease}}"
@@ -94,6 +94,16 @@ writeShellApplication {
       export GHOSTSHIP_APP_STATE_DIR="$XDG_STATE_HOME/ghostship-hermes/apps"
       export GHOSTSHIP_OPENCODE_STATE_DIR="$XDG_STATE_HOME/opencode"
       export GHOSTSHIP_HONCHO_SHARED_DIR="''${GHOSTSHIP_HONCHO_SHARED_DIR:-$HERMES_HOME/shared/honcho}"
+      export GHOSTSHIP_HOME_HERMES_DIR="$GHOSTSHIP_HOME_ROOT/.hermes"
+      export GHOSTSHIP_HOME_CONFIG_DIR="$GHOSTSHIP_HOME_ROOT/.config"
+      export GHOSTSHIP_HOME_LOCAL_DIR="$GHOSTSHIP_HOME_ROOT/.local"
+      export GHOSTSHIP_HOME_CACHE_DIR="$GHOSTSHIP_HOME_ROOT/.cache"
+      export GHOSTSHIP_HOME_AGENTS_DIR="$GHOSTSHIP_HOME_ROOT/.agents"
+      export GHOSTSHIP_HOME_CODEX_DIR="$GHOSTSHIP_HOME_ROOT/.codex"
+      export GHOSTSHIP_HOME_GEMINI_DIR="$GHOSTSHIP_HOME_ROOT/.gemini"
+      export GHOSTSHIP_HOME_OPENCODE_DIR="$GHOSTSHIP_HOME_ROOT/.opencode"
+      export GHOSTSHIP_SYSTEMCTL_BIN="${systemd}/bin/systemctl"
+      export GHOSTSHIP_SYSTEMD_USER_BIN="${systemd}/lib/systemd/systemd"
       export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:$HERMES_HOME/hermes-agent/venv/bin:$HERMES_HOME/hermes-agent/node_modules/.bin:$PATH"
 
       tmp_dir="''${TMPDIR:-/tmp}"
@@ -122,15 +132,103 @@ writeShellApplication {
       fi
     }
 
-    ensure_runtime_directories() {
+    persist_missing_dir_contents() {
+      local source_dir="$1"
+      local dest_dir="$2"
+      [ -d "$source_dir" ] || return 0
+      mkdir -p "$dest_dir"
+      rsync -a --ignore-existing "$source_dir"/ "$dest_dir"/
+      chmod -R u+rwX "$dest_dir"
+      return 0
+    }
+
+    persist_missing_file() {
+      local source_file="$1"
+      local dest_file="$2"
+      [ -f "$source_file" ] || return 0
+      mkdir -p "$(dirname "$dest_file")"
+      if [ ! -e "$dest_file" ]; then
+        cp "$source_file" "$dest_file"
+        chmod u+rw "$dest_file"
+      else
+        log_warn "preserving existing persisted file at $dest_file"
+      fi
+      return 0
+    }
+
+    migrate_home_path_to_symlink() {
+      local live_path="$1"
+      local persisted_path="$2"
+
+      mkdir -p "$(dirname "$persisted_path")"
+
+      if [ -L "$live_path" ]; then
+        if [ "$(readlink -f "$live_path")" = "$persisted_path" ]; then
+          return 0
+        fi
+        rm -f "$live_path"
+      elif [ -d "$live_path" ]; then
+        persist_missing_dir_contents "$live_path" "$persisted_path"
+        rm -rf "$live_path"
+      elif [ -f "$live_path" ]; then
+        persist_missing_file "$live_path" "$persisted_path"
+        rm -f "$live_path"
+      fi
+
+      ln -sfn "$persisted_path" "$live_path"
+      return 0
+    }
+
+    prepare_persisted_layout() {
       install -d -m 1777 /tmp
       install -d -m 0755 \
         "$HOME" \
+        "$GHOSTSHIP_DATA_ROOT" \
+        "$GHOSTSHIP_HOME_ROOT" \
+        "$GHOSTSHIP_WORKSPACE_ROOT" \
         "$HERMES_HOME" \
-        "$HERMES_HOME/profiles" \
         "$HERMES_HOME/feed" \
-        "$GHOSTSHIP_BWS_DIR" \
-        "$GHOSTSHIP_BWS_DIR/state" \
+        "$HERMES_HOME/cron" \
+        "$HERMES_HOME/logs" \
+        "$HERMES_HOME/memories" \
+        "$HERMES_HOME/sessions" \
+        "$HERMES_HOME/skills" \
+        "$GHOSTSHIP_HOME_HERMES_DIR" \
+        "$GHOSTSHIP_HOME_CONFIG_DIR" \
+        "$GHOSTSHIP_HOME_LOCAL_DIR" \
+        "$GHOSTSHIP_HOME_CACHE_DIR" \
+        "$GHOSTSHIP_HOME_AGENTS_DIR" \
+        "$GHOSTSHIP_HOME_CODEX_DIR" \
+        "$GHOSTSHIP_HOME_GEMINI_DIR" \
+        "$GHOSTSHIP_HOME_OPENCODE_DIR"
+      
+      migrate_home_path_to_symlink "$HOME/.hermes" "$GHOSTSHIP_HOME_HERMES_DIR"
+      migrate_home_path_to_symlink "$HOME/.config" "$GHOSTSHIP_HOME_CONFIG_DIR"
+      migrate_home_path_to_symlink "$HOME/.local" "$GHOSTSHIP_HOME_LOCAL_DIR"
+      migrate_home_path_to_symlink "$HOME/.cache" "$GHOSTSHIP_HOME_CACHE_DIR"
+      migrate_home_path_to_symlink "$HOME/.agents" "$GHOSTSHIP_HOME_AGENTS_DIR"
+      migrate_home_path_to_symlink "$HOME/.codex" "$GHOSTSHIP_HOME_CODEX_DIR"
+      migrate_home_path_to_symlink "$HOME/.gemini" "$GHOSTSHIP_HOME_GEMINI_DIR"
+      migrate_home_path_to_symlink "$HOME/.opencode" "$GHOSTSHIP_HOME_OPENCODE_DIR"
+      migrate_home_path_to_symlink "$HOME/workspace" "$GHOSTSHIP_WORKSPACE_ROOT"
+      return 0
+    }
+
+    prepare_nix_profile_state() {
+      local profile_root gc_root per_user_root
+      profile_root="/nix/var/nix/profiles/per-user/$HERMES_USER"
+      gc_root="/nix/var/nix/gcroots/per-user/$HERMES_USER"
+      per_user_root="/nix/var/nix/profiles/per-user"
+
+      install -d -m 0755 "$per_user_root" >/dev/null 2>&1 || true
+      install -d -m 0755 "$profile_root" "$gc_root" >/dev/null 2>&1 || true
+      chown -R "$HERMES_UID:$HERMES_GID" "$profile_root" "$gc_root" >/dev/null 2>&1 || true
+      return 0
+    }
+
+    ensure_runtime_directories() {
+      prepare_persisted_layout
+      install -d -m 0755 \
         "$XDG_CONFIG_HOME" \
         "$XDG_DATA_HOME" \
         "$XDG_STATE_HOME" \
@@ -149,26 +247,11 @@ writeShellApplication {
         "$GHOSTSHIP_RUNTIME_STATE_DIR" \
         "$GHOSTSHIP_WWW_DIR" \
         "$GHOSTSHIP_API_DIR" \
-        "$GHOSTSHIP_CADDY_DIR"
+        "$GHOSTSHIP_CADDY_DIR" \
+        "$XDG_RUNTIME_DIR"
+      chmod 0700 "$XDG_RUNTIME_DIR"
+      prepare_nix_profile_state
       touch "$GHOSTSHIP_API_DIR/profiles.json"
-    }
-
-    ensure_bws_layout() {
-      if ! command -v bws >/dev/null 2>&1; then
-        return 0
-      fi
-
-      if [ "$(id -u)" -eq 0 ]; then
-        setpriv --reuid "$HERMES_UID" --regid "$HERMES_GID" --clear-groups --inh-caps -all env \
-          HOME="$HOME" \
-          HERMES_HOME="$HERMES_HOME" \
-          GHOSTSHIP_BWS_DIR="$GHOSTSHIP_BWS_DIR" \
-          BWS_CONFIG_FILE="$BWS_CONFIG_FILE" \
-          bws config state-dir "$GHOSTSHIP_BWS_DIR/state" >/dev/null
-        return 0
-      fi
-
-      BWS_CONFIG_FILE="$BWS_CONFIG_FILE" bws config state-dir "$GHOSTSHIP_BWS_DIR/state" >/dev/null
     }
 
     honcho_shared_has_content() {
@@ -265,8 +348,8 @@ writeShellApplication {
       local profile_dir profile_name slug
       local -a profile_dirs=()
       printf 'default\t%s\tdefault\t%s\ttrue\n' "$HERMES_HOME" "9000"
-      if [ -d "$HERMES_HOME/profiles" ]; then
-        mapfile -t profile_dirs < <(find "$HERMES_HOME/profiles" -mindepth 1 -maxdepth 1 -type d | sort)
+      if [ -d "$HOME/.hermes/profiles" ]; then
+        mapfile -t profile_dirs < <(find "$HOME/.hermes/profiles" -mindepth 1 -maxdepth 1 -type d | sort)
         for profile_dir in "''${profile_dirs[@]}"; do
           index=$((index + 1))
           profile_name="$(basename "$profile_dir")"
@@ -310,6 +393,15 @@ writeShellApplication {
       [ -L "$target" ] || return 1
       case "$(readlink -f "$target")" in
         "$GHOSTSHIP_SYSTEMD_MANAGED_DIR"/*) return 0 ;;
+      esac
+      return 1
+    }
+
+    generated_target_is_live() {
+      local target="$1"
+      [ -L "$target" ] || return 1
+      case "$(readlink -f "$target")" in
+        "$GHOSTSHIP_GENERATED_UNITS_DIR"/*) return 0 ;;
       esac
       return 1
     }
@@ -422,6 +514,7 @@ writeShellApplication {
       trap cleanup_bootstrap EXIT
 
       mkdir -p "$HOME" "$HERMES_HOME" "$HERMES_HOME/cron" "$HERMES_HOME/logs" "$HERMES_HOME/memories" "$HERMES_HOME/sessions" "$HERMES_HOME/skills"
+      mkdir -p "$HOME/.local/bin"
 
       needs_reinstall=1
       if [ -x "$install_root/venv/bin/hermes" ] && [ -f "$release_marker" ] && [ "$(tr -d '\n' < "$release_marker")" = "$GHOSTSHIP_HERMES_REF" ]; then
@@ -431,6 +524,7 @@ writeShellApplication {
       fi
 
       if [ "$needs_reinstall" -eq 0 ]; then
+        ln -sfn "$install_root/venv/bin/hermes" "$HOME/.local/bin/hermes"
         trap - EXIT
         cleanup_bootstrap
         return 0
@@ -455,6 +549,10 @@ writeShellApplication {
         touch "$HERMES_HOME/.env"
       fi
 
+      if [ -f "$install_root/docker/SOUL.md" ] && [ ! -f "$HERMES_HOME/SOUL.md" ]; then
+        cp "$install_root/docker/SOUL.md" "$HERMES_HOME/SOUL.md"
+      fi
+
       rm -rf "$install_root/venv"
       uv venv venv --python ${python311.interpreter}
       uv build --wheel --out-dir "$tmp_root/dist" .
@@ -462,6 +560,7 @@ writeShellApplication {
       npm install
 
       printf '%s' "$GHOSTSHIP_HERMES_REF" > "$release_marker"
+      ln -sfn "$install_root/venv/bin/hermes" "$HOME/.local/bin/hermes"
       trap - EXIT
       cleanup_bootstrap
       return 0
@@ -567,6 +666,30 @@ EOF
       return 0
     }
 
+    install_generated_user_unit() {
+      local unit_name="$1"
+      local generated_file="$GHOSTSHIP_GENERATED_UNITS_DIR/$unit_name"
+      local live_file="$HOME/.config/systemd/user/$unit_name"
+
+      [ -f "$generated_file" ] || return 0
+      mkdir -p "$HOME/.config/systemd/user"
+
+      if [ ! -e "$live_file" ] || generated_target_is_live "$live_file"; then
+        ln -sfn "$generated_file" "$live_file"
+      fi
+      return 0
+    }
+
+    remove_generated_user_unit() {
+      local unit_name="$1"
+      local live_file="$HOME/.config/systemd/user/$unit_name"
+
+      if generated_target_is_live "$live_file"; then
+        rm -f "$live_file"
+      fi
+      return 0
+    }
+
     profile_gateway_unit_candidates() {
       local profile_name="$1"
       local slug="$2"
@@ -615,7 +738,7 @@ EOF
         if user_unit_exists "$unit_name"; then
           GATEWAY_EXPECTED=true
         fi
-        if systemctl --user --quiet is-active "$unit_name" 2>/dev/null; then
+        if "$GHOSTSHIP_SYSTEMCTL_BIN" --user --quiet is-active "$unit_name" 2>/dev/null; then
           GATEWAY_RUNNING=true
         fi
       done < <(profile_gateway_unit_candidates "$profile_name" "$slug" "$is_default")
@@ -631,7 +754,6 @@ EOF
 
       ensure_runtime_prereqs
       ensure_runtime_directories
-      ensure_bws_layout
       ensure_honcho_layout
 
       entries_file="$(mktemp)"
@@ -641,6 +763,7 @@ EOF
       while IFS=$'\t' read -r profile_name profile_home slug port is_default; do
         render_ttyd_unit "$profile_name" "$profile_home" "$slug" "$port"
         unit_name="ghostship-profile-ttyd-$slug.service"
+        install_generated_user_unit "$unit_name"
         printf '%s\n' "$unit_name" >> "$desired_units_file"
         printf '%s\t%s\t%s\n' "$profile_name" "$slug" "$port" >> "$GHOSTSHIP_PROFILE_PORTS"
         collect_gateway_state "$profile_name" "$slug" "$is_default"
@@ -651,18 +774,19 @@ EOF
         unit_name="$(basename "$unit_file")"
         if ! grep -Fxq "$unit_name" "$desired_units_file"; then
           if [ "$start_units" = "true" ]; then
-            systemctl --user stop "$unit_name" >/dev/null 2>&1 || true
+            "$GHOSTSHIP_SYSTEMCTL_BIN" --user stop "$unit_name" >/dev/null 2>&1 || true
           fi
           rm -f "$unit_file"
+          remove_generated_user_unit "$unit_name"
           reload_required=1
         fi
       done < <(find "$GHOSTSHIP_GENERATED_UNITS_DIR" -mindepth 1 -maxdepth 1 -type f -name 'ghostship-profile-ttyd-*.service' | sort)
 
       if [ "$start_units" = "true" ]; then
-        systemctl --user daemon-reload >/dev/null 2>&1 || true
+        "$GHOSTSHIP_SYSTEMCTL_BIN" --user daemon-reload >/dev/null 2>&1 || true
         while IFS= read -r unit_name; do
           [ -n "$unit_name" ] || continue
-          systemctl --user start "$unit_name" >/dev/null 2>&1 || true
+          "$GHOSTSHIP_SYSTEMCTL_BIN" --user start "$unit_name" >/dev/null 2>&1 || true
         done < "$desired_units_file"
       elif [ "$reload_required" -eq 1 ]; then
         :
@@ -790,22 +914,25 @@ EOF
     }
 
     refresh_openspec_roots() {
-      local config_file repo_root openspec_output
+      local config_file repo_root openspec_output search_root
       if ! command -v openspec >/dev/null 2>&1; then
         return 0
       fi
 
-      while IFS= read -r config_file; do
-        [ -n "$config_file" ] || continue
-        repo_root="$(dirname "$(dirname "$config_file")")"
-        log_info "refreshing openspec instructions in $repo_root"
-        if ! openspec_output="$(cd "$repo_root" && openspec update . 2>&1)"; then
-          log_warn "openspec refresh failed for $repo_root"
+      for search_root in "$HOME" "$GHOSTSHIP_WORKSPACE_ROOT"; do
+        [ -d "$search_root" ] || continue
+        while IFS= read -r config_file; do
+          [ -n "$config_file" ] || continue
+          repo_root="$(dirname "$(dirname "$config_file")")"
+          log_info "refreshing openspec instructions in $repo_root"
+          if ! openspec_output="$(cd "$repo_root" && openspec update . 2>&1)"; then
+            log_warn "openspec refresh failed for $repo_root"
+            [ -n "$openspec_output" ] && printf '%s\n' "$openspec_output" >&2
+            continue
+          fi
           [ -n "$openspec_output" ] && printf '%s\n' "$openspec_output" >&2
-          continue
-        fi
-        [ -n "$openspec_output" ] && printf '%s\n' "$openspec_output" >&2
-      done < <(find "$HOME" -path '*/openspec/config.yaml' -type f -not -path "$GHOSTSHIP_WORKSTATION_DIR/*" 2>/dev/null | sort)
+        done < <(find "$search_root" -path '*/openspec/config.yaml' -type f -not -path "$GHOSTSHIP_WORKSTATION_DIR/*" 2>/dev/null | sort)
+      done
       return 0
     }
 
@@ -899,10 +1026,22 @@ EOF
       bootstrap_hermes
       seed_hermes_skills
       seed_workstation
-      update_apps_once
-      refresh_assets_once
-      refresh_opencode_models_once
       generate_profile_state "false"
+      return 0
+    }
+
+    prepare_runtime_storage() {
+      ensure_runtime_prereqs
+      prepare_runtime_storage_for_user
+      return 0
+    }
+
+    prepare_runtime_storage_for_user() {
+      ensure_runtime_prereqs
+      install -d -m 1777 /tmp
+      install -d -m 0755 "$HOME" "$GHOSTSHIP_DATA_ROOT" "$GHOSTSHIP_HOME_ROOT" "$GHOSTSHIP_WORKSPACE_ROOT" "$XDG_RUNTIME_DIR"
+      chown -R "$HERMES_UID:$HERMES_GID" "$HOME" "$GHOSTSHIP_DATA_ROOT" "$GHOSTSHIP_HOME_ROOT" "$GHOSTSHIP_WORKSPACE_ROOT" "$XDG_RUNTIME_DIR" >/dev/null 2>&1 || true
+      prepare_nix_profile_state
       return 0
     }
 
@@ -929,6 +1068,9 @@ EOF
       bootstrap)
         bootstrap_hermes
         ;;
+      prepare-runtime-storage)
+        prepare_runtime_storage
+        ;;
       seed-skills)
         seed_hermes_skills
         ;;
@@ -954,8 +1096,7 @@ EOF
         ensure_runtime_prereqs
         configure_runtime_identity
         if [ "$(id -u)" -eq 0 ]; then
-          install -d -m 1777 /tmp
-          install -d -m 0755 -o "$HERMES_UID" -g "$HERMES_GID" "$HOME" "$HERMES_HOME" /nix "$XDG_RUNTIME_DIR"
+          prepare_runtime_storage_for_user
           setpriv --reuid "$HERMES_UID" --regid "$HERMES_GID" --clear-groups --inh-caps -all "$0" seed-skills
           setpriv --reuid "$HERMES_UID" --regid "$HERMES_GID" --clear-groups --inh-caps -all "$0" seed-workstation
           exec setpriv --reuid "$HERMES_UID" --regid "$HERMES_GID" --clear-groups --inh-caps -all "$0" user-manager
@@ -968,9 +1109,34 @@ EOF
         ensure_runtime_prereqs
         ensure_runtime_directories
         ensure_honcho_layout
+        dbus_config=""
         mkdir -p "$XDG_RUNTIME_DIR"
         chmod 0700 "$XDG_RUNTIME_DIR"
-        exec dbus-run-session -- systemd --user
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+        dbus_config="$(mktemp "$XDG_RUNTIME_DIR/dbus-session.XXXXXX.conf")"
+        cat > "$dbus_config" <<EOF
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>''${DBUS_SESSION_BUS_ADDRESS}</listen>
+  <auth>EXTERNAL</auth>
+  <standard_session_servicedirs />
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+  <policy context="mandatory">
+    <deny send_interface="org.freedesktop.DBus.Local" />
+  </policy>
+</busconfig>
+EOF
+        dbus-daemon \
+          --config-file="$dbus_config" \
+          --fork \
+          --nopidfile
+        exec "$GHOSTSHIP_SYSTEMD_USER_BIN" --user
         ;;
       caddy-service)
         ensure_runtime_prereqs

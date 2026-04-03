@@ -16,14 +16,16 @@ Use this skill when you need to reason about what is durable in the Hermes works
 ## Persistence Model
 
 - Persistent:
-  - `/home/hermes`
+  - `/opt/data`
+  - `/opt/data/home` via symlinks from `/home/hermes`
+  - `/workspace`
   - `/nix` in the intended deployment model for user-installed Nix software
 - Ephemeral:
   - `/tmp`
   - live processes
   - `ttyd` sessions
-  - interactive runtime-only changes outside `/home/hermes` and `/nix`
-- If something should survive restart, put it under `/home/hermes`, persist `/nix` for Nix-managed installs, or bake it into the image.
+  - interactive runtime-only changes outside `/opt/data`, `/workspace`, and `/nix`
+- If something should survive restart, put it under `/opt/data`, under the symlinked home facade that resolves into `/opt/data/home`, under `/workspace`, persist `/nix` for Nix-managed installs, or bake it into the image.
 
 ## Runtime Boundaries
 
@@ -43,8 +45,9 @@ Use this skill when you need to reason about what is durable in the Hermes works
 
 ## Durable Change Workflow
 
-- For Hermes config, skills, and profile state: work under `/home/hermes/.hermes`.
-- For persistent agent config, shared prompts, OpenSpec skills, Codex/Gemini/Opencode state, and user systemd units: work under `/home/hermes`.
+- For Hermes config, skills, and default-profile state: work under `HERMES_HOME`, which is `/opt/data`.
+- For persistent HOME-anchored agent config, shared prompts, OpenSpec skills, Codex/Gemini/Opencode state, named profiles, wrappers, and user systemd units: work under `/home/hermes`, which resolves into `/opt/data/home`.
+- For repos, builds, downloads, and long-lived work products: work under `/workspace` or `/home/hermes/workspace`.
 - For user-installed software with Nix: persist `/nix` and use `nix profile`, `nix shell`, or `nix run` from the workstation home.
 - For service layout, default seeded tooling, or bootstrap/update logic: change the repo and rebuild the image.
 - Do not rely on live process tweaks to persist.

@@ -1,6 +1,6 @@
 ---
 name: bitwarden
-description: Use the Bitwarden Secrets Manager CLI `bws` in the Hermes image to fetch operator-shared service secrets with a machine-account access token, repo-managed config path, and project or secret workflows.
+description: Use the Bitwarden Secrets Manager CLI `bws` in the Hermes image to fetch operator-shared service secrets with a machine-account access token and project or secret workflows.
 ---
 
 # Bitwarden Skill
@@ -11,8 +11,8 @@ Use `bws` when you need project-scoped secrets from Bitwarden Secrets Manager.
 
 - `BWS_ACCESS_TOKEN`
 - Optional `BWS_SERVER_URL` for self-hosted Bitwarden
-- `BWS_CONFIG_FILE` defaults to `/home/hermes/.hermes/bws/config`
-- Hermes persists `bws` state under `/home/hermes/.hermes/bws/state`
+- `bws` uses its normal HOME-based config and state locations
+- Hermes persists that HOME state through the `/opt/data/home` symlinked home tree
 
 ## Operating Model
 

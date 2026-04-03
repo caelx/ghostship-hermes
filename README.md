@@ -1,6 +1,6 @@
 # ghostship-hermes
 
-`ghostship-hermes` is a Nix-first monorepo for building and publishing the `caelx` Hermes container image. The image is a persistent agent workstation: it runs Hermes behind a Caddy dashboard on port `7681`, seeds repo-managed and vendored skills plus a mirrored develop-environment seed tree into the workstation home, keeps agent tooling current on boot and on timers, and treats `/home/hermes` as the durable source of truth for the agent's evolving environment.
+`ghostship-hermes` is a Nix-first monorepo for building and publishing the `caelx` Hermes container image. The image is a persistent agent workstation: it runs Hermes behind a Caddy dashboard on port `7681`, keeps `HERMES_HOME=/opt/data` to match upstream Hermes Docker behavior, exposes a persisted home facade through `/opt/data/home`, persists work products separately in `/workspace`, and keeps agent tooling current on boot and on timers.
 
 Canonical image references:
 
@@ -12,18 +12,19 @@ Canonical image references:
 - Hermes is prepackaged in a container runtime instead of installed directly on the host.
 - Caddy on port `7681` is the public interface. It serves a profile dashboard and reverse-proxies same-origin `ttyd` terminals for each Hermes profile.
 - Hermes is bootstrapped at container start from the pinned upstream release in `packages/hermes-image/hermes-release.txt`.
-- Hermes is installed into the final `/home/hermes/.hermes/hermes-agent` path during bootstrap so the generated launchers and imports do not depend on a temporary build directory.
+- Hermes is installed into the final `/opt/data/hermes-agent` path during bootstrap so the generated launchers and imports do not depend on a temporary build directory.
 - Repo-managed and vendored Hermes skills are seeded into `~/.hermes/skills` on first start without overwriting user-managed content.
-- A repo-managed workstation seed mirrors the selected develop-environment defaults for `.agents`, Codex, Gemini CLI, Opencode, OpenSpec commands/skills, and user `systemd` units into `/home/hermes` without clobbering local edits.
-- The full `/home/hermes` profile is durable workstation state. Persist it across rebuilds and restarts so the agent keeps its configs, skills, prompts, timers, caches, auth, installs, and learned environment.
-- Persist `/nix` as well if you want `nix build`, `nix shell`, and `nix profile install` outputs to survive container replacement. Do not mount a brand-new empty volume over `/nix` on first boot of a Nix-built image.
+- A repo-managed workstation seed mirrors the selected develop-environment defaults for `.agents`, Codex, Gemini CLI, Opencode, OpenSpec commands/skills, and user `systemd` units into persisted state under `/opt/data` and `/opt/data/home` without clobbering local edits.
+- `/opt/data` is the canonical persisted Hermes volume. `/opt/data/home` backs the persisted home facade that is symlinked into `/home/hermes` on boot.
+- Persist `/workspace` as a separate work-products volume for repos, downloads, build artifacts, and long-lived work items.
+- Persist `/nix` as well if you want `nix build`, `nix shell`, and `nix profile install` outputs to survive container replacement. Use a safe pre-populated `/nix` mount such as a bind mount from an existing Nix host store, not a brand-new empty Docker volume over `/nix`.
 - The runtime now uses a `hermes` user `systemd` manager. Caddy is still the only public web service, profile-specific `ttyd` terminals are generated dynamically for the default and named Hermes profiles, and agent tooling is updated on boot and on timers instead of on every invocation.
 - `codex`, `gemini`, `opencode`, `openspec`, and `skills` are installed as normal workstation apps under the persisted home and updated with atomic versioned installs plus stable symlink flips in `~/.local/bin`.
 - The runtime includes curated `ghostship-*` utilities so Hermes can call them from the same environment.
 - The runtime includes upstream `feed` as the main persistent RSS reader and monitoring engine, with profile-scoped SQLite state under Hermes storage.
 - The runtime includes the Bitwarden Secrets Manager CLI `bws` with a repo-managed Bitwarden skill, a persistent config file at `/home/hermes/.hermes/bws/config`, and Hermes-managed state under `/home/hermes/.hermes/bws/state` for machine-account secret retrieval.
 - The runtime also includes the upstream Google Workspace CLI `gws`, packaged from a pinned flake input and paired with a broad vendored Google Workspace skill set.
-- Upstream Hermes Honcho support is available in the container out of the box for connecting Hermes to an external Honcho instance, with the `honcho-ai` SDK available to Hermes and env-first configuration preferred for container use.
+- Upstream Hermes Honcho support remains available for connecting Hermes to an external Honcho instance, but the image no longer bundles a separate `honcho-ai` package.
 
 ## Overview
 
@@ -62,7 +63,9 @@ docker run \
   --rm \
   --name ghostship-hermes \
   --publish 7681:7681 \
-  --volume ghostship-hermes-home:/home/hermes \
+  --volume ghostship-hermes-data:/opt/data \
+  --volume ghostship-hermes-workspace:/workspace \
+  --volume /nix:/nix \
   ghcr.io/caelx/ghostship-hermes:latest
 ```
 
@@ -79,7 +82,8 @@ After the container starts:
 
 The workstation model is:
 
-- persist `/home/hermes` always
+- persist `/opt/data` always
+- persist `/workspace` always
 - persist `/nix` when you want Nix-installed utilities and build outputs to survive container replacement
 - let boot-time and timer-driven jobs update mutable workstation state in the background
 - keep normal agent invocations local and cached
@@ -139,7 +143,7 @@ Common shared slash commands from the upstream README include:
 /platforms
 ```
 
-`hermes gateway` remains available for upstream compatibility, but this image uses the Caddy dashboard and profile `ttyd` terminals as the default browser-facing interface. For persistent messaging gateways, prefer Hermes' upstream `gateway install` flow from inside the profile terminal. The workstation keeps a real user `systemd` manager under `/home/hermes`, so profile-scoped gateway services can live in the persisted home like the rest of the workstation. For the full current command inventory, use the upstream CLI reference linked below.
+`hermes gateway` remains available for upstream compatibility, but this image uses the Caddy dashboard and profile `ttyd` terminals as the default browser-facing interface. For persistent messaging gateways, prefer Hermes' upstream `gateway install` flow from inside the profile terminal. The workstation keeps a real user `systemd` manager with units persisted through `/opt/data/home/.config/systemd/user`, so profile-scoped gateway services can live in persisted state like the rest of the workstation. For the full current command inventory, use the upstream CLI reference linked below.
 
 ## Hermes Docs
 
@@ -231,7 +235,7 @@ All `ghostship-*` CLIs now follow one contract: dedicated commands mirror the un
 
 ## Bitwarden Secrets Manager CLI
 
-The image ships the official Bitwarden Secrets Manager CLI as `bws` from nixpkgs. It is available directly on `PATH`, the runtime defaults `BWS_CONFIG_FILE` to `/home/hermes/.hermes/bws/config`, and the runtime seeds `state_dir` to `/home/hermes/.hermes/bws/state` so local CLI state persists with Hermes.
+The image ships the official Bitwarden Secrets Manager CLI as `bws` from nixpkgs. It is available directly on `PATH`, and its normal HOME-based config/state locations persist because the relevant home directories are symlinked into `/opt/data/home`.
 
 Inside the container, use `bws` directly:
 
