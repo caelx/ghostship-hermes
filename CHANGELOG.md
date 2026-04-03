@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Pinned Hermes release updated to `v2026.4.3`.
+
 - Kept the workstation image's OpenSpec `propose`, `apply`, and `archive` workflows aligned with the develop-environment overrides by sourcing the seeded Codex/Gemini/Opencode instruction trees from the repo-managed copies and reapplying the Ghostship override blocks after `openspec update` refreshes.
 - Reframed the image as a Hermes-native persistent agent workstation: `HERMES_HOME=/opt/data` now matches upstream Hermes Docker behavior, `/opt/data/home` backs the symlinked persisted home facade under `/home/hermes`, `/workspace` is a separate persisted work-products mount, the steady-state runtime stays on a persisted `hermes` user `systemd` manager with the custom dashboard stack, and local Docker validation now proves that reused `/opt/data`, `/workspace`, and a safe persisted `/nix` mount survive restart/replacement.
 - Added upstream `feed` as a pinned flake-managed image dependency, wired `FEED_DB_PATH` to profile-scoped Hermes storage under `$HERMES_HOME/feed/feed.db`, and added a repo-managed `feed` skill that pairs RSS-Bridge feed URL generation with durable RSS monitoring and triage workflows.
