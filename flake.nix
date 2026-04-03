@@ -45,11 +45,11 @@
           ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipChangedetection = pkgs.callPackage ./packages/changedetection-cli/package.nix { inherit ghostshipCliContract; };
-          honchoAi = pkgs.callPackage ./packages/honcho-ai/package.nix { };
           bitwardenSecretsCli = pkgs.bws;
           feed = pkgs.callPackage ./packages/feed/package.nix { };
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
           ghostshipHermesSkills = pkgs.callPackage ./packages/hermes-image/skills.nix { };
+          ghostshipHermesWorkstationSeed = pkgs.callPackage ./packages/hermes-image/workstation-seed.nix { };
 
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
@@ -78,6 +78,28 @@
             ghostshipRssBridge
             ghostshipChangedetection
           ];
+
+          ghostshipHermesSystem = nixpkgs.lib.nixosSystem {
+            inherit system;
+            specialArgs = {
+              inherit
+                ghostshipHermesRuntime
+                ghostshipHermesSkills
+                ghostshipHermesWorkstationSeed
+                hermesRelease
+                bitwardenSecretsCli
+                feed
+                googleWorkspaceCli
+                ;
+              ghostshipUtilities = allUtilities;
+            };
+            modules = [
+              ({ ... }: {
+                nixpkgs.config.allowUnfree = true;
+              })
+              ./packages/hermes-image/nixos-module.nix
+            ];
+          };
         in
         {
           ghostship-cli-contract = ghostshipCliContract;
@@ -103,22 +125,12 @@
           inherit feed;
           gws = googleWorkspaceCli;
           ghostship-hermes-skills = ghostshipHermesSkills;
+          ghostship-hermes-workstation-seed = ghostshipHermesWorkstationSeed;
 
           ghostship-hermes-runtime = ghostshipHermesRuntime;
+          ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;
 
-          ghostship-hermes-image = pkgs.callPackage ./packages/hermes-image/image.nix {
-            inherit
-              ghostshipHermesRuntime
-              ghostshipHermesSkills
-              hermesRelease
-              pkgs
-              honchoAi
-              bitwardenSecretsCli
-              feed
-              googleWorkspaceCli
-              ;
-            ghostshipUtilities = allUtilities;
-          };
+          ghostship-hermes-image = ghostshipHermesSystem.config.system.build.tarball;
         }
       );
 
@@ -155,7 +167,9 @@
             feed
             gws
             ghostship-hermes-skills
+            ghostship-hermes-workstation-seed
             ghostship-hermes-runtime
+            ghostship-hermes-system
             ghostship-hermes-image;
         }
       );

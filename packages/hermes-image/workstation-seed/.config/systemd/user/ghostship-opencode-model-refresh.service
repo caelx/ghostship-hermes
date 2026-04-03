@@ -1,0 +1,6 @@
+[Unit]
+Description=ghostship-hermes opencode model refresh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ghostship-hermes-runtime refresh-opencode-models-once

@@ -1,0 +1,6 @@
+[Unit]
+Description=ghostship-hermes agent app updater
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ghostship-hermes-runtime update-apps-once

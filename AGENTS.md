@@ -9,14 +9,19 @@
 
 - Run Hermes as a non-root runtime user. Do not grant general `sudo` in-container.
 - Include Nix in the runtime for ad hoc `nix shell` usage.
-- Persist Hermes state under the user home. Treat `/nix` persistence as deployment-specific, not a default Docker named volume.
+- Keep `HERMES_HOME=/opt/data` to match upstream Hermes Docker behavior.
+- Treat `/opt/data` as the canonical persisted Hermes root, `/opt/data/home` as the persisted home facade exposed through `/home/hermes`, and `/workspace` as the separate persisted work-products mount.
+- Persist `/nix` whenever the deployment expects user-installed Nix software or build outputs to survive container replacement, but do not hide the image store behind a brand-new empty Docker volume.
 - Default browser entrypoint is a Caddy dashboard on port `7681` that proxies same-origin `ttyd` terminals.
 - Keep CLI access available for admin and debug workflows.
 - Discord gateway is a later optional interface, not the v1 default.
 - Seed default skills into `~/.hermes/skills/` on first start without overwriting user-managed content.
+- Seed the mirrored develop-environment defaults into persisted state under `/opt/data` and `/opt/data/home` without overwriting user edits.
 - Install Hermes at container runtime with the upstream manual `uv` + `npm` flow against a pinned upstream release tag.
 - Follow upstream profile layout: default profile at `~/.hermes`, named profiles at `~/.hermes/profiles/<name>`.
-- Generate profile-scoped `ttyd` terminals and gateway services dynamically from discovered profiles without restarting the container.
+- Generate profile-scoped `ttyd` terminals dynamically from discovered profiles without restarting the container.
+- Keep the steady-state runtime on a persisted `hermes` user `systemd` manager with boot jobs and timers under `~/.config/systemd/user`.
+- Install `codex`, `gemini-cli`, `opencode`, `openspec`, and `skills` as normal workstation apps under the persisted home and update them on boot and timers.
 - Keep the first utility scaffold focused on SearXNG.
 - Watch upstream Hermes releases and update `packages/hermes-image/hermes-release.txt`.
 - Publish multi-arch `amd64` and `arm64` images plus manifest lists for the documented release channels.
@@ -55,27 +60,31 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 ### Hermes Runtime
 
 - Hermes Honcho resolution is profile-local first: prefer `$HERMES_HOME/honcho.json` before the legacy shared compatibility path.
-- Hermes `v2026.3.30` already pins `honcho-ai` `2.0.1` through the upstream `honcho` extra; container support only needs the SDK available in the Hermes Python environment.
+- Hermes `v2026.3.30` already pins `honcho-ai` `2.0.1` through the upstream `honcho` extra, so the container does not need to bundle a separate `honcho-ai` package.
 - Create `~/.honcho` lazily and only when compatibility state exists. Primary persisted config stays at `$HERMES_HOME/honcho.json`.
 - Hermes has no documented primary web UI today; the official UX is CLI/TUI plus messaging gateway workflows.
 - Hermes browser automation docs describe `agent-browser` in Browserbase-style cloud terms, not a local Chrome/CDP-first stack.
 - Hermes skills live in `~/.hermes/skills/`; container behavior should mirror upstream skill copying.
 - `agent-browser` in this repo should come from the Hermes-side `npm install`, not from nixpkgs.
-- Install Hermes into the final `/home/hermes/.hermes/hermes-agent` path, not an editable temp checkout. Editable installs leave launchers pointing at dead `/tmp/...` paths and tmux sessions exit.
+- Install Hermes into the final `/opt/data/hermes-agent` path, not an editable temp checkout. Editable installs leave launchers pointing at dead `/tmp/...` paths and tmux sessions exit.
 - `hermes chat` exits immediately with no provider configured. Browser sessions must fall back to a real shell instead of an empty tmux session.
 - Hermes `v2026.3.28` lacks native profiles; `v2026.3.30` adds `hermes profile ...` and `-p/--profile`, which the multi-profile dashboard depends on.
 - The repo `skills/agent-browser/SKILL.md` is intentionally copied from upstream unchanged; keep container-specific browser setup guidance in separate repo skills instead of patching the upstream skill body.
 
 ### Container And Supervisor Behavior
 
-- A practical container needs a root init phase to prepare `/home/hermes/.hermes` and `/nix` permissions before dropping to the `hermes` user.
+- A practical workstation container needs a root init phase to prepare `/opt/data`, `/opt/data/home`, `/workspace`, `/nix`, and the `/home/hermes` facade before dropping to the `hermes` user.
 - Hermes bootstrap also needs writable `/tmp` plus `SSL_CERT_FILE` and `NIX_SSL_CERT_FILE`; otherwise `mktemp`, `git clone`, and Nix fetches fail.
-- Under the current `s6` layout, `ttyd` is the primary browser terminal and the gateway watcher polls `~/.hermes/.env`; when credentials appear, it should run `hermes gateway run --replace` without restart.
+- The steady-state runtime should be a `hermes` user `systemd` manager, not `s6`.
+- `ttyd` is still the primary browser terminal surface, but per-profile terminals are managed as generated user services under the persisted home.
+- Prefer Hermes' own `gateway install` systemd flow for persistent messaging gateways instead of a repo-specific gateway watcher.
 - Caddy does not auto-discover local `ttyd` processes. Generate route tables and iframe manifests from the Hermes profile set.
-- `s6-svscan` does not notice new service directories automatically after startup. The profile reconciler must call `s6-svscanctl -a`.
+- Persisted user `systemd` units belong under `/opt/data/home/.config/systemd/user` and are exposed through `/home/hermes/.config/systemd/user`; repo-managed units should be installed as managed symlinks so local overrides can replace them cleanly.
 - For this container, the supported `agent-browser` path is CloakBrowser-backed profiles only: two default profiles plus one default VPN-backed profile that is more CAPTCHA-prone.
 - Skills copied from a Nix-store source tree inherit read-only modes unless the runtime explicitly `chmod`s the copied files writable. Skill seeding must leave `~/.hermes/skills` user-editable after first start.
 - Mounting an empty Docker volume over `/nix` on a fresh Nix-built image is unsafe: it can hide or copy the image store and stall `docker run`.
+- The official Hermes Docker image does not create a `~/.hermes -> /opt/data` symlink; it sets `HERMES_HOME=/opt/data` directly. Named profiles, wrappers, and user services are still HOME-anchored, so this repo must provide the persisted home facade itself.
+- Home-managed agent apps should install into versioned directories and flip stable symlinks only after a successful validation step.
 - In bash with `set -e`, helper functions that stream via `while read` must end with `return 0`, or the final `read` can terminate reconciliation loops after state truncation.
 - In bash with `set -e`, idempotent helpers like `write_if_changed` must also return `0` on no-op paths.
 
@@ -97,7 +106,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 
 ### Service And API Integration
 
-- The Bitwarden Secrets Manager CLI fits this container best as an env-driven workflow: keep `BWS_CONFIG_FILE` stable under `~/.hermes/bws/config`, set `state_dir` to `~/.hermes/bws/state`, inject `BWS_ACCESS_TOKEN` from the operator, and use project/secret reads instead of `bw` unlock sessions.
+- The Bitwarden Secrets Manager CLI fits this container best as an env-driven workflow: inject `BWS_ACCESS_TOKEN` from the operator, let `bws` use its normal HOME-based defaults, and persist that state through the `/opt/data/home` symlinked home tree instead of custom config-path overrides.
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
 - For a dedicated personal Gmail account on an unverified testing-mode OAuth app, `gws auth login` should use narrow scopes like `gmail` or `gmail,calendar,drive`; the broad upstream `recommended` preset can fail consent.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.

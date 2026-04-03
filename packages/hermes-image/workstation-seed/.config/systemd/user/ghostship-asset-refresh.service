@@ -1,0 +1,6 @@
+[Unit]
+Description=ghostship-hermes mutable asset refresh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ghostship-hermes-runtime refresh-assets-once
