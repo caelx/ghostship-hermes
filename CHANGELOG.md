@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Reframed the image as a persistent agent workstation: `/home/hermes` is now the durable workstation root, the steady-state runtime moved from `s6` assumptions to a persisted `hermes` user `systemd` manager, a repo-managed develop-environment seed is mirrored into the home on boot, agent apps are installed and updated under `~/.local/bin` on boot and timers, and local validation now proves that reused home state and persisted Nix profile installs survive restart/replacement.
 - Added upstream `feed` as a pinned flake-managed image dependency, wired `FEED_DB_PATH` to profile-scoped Hermes storage under `$HERMES_HOME/feed/feed.db`, and added a repo-managed `feed` skill that pairs RSS-Bridge feed URL generation with durable RSS monitoring and triage workflows.
 - Added the official Bitwarden CLI `bw` to the image bundle, exposed it through the repo flake for verification, set a persistent default `BITWARDENCLI_APPDATA_DIR` under Hermes state, and added a repo-managed `bitwarden` skill plus docs for the env-driven shared-collection workflow.
 - Rewrote the repo-managed Hermes skill pack into workflow-oriented operator guides, keeping service skills short and trigger-rich around inspect, diagnose, mutate, and verify flows, preserving bespoke environment skills, and replacing the repo `agent-browser` skill with the upstream file unchanged.

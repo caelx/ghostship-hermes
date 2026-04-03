@@ -1,0 +1,19 @@
+check_for_update_on_startup = false
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+project_doc_fallback_filenames = [".agents.md"]
+
+skills.config = [
+  { path = "/home/hermes/.agents/skills/brainstorming", enabled = true },
+  { path = "/home/hermes/.agents/skills/find-skills", enabled = true },
+  { path = "/home/hermes/.agents/skills/nix", enabled = true },
+  { path = "/home/hermes/.agents/skills/python", enabled = true },
+  { path = "/home/hermes/.agents/skills/skills-creator", enabled = true },
+  { path = "/home/hermes/.agents/skills/ssh", enabled = true },
+  { path = "/home/hermes/.agents/skills/systematic-debugging", enabled = true },
+  { path = "/home/hermes/.agents/skills/using-git-worktrees", enabled = true },
+  { path = "/home/hermes/.codex/skills/openspec-apply-change", enabled = true },
+  { path = "/home/hermes/.codex/skills/openspec-archive-change", enabled = true },
+  { path = "/home/hermes/.codex/skills/openspec-explore", enabled = true },
+  { path = "/home/hermes/.codex/skills/openspec-propose", enabled = true },
+]

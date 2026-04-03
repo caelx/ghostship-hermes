@@ -9,14 +9,18 @@
 
 - Run Hermes as a non-root runtime user. Do not grant general `sudo` in-container.
 - Include Nix in the runtime for ad hoc `nix shell` usage.
-- Persist Hermes state under the user home. Treat `/nix` persistence as deployment-specific, not a default Docker named volume.
+- Treat `/home/hermes` as the durable workstation root. Persist the full home across rebuilds and restarts.
+- Persist `/nix` whenever the deployment expects user-installed Nix software or build outputs to survive container replacement.
 - Default browser entrypoint is a Caddy dashboard on port `7681` that proxies same-origin `ttyd` terminals.
 - Keep CLI access available for admin and debug workflows.
 - Discord gateway is a later optional interface, not the v1 default.
 - Seed default skills into `~/.hermes/skills/` on first start without overwriting user-managed content.
+- Seed the mirrored develop-environment defaults into `/home/hermes` without overwriting user edits.
 - Install Hermes at container runtime with the upstream manual `uv` + `npm` flow against a pinned upstream release tag.
 - Follow upstream profile layout: default profile at `~/.hermes`, named profiles at `~/.hermes/profiles/<name>`.
-- Generate profile-scoped `ttyd` terminals and gateway services dynamically from discovered profiles without restarting the container.
+- Generate profile-scoped `ttyd` terminals dynamically from discovered profiles without restarting the container.
+- Keep the steady-state runtime on a persisted `hermes` user `systemd` manager with boot jobs and timers under `~/.config/systemd/user`.
+- Install `codex`, `gemini-cli`, `opencode`, `openspec`, and `skills` as normal workstation apps under the persisted home and update them on boot and timers.
 - Keep the first utility scaffold focused on SearXNG.
 - Watch upstream Hermes releases and update `packages/hermes-image/hermes-release.txt`.
 - Publish multi-arch `amd64` and `arm64` images plus manifest lists for the documented release channels.
@@ -68,14 +72,17 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 
 ### Container And Supervisor Behavior
 
-- A practical container needs a root init phase to prepare `/home/hermes/.hermes` and `/nix` permissions before dropping to the `hermes` user.
+- A practical workstation container needs a root init phase to prepare `/home/hermes`, `/nix`, and runtime directories before dropping to the `hermes` user.
 - Hermes bootstrap also needs writable `/tmp` plus `SSL_CERT_FILE` and `NIX_SSL_CERT_FILE`; otherwise `mktemp`, `git clone`, and Nix fetches fail.
-- Under the current `s6` layout, `ttyd` is the primary browser terminal and the gateway watcher polls `~/.hermes/.env`; when credentials appear, it should run `hermes gateway run --replace` without restart.
+- The steady-state runtime should be a `hermes` user `systemd` manager, not `s6`.
+- `ttyd` is still the primary browser terminal surface, but per-profile terminals are managed as generated user services under the persisted home.
+- Prefer Hermes' own `gateway install` systemd flow for persistent messaging gateways instead of a repo-specific gateway watcher.
 - Caddy does not auto-discover local `ttyd` processes. Generate route tables and iframe manifests from the Hermes profile set.
-- `s6-svscan` does not notice new service directories automatically after startup. The profile reconciler must call `s6-svscanctl -a`.
+- Persisted user `systemd` units belong under `/home/hermes`, and repo-managed units should be installed as managed symlinks so local overrides can replace them cleanly.
 - For this container, the supported `agent-browser` path is CloakBrowser-backed profiles only: two default profiles plus one default VPN-backed profile that is more CAPTCHA-prone.
 - Skills copied from a Nix-store source tree inherit read-only modes unless the runtime explicitly `chmod`s the copied files writable. Skill seeding must leave `~/.hermes/skills` user-editable after first start.
 - Mounting an empty Docker volume over `/nix` on a fresh Nix-built image is unsafe: it can hide or copy the image store and stall `docker run`.
+- Home-managed agent apps should install into versioned directories and flip stable symlinks only after a successful validation step.
 - In bash with `set -e`, helper functions that stream via `while read` must end with `return 0`, or the final `read` can terminate reconciliation loops after state truncation.
 - In bash with `set -e`, idempotent helpers like `write_if_changed` must also return `0` on no-op paths.
 

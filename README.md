@@ -1,6 +1,6 @@
 # ghostship-hermes
 
-`ghostship-hermes` is a Nix-first monorepo for building and publishing the `caelx` Hermes container image. The image runs Hermes behind a Caddy dashboard on port `7681`, seeds repo-managed and vendored skills on first start, persists Hermes state in `/home/hermes/.hermes` and `/nix`, and bundles repo-owned `ghostship-*` utilities plus a curated operator toolchain for agent-friendly workflows.
+`ghostship-hermes` is a Nix-first monorepo for building and publishing the `caelx` Hermes container image. The image is a persistent agent workstation: it runs Hermes behind a Caddy dashboard on port `7681`, seeds repo-managed and vendored skills plus a mirrored develop-environment seed tree into the workstation home, keeps agent tooling current on boot and on timers, and treats `/home/hermes` as the durable source of truth for the agent's evolving environment.
 
 Canonical image references:
 
@@ -13,9 +13,12 @@ Canonical image references:
 - Caddy on port `7681` is the public interface. It serves a profile dashboard and reverse-proxies same-origin `ttyd` terminals for each Hermes profile.
 - Hermes is bootstrapped at container start from the pinned upstream release in `packages/hermes-image/hermes-release.txt`.
 - Hermes is installed into the final `/home/hermes/.hermes/hermes-agent` path during bootstrap so the generated launchers and imports do not depend on a temporary build directory.
-- Repo-managed and vendored skills are seeded into `~/.hermes/skills` on first start without overwriting user-managed content.
-- Hermes state is persisted in `/home/hermes/.hermes`, and `/nix` is mounted separately so ad hoc `nix shell` usage survives container restarts.
-- The runtime is supervised by `s6`: Caddy is the only public web service, profile-specific `ttyd` terminals are created dynamically for the default and named Hermes profiles, profile-specific gateways start automatically when messaging credentials appear, and unconfigured profiles fall back to a shell instead of a dead reconnect screen.
+- Repo-managed and vendored Hermes skills are seeded into `~/.hermes/skills` on first start without overwriting user-managed content.
+- A repo-managed workstation seed mirrors the selected develop-environment defaults for `.agents`, Codex, Gemini CLI, Opencode, OpenSpec commands/skills, and user `systemd` units into `/home/hermes` without clobbering local edits.
+- The full `/home/hermes` profile is durable workstation state. Persist it across rebuilds and restarts so the agent keeps its configs, skills, prompts, timers, caches, auth, installs, and learned environment.
+- Persist `/nix` as well if you want `nix build`, `nix shell`, and `nix profile install` outputs to survive container replacement. Do not mount a brand-new empty volume over `/nix` on first boot of a Nix-built image.
+- The runtime now uses a `hermes` user `systemd` manager. Caddy is still the only public web service, profile-specific `ttyd` terminals are generated dynamically for the default and named Hermes profiles, and agent tooling is updated on boot and on timers instead of on every invocation.
+- `codex`, `gemini`, `opencode`, `openspec`, and `skills` are installed as normal workstation apps under the persisted home and updated with atomic versioned installs plus stable symlink flips in `~/.local/bin`.
 - The runtime includes curated `ghostship-*` utilities so Hermes can call them from the same environment.
 - The runtime includes upstream `feed` as the main persistent RSS reader and monitoring engine, with profile-scoped SQLite state under Hermes storage.
 - The runtime includes the official Bitwarden CLI `bw` with a repo-managed Bitwarden skill and a persistent appdata directory under `/home/hermes/.hermes/bitwarden-cli` for env-driven secret retrieval.
@@ -58,9 +61,11 @@ docker run \
   --rm \
   --name ghostship-hermes \
   --publish 7681:7681 \
-  --volume ghostship-hermes-home:/home/hermes/.hermes \
+  --volume ghostship-hermes-home:/home/hermes \
   ghcr.io/caelx/ghostship-hermes:latest
 ```
+
+If you want Nix-built software and user profiles to survive container replacement as well, reuse a persistent `/nix` mount that already contains the image store and profile state. Do not start by hiding `/nix` behind a brand-new empty Docker volume.
 
 After the container starts:
 
@@ -71,7 +76,12 @@ After the container starts:
 5. Create additional Hermes profiles with `docker exec -it ghostship-hermes bash -lc 'hermes profile create coder --clone'`. The dashboard picks them up automatically without restarting the container.
 6. Return to the dashboard and switch between profiles from the left-hand panel.
 
-`/nix` is part of the intended persistent runtime model, but do not blindly mount an empty Docker volume over `/nix` on a fresh Nix-built image. That hides or forces Docker to copy the image’s Nix store. If you need `/nix` persistence, use a deployment strategy that keeps the existing store available rather than replacing `/nix` with an empty volume.
+The workstation model is:
+
+- persist `/home/hermes` always
+- persist `/nix` when you want Nix-installed utilities and build outputs to survive container replacement
+- let boot-time and timer-driven jobs update mutable workstation state in the background
+- keep normal agent invocations local and cached
 
 ### Profiles Dashboard
 
@@ -128,7 +138,7 @@ Common shared slash commands from the upstream README include:
 /platforms
 ```
 
-`hermes gateway` remains available for upstream compatibility, but this image uses the Caddy dashboard and profile `ttyd` terminals as the default browser-facing interface. The container runs a background watcher under `s6` that starts `hermes gateway run --replace` automatically for each profile once that profile’s messaging credentials are present, so you only need to run `hermes gateway setup` when you actually want messaging enabled. For the full current command inventory, use the upstream CLI reference linked below.
+`hermes gateway` remains available for upstream compatibility, but this image uses the Caddy dashboard and profile `ttyd` terminals as the default browser-facing interface. For persistent messaging gateways, prefer Hermes' upstream `gateway install` flow from inside the profile terminal. The workstation keeps a real user `systemd` manager under `/home/hermes`, so profile-scoped gateway services can live in the persisted home like the rest of the workstation. For the full current command inventory, use the upstream CLI reference linked below.
 
 ## Hermes Docs
 
@@ -159,12 +169,24 @@ The published manifest list and per-architecture image tags follow the same nami
 ## Architecture
 
 - **Base Image**: Stable NixOS (`nixos-25.11`)
-- **Hermes**: Installed at container runtime from a pinned upstream release
+- **Hermes**: Installed into the durable workstation home from a pinned upstream release
 - **Interface**: Caddy on port `7681` serves a profile dashboard and same-origin proxied `ttyd` terminals
-- **Persistence**: `/home/hermes/.hermes` is the safe default Docker volume; `/nix` persistence is deployment-specific because replacing `/nix` with an empty Docker volume hides or copies the image’s Nix store
-- **Bootstrap Resilience**: The entrypoint creates `/tmp` and defaults `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` to `/etc/ssl/certs/ca-bundle.crt` so bootstrap `git`, `uv`, and Nix operations inherit a working CA bundle
-- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `bw`, `feed`, `gws`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, and more
+- **Persistence**: `/home/hermes` is the workstation state root; `/nix` should also be persisted when you want Nix-managed installs and build outputs to survive container replacement
+- **Runtime Model**: Root does a short ownership/bootstrap phase, then a persisted `hermes` user `systemd` manager owns the workstation services and timers under `~/.config/systemd/user`
+- **Updates**: `codex`, `gemini`, `opencode`, `openspec`, `skills`, global `skills.sh` skills, Gemini extensions, OpenSpec instruction trees, and opencode's generated OpenRouter free-model config are refreshed on boot and on timers while preserving the last working local state on failures
+- **Bootstrap Resilience**: The entrypoint creates `/tmp` and defaults `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` to `/etc/ssl/certs/ca-bundle.crt` so bootstrap `git`, `uv`, npm, and Nix operations inherit a working CA bundle
+- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `bw`, `feed`, `gws`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, `systemd`, and more
 - **Output Standard**: All `ghostship-` utilities output native JSON. Use `--pretty` for human-readable output.
+
+## Local Validation
+
+Use the repo validation script to prove the workstation model locally against a reused home directory:
+
+```bash
+scripts/validate_workstation_persistence.sh
+```
+
+The script builds the runtime/seed outputs, seeds a fresh workstation home, updates the managed agent apps, generates the opencode programming-model cache, installs a Nix profile package, reruns the boot seeding against the same home, and verifies that the local edit, Hermes state, app links, generated config, and Nix profile still work.
 
 ## Python Utility Workflow
 

@@ -1,4 +1,0 @@
-#!/bin/sh
-set -eu
-
-exec /usr/local/bin/ghostship-hermes-runtime profile-reconciler-loop

@@ -5,7 +5,7 @@ description: Understand how Hermes runs in this container, what persists, what r
 
 # Current Environment
 
-Use this skill when you need to reason about what is durable in the Hermes container and which recovery path is safe.
+Use this skill when you need to reason about what is durable in the Hermes workstation container and which recovery path is safe.
 
 ## Start Here
 
@@ -16,15 +16,14 @@ Use this skill when you need to reason about what is durable in the Hermes conta
 ## Persistence Model
 
 - Persistent:
-  - `/home/hermes/.hermes`
-  - `/nix` in the intended deployment model
+  - `/home/hermes`
+  - `/nix` in the intended deployment model for user-installed Nix software
 - Ephemeral:
   - `/tmp`
   - live processes
   - `ttyd` sessions
-  - `tmux` sessions
-  - interactive `s6` changes
-- If something should survive restart, put it in persistent profile state, install it via Nix, or bake it into the image.
+  - interactive runtime-only changes outside `/home/hermes` and `/nix`
+- If something should survive restart, put it under `/home/hermes`, persist `/nix` for Nix-managed installs, or bake it into the image.
 
 ## Runtime Boundaries
 
@@ -37,7 +36,7 @@ Use this skill when you need to reason about what is durable in the Hermes conta
 ## Profile Terminal Recovery
 
 - Treat `/profiles/<slug>/` routes as browser access to `ttyd`, not as proof that Hermes itself is healthy.
-- If a foreground Hermes command exits, reconnecting to the iframe may only give you a dead session or a plain shell.
+- If a foreground Hermes command exits, reconnecting to the iframe may only give you a plain shell.
 - Recover a broken profile session by restarting the Hermes command in that profile terminal.
 - Prefer restarting the profile-specific foreground process over touching Caddy or the whole container.
 - Restart the container only for container-level failures, not ordinary session recovery.
@@ -45,15 +44,17 @@ Use this skill when you need to reason about what is durable in the Hermes conta
 ## Durable Change Workflow
 
 - For Hermes config, skills, and profile state: work under `/home/hermes/.hermes`.
-- For missing tools or persistent user installs: use Nix under `/nix`.
-- For service layout, supervisor behavior, or default bundled tooling: change the repo and rebuild the image.
-- Do not rely on interactive `s6` or `tmux` tweaks to persist.
+- For persistent agent config, shared prompts, OpenSpec skills, Codex/Gemini/Opencode state, and user systemd units: work under `/home/hermes`.
+- For user-installed software with Nix: persist `/nix` and use `nix profile`, `nix shell`, or `nix run` from the workstation home.
+- For service layout, default seeded tooling, or bootstrap/update logic: change the repo and rebuild the image.
+- Do not rely on live process tweaks to persist.
 
 ## Service Model
 
-- `s6` supervises the dashboard and profile watcher services.
+- The workstation boots a `hermes` user `systemd` manager after a short root-owned setup phase.
 - Caddy is the only public HTTP surface.
-- Profile `ttyd` terminals and gateway services are generated dynamically from Hermes profile state.
+- Profile `ttyd` terminals are generated dynamically from Hermes profile state.
+- Gateway persistence should prefer Hermes' own `gateway install` user-service flow instead of a repo-specific watcher.
 - Direct `ttyd` loopback backends are implementation details; the Caddy routes are the intended interface.
 
 ## Identity And Permissions

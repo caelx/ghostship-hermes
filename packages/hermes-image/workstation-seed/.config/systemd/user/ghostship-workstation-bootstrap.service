@@ -1,0 +1,11 @@
+[Unit]
+Description=ghostship-hermes workstation bootstrap
+After=default.target
+Before=ghostship-caddy.service ghostship-profile-reconciler.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ghostship-hermes-runtime workstation-bootstrap
+
+[Install]
+WantedBy=default.target

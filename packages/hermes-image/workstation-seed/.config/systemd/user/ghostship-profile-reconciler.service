@@ -1,0 +1,13 @@
+[Unit]
+Description=ghostship-hermes profile reconciler
+After=ghostship-workstation-bootstrap.service
+Requires=ghostship-workstation-bootstrap.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ghostship-hermes-runtime profile-reconciler-loop
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=default.target

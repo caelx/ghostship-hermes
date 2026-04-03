@@ -1,0 +1,11 @@
+[Unit]
+Description=Run ghostship-hermes app updates every 6 hours
+
+[Timer]
+OnBootSec=20m
+OnUnitActiveSec=6h
+RandomizedDelaySec=15m
+Unit=ghostship-app-update.service
+
+[Install]
+WantedBy=timers.target

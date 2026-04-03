@@ -49,6 +49,7 @@
           feed = pkgs.callPackage ./packages/feed/package.nix { };
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
           ghostshipHermesSkills = pkgs.callPackage ./packages/hermes-image/skills.nix { };
+          ghostshipHermesWorkstationSeed = pkgs.callPackage ./packages/hermes-image/workstation-seed.nix { };
 
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
@@ -100,6 +101,7 @@
           inherit feed;
           gws = googleWorkspaceCli;
           ghostship-hermes-skills = ghostshipHermesSkills;
+          ghostship-hermes-workstation-seed = ghostshipHermesWorkstationSeed;
 
           ghostship-hermes-runtime = ghostshipHermesRuntime;
 
@@ -107,6 +109,7 @@
             inherit
               ghostshipHermesRuntime
               ghostshipHermesSkills
+              ghostshipHermesWorkstationSeed
               hermesRelease
               pkgs
               honchoAi
@@ -151,6 +154,7 @@
             feed
             gws
             ghostship-hermes-skills
+            ghostship-hermes-workstation-seed
             ghostship-hermes-runtime
             ghostship-hermes-image;
         }

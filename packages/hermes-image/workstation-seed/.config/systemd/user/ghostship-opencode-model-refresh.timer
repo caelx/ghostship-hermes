@@ -1,0 +1,11 @@
+[Unit]
+Description=Run ghostship-hermes opencode model refresh daily
+
+[Timer]
+OnBootSec=45m
+OnUnitActiveSec=1d
+RandomizedDelaySec=30m
+Unit=ghostship-opencode-model-refresh.service
+
+[Install]
+WantedBy=timers.target
