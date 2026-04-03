@@ -89,6 +89,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Scheduled GitHub release polling must authenticate with `GITHUB_TOKEN` or `GH_TOKEN`; anonymous `api.github.com` release queries can hit rate limits and break Actions.
 - Hermes is not packaged in the inspected `nixos-25.11` nixpkgs tree, while `ttyd`, `codex`, `gemini-cli`, and `opencode` are.
 - `googleworkspace/cli` already ships a usable upstream flake and a large upstream `skills/` tree. Keep the pinned flake input revision and the vendored `vendor/googleworkspace-cli/skills/` snapshot aligned to the same upstream commit.
+- Upstream `feed` fits the image best as a direct flake-managed utility, not a `ghostship-*` wrapper. Keep its SQLite state under `$HERMES_HOME/feed/feed.db` so subscriptions and unread state stay profile-scoped.
 - Local flake evaluation only sees git-tracked files. Stage new Nix files and vendored trees before relying on `nix flake check` or `nix build` in a worktree.
 - On the current `x86_64` dev host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired correctly and rely on arm64 runners for full arm builds.
 - Git worktrees do not carry ignored local `.envrc` files by default. Live-test helpers should check the current worktree first, then another repo worktree with `.envrc`.
@@ -108,6 +109,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Grimmory source-of-truth is the official `grimmory-tools/grimmory` repository. It is the BookLore successor; document its API from that repo’s controllers, not unrelated `grimoire` services.
 - PriceBuddy exposes authenticated API docs at `/docs/api`, but the raw OpenAPI export is effectively token-gated. If no authenticated export is available, document the surface from upstream tests and handlers instead of inventing a spec mirror.
 - RSS-Bridge is action-driven, not CRUD-driven. “Create a feed” means generating a canonical `action=display` URL from bridge schema, not persisting a server-side object.
+- For RSS workflows in this image, keep `ghostship-rss-bridge` as the canonical feed URL generation layer and `feed` as the persistent subscription, fetch, search, and triage layer.
 - The deployed RSS-Bridge instance returns two parameter shapes: a dict of contexts or a legacy list of parameter groups that should be treated as the global context.
 
 ### Testing And Known Service Conditions

@@ -7,6 +7,7 @@
   ghostshipUtilities,
   honchoAi,
   bitwardenCli,
+  feed,
   googleWorkspaceCli,
 }:
 let
@@ -84,6 +85,7 @@ let
     gemini-cli
     opencode
     bitwardenCli
+    feed
     googleWorkspaceCli
     honchoPython
     rootfs

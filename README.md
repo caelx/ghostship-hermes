@@ -17,6 +17,7 @@ Canonical image references:
 - Hermes state is persisted in `/home/hermes/.hermes`, and `/nix` is mounted separately so ad hoc `nix shell` usage survives container restarts.
 - The runtime is supervised by `s6`: Caddy is the only public web service, profile-specific `ttyd` terminals are created dynamically for the default and named Hermes profiles, profile-specific gateways start automatically when messaging credentials appear, and unconfigured profiles fall back to a shell instead of a dead reconnect screen.
 - The runtime includes curated `ghostship-*` utilities so Hermes can call them from the same environment.
+- The runtime includes upstream `feed` as the main persistent RSS reader and monitoring engine, with profile-scoped SQLite state under Hermes storage.
 - The runtime includes the official Bitwarden CLI `bw` with a repo-managed Bitwarden skill and a persistent appdata directory under `/home/hermes/.hermes/bitwarden-cli` for env-driven secret retrieval.
 - The runtime also includes the upstream Google Workspace CLI `gws`, packaged from a pinned flake input and paired with a broad vendored Google Workspace skill set.
 - Upstream Hermes Honcho support is available in the container out of the box for connecting Hermes to an external Honcho instance, with the `honcho-ai` SDK available to Hermes and env-first configuration preferred for container use.
@@ -43,6 +44,10 @@ This repository provides a unified environment for running Hermes with a pre-con
 - `ghostship-cloakbrowser`: CloakBrowser profile management
 - `ghostship-pricebuddy`: typed PriceBuddy product, source, store, and tag automation
 - `ghostship-rss-bridge`: typed RSS-Bridge discovery, schema inspection, feed URL generation, and wrapped display fetching
+
+Additional bundled upstream tools include:
+
+- `feed`: persistent RSS subscription, fetch, search, and triage engine for Hermes workflows
 
 ## Getting Started
 
@@ -158,7 +163,7 @@ The published manifest list and per-architecture image tags follow the same nami
 - **Interface**: Caddy on port `7681` serves a profile dashboard and same-origin proxied `ttyd` terminals
 - **Persistence**: `/home/hermes/.hermes` is the safe default Docker volume; `/nix` persistence is deployment-specific because replacing `/nix` with an empty Docker volume hides or copies the image’s Nix store
 - **Bootstrap Resilience**: The entrypoint creates `/tmp` and defaults `SSL_CERT_FILE`/`NIX_SSL_CERT_FILE` to `/etc/ssl/certs/ca-bundle.crt` so bootstrap `git`, `uv`, and Nix operations inherit a working CA bundle
-- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `bw`, `gws`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, and more
+- **Tooling**: Comprehensive bundle including `git`, `curl`, `uv`, `nix`, `bw`, `feed`, `gws`, `rg`, `jq`, `python`, `gh`, `tmux`, `procps`, `dnsutils`, `shellcheck`, `bats`, and more
 - **Output Standard**: All `ghostship-` utilities output native JSON. Use `--pretty` for human-readable output.
 
 ## Python Utility Workflow
@@ -280,6 +285,28 @@ gws gmail +triage
 
 When refreshing this integration, update the pinned flake input and the vendored `vendor/googleworkspace-cli/skills/` snapshot together so the seeded skills stay aligned with the packaged CLI.
 
+## Feed CLI
+
+The image ships upstream `feed` as the main persistent RSS reader and monitoring utility. The runtime defaults `FEED_DB_PATH` to `$HERMES_HOME/feed/feed.db`, so each Hermes profile gets its own durable feed database under Hermes-managed storage.
+
+Inside the container, use `feed` directly:
+
+```fish
+feed get stats
+feed get entries --limit 25
+feed search "ai agents"
+```
+
+To monitor a source through RSS-Bridge, build or discover the canonical feed URL first, then store it in `feed`:
+
+```fish
+ghostship-rss-bridge find_feed https://example.com
+feed add feed <rss-or-rss-bridge-url>
+feed get feeds
+```
+
+`ghostship-rss-bridge` remains the feed URL generation layer; `feed` is the durable subscription, fetch, search, and triage layer.
+
 ## Skills
 
 Default skills are sourced from the repo-local `skills/` tree and the vendored `vendor/googleworkspace-cli/skills/` tree, then seeded into the Hermes runtime `~/.hermes/skills` on first start without overwriting user-managed content.
@@ -291,6 +318,7 @@ The local Ghostship skills continue to cover container-specific guidance:
 In addition to the service-specific skills, the image ships:
 
 - `bitwarden`: how to authenticate with the official `bw` client, sync shared collections, and retrieve shared credentials with env-driven sessions
+- `feed`: how to turn direct or RSS-Bridge-generated feed URLs into durable monitored sources, scan unread entries, search history, and read full posts
 - `hermes-nix`: how to choose between one-off `nix shell` usage, durable `nix profile` installs, and repo/image rebuilds without root
 - `agent-browser`: the upstream browser automation skill copied through unchanged for general browser control workflows
 - `current-environment`: how the Caddy dashboard, `ttyd`, `s6`, persistence, and safe container recovery behavior work here
@@ -306,9 +334,10 @@ The vendored Google Workspace set adds the upstream `gws-*` service skills plus 
 3. Test a utility: `python3 scripts/python_utility.py test packages/<utility>-cli`
 4. Build a utility: `python3 scripts/python_utility.py build packages/<utility>-cli`
 5. Build the flake-exposed Bitwarden CLI package: `nix build .#bw`
-6. Build the flake-packaged Google Workspace CLI: `nix build .#gws`
-7. Build the combined seeded skill tree: `nix build .#packages.x86_64-linux.ghostship-hermes-skills`
-8. Build the image: `nix build .#packages.x86_64-linux.ghostship-hermes-image`
+6. Build the flake-packaged `feed` CLI: `nix build .#feed`
+7. Build the flake-packaged Google Workspace CLI: `nix build .#gws`
+8. Build the combined seeded skill tree: `nix build .#packages.x86_64-linux.ghostship-hermes-skills`
+9. Build the image: `nix build .#packages.x86_64-linux.ghostship-hermes-image`
 
 ## Live Integration Tests
 

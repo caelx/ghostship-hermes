@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added upstream `feed` as a pinned flake-managed image dependency, wired `FEED_DB_PATH` to profile-scoped Hermes storage under `$HERMES_HOME/feed/feed.db`, and added a repo-managed `feed` skill that pairs RSS-Bridge feed URL generation with durable RSS monitoring and triage workflows.
 - Added the official Bitwarden CLI `bw` to the image bundle, exposed it through the repo flake for verification, set a persistent default `BITWARDENCLI_APPDATA_DIR` under Hermes state, and added a repo-managed `bitwarden` skill plus docs for the env-driven shared-collection workflow.
 - Rewrote the repo-managed Hermes skill pack into workflow-oriented operator guides, keeping service skills short and trigger-rich around inspect, diagnose, mutate, and verify flows, preserving bespoke environment skills, and replacing the repo `agent-browser` skill with the upstream file unchanged.
 - Added the upstream Google Workspace CLI `gws` as a pinned flake-managed image dependency, vendored the full upstream Google Workspace skill catalog into `vendor/googleworkspace-cli/skills`, exposed a combined `ghostship-hermes-skills` flake output for seeded defaults, rewrote `hermes-nix` to be explicitly flake-first, and documented narrow-scope Gmail auth guidance for dedicated testing-mode personal accounts.

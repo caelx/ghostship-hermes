@@ -52,6 +52,7 @@ writeShellApplication {
       export HOME="''${HOME:-/home/hermes}"
       export HERMES_HOME="''${HERMES_HOME:-$HOME/.hermes}"
       export BITWARDENCLI_APPDATA_DIR="''${BITWARDENCLI_APPDATA_DIR:-$HERMES_HOME/bitwarden-cli}"
+      export FEED_DB_PATH="''${FEED_DB_PATH:-$HERMES_HOME/feed/feed.db}"
       export TERMINAL_CWD="''${TERMINAL_CWD:-$HOME}"
       export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-bundle.crt}"
       export NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-$SSL_CERT_FILE}"
@@ -95,7 +96,7 @@ writeShellApplication {
 
     ensure_runtime_directories() {
       install -d -m 1777 /tmp
-      install -d -m 0755 "$HOME" "$HERMES_HOME" "$HERMES_HOME/profiles" "$BITWARDENCLI_APPDATA_DIR" "$GHOSTSHIP_STATE_DIR" "$GHOSTSHIP_SERVICES_DIR" "$GHOSTSHIP_WWW_DIR" "$GHOSTSHIP_API_DIR" "$GHOSTSHIP_CADDY_DIR"
+      install -d -m 0755 "$HOME" "$HERMES_HOME" "$HERMES_HOME/profiles" "$HERMES_HOME/feed" "$BITWARDENCLI_APPDATA_DIR" "$GHOSTSHIP_STATE_DIR" "$GHOSTSHIP_SERVICES_DIR" "$GHOSTSHIP_WWW_DIR" "$GHOSTSHIP_API_DIR" "$GHOSTSHIP_CADDY_DIR"
       touch "$GHOSTSHIP_API_DIR/profiles.json"
     }
 
@@ -430,6 +431,8 @@ PY
       local profile_name="$1"
       local profile_home="$2"
       export HERMES_HOME="$profile_home"
+      export FEED_DB_PATH="$HERMES_HOME/feed/feed.db"
+      mkdir -p "$HERMES_HOME/feed"
       cd "$TERMINAL_CWD"
 
       if profile_has_chat_credentials "$profile_name" "$profile_home"; then
@@ -444,6 +447,8 @@ PY
       local profile_name="$1"
       local profile_home="$2"
       export HERMES_HOME="$profile_home"
+      export FEED_DB_PATH="$HERMES_HOME/feed/feed.db"
+      mkdir -p "$HERMES_HOME/feed"
 
       while true; do
         if profile_has_gateway_credentials "$profile_name" "$profile_home"; then
