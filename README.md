@@ -192,6 +192,8 @@ Use the repo validation script to prove the workstation model locally against a 
 scripts/validate_workstation_persistence.sh
 ```
 
+The script requires a working Docker daemon from the current shell. On WSL 2, enable Docker Desktop integration for this distro first.
+
 The script builds the runtime/seed outputs, seeds a fresh workstation home, updates the managed agent apps, generates the opencode programming-model cache, installs a Nix profile package, reruns the boot seeding against the same home, and verifies that the local edit, Hermes state, app links, generated config, and Nix profile still work.
 
 ## Python Utility Workflow

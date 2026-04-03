@@ -9,6 +9,11 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! docker version >/dev/null 2>&1; then
+  echo "docker is installed but not reachable from this shell; start a local Docker daemon or enable WSL integration before running workstation validation" >&2
+  exit 1
+fi
+
 if [ ! -d /nix/store ]; then
   echo "/nix/store is required for the safe /nix bind-mount validation path" >&2
   exit 1
