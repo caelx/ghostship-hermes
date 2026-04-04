@@ -2,13 +2,15 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-image_tar="${1:?usage: profiles-dashboard.sh <docker-image-tar> [image-tag]}"
+image_bundle="${1:?usage: profiles-dashboard.sh <image-bundle> [image-tag]}"
 release="$(tr -d '\n' < "$repo_root/packages/hermes-image/hermes-release.txt")"
 image_tag="${2:-ghostship-hermes:$release}"
 container_name="ghostship-hermes-dashboard-test"
 tmp_root="$(mktemp -d)"
 home_dir="$tmp_root/home"
 workspace_dir="$tmp_root/workspace"
+host_uid="$(id -u)"
+host_gid="$(id -g)"
 container_shell="/bin/sh"
 container_path="/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin"
 nix_volume_root="${GHOSTSHIP_NIX_VOLUME_ROOT:-}"
@@ -30,6 +32,12 @@ fi
 
 cleanup() {
   docker rm -f "$container_name" >/dev/null 2>&1 || true
+  if docker image inspect "$image_tag" >/dev/null 2>&1; then
+    docker run --rm --entrypoint /bin/sh -u 0:0 -v "$tmp_root:/cleanup" "$image_tag" -lc '
+      chown -R '"$host_uid:$host_gid"' /cleanup >/dev/null 2>&1 || true
+      chmod -R u+w /cleanup >/dev/null 2>&1 || true
+    ' >/dev/null 2>&1 || true
+  fi
   docker image rm -f "$image_tag" >/dev/null 2>&1 || true
   rm -rf "$tmp_root" >/dev/null 2>&1 || true
 }
@@ -157,8 +165,18 @@ sock.close()
 PY
 }
 
-if [ "${SKIP_DOCKER_LOAD:-0}" != "1" ]; then
-  xz -dc "$image_tar" | docker import - "$image_tag" >/dev/null
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker is required for dashboard image testing" >&2
+  exit 1
+fi
+
+if ! docker version >/dev/null 2>&1; then
+  echo "docker is installed but not reachable from this shell; start a local Docker daemon or enable WSL integration before running dashboard image tests" >&2
+  exit 1
+fi
+
+if [ "${SKIP_IMAGE_IMPORT:-0}" != "1" ]; then
+  "$repo_root/scripts/export_publishable_image.sh" "$image_bundle" "$image_tag" >/dev/null
 fi
 
 mkdir -p "$home_dir" "$workspace_dir"

@@ -33,8 +33,8 @@ resolve_store_path() {
   printf '%s\n' "$path"
 }
 
-image_output="${GHOSTSHIP_IMAGE_OUTPUT:-}"
-image_tar="${GHOSTSHIP_IMAGE_TAR:-}"
+rootfs_output="${GHOSTSHIP_ROOTFS_OUTPUT:-${GHOSTSHIP_IMAGE_OUTPUT:-}}"
+rootfs_tar="${GHOSTSHIP_ROOTFS_TAR:-${GHOSTSHIP_IMAGE_TAR:-}}"
 nix_volume_root="${GHOSTSHIP_NIX_VOLUME_ROOT:-}"
 dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-7681}"
 dashboard_base_url="http://127.0.0.1:${dashboard_port}"
@@ -52,25 +52,25 @@ if [ ! -d "$nix_volume_root/store" ]; then
   exit 1
 fi
 
-if [ -z "$image_output" ] && [ -z "$image_tar" ]; then
-  image_output="$(nix_cmd build --no-link --print-out-paths .#packages.x86_64-linux.ghostship-hermes-image)"
-  image_output="$(resolve_store_path "$image_output")"
+if [ -z "$rootfs_output" ] && [ -z "$rootfs_tar" ]; then
+  rootfs_output="$(nix_cmd build --no-link --print-out-paths .#packages.x86_64-linux.ghostship-hermes-rootfs)"
+  rootfs_output="$(resolve_store_path "$rootfs_output")"
 fi
 
-if [ -z "$image_tar" ] && [ -n "$image_output" ]; then
-  if [ -d "$image_output" ]; then
-    image_tar="$(find "$image_output" -type f -name '*.tar.xz' | head -n 1)"
+if [ -z "$rootfs_tar" ] && [ -n "$rootfs_output" ]; then
+  if [ -d "$rootfs_output" ]; then
+    rootfs_tar="$(find "$rootfs_output" -type f -name '*.tar.xz' | head -n 1)"
   else
-    image_tar="$image_output"
+    rootfs_tar="$rootfs_output"
   fi
 fi
 
-if [ -n "$image_tar" ]; then
-  image_tar="$(resolve_store_path "$image_tar")"
+if [ -n "$rootfs_tar" ]; then
+  rootfs_tar="$(resolve_store_path "$rootfs_tar")"
 fi
 
-if [ -z "$image_tar" ]; then
-  echo "failed to locate compressed NixOS rootfs tarball" >&2
+if [ -z "$rootfs_tar" ]; then
+  echo "failed to locate compressed NixOS rootfs tarball under $rootfs_output" >&2
   exit 1
 fi
 
@@ -214,7 +214,7 @@ wait_for_hermes_condition() {
 }
 
 mkdir -p "$home_dir" "$workspace_dir"
-xz -dc "$image_tar" | docker import - "$image_ref" >/dev/null
+xz -dc "$rootfs_tar" | docker import - "$image_ref" >/dev/null
 
 docker run -d \
   --name "$container_one" \

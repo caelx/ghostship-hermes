@@ -28,18 +28,17 @@ jobs:
             experimental-features = nix-command flakes
             extra-platforms = aarch64-linux
 
-      - name: Build image tarball
+      - name: Build publishable image archive
         run: |
           nix build .#packages.${{ matrix.system }}.ghostship-hermes-image
-          # Normalize name for upload
           ARCH=$(echo ${{ matrix.system }} | cut -d'-' -f1)
-          cp "$(readlink -f result)" "ghostship-hermes-${ARCH}.tar.gz"
+          scripts/export_publishable_image.sh "$(readlink -f result)" "ghostship-hermes:ci-${ARCH}" "ghostship-hermes-${ARCH}.tar"
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v7
         with:
           name: ghostship-hermes-${{ matrix.system }}
-          path: ghostship-hermes-*.tar.gz
+          path: ghostship-hermes-*.tar
 
   publish:
     needs: build
@@ -110,8 +109,8 @@ jobs:
             done
           }
 
-          publish_arch amd64 "$(readlink -f dist/ghostship-hermes-x86_64-linux/ghostship-hermes-x86_64.tar.gz)"
-          publish_arch arm64 "$(readlink -f dist/ghostship-hermes-aarch64-linux/ghostship-hermes-aarch64.tar.gz)"
+          publish_arch amd64 "$(readlink -f dist/ghostship-hermes-x86_64-linux/ghostship-hermes-x86_64.tar)"
+          publish_arch arm64 "$(readlink -f dist/ghostship-hermes-aarch64-linux/ghostship-hermes-aarch64.tar)"
 
           for tag in "${tags[@]}"; do
             docker buildx imagetools create \

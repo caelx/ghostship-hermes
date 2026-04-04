@@ -179,20 +179,28 @@ All `ghostship-*` utilities emit native JSON by default.
 
 ## Local Validation
 
-Build the image locally:
+Build the publishable image bundle and the low-level rootfs locally:
 
 ```fish
 mkdir -p .nix-local-store
-nix build --store "local?root=$PWD/.nix-local-store/nix" .#packages.x86_64-linux.ghostship-hermes-image -L
+set store "local?root=$PWD/.nix-local-store/nix"
+nix build --store $store .#packages.x86_64-linux.ghostship-hermes-image .#packages.x86_64-linux.ghostship-hermes-rootfs -L
+set image_bundle (nix path-info --store $store .#packages.x86_64-linux.ghostship-hermes-image)
+set rootfs_output (nix path-info --store $store .#packages.x86_64-linux.ghostship-hermes-rootfs)
+set rootfs_tar (find $rootfs_output -type f -name '*.tar.xz' | head -n 1)
 ```
+
+Image output contract:
+
+- `ghostship-hermes-image` is the explicit publishable image bundle consumed by `scripts/export_publishable_image.sh`, the GHCR publish workflow, and the dashboard smoke test.
+- `ghostship-hermes-rootfs` is the lower-level NixOS rootfs tarball used for `/init`-oriented persistence validation.
 
 Run the dashboard smoke test:
 
 ```fish
 # Run this from a shell where ../../.envrc has already exported
 # OPENROUTER_API_KEY and OPENROUTER_TEST_MODEL.
-set tarball "$PWD/.nix-local-store/nix/nix/store/(basename (readlink result))/tarball/nixos-system-x86_64-linux.tar.xz"
-GHOSTSHIP_NIX_VOLUME_ROOT="$PWD/.nix-local-store/nix/nix" bash tests/hermes-image/profiles-dashboard.sh $tarball ghostship-hermes:ops-coder
+GHOSTSHIP_NIX_VOLUME_ROOT="$PWD/.nix-local-store/nix/nix" bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:ops-coder
 ```
 
 Run the full persistence validation:
@@ -200,7 +208,7 @@ Run the full persistence validation:
 ```fish
 set -a
 source ../../.envrc >/dev/null 2>&1
-GHOSTSHIP_IMAGE_TAR="$tarball" GHOSTSHIP_NIX_VOLUME_ROOT="$PWD/.nix-local-store/nix/nix" bash scripts/validate_workstation_persistence.sh
+GHOSTSHIP_ROOTFS_TAR="$rootfs_tar" GHOSTSHIP_NIX_VOLUME_ROOT="$PWD/.nix-local-store/nix/nix" bash scripts/validate_workstation_persistence.sh
 ```
 
 The persistence suite validates:

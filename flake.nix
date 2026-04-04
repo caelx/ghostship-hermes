@@ -92,6 +92,14 @@
               ./packages/hermes-image/nixos-module.nix
             ];
           };
+          ghostshipHermesRootfs = ghostshipHermesSystem.config.system.build.tarball;
+          ghostshipHermesImage = pkgs.callPackage ./packages/hermes-image/image.nix {
+            inherit
+              system
+              ghostshipHermesRootfs
+              hermesRelease
+              ;
+          };
         in
         {
           ghostship-cli-contract = ghostshipCliContract;
@@ -115,8 +123,8 @@
           ghostship-changedetection = ghostshipChangedetection;
           ghostship-hermes-runtime = ghostshipHermesRuntime;
           ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;
-
-          ghostship-hermes-image = ghostshipHermesSystem.config.system.build.tarball;
+          ghostship-hermes-rootfs = ghostshipHermesRootfs;
+          ghostship-hermes-image = ghostshipHermesImage;
         }
       );
 
@@ -151,6 +159,7 @@
             ghostship-changedetection
             ghostship-hermes-runtime
             ghostship-hermes-system
+            ghostship-hermes-rootfs
             ghostship-hermes-image;
         }
       );
