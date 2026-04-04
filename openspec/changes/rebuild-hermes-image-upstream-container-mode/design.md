@@ -57,7 +57,7 @@ Resulting layout:
 
 - `/home/hermes/.hermes/config.yaml`
 - `/home/hermes/.hermes/.env`
-- `/home/hermes/.hermes/profiles/test`
+- `/home/hermes/.hermes/profiles/operations`
 - `/home/hermes/.hermes/profiles/coder`
 - `/workspace`
 - `/nix`
@@ -121,7 +121,7 @@ This requires:
 4. Run the full persistence test:
    - verify `HERMES_HOME=/home/hermes/.hermes`
    - verify `HOME=/home/hermes`
-   - verify `test` and `coder`
+   - verify `operations` and `coder`
    - verify `nix profile install` persistence
    - verify later-installed tool state persistence
    - verify multi-terminal dashboard behavior

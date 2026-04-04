@@ -18,8 +18,9 @@ Canonical image references:
 - The runtime user is `hermes` at `3000:3000`.
 - The public browser surface is a minimal dashboard on port `7681`.
 - The dashboard can launch as many ephemeral `ttyd` sessions as needed, tracks them as left-rail tabs, opens new tabs immediately with a loading state while `ttyd` starts, labels tabs from the shell cwd or current command, and returns to a blank home state when the active terminal is closed and no sessions remain.
+- Switching between open tabs keeps each live `ttyd` session attached instead of dropping back to ttyd's reconnect prompt.
 - Browser terminals start in `/home/hermes`.
-- The image bootstraps two Hermes profiles, `test` and `coder`, at `~/.hermes/profiles/...` so the upstream profile layout is ready to inspect immediately.
+- The image bootstraps two Hermes profiles, `operations` and `coder`, at `~/.hermes/profiles/...` and keeps a persistent gateway service running for each one.
 
 Upstream note:
 
@@ -70,7 +71,7 @@ Inside the running container:
 
 - `/home/hermes` is both the interactive home directory and the persisted state mount
 - `/home/hermes/.hermes` is the managed Hermes service state written by the upstream NixOS module
-- named profiles live under `/home/hermes/.hermes/profiles/test` and `/home/hermes/.hermes/profiles/coder`
+- named profiles live under `/home/hermes/.hermes/profiles/operations` and `/home/hermes/.hermes/profiles/coder`
 - `/workspace` remains a separate persisted work directory and is not folded into the home facade
 
 This layout is important:
@@ -88,13 +89,23 @@ The container uses a small NixOS-managed unit graph:
 - `ghostship-storage.service`
   prepares `/home/hermes`, `/home/hermes/.hermes`, `/workspace`, and `/nix` before user-facing services start
 - `hermes-agent.service`
-  is the upstream Hermes NixOS-module service, running as `hermes`
+  remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-bootstrap.service`
-  is a repo-specific NixOS oneshot that creates the approved `test` and `coder` profiles after the managed Hermes config exists
+  is a repo-specific NixOS oneshot that reconciles the approved `operations` and `coder` profiles after the managed Hermes config exists, writes their `.env` files from the runtime OpenRouter env, and sets the sticky default profile to `operations`
+- `ghostship-hermes-profile-operations.service`
+  keeps the `operations` gateway running with `hermes -p operations gateway run --replace`
+- `ghostship-hermes-profile-coder.service`
+  keeps the `coder` gateway running with `hermes -p coder gateway run --replace`
 - `ghostship-dashboard-controller.service`
   serves the static dashboard and proxies on-demand ephemeral `ttyd` sessions on port `7681`
 
-The profile bootstrap unit is an approved custom deviation from upstream. Upstream Hermes does not currently expose named profiles as a declarative NixOS-module option, so the profile names are declared in Nix here and materialized by a NixOS-managed oneshot service.
+The profile bootstrap unit and the two persistent per-profile gateway services are approved custom deviations from upstream. Upstream Hermes does not currently expose named profiles as a declarative NixOS-module option, so the profile names are declared in Nix here, materialized by a NixOS-managed oneshot, and then supervised by repo-managed systemd units.
+
+ttyd note:
+
+- The dashboard proxies terminals from `:7681` to internal `ttyd` listeners on localhost.
+- Do not enable ttyd `--check-origin` for those sessions. The browser origin is the dashboard port, so ttyd origin-checking rejects the proxied websocket and drops the terminal into a reconnect overlay.
+- The iframe sandbox is the intended browser-side safety control here; it blocks popup escape without breaking the proxied websocket.
 
 ## Running The Image
 
@@ -116,7 +127,7 @@ Notes:
 - Fix the per-user Nix ownership on the persisted volume before expecting mutable Nix workflows to work for `hermes`. In practice, `hermes` needs usable paths under `/nix/var/nix/profiles/per-user/hermes` and `/nix/var/nix/gcroots/per-user/hermes`.
 - Persisting `/home/hermes` directly is the intended way to keep Hermes managed state, Hermes CLI profiles, XDG state, and later-installed agent tooling across container replacement.
 - The dashboard is the intended browser entrypoint.
-- Hermes starts with a minimal declarative config so the gateway process comes up cleanly even before you add your own provider or messaging settings.
+- For local validation, source the repo `.envrc` before `docker run` so `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` are passed into the bootstrap oneshot and written into the declared profiles.
 
 After startup:
 
@@ -133,6 +144,7 @@ The image is intentionally declarative-first:
 - Hermes managed config is written into `/home/hermes/.hermes`.
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`.
+- The declared `operations` and `coder` profiles inherit the runtime `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` values during bootstrap so both gateways come up with the same test provider configuration.
 
 Upstream Hermes docs still apply for CLI behavior:
 
@@ -171,20 +183,24 @@ Build the image locally:
 
 ```fish
 mkdir -p .nix-local-store
-nix --store "$PWD/.nix-local-store" build .#packages.x86_64-linux.ghostship-hermes-image -L
+nix build --store "local?root=$PWD/.nix-local-store/nix" .#packages.x86_64-linux.ghostship-hermes-image -L
 ```
 
 Run the dashboard smoke test:
 
 ```fish
-set tarball "$PWD/.nix-local-store/nix/store/(basename (nix --store "$PWD/.nix-local-store" path-info .#packages.x86_64-linux.ghostship-hermes-image))/tarball/nixos-system-x86_64-linux.tar.xz"
-GHOSTSHIP_NIX_STORE="$PWD/.nix-local-store" bash tests/hermes-image/profiles-dashboard.sh $tarball
+# Run this from a shell where ../../.envrc has already exported
+# OPENROUTER_API_KEY and OPENROUTER_TEST_MODEL.
+set tarball "$PWD/.nix-local-store/nix/nix/store/(basename (readlink result))/tarball/nixos-system-x86_64-linux.tar.xz"
+GHOSTSHIP_NIX_VOLUME_ROOT="$PWD/.nix-local-store/nix/nix" bash tests/hermes-image/profiles-dashboard.sh $tarball ghostship-hermes:ops-coder
 ```
 
 Run the full persistence validation:
 
 ```fish
-GHOSTSHIP_NIX_STORE="$PWD/.nix-local-store" bash scripts/validate_workstation_persistence.sh
+set -a
+source ../../.envrc >/dev/null 2>&1
+GHOSTSHIP_IMAGE_TAR="$tarball" GHOSTSHIP_NIX_VOLUME_ROOT="$PWD/.nix-local-store/nix/nix" bash scripts/validate_workstation_persistence.sh
 ```
 
 The persistence suite validates:
@@ -192,9 +208,9 @@ The persistence suite validates:
 - `HERMES_HOME=/home/hermes/.hermes`
 - `HOME=/home/hermes`
 - `hermes` runs as `3000:3000`
-- `test` and `coder` are present under `~/.hermes/profiles/...`
+- `operations` and `coder` are present under `~/.hermes/profiles/...`
 - `/home/hermes` itself is the persisted home volume
-- the NixOS unit graph comes up in the expected order for storage, Hermes, profile bootstrap, and dashboard
+- the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the two profile gateways, and the dashboard
 - no custom default skills are seeded
 - removed workstation tools are absent by default
 - `ghostship-*` utilities remain available
@@ -204,7 +220,8 @@ The persistence suite validates:
 - `opencode` install plus XDG state survives replacement
 - the dashboard can open and close an ephemeral terminal before and after replacement
 - the dashboard can manage multiple independent terminal tabs
-- the bootstrap `test` and `coder` profiles are available under `~/.hermes/profiles/...`
+- switching between open tabs keeps the live terminal session attached
+- the bootstrap `operations` and `coder` profiles are available under `~/.hermes/profiles/...`
 
 ## Python Utility Workflow
 

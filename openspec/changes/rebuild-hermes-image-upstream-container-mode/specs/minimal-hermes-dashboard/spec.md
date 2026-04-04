@@ -7,6 +7,7 @@ The image SHALL provide a small browser-facing dashboard that is limited to the 
 - **WHEN** the rebuilt container starts successfully
 - **THEN** the browser-facing dashboard serves a static HTML entrypoint
 - **AND** that entrypoint exposes a clear action for opening a terminal into the running Hermes environment
+- **AND** the entrypoint keeps the old Hermes logo while using a darker modern visual treatment without serif typography
 
 ### Requirement: Browser terminals SHALL be launched on demand and remain non-persistent
 Browser terminal sessions SHALL be created only when requested, SHALL support explicit dashboard-driven teardown, and SHALL NOT be managed as long-lived background services.
@@ -18,6 +19,8 @@ Browser terminal sessions SHALL be created only when requested, SHALL support ex
 - **AND** the focused tab appears immediately even if the `ttyd` process is still starting
 - **AND** the session starts in `/home/hermes`
 - **AND** the tab label reflects the shell cwd while idle and the foreground command name while work is running
+- **AND** each tab uses a single-line label rather than a multi-line summary
+- **AND** switching back to an already-open tab reuses the live session instead of dropping into a reconnect prompt
 - **AND** the session is not represented as a persistent systemd service that remains running after the browser session ends
 
 #### Scenario: Closing a terminal tears down the ephemeral session

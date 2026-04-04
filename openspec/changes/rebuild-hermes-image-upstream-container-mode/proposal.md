@@ -35,7 +35,7 @@ That keeps the image operationally simpler, makes later-installed tool state per
   - close the active session and remove its tab
   - return to a blank homepage when no sessions remain
   - start browser terminals in `/home/hermes`
-- Bootstrap `test` and `coder` Hermes profiles from NixOS-managed startup so the upstream profile layout is inspectable immediately.
+- Bootstrap `operations` and `coder` Hermes profiles from NixOS-managed startup, set `operations` as the sticky default, and keep a gateway service running for each declared profile.
 - Persist `/home/hermes`, `/workspace`, and `/nix`.
 - Validate `nix profile install` persistence and later-installed tool state persistence across container replacement.
 

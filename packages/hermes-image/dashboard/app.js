@@ -5,16 +5,20 @@ const tabCount = document.getElementById("tab-count");
 const blankHome = document.getElementById("blank-home");
 const terminalStage = document.getElementById("terminal-stage");
 const activeLabel = document.getElementById("active-label");
-const terminalCwd = document.getElementById("terminal-cwd");
-const managedHermesHome = document.getElementById("managed-hermes-home");
-const popoutLink = document.getElementById("popout-link");
-const frame = document.getElementById("terminal-frame");
-const profileList = document.getElementById("profile-list");
+const terminalPanes = document.getElementById("terminal-panes");
 const terminalLoading = document.getElementById("terminal-loading");
+const profileList = document.getElementById("profile-list");
+const homePath = document.getElementById("home-path");
+const profileRoot = document.getElementById("profile-root");
+const defaultProfile = document.getElementById("default-profile");
 
 const state = {
-  sessions: [],
   activeTerminalId: null,
+  home: "/home/hermes",
+  managedHermesHome: "/home/hermes/.hermes",
+  defaultProfile: "operations",
+  profiles: [],
+  sessions: [],
 };
 
 async function requestJson(path, options = {}) {
@@ -23,11 +27,9 @@ async function requestJson(path, options = {}) {
     ...options,
   });
   const payload = await response.json();
-
   if (!response.ok) {
     throw new Error(payload.error || `request failed: ${response.status}`);
   }
-
   return payload;
 }
 
@@ -51,14 +53,12 @@ function renderTabs() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "terminal-tab";
+    button.title = session.label;
     if (session.id === state.activeTerminalId) {
       button.classList.add("is-active");
       button.setAttribute("aria-current", "page");
     }
-    button.innerHTML = `
-      <span class="terminal-tab-title">${session.label}</span>
-      <span class="terminal-tab-meta">${session.cwd}</span>
-    `;
+    button.textContent = session.label;
     button.addEventListener("click", () => {
       state.activeTerminalId = session.id;
       render();
@@ -70,30 +70,66 @@ function renderTabs() {
   }
 }
 
-function renderProfiles(payload) {
+function renderProfiles() {
   profileList.innerHTML = "";
-  const profiles = payload.profiles || [];
-  if (profiles.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "profile-empty";
-    empty.textContent = "No Hermes profiles have been created yet.";
-    profileList.appendChild(empty);
-    return;
-  }
-
-  for (const profile of profiles) {
+  for (const profile of state.profiles) {
     const item = document.createElement("article");
     item.className = "profile-card";
-    const commandHint = profile.name === "default" ? "hermes chat" : `hermes -p ${profile.name} chat`;
+    const defaultBadge = profile.is_default ? `<span class="profile-badge">default</span>` : "";
     item.innerHTML = `
-      <div class="profile-card-header">
+      <div class="profile-head">
         <strong>${profile.name}</strong>
-        <code>${commandHint}</code>
+        ${defaultBadge}
       </div>
+      <code>${profile.service}</code>
       <p>${profile.path}</p>
     `;
     profileList.appendChild(item);
   }
+}
+
+function ensureFrame(session) {
+  let pane = terminalPanes.querySelector(`[data-terminal-id="${session.id}"]`);
+  if (!pane) {
+    pane = document.createElement("section");
+    pane.className = "terminal-pane";
+    pane.dataset.terminalId = session.id;
+
+    const frame = document.createElement("iframe");
+    frame.className = "terminal-frame";
+    frame.title = `ghostship-hermes terminal ${session.id}`;
+    frame.loading = "lazy";
+    frame.referrerPolicy = "same-origin";
+    frame.setAttribute("sandbox", "allow-same-origin allow-scripts allow-forms allow-downloads");
+    pane.appendChild(frame);
+    terminalPanes.appendChild(pane);
+  }
+
+  const frame = pane.querySelector("iframe");
+  if (session.ready && frame.dataset.src !== session.terminal_url) {
+    frame.src = session.terminal_url;
+    frame.dataset.src = session.terminal_url;
+  }
+
+  return pane;
+}
+
+function syncFrames() {
+  const activeSession = currentSession();
+  const sessionIds = new Set(state.sessions.map((session) => session.id));
+
+  for (const pane of terminalPanes.querySelectorAll(".terminal-pane")) {
+    if (!sessionIds.has(pane.dataset.terminalId)) {
+      pane.remove();
+    }
+  }
+
+  for (const session of state.sessions) {
+    const pane = ensureFrame(session);
+    pane.classList.toggle("is-active", session.id === state.activeTerminalId);
+  }
+
+  terminalPanes.classList.toggle("is-hidden", !activeSession);
 }
 
 function renderStage() {
@@ -105,39 +141,34 @@ function renderStage() {
   closeButton.disabled = !hasSession;
 
   if (!hasSession) {
-    frame.removeAttribute("src");
-    frame.dataset.src = "";
-    activeLabel.textContent = "Terminal";
-    popoutLink.href = "#";
+    activeLabel.textContent = "No terminal selected";
     terminalLoading.classList.add("is-hidden");
+    terminalPanes.classList.add("is-hidden");
     return;
   }
 
   activeLabel.textContent = session.label;
-  popoutLink.href = session.terminal_url;
   terminalLoading.classList.toggle("is-hidden", Boolean(session.ready));
-  if (!session.ready) {
-    frame.removeAttribute("src");
-    frame.dataset.src = "";
-    return;
-  }
-
-  if (frame.dataset.src !== session.terminal_url) {
-    frame.src = session.terminal_url;
-    frame.dataset.src = session.terminal_url;
-  }
+  syncFrames();
 }
 
 function render() {
   renderTabs();
+  renderProfiles();
   renderStage();
 }
 
 function applyPayload(payload) {
+  state.home = payload.home || "/home/hermes";
+  state.managedHermesHome = payload.managed_hermes_home || "/home/hermes/.hermes";
+  state.defaultProfile = payload.default_profile || "operations";
+  state.profiles = payload.profiles || [];
   state.sessions = payload.sessions || [];
-  terminalCwd.textContent = payload.terminal_cwd || "/home/hermes";
-  managedHermesHome.textContent = payload.managed_hermes_home || "/home/hermes/.hermes";
-  renderProfiles(payload);
+
+  homePath.textContent = state.home;
+  profileRoot.textContent = `${state.managedHermesHome}/profiles`;
+  defaultProfile.textContent = state.defaultProfile;
+
   syncActiveId(payload);
   render();
 }
@@ -151,7 +182,7 @@ async function refreshStatus() {
   }
 }
 
-openButton.addEventListener("click", async () => {
+async function openTerminal() {
   openButton.disabled = true;
   try {
     const payload = await requestJson("/api/terminal/open", { method: "POST" });
@@ -162,9 +193,9 @@ openButton.addEventListener("click", async () => {
   } finally {
     openButton.disabled = false;
   }
-});
+}
 
-closeButton.addEventListener("click", async () => {
+async function closeTerminal() {
   const session = currentSession();
   if (!session) {
     return;
@@ -180,9 +211,24 @@ closeButton.addEventListener("click", async () => {
   } finally {
     closeButton.disabled = false;
   }
+}
+
+function startPolling() {
+  const tick = async () => {
+    await refreshStatus();
+    window.setTimeout(tick, 400);
+  };
+  void tick();
+}
+
+openButton.addEventListener("click", () => {
+  void openTerminal();
 });
 
-window.addEventListener("DOMContentLoaded", async () => {
-  await refreshStatus();
-  window.setInterval(refreshStatus, 1000);
+closeButton.addEventListener("click", () => {
+  void closeTerminal();
+});
+
+window.addEventListener("DOMContentLoaded", () => {
+  startPolling();
 });

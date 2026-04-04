@@ -14,12 +14,25 @@ let
     name = "ghostship-hermes-dashboard";
   };
 
-  bootstrapProfiles = [
-    "test"
+  managedProfiles = [
+    "operations"
     "coder"
   ];
+  defaultProfile = "operations";
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   runtimeBin = "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime";
+  yamlFormat = pkgs.formats.yaml { };
+  profileConfig = {
+    display.personality = "kawaii";
+    model.default = "openrouter/free";
+    terminal = {
+      backend = "local";
+      cwd = "/home/hermes";
+      timeout = 180;
+    };
+  };
+  managedProfileNames = lib.concatStringsSep "," managedProfiles;
+  managedProfileRoot = "/home/hermes/.hermes/profiles";
 
   runtimePackages = with pkgs; [
     bashInteractive
@@ -45,16 +58,62 @@ let
     name = "ghostship-hermes-user-env";
     paths = servicePath;
   };
+  profileConfigFile = yamlFormat.generate "ghostship-hermes-profile-config.yaml" profileConfig;
   bootstrapHermesScript = pkgs.writeShellScript "ghostship-hermes-bootstrap.sh" ''
     set -euo pipefail
 
+    profiles_root="${managedProfileRoot}"
+    mkdir -p "$profiles_root"
+
+    for existing in "$profiles_root"/*; do
+      [ -d "$existing" ] || continue
+      keep=0
+      case "$(basename "$existing")" in
+        ${lib.concatMapStringsSep "|" (profile: lib.escapeShellArg profile) managedProfiles})
+          keep=1
+          ;;
+      esac
+      if [ "$keep" -eq 0 ]; then
+        rm -rf "$existing"
+        rm -f "/home/hermes/.local/bin/$(basename "$existing")"
+      fi
+    done
+
     ${lib.concatMapStringsSep "\n" (profile: ''
-      if [ ! -d "/home/hermes/.hermes/profiles/${profile}" ]; then
+      if [ ! -d "${managedProfileRoot}/${profile}" ]; then
         hermes profile create ${lib.escapeShellArg profile} --clone >/dev/null 2>&1 \
           || hermes profile create ${lib.escapeShellArg profile} >/dev/null 2>&1 \
           || true
       fi
-    '') bootstrapProfiles}
+
+      install -D -m 0600 ${profileConfigFile} "${managedProfileRoot}/${profile}/config.yaml"
+    '') managedProfiles}
+
+    write_profile_env() {
+      target="$1"
+      umask 077
+      {
+        printf 'TERMINAL_CWD=/home/hermes\n'
+        for key in OPENROUTER_API_KEY OPENROUTER_BASE_URL OPENROUTER_HTTP_REFERER OPENROUTER_TITLE; do
+          value="''${!key:-}"
+          if [ -n "$value" ]; then
+            printf '%s=%s\n' "$key" "$value"
+          fi
+        done
+      } >"$target"
+    }
+
+    write_profile_env "/home/hermes/.hermes/.env"
+    write_profile_env "/home/hermes/.hermes/profiles/operations/.env"
+    write_profile_env "/home/hermes/.hermes/profiles/coder/.env"
+
+    if [ -n "''${OPENROUTER_TEST_MODEL:-}" ]; then
+      hermes config set model.default "$OPENROUTER_TEST_MODEL" >/dev/null 2>&1 || true
+      hermes -p operations config set model.default "$OPENROUTER_TEST_MODEL" >/dev/null 2>&1 || true
+      hermes -p coder config set model.default "$OPENROUTER_TEST_MODEL" >/dev/null 2>&1 || true
+    fi
+
+    hermes profile use ${lib.escapeShellArg defaultProfile} >/dev/null 2>&1 || true
 
     hermes config path >/dev/null 2>&1 || true
     hermes config env-path >/dev/null 2>&1 || true
@@ -66,6 +125,8 @@ let
     GHOSTSHIP_TERMINAL_CWD = "/home/hermes";
     GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
     GHOSTSHIP_DASHBOARD_ROOT = dashboardTree;
+    GHOSTSHIP_HERMES_PROFILES = managedProfileNames;
+    GHOSTSHIP_HERMES_DEFAULT_PROFILE = defaultProfile;
     SSL_CERT_FILE = certificateFile;
     NIX_SSL_CERT_FILE = certificateFile;
   };
@@ -148,14 +209,7 @@ in
       TERMINAL_CWD = "/home/hermes";
     };
     settings = {
-      display.personality = "kawaii";
-      model.default = "anthropic/claude-sonnet-4";
-      terminal = {
-        backend = "local";
-        cwd = "/home/hermes";
-        timeout = 180;
-      };
-    };
+    } // profileConfig;
     extraPackages = [ pkgs.nix ] ++ ghostshipUtilities;
   };
 
@@ -176,6 +230,7 @@ in
   };
 
   systemd.services.hermes-agent = {
+    wantedBy = lib.mkForce [ ];
     after = [ "ghostship-storage.service" ];
     requires = [ "ghostship-storage.service" ];
     environment = lib.mkForce (
@@ -196,11 +251,9 @@ in
     wantedBy = [ "multi-user.target" ];
     after = [
       "ghostship-storage.service"
-      "hermes-agent.service"
     ];
     requires = [
       "ghostship-storage.service"
-      "hermes-agent.service"
     ];
     environment = userServiceEnvironment;
     path = servicePath;
@@ -209,6 +262,13 @@ in
       User = "hermes";
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
+      PassEnvironment = [
+        "OPENROUTER_API_KEY"
+        "OPENROUTER_BASE_URL"
+        "OPENROUTER_HTTP_REFERER"
+        "OPENROUTER_TITLE"
+        "OPENROUTER_TEST_MODEL"
+      ];
       ExecStart = bootstrapHermesScript;
     };
   };
@@ -234,6 +294,62 @@ in
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
       ExecStart = "${runtimeBin} dashboard-controller";
+      Restart = "always";
+      RestartSec = "2s";
+    };
+  };
+
+  systemd.services.ghostship-hermes-profile-operations = {
+    description = "ghostship-hermes operations gateway";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+      "network-online.target"
+    ];
+    requires = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+    ];
+    environment = userServiceEnvironment // {
+      HERMES_MANAGED = "true";
+    };
+    path = servicePath;
+    serviceConfig = {
+      Type = "simple";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = "/home/hermes";
+      ExecStart = "${config.services.hermes-agent.package}/bin/hermes -p operations gateway run --replace";
+      Restart = "always";
+      RestartSec = "2s";
+    };
+  };
+
+  systemd.services.ghostship-hermes-profile-coder = {
+    description = "ghostship-hermes coder gateway";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+      "network-online.target"
+    ];
+    requires = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+    ];
+    environment = userServiceEnvironment // {
+      HERMES_MANAGED = "true";
+    };
+    path = servicePath;
+    serviceConfig = {
+      Type = "simple";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = "/home/hermes";
+      ExecStart = "${config.services.hermes-agent.package}/bin/hermes -p coder gateway run --replace";
       Restart = "always";
       RestartSec = "2s";
     };

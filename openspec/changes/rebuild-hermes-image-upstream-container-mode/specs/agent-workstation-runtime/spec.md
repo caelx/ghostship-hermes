@@ -37,9 +37,11 @@ The workstation SHALL remain compatible with upstream Hermes profile layout.
 - **THEN** the profile directories written through the upstream Hermes layout persist under `~/.hermes/profiles/...`
 - **AND** the managed default Hermes state remains at `/home/hermes/.hermes`
 
-#### Scenario: Runtime bootstraps inspection profiles
+#### Scenario: Runtime bootstraps declared Hermes profiles
 - **WHEN** the rebuilt image reaches steady state
-- **THEN** `test` and `coder` exist under `~/.hermes/profiles/...`
+- **THEN** `operations` and `coder` exist under `~/.hermes/profiles/...`
+- **AND** `operations` is the sticky default profile
+- **AND** each declared profile has its own persistent gateway service
 - **AND** operators can inspect the upstream profile layout immediately
 
 ## ADDED Requirements

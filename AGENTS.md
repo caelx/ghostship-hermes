@@ -19,6 +19,8 @@
 - Do not seed Ghostship-managed default skills or develop-environment workstation content into the image runtime.
 - Do not preinstall Codex, Gemini CLI, Opencode, OpenSpec, `skills`, `gws`, `bws`, or `feed` in the default image.
 - Keep the browser surface minimal: one dashboard, on-demand ephemeral `ttyd`, no persistent per-profile terminal services.
+- Keep only two declarative Hermes profiles in the image: `operations` and `coder`.
+- Keep one persistent gateway service per declared profile, managed by NixOS systemd units.
 - Persist the whole `/home/hermes` tree instead of maintaining a top-level HOME symlink policy for individual dot-directories.
 - Keep the first utility scaffold focused on SearXNG.
 - Watch upstream Hermes releases and update `packages/hermes-image/hermes-release.txt`.
@@ -62,9 +64,11 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Using `/home/hermes` as the persisted state root is a repo-specific deviation from upstream container-mode docs, which otherwise separate state and HOME. Keep calling that out explicitly when it matters.
 - Upstream Hermes profiles are anchored to `~/.hermes/profiles/...`; with `stateDir=/home/hermes`, the managed default profile and the named profile tree now live together under `/home/hermes/.hermes`.
 - A minimal declarative gateway config is enough to boot the Hermes service even before operator-specific provider or messaging settings are added.
-- Upstream Hermes does not expose named profiles as a declarative NixOS-module option. Precreating `test` and `coder` from Nix is an approved repo-specific deviation and should stay implemented as a NixOS-managed oneshot, not as mutable runtime drift.
+- Upstream Hermes does not expose named profiles as a declarative NixOS-module option. Precreating `operations` and `coder` from Nix and supervising each one with its own gateway service is an approved repo-specific deviation and should stay implemented as NixOS-managed units, not as mutable runtime drift.
 - The browser dashboard should treat terminals as ephemeral tabs: opening spawns a fresh `ttyd` session focused on `/home/hermes`, closing removes only that session, and zero sessions returns the UI to a blank home state.
-- The image should bootstrap `test` and `coder` profiles so operators can inspect the upstream `~/.hermes/profiles/...` layout immediately after boot.
+- The dashboard proxies ttyd from its own origin on `:7681`; do not turn ttyd `--check-origin` back on for proxied sessions or tab switches will fall into ttyd's reconnect overlay.
+- The image should bootstrap `operations` and `coder` profiles so operators can inspect the upstream `~/.hermes/profiles/...` layout immediately after boot, with `operations` set as the sticky default profile.
+- The bootstrap oneshot should source `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` from the runtime environment, write the profile `.env` files, and set both declared profiles to the requested test model without depending on extra Python packages like PyYAML.
 
 ### Container And Supervisor Behavior
 

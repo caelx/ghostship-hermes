@@ -172,6 +172,11 @@ docker run -d \
   --tmpfs /run/lock \
   --tmpfs /tmp \
   -e container=docker \
+  -e OPENROUTER_API_KEY \
+  -e OPENROUTER_BASE_URL \
+  -e OPENROUTER_HTTP_REFERER \
+  -e OPENROUTER_TITLE \
+  -e OPENROUTER_TEST_MODEL \
   -p "${dashboard_port}:7681" \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
@@ -184,11 +189,11 @@ wait_for_http "${dashboard_base_url}/api/status"
 
 assert_http_contains "${dashboard_base_url}/" 'data-dashboard="ghostship-hermes-dashboard"'
 assert_http_contains "${dashboard_base_url}/" "Open Terminal"
-assert_http_contains "${dashboard_base_url}/" "Managed service state stays in"
+assert_http_contains "${dashboard_base_url}/" "Two declared Hermes profiles"
 assert_http_contains "${dashboard_base_url}/api/status" '"sessions": \[\]'
-assert_http_contains "${dashboard_base_url}/api/status" '"name": "default"'
-assert_http_contains "${dashboard_base_url}/api/status" '"name": "test"'
+assert_http_contains "${dashboard_base_url}/api/status" '"name": "operations"'
 assert_http_contains "${dashboard_base_url}/api/status" '"name": "coder"'
+assert_http_contains "${dashboard_base_url}/api/status" '"default_profile": "operations"'
 
 open_started_ms="$(date +%s%3N)"
 curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-hermes-terminal-open-1.json
@@ -221,12 +226,18 @@ curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_one/close" >/tm
 assert_http_contains "${dashboard_base_url}/api/status" '"sessions": \[\]'
 
 run_in_container "$container_name" 'id hermes | grep -F "uid=3000" >/dev/null'
-run_in_container "$container_name" 'systemctl is-active hermes-agent.service >/dev/null'
+run_in_container "$container_name" '! systemctl is-active hermes-agent.service >/dev/null'
 run_in_container "$container_name" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
-run_in_container "$container_name" 'su - hermes -c "hermes profile show test >/dev/null"'
+run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-operations.service >/dev/null'
+run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-coder.service >/dev/null'
+run_in_container "$container_name" 'su - hermes -c "hermes profile show operations >/dev/null"'
 run_in_container "$container_name" 'su - hermes -c "hermes profile show coder >/dev/null"'
-run_in_container "$container_name" 'su - hermes -c "test -d /home/hermes/.hermes/profiles/test && test -d /home/hermes/.hermes/profiles/coder"'
+run_in_container "$container_name" 'su - hermes -c "test -d /home/hermes/.hermes/profiles/operations && test -d /home/hermes/.hermes/profiles/coder"'
+run_in_container "$container_name" 'su - hermes -c "! test -d /home/hermes/.hermes/profiles/test"'
+run_in_container "$container_name" 'su - hermes -c "test \"$(cat /home/hermes/.hermes/active_profile)\" = \"operations\""'
+run_in_container "$container_name" 'su - hermes -c "grep -F \"OPENROUTER_API_KEY=\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"'
+run_in_container "$container_name" 'su - hermes -c "grep -F \"OPENROUTER_API_KEY=\" /home/hermes/.hermes/profiles/coder/.env >/dev/null"'
 run_in_container "$container_name" 'su - hermes -c "hermes config show 2>/dev/null | grep -F \"/home/hermes\" >/dev/null"'
 run_in_container "$container_name" 'systemctl is-active ghostship-dashboard-controller.service >/dev/null'
-run_in_container "$container_name" 'systemctl cat hermes-agent.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
-run_in_container "$container_name" 'systemctl cat ghostship-hermes-bootstrap.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
+run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
+run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-coder.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'

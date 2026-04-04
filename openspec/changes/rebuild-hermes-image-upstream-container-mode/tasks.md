@@ -14,7 +14,7 @@
 
 ## 3. Profiles And Hermes Layout
 
-- [x] 3.1 Bootstrap `test` and `coder` from NixOS-managed startup.
+- [x] 3.1 Bootstrap `operations` and `coder` from NixOS-managed startup and keep a gateway service running for each one.
 - [x] 3.2 Document the `/home/hermes/.hermes` layout and how the profiles are stored.
 - [x] 3.3 Document the systemd unit graph and call out any deviation from upstream.
 

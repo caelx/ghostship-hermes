@@ -165,17 +165,19 @@ wait_for_container_ready() {
   local tries=0
 
   until run_in_container "$container_name" '
-    systemctl is-active ghostship-storage.service >/dev/null &&
-    systemctl is-active hermes-agent.service >/dev/null &&
-    systemctl is-active ghostship-dashboard-controller.service >/dev/null &&
-    curl -fsS http://127.0.0.1:7681/api/status >/dev/null
+    systemctl is-active ghostship-storage.service >/dev/null 2>&1 &&
+    test "$(systemctl show -P Result ghostship-hermes-bootstrap.service 2>/dev/null)" = "success" &&
+    systemctl is-active ghostship-hermes-profile-operations.service >/dev/null 2>&1 &&
+    systemctl is-active ghostship-hermes-profile-coder.service >/dev/null 2>&1 &&
+    systemctl is-active ghostship-dashboard-controller.service >/dev/null 2>&1 &&
+    curl -fsS http://127.0.0.1:7681/api/status >/dev/null 2>&1
   '; do
     tries=$((tries + 1))
     if [ "$tries" -ge 90 ]; then
       echo "container $container_name did not become ready" >&2
       docker logs "$container_name" >&2 || true
       run_in_container "$container_name" '
-        systemctl --no-pager --full status ghostship-storage.service hermes-agent.service ghostship-dashboard-controller.service || true
+        systemctl --no-pager --full status ghostship-storage.service ghostship-hermes-bootstrap.service ghostship-hermes-profile-operations.service ghostship-hermes-profile-coder.service ghostship-dashboard-controller.service || true
       ' >&2 || true
       exit 1
     fi
@@ -222,6 +224,11 @@ docker run -d \
   --tmpfs /run/lock \
   --tmpfs /tmp \
   -e container=docker \
+  -e OPENROUTER_API_KEY \
+  -e OPENROUTER_BASE_URL \
+  -e OPENROUTER_HTTP_REFERER \
+  -e OPENROUTER_TITLE \
+  -e OPENROUTER_TEST_MODEL \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
@@ -232,14 +239,16 @@ docker run -d \
 wait_for_container_ready "$container_one"
 wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/status"
-assert_http_contains "${dashboard_base_url}/api/status" '"name": "default"'
-assert_http_contains "${dashboard_base_url}/api/status" '"name": "test"'
+assert_http_contains "${dashboard_base_url}/api/status" '"name": "operations"'
 assert_http_contains "${dashboard_base_url}/api/status" '"name": "coder"'
+assert_http_contains "${dashboard_base_url}/api/status" '"default_profile": "operations"'
 
 run_in_container "$container_one" 'id hermes | grep -F "uid=3000(hermes) gid=3000(hermes)" >/dev/null'
 run_in_container "$container_one" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
-run_in_container "$container_one" 'systemctl cat hermes-agent.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
+run_in_container "$container_one" '! systemctl is-active hermes-agent.service >/dev/null'
 run_in_container "$container_one" 'systemctl cat ghostship-hermes-bootstrap.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
+run_in_container "$container_one" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
+run_in_container "$container_one" 'systemctl cat ghostship-hermes-profile-coder.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
 run_as_hermes "$container_one" 'test "$HOME" = "/home/hermes"'
 run_as_hermes "$container_one" 'test "$HERMES_HOME" = "/home/hermes/.hermes"'
 run_as_hermes "$container_one" 'test "$(id -u)" = "3000" && test "$(id -g)" = "3000"'
@@ -266,12 +275,19 @@ run_in_container "$container_one" '
   done
 '
 
-run_as_hermes "$container_one" 'hermes profile create coder >/tmp/profile-create.log || true'
-run_as_hermes "$container_one" 'hermes profile show test >/dev/null'
+run_as_hermes "$container_one" 'hermes profile show operations >/dev/null'
 run_as_hermes "$container_one" 'hermes profile show coder >/dev/null'
+run_as_hermes "$container_one" 'test "$(cat /home/hermes/.hermes/active_profile)" = "operations"'
+run_as_hermes "$container_one" 'test -d /home/hermes/.hermes/profiles/operations'
 run_as_hermes "$container_one" 'test -d /home/hermes/.hermes/profiles/coder'
-run_as_hermes "$container_one" 'test -d /home/hermes/.hermes/profiles/test'
+run_as_hermes "$container_one" '! test -d /home/hermes/.hermes/profiles/test'
 run_as_hermes "$container_one" 'hermes config show | grep -F "/home/hermes" >/dev/null'
+run_as_hermes "$container_one" 'hermes profile list | grep -F "operations" >/dev/null'
+run_as_hermes "$container_one" 'hermes profile list | grep -F "coder" >/dev/null'
+run_as_hermes "$container_one" 'hermes -p operations config show | grep -F "$OPENROUTER_TEST_MODEL" >/dev/null'
+run_as_hermes "$container_one" 'hermes -p coder config show | grep -F "$OPENROUTER_TEST_MODEL" >/dev/null'
+run_as_hermes "$container_one" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
+run_as_hermes "$container_one" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/coder/.env >/dev/null'
 
 run_as_hermes "$container_one" '
   mkdir -p \
@@ -359,6 +375,11 @@ docker run -d \
   --tmpfs /run/lock \
   --tmpfs /tmp \
   -e container=docker \
+  -e OPENROUTER_API_KEY \
+  -e OPENROUTER_BASE_URL \
+  -e OPENROUTER_HTTP_REFERER \
+  -e OPENROUTER_TITLE \
+  -e OPENROUTER_TEST_MODEL \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
@@ -369,9 +390,9 @@ docker run -d \
 wait_for_container_ready "$container_two"
 wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/status"
-assert_http_contains "${dashboard_base_url}/api/status" '"name": "default"'
-assert_http_contains "${dashboard_base_url}/api/status" '"name": "test"'
+assert_http_contains "${dashboard_base_url}/api/status" '"name": "operations"'
 assert_http_contains "${dashboard_base_url}/api/status" '"name": "coder"'
+assert_http_contains "${dashboard_base_url}/api/status" '"default_profile": "operations"'
 
 run_as_hermes "$container_two" 'grep -Fx "hermes-home" ~/.hermes/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/ghostship-test/persist.txt >/dev/null'
@@ -388,11 +409,15 @@ run_as_hermes "$container_two" 'grep -Fx "ssh" ~/.ssh/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "gnupg" ~/.gnupg/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "pki" ~/.pki/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "workspace" /workspace/work-item.txt >/dev/null'
-run_as_hermes "$container_two" 'hermes profile show test >/dev/null'
+run_as_hermes "$container_two" 'hermes profile show operations >/dev/null'
+run_as_hermes "$container_two" 'test "$(cat /home/hermes/.hermes/active_profile)" = "operations"'
+run_as_hermes "$container_two" 'test -d /home/hermes/.hermes/profiles/operations'
 run_as_hermes "$container_two" 'test -d /home/hermes/.hermes/profiles/coder'
-run_as_hermes "$container_two" 'test -d /home/hermes/.hermes/profiles/test'
+run_as_hermes "$container_two" '! test -d /home/hermes/.hermes/profiles/test'
+run_as_hermes "$container_two" 'hermes profile list | grep -F "operations" >/dev/null'
 run_as_hermes "$container_two" 'hermes profile list | grep -F "coder" >/dev/null'
-run_as_hermes "$container_two" 'hermes profile list | grep -F "test" >/dev/null'
+run_as_hermes "$container_two" 'hermes -p operations config show | grep -F "$OPENROUTER_TEST_MODEL" >/dev/null'
+run_as_hermes "$container_two" 'hermes -p coder config show | grep -F "$OPENROUTER_TEST_MODEL" >/dev/null'
 run_as_hermes "$container_two" 'hello >/tmp/hello.out && grep -F "Hello, world!" /tmp/hello.out >/dev/null'
 run_as_hermes "$container_two" 'command -v tirith >/dev/null'
 run_as_hermes "$container_two" 'command -v opencode >/dev/null'

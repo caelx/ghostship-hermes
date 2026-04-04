@@ -28,6 +28,8 @@ DASHBOARD_PORT = int(os.environ.get("GHOSTSHIP_DASHBOARD_PORT", "7683"))
 TERMINAL_CWD = os.environ.get("GHOSTSHIP_TERMINAL_CWD", "/home/hermes")
 HOME_DIR = os.environ.get("HOME", "/home/hermes")
 MANAGED_HERMES_HOME = os.environ.get("HERMES_HOME", "/home/hermes/.hermes")
+MANAGED_PROFILES = [item.strip() for item in os.environ.get("GHOSTSHIP_HERMES_PROFILES", "operations,coder").split(",") if item.strip()]
+DEFAULT_PROFILE = os.environ.get("GHOSTSHIP_HERMES_DEFAULT_PROFILE", MANAGED_PROFILES[0] if MANAGED_PROFILES else "default")
 DASHBOARD_ROOT = Path(os.environ.get("GHOSTSHIP_DASHBOARD_ROOT", "/srv/dashboard"))
 BASH_PATH = os.environ.get("GHOSTSHIP_BASH") or shutil.which("bash") or "/bin/sh"
 
@@ -132,8 +134,14 @@ def session_label(session: dict) -> str:
         return session["cwd"] or session["label"]
     active_pid = deepest_descendant(shell_pid[-1])
     active_name = proc_name(active_pid)
-    if active_name and Path(active_name.split(" ", 1)[0]).name not in {"bash", "sh"}:
-        return active_name
+    if active_name:
+        try:
+            command = shlex.split(active_name)[0] if active_name.strip() else ""
+        except ValueError:
+            command = active_name.split(" ", 1)[0]
+        command_name = Path(command).name
+        if command_name and command_name not in {"bash", "sh"}:
+            return command_name
     cwd = proc_cwd(active_pid)
     return cwd or session["cwd"] or session["label"]
 
@@ -148,18 +156,22 @@ def prune_dead_sessions(state: dict) -> dict:
 
 
 def terminal_payload(state: dict) -> dict:
-    profiles_root = Path(HOME_DIR) / ".hermes" / "profiles"
-    profiles = [
-        {"name": "default", "path": str(Path(HOME_DIR) / ".hermes")},
-    ]
-    if profiles_root.is_dir():
-        for entry in sorted(profiles_root.iterdir()):
-            if entry.is_dir():
-                profiles.append({"name": entry.name, "path": str(entry)})
+    profiles = []
+    profiles_root = Path(MANAGED_HERMES_HOME) / "profiles"
+    for name in MANAGED_PROFILES:
+        profiles.append(
+            {
+                "name": name,
+                "path": str(profiles_root / name),
+                "service": f"ghostship-hermes-profile-{name}.service",
+                "is_default": name == DEFAULT_PROFILE,
+            }
+        )
     return {
         "terminal_cwd": TERMINAL_CWD,
         "home": HOME_DIR,
         "managed_hermes_home": MANAGED_HERMES_HOME,
+        "default_profile": DEFAULT_PROFILE,
         "active_terminal_id": state["active_terminal_id"],
         "profiles": profiles,
         "sessions": [
@@ -194,6 +206,16 @@ def ttyd_command(session: dict) -> list[str]:
         TTYD_HOST,
         "-p",
         str(session["port"]),
+        "-t",
+        "disableLeaveAlert=true",
+        "-t",
+        "disableResizeOverlay=true",
+        "-t",
+        "rendererType=webgl",
+        "-t",
+        "fontFamily=IBM Plex Mono, monospace",
+        "-t",
+        "theme={\"background\":\"#020308\",\"foreground\":\"#f3f5f9\",\"cursor\":\"#f0a84d\",\"selectionBackground\":\"rgba(240,168,77,0.28)\",\"black\":\"#020308\",\"red\":\"#ff7a90\",\"green\":\"#7ad692\",\"yellow\":\"#f3c96b\",\"blue\":\"#71a7ff\",\"magenta\":\"#c18cff\",\"cyan\":\"#63d8e6\",\"white\":\"#d6dcea\",\"brightBlack\":\"#5d6678\",\"brightRed\":\"#ff9caf\",\"brightGreen\":\"#a4ebb3\",\"brightYellow\":\"#ffd98d\",\"brightBlue\":\"#96beff\",\"brightMagenta\":\"#d2abff\",\"brightCyan\":\"#96ecf5\",\"brightWhite\":\"#ffffff\"}",
         "--base-path",
         session["terminal_url"].rstrip("/"),
         BASH_PATH,
