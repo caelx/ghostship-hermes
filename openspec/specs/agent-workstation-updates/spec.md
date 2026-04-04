@@ -20,6 +20,11 @@ The workstation SHALL refresh mutable agent assets on boot and on timers using p
 - **THEN** it refreshes the configured mutable agent assets in persisted storage
 - **AND** those refreshed assets remain available after container restart or replacement
 
+#### Scenario: OpenSpec refresh reapplies the current Ghostship override text
+- **WHEN** the workstation refreshes OpenSpec instruction roots in a repo under persisted state
+- **THEN** it reapplies the current Ghostship override blocks after `openspec update`
+- **AND** the regenerated propose override instructs agents to create or reuse `.worktrees/<name>/`
+
 #### Scenario: Opencode free-model config refreshes daily
 - **WHEN** the scheduled Opencode model updater runs on a new day or stale boot
 - **THEN** it regenerates the cached Opencode programming free-model config in persisted state
