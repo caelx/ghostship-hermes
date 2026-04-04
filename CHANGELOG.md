@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Rebuilt the Hermes image around the upstream Hermes NixOS module with canonical `/data` state, a fixed `hermes` `3000:3000` runtime user, a lean default package set, a minimal on-demand `ttyd` dashboard, and broad HOME-backed persistence under `/data/home`.
+- Removed the old Ghostship workstation layer from the image default runtime, including custom skill seeding, Codex/Gemini/Opencode/OpenSpec installs and update flows, honcho compatibility glue, per-profile terminal orchestration, and other custom app-refresh machinery.
+- Rewrote the image validation scripts around the new runtime contract, including `/data` path checks, persisted `/nix` validation for `nix profile install`, `opencode` persistence checks, later-installed tool updateability, and minimal dashboard terminal open/close coverage.
 - Defined a repo-wide secrets/config policy: `BWS_ACCESS_TOKEN` remains the bootstrap secret, Bitwarden Secrets Manager is now the documented default source of truth for service and automation-compatible website credentials, local topology such as URLs and ports stays in env/config by default, and the docs and repo-managed skills now describe utility env vars as the runtime interface rather than the durable secret store.
 - Fixed the Hermes runtime OpenSpec propose override to keep refreshed image instructions on `.worktrees/<name>/`, and removed the retired `brainstorming` skill from the curated workstation seed defaults shipped by the image.
 - Made `scripts/validate_workstation_persistence.sh` executable again and added a fast Docker-daemon preflight so the documented local validation command fails immediately with a clear message when Docker is installed but unusable from the current shell, including common WSL integration setups.

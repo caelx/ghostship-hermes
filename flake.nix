@@ -3,11 +3,17 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    hermes-agent.url = "github:NousResearch/hermes-agent/v2026.4.3";
     googleworkspace-cli.url = "github:googleworkspace/cli/v0.22.5";
   };
 
   outputs =
-    { self, nixpkgs, googleworkspace-cli }:
+    {
+      self,
+      nixpkgs,
+      hermes-agent,
+      googleworkspace-cli,
+    }:
     let
       lib = nixpkgs.lib;
       systems = [
@@ -48,15 +54,10 @@
           bitwardenSecretsCli = pkgs.bws;
           feed = pkgs.callPackage ./packages/feed/package.nix { };
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
-          ghostshipHermesSkills = pkgs.callPackage ./packages/hermes-image/skills.nix { };
-          ghostshipHermesWorkstationSeed = pkgs.callPackage ./packages/hermes-image/workstation-seed.nix { };
-
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
           );
-          ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix {
-            inherit hermesRelease;
-          };
+          ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix { };
 
           allUtilities = [
             ghostshipSearxng
@@ -84,8 +85,6 @@
             specialArgs = {
               inherit
                 ghostshipHermesRuntime
-                ghostshipHermesSkills
-                ghostshipHermesWorkstationSeed
                 hermesRelease
                 bitwardenSecretsCli
                 feed
@@ -97,6 +96,7 @@
               ({ ... }: {
                 nixpkgs.config.allowUnfree = true;
               })
+              hermes-agent.nixosModules.default
               ./packages/hermes-image/nixos-module.nix
             ];
           };
@@ -124,8 +124,6 @@
           bws = bitwardenSecretsCli;
           inherit feed;
           gws = googleWorkspaceCli;
-          ghostship-hermes-skills = ghostshipHermesSkills;
-          ghostship-hermes-workstation-seed = ghostshipHermesWorkstationSeed;
 
           ghostship-hermes-runtime = ghostshipHermesRuntime;
           ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;
@@ -166,8 +164,6 @@
             bws
             feed
             gws
-            ghostship-hermes-skills
-            ghostship-hermes-workstation-seed
             ghostship-hermes-runtime
             ghostship-hermes-system
             ghostship-hermes-image;

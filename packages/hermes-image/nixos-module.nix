@@ -1,16 +1,11 @@
 {
-  lib,
-  pkgs,
-  modulesPath,
   config,
+  lib,
+  modulesPath,
+  pkgs,
   ghostshipHermesRuntime,
-  ghostshipHermesSkills,
-  ghostshipHermesWorkstationSeed,
-  hermesRelease,
-  bitwardenSecretsCli,
-  feed,
-  googleWorkspaceCli,
   ghostshipUtilities,
+  hermesRelease,
   ...
 }:
 let
@@ -19,22 +14,51 @@ let
     name = "ghostship-hermes-dashboard";
   };
 
+  certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   runtimeBin = "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime";
 
-  commonService = {
-    serviceConfig = {
-      User = "hermes";
-      Group = "hermes";
-      WorkingDirectory = "/home/hermes";
-      Restart = "on-failure";
-      RestartSec = "2s";
-    };
-    environment = {
-      HOME = "/home/hermes";
-      HERMES_HOME = "/opt/data";
-    };
-    path = config.environment.systemPackages;
+  basePackages = with pkgs; [
+    bashInteractive
+    cacert
+    caddy
+    coreutils
+    curl
+    git
+    jq
+    nix
+    procps
+    python3
+    ttyd
+    util-linux
+    ghostshipHermesRuntime
+  ];
+
+  serviceEnvironment = {
+    HERMES_HOME = "/data/.hermes";
+    MESSAGING_CWD = "/workspace";
+    SSL_CERT_FILE = certificateFile;
+    NIX_SSL_CERT_FILE = certificateFile;
   };
+
+  userServiceEnvironment = serviceEnvironment // {
+    HOME = "/home/hermes";
+  };
+
+  caddyConfig = pkgs.writeText "ghostship-hermes-caddyfile" ''
+    :7681 {
+      root * ${dashboardTree}
+      handle /api/* {
+        reverse_proxy 127.0.0.1:7683
+      }
+      handle /healthz {
+        reverse_proxy 127.0.0.1:7683
+      }
+      handle /terminal* {
+        reverse_proxy 127.0.0.1:7682
+      }
+      file_server
+    }
+  '';
 in
 {
   imports = [
@@ -50,6 +74,7 @@ in
 
   networking.hostName = "ghostship-hermes";
   networking.useDHCP = lib.mkDefault true;
+  networking.firewall.allowedTCPPorts = [ 7681 ];
   system.stateVersion = "25.11";
 
   users.mutableUsers = false;
@@ -69,86 +94,17 @@ in
   services.dbus.enable = true;
   security.sudo.enable = false;
 
-  environment.systemPackages =
-    with pkgs;
-    [
-      bashInteractive
-      bat
-      binutils
-      bubblewrap
-      cacert
-      caddy
-      coreutils
-      curl
-      delta
-      dnsutils
-      entr
-      exiftool
-      fd
-      ffmpeg
-      file
-      findutils
-      fzf
-      gawk
-      gh
-      git
-      git-lfs
-      gnugrep
-      gnused
-      hn-text
-      iproute2
-      iputils
-      jq
-      less
-      lsof
-      man-db
-      man-pages
-      miller
-      nix
-      nodejs_22
-      openssl
-      p7zip
-      procps
-      psmisc
-      ripgrep
-      ripgrep-all
-      rsync
-      sqlite-utils
-      strace
-      shellcheck
-      bats
-      systemd
-      dbus
-      tmux
-      tree
-      ttyd
-      unzip
-      uv
-      visidata
-      wget
-      yq-go
-      yt-dlp
-      zip
-      util-linux
-      codex
-      gemini-cli
-      opencode
-      bitwardenSecretsCli
-      feed
-      googleWorkspaceCli
-      ghostshipHermesRuntime
-    ]
-    ++ ghostshipUtilities;
-
-  environment.variables = {
-    HOME = "/home/hermes";
-    HERMES_HOME = "/opt/data";
-  };
-
+  environment.systemPackages = basePackages ++ ghostshipUtilities;
+  environment.variables = serviceEnvironment;
   environment.shellInit = ''
-    export PATH="$HOME/.local/bin:$PATH"
-    export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    export DBUS_SESSION_BUS_ADDRESS="''${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+    if [ "$(id -u)" = "3000" ]; then
+      export HOME=/home/hermes
+    fi
+    export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:$PATH"
+    export HERMES_HOME=/data/.hermes
+    export MESSAGING_CWD=/workspace
+    export SSL_CERT_FILE=${certificateFile}
+    export NIX_SSL_CERT_FILE=${certificateFile}
   '';
 
   nix.settings = {
@@ -162,10 +118,33 @@ in
     ];
   };
 
+  services.hermes-agent = {
+    enable = true;
+    addToSystemPackages = true;
+    createUser = false;
+    user = "hermes";
+    group = "hermes";
+    stateDir = "/data";
+    workingDirectory = "/workspace";
+    extraArgs = [
+      "run"
+      "--replace"
+    ];
+    environment = {
+      TERMINAL_CWD = "/workspace";
+    };
+    settings = {
+      model.default = "anthropic/claude-sonnet-4";
+      terminal = {
+        backend = "local";
+        cwd = "/workspace";
+        timeout = 180;
+      };
+    };
+    extraPackages = [ pkgs.nix ] ++ ghostshipUtilities;
+  };
+
   systemd.tmpfiles.rules = [
-    "L+ /usr/local/bin/ghostship-hermes-runtime - - - - ${runtimeBin}"
-    "L+ /usr/local/share/ghostship-hermes/skills - - - - ${ghostshipHermesSkills}"
-    "L+ /usr/local/share/ghostship-hermes/workstation-seed - - - - ${ghostshipHermesWorkstationSeed}"
     "L+ /usr/local/share/ghostship-hermes/dashboard - - - - ${dashboardTree}"
   ];
 
@@ -173,172 +152,86 @@ in
     description = "Prepare ghostship-hermes persisted storage";
     wantedBy = [ "multi-user.target" ];
     before = [
-      "ghostship-workstation-bootstrap.service"
-      "user@3000.service"
+      "hermes-agent.service"
+      "ghostship-dashboard-controller.service"
+      "ghostship-caddy.service"
     ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "${runtimeBin} prepare-runtime-storage";
+      ExecStart = "${runtimeBin} prepare-storage";
     };
   };
 
-  systemd.services.ghostship-workstation-bootstrap =
-    commonService
-    // {
-      description = "Bootstrap ghostship-hermes workstation state";
-      wantedBy = [ "multi-user.target" ];
-      wants = [ "network-online.target" ];
-      after = [
-        "ghostship-storage.service"
-        "network-online.target"
-        "dbus.service"
-      ];
-      requires = [ "ghostship-storage.service" ];
-      serviceConfig =
-        commonService.serviceConfig
-        // {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = "${runtimeBin} workstation-bootstrap";
-        };
+  systemd.services.hermes-agent = {
+    after = [ "ghostship-storage.service" ];
+    requires = [ "ghostship-storage.service" ];
+    environment = lib.mkForce (
+      userServiceEnvironment
+      // {
+        HERMES_MANAGED = "true";
+      }
+    );
+    serviceConfig = {
+      User = lib.mkForce "hermes";
+      Group = lib.mkForce "hermes";
+      WorkingDirectory = lib.mkForce "/workspace";
     };
+  };
 
-  systemd.services.ghostship-hermes-user-manager = {
-    description = "Start the hermes systemd user manager";
+  systemd.services.ghostship-dashboard-controller = {
+    description = "ghostship-hermes dashboard controller";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [
+      "ghostship-storage.service"
+      "network-online.target"
+    ];
+    requires = [ "ghostship-storage.service" ];
+    environment = userServiceEnvironment;
+    path = config.environment.systemPackages;
+    serviceConfig = {
+      Type = "simple";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = "/workspace";
+      ExecStart = "${runtimeBin} dashboard-controller";
+      Restart = "always";
+      RestartSec = "2s";
+    };
+  };
+
+  systemd.sockets.nix-daemon = {
+    wantedBy = lib.mkForce [ "multi-user.target" ];
+    after = [ "ghostship-storage.service" ];
+    requires = [ "ghostship-storage.service" ];
+  };
+
+  systemd.services.ghostship-caddy = {
+    description = "ghostship-hermes dashboard";
     wantedBy = [ "multi-user.target" ];
     after = [
-      "ghostship-workstation-bootstrap.service"
-      "user-runtime-dir@3000.service"
-      "linger-users.service"
+      "ghostship-storage.service"
+      "ghostship-dashboard-controller.service"
     ];
     requires = [
-      "ghostship-workstation-bootstrap.service"
-      "user-runtime-dir@3000.service"
+      "ghostship-storage.service"
+      "ghostship-dashboard-controller.service"
     ];
+    environment = userServiceEnvironment;
+    path = config.environment.systemPackages;
     serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      ExecStart = "${config.systemd.package}/bin/systemctl start user@3000.service";
+      Type = "simple";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = "/workspace";
+      ExecStart = "${pkgs.caddy}/bin/caddy run --config ${caddyConfig} --adapter caddyfile";
+      Restart = "always";
+      RestartSec = "2s";
     };
   };
 
-  systemd.services.ghostship-caddy =
-    commonService
-    // {
-      description = "ghostship-hermes Caddy dashboard";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "ghostship-workstation-bootstrap.service" ];
-      requires = [ "ghostship-workstation-bootstrap.service" ];
-      serviceConfig =
-        commonService.serviceConfig
-        // {
-          Type = "simple";
-          ExecStart = "${runtimeBin} caddy-service";
-          Restart = "always";
-        };
-    };
+  system.extraDependencies = basePackages ++ ghostshipUtilities ++ [ config.services.hermes-agent.package ];
 
-  systemd.services.ghostship-profile-reconciler =
-    commonService
-    // {
-      description = "ghostship-hermes profile reconciler";
-      wantedBy = [ "multi-user.target" ];
-      after = [
-        "ghostship-workstation-bootstrap.service"
-        "ghostship-hermes-user-manager.service"
-      ];
-      requires = [
-        "ghostship-workstation-bootstrap.service"
-        "ghostship-hermes-user-manager.service"
-      ];
-      serviceConfig =
-        commonService.serviceConfig
-        // {
-          Type = "simple";
-          ExecStart = "${runtimeBin} profile-reconciler-loop";
-          Restart = "always";
-        };
-    };
-
-  systemd.services.ghostship-app-update =
-    commonService
-    // {
-      description = "ghostship-hermes agent app updater";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "ghostship-workstation-bootstrap.service" ];
-      requires = [ "ghostship-workstation-bootstrap.service" ];
-      serviceConfig =
-        commonService.serviceConfig
-        // {
-          Type = "oneshot";
-          ExecStart = "${runtimeBin} update-apps-once";
-          Restart = "no";
-        };
-    };
-
-  systemd.timers.ghostship-app-update = {
-    description = "Run ghostship-hermes app updates every 6 hours";
-    wantedBy = [ "timers.target" ];
-    timerConfig = {
-      OnBootSec = "20m";
-      OnUnitActiveSec = "6h";
-      RandomizedDelaySec = "15m";
-      Unit = "ghostship-app-update.service";
-    };
-  };
-
-  systemd.services.ghostship-asset-refresh =
-    commonService
-    // {
-      description = "ghostship-hermes asset refresher";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "ghostship-workstation-bootstrap.service" ];
-      requires = [ "ghostship-workstation-bootstrap.service" ];
-      serviceConfig =
-        commonService.serviceConfig
-        // {
-          Type = "oneshot";
-          ExecStart = "${runtimeBin} refresh-assets-once";
-          Restart = "no";
-        };
-    };
-
-  systemd.timers.ghostship-asset-refresh = {
-    description = "Run ghostship-hermes asset refresh every 6 hours";
-    wantedBy = [ "timers.target" ];
-    timerConfig = {
-      OnBootSec = "30m";
-      OnUnitActiveSec = "6h";
-      RandomizedDelaySec = "20m";
-      Unit = "ghostship-asset-refresh.service";
-    };
-  };
-
-  systemd.services.ghostship-opencode-model-refresh =
-    commonService
-    // {
-      description = "ghostship-hermes opencode model refresher";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "ghostship-workstation-bootstrap.service" ];
-      requires = [ "ghostship-workstation-bootstrap.service" ];
-      serviceConfig =
-        commonService.serviceConfig
-        // {
-          Type = "oneshot";
-          ExecStart = "${runtimeBin} refresh-opencode-models-once";
-          Restart = "no";
-        };
-    };
-
-  systemd.timers.ghostship-opencode-model-refresh = {
-    description = "Run ghostship-hermes opencode model refresh daily";
-    wantedBy = [ "timers.target" ];
-    timerConfig = {
-      OnBootSec = "45m";
-      OnUnitActiveSec = "1d";
-      RandomizedDelaySec = "30m";
-      Unit = "ghostship-opencode-model-refresh.service";
-    };
-  };
+  environment.etc."ghostship-hermes-release".text = hermesRelease + "\n";
 }

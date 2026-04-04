@@ -1,95 +1,73 @@
-const profilesRoot = document.getElementById("profiles");
-const activeName = document.getElementById("active-name");
-const popoutLink = document.getElementById("popout-link");
-const profileFrame = document.getElementById("profile-frame");
+const openButton = document.getElementById("open-terminal");
+const closeButton = document.getElementById("close-terminal");
+const statusNode = document.getElementById("terminal-status");
+const workspaceNode = document.getElementById("terminal-workspace");
+const routeNode = document.getElementById("terminal-route");
+const frame = document.getElementById("terminal-frame");
 
-const state = {
-  profiles: [],
-  activeSlug: null,
-};
+async function requestJson(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
 
-function currentSlugFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("profile");
-}
-
-function pickDefaultProfile(profiles) {
-  const requested = currentSlugFromUrl();
-  if (requested && profiles.some((profile) => profile.slug === requested)) {
-    return requested;
-  }
-  const defaultProfile = profiles.find((profile) => profile.is_default);
-  return defaultProfile ? defaultProfile.slug : profiles[0]?.slug ?? "default";
-}
-
-function syncUrl(slug) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("profile", slug);
-  window.history.replaceState({}, "", url);
-}
-
-function renderProfiles() {
-  profilesRoot.innerHTML = "";
-  for (const profile of state.profiles) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "profile-card";
-    button.dataset.profile = profile.slug;
-    if (profile.slug === state.activeSlug) {
-      button.classList.add("active");
-    }
-
-    const gatewayText = profile.gateway_expected ? "Gateway On" : "Gateway Off";
-    button.innerHTML = `
-      <span class="profile-title">${profile.name}</span>
-      <span class="profile-meta">${profile.is_default ? "Default profile" : "Named profile"}</span>
-      <span class="status ${profile.gateway_expected ? "status-on" : "status-off"}">${gatewayText}</span>
-    `;
-
-    button.addEventListener("click", () => activateProfile(profile.slug));
-    profilesRoot.appendChild(button);
-  }
-}
-
-function activateProfile(slug, options = {}) {
-  const { reloadFrame = true } = options;
-  const profile = state.profiles.find((entry) => entry.slug === slug);
-  if (!profile) {
-    return;
-  }
-
-  state.activeSlug = slug;
-  activeName.textContent = profile.name;
-  if (reloadFrame || profileFrame.getAttribute("src") !== profile.terminal_path) {
-    profileFrame.src = profile.terminal_path;
-  }
-  popoutLink.href = profile.terminal_path;
-  syncUrl(slug);
-  renderProfiles();
-}
-
-async function loadProfiles() {
-  const response = await fetch("/api/profiles.json", { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`profiles request failed: ${response.status}`);
-  }
   const payload = await response.json();
-  state.profiles = payload.profiles ?? [];
-  if (!state.activeSlug || !state.profiles.some((profile) => profile.slug === state.activeSlug)) {
-    state.activeSlug = pickDefaultProfile(state.profiles);
+  if (!response.ok) {
+    throw new Error(payload.error || `request failed: ${response.status}`);
   }
-  activateProfile(state.activeSlug, { reloadFrame: false });
+
+  return payload;
 }
 
-async function refreshProfiles() {
+function renderStatus(payload) {
+  const running = Boolean(payload.running);
+  const terminalUrl = payload.terminal_url || "/terminal";
+
+  statusNode.textContent = running ? "Running" : "Stopped";
+  workspaceNode.textContent = payload.workspace || "/workspace";
+  routeNode.textContent = terminalUrl;
+  openButton.disabled = running;
+  closeButton.disabled = !running;
+
+  if (running) {
+    if (frame.dataset.src !== terminalUrl) {
+      frame.src = terminalUrl;
+      frame.dataset.src = terminalUrl;
+    }
+  } else {
+    frame.removeAttribute("src");
+    frame.dataset.src = "";
+  }
+}
+
+async function refreshStatus() {
   try {
-    await loadProfiles();
+    const payload = await requestJson("/api/status");
+    renderStatus(payload);
   } catch (error) {
-    console.error(error);
+    statusNode.textContent = error.message;
   }
 }
 
-window.addEventListener("DOMContentLoaded", async () => {
-  await refreshProfiles();
-  window.setInterval(refreshProfiles, 5000);
+openButton.addEventListener("click", async () => {
+  statusNode.textContent = "Starting";
+  try {
+    const payload = await requestJson("/api/terminal/open", { method: "POST" });
+    renderStatus(payload);
+  } catch (error) {
+    statusNode.textContent = error.message;
+  }
 });
+
+closeButton.addEventListener("click", async () => {
+  statusNode.textContent = "Stopping";
+  try {
+    const payload = await requestJson("/api/terminal/close", { method: "POST" });
+    renderStatus(payload);
+  } catch (error) {
+    statusNode.textContent = error.message;
+  }
+});
+
+refreshStatus();
+setInterval(refreshStatus, 5000);
