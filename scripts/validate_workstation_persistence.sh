@@ -74,7 +74,7 @@ fi
 
 image_ref="ghostship-hermes-validate:$(date +%s)"
 tmp_root="$(mktemp -d)"
-data_dir="$tmp_root/data"
+home_dir="$tmp_root/home"
 workspace_dir="$tmp_root/workspace"
 container_one="ghostship-validate-$$-1"
 container_two="ghostship-validate-$$-2"
@@ -106,23 +106,6 @@ ghostship_cmds=(
 
 ghostship_cmds_joined="$(printf '%q ' "${ghostship_cmds[@]}")"
 
-persisted_home_dirs=(
-  .hermes
-  .config
-  .local
-  .cache
-  .agent-browser
-  .agents
-  .codex
-  .gemini
-  .copilot
-  .npm
-  .bun
-  .ssh
-  .gnupg
-  .pki
-)
-
 cleanup() {
   docker rm -f "$container_one" "$container_two" >/dev/null 2>&1 || true
   docker run --rm -v "$tmp_root:/cleanup" alpine sh -lc "
@@ -151,6 +134,21 @@ wait_for_http() {
   return 1
 }
 
+assert_http_contains() {
+  local url="$1"
+  local pattern="$2"
+  local body
+
+  body="$(curl -fsS "$url")"
+  grep -q "$pattern" <<<"$body"
+}
+
+assert_file_contains() {
+  local file="$1"
+  local pattern="$2"
+  grep -q "$pattern" "$file"
+}
+
 run_in_container() {
   local container_name="$1"
   shift
@@ -168,7 +166,6 @@ wait_for_container_ready() {
     systemctl is-active ghostship-storage.service >/dev/null &&
     systemctl is-active hermes-agent.service >/dev/null &&
     systemctl is-active ghostship-dashboard-controller.service >/dev/null &&
-    systemctl is-active ghostship-caddy.service >/dev/null &&
     curl -fsS http://127.0.0.1:7681/api/status >/dev/null
   '; do
     tries=$((tries + 1))
@@ -176,7 +173,7 @@ wait_for_container_ready() {
       echo "container $container_name did not become ready" >&2
       docker logs "$container_name" >&2 || true
       run_in_container "$container_name" '
-        systemctl --no-pager --full status ghostship-storage.service hermes-agent.service ghostship-dashboard-controller.service ghostship-caddy.service || true
+        systemctl --no-pager --full status ghostship-storage.service hermes-agent.service ghostship-dashboard-controller.service || true
       ' >&2 || true
       exit 1
     fi
@@ -190,8 +187,8 @@ run_as_hermes() {
   docker exec \
     -u 3000:3000 \
     -e HOME=/home/hermes \
-    -e HERMES_HOME=/data/.hermes \
-    -e MESSAGING_CWD=/workspace \
+    -e HERMES_HOME=/home/hermes/.hermes \
+    -e TERMINAL_CWD=/home/hermes \
     -e PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin \
     "$container_name" \
     "$container_shell" -lc "$*"
@@ -212,7 +209,7 @@ wait_for_hermes_condition() {
   done
 }
 
-mkdir -p "$data_dir" "$workspace_dir"
+mkdir -p "$home_dir" "$workspace_dir"
 xz -dc "$image_tar" | docker import - "$image_ref" >/dev/null
 
 docker run -d \
@@ -223,7 +220,7 @@ docker run -d \
   --tmpfs /run/lock \
   --tmpfs /tmp \
   -e container=docker \
-  -v "$data_dir:/data" \
+  -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
   -v "$nix_volume_root:/nix" \
@@ -233,16 +230,18 @@ docker run -d \
 wait_for_container_ready "$container_one"
 wait_for_http "http://127.0.0.1:7681/"
 wait_for_http "http://127.0.0.1:7681/api/status"
+assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "default"'
+assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "test"'
+assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "coder"'
 
 run_in_container "$container_one" 'id hermes | grep -F "uid=3000(hermes) gid=3000(hermes)" >/dev/null'
+run_in_container "$container_one" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
+run_in_container "$container_one" 'systemctl cat hermes-agent.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
+run_in_container "$container_one" 'systemctl cat ghostship-hermes-bootstrap.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
 run_as_hermes "$container_one" 'test "$HOME" = "/home/hermes"'
-run_as_hermes "$container_one" 'test "$HERMES_HOME" = "/data/.hermes"'
+run_as_hermes "$container_one" 'test "$HERMES_HOME" = "/home/hermes/.hermes"'
 run_as_hermes "$container_one" 'test "$(id -u)" = "3000" && test "$(id -g)" = "3000"'
-run_in_container "$container_one" 'test -d /data/.hermes && test -d /data/home && test -d /workspace'
-
-for dir in "${persisted_home_dirs[@]}"; do
-  run_in_container "$container_one" "test \"\$(readlink -f /home/hermes/$dir)\" = \"/data/home/$dir\""
-done
+run_in_container "$container_one" 'test -d /home/hermes/.hermes && test -d /workspace'
 
 run_in_container "$container_one" '
   for cmd in codex gemini opencode openspec skills gws bws feed; do
@@ -254,10 +253,11 @@ run_in_container "$container_one" '
 '
 
 run_in_container "$container_one" "for cmd in $ghostship_cmds_joined; do command -v \"\$cmd\" >/dev/null; done"
+run_in_container "$container_one" 'command -v tirith >/dev/null'
 
 run_in_container "$container_one" '
   for skill in bitwarden changedetection current-environment feed hermes-nix; do
-    if [ -d "/data/.hermes/skills/$skill" ]; then
+    if [ -d "/home/hermes/.hermes/skills/$skill" ]; then
       echo "unexpected custom skill seeded: $skill" >&2
       exit 1
     fi
@@ -265,7 +265,11 @@ run_in_container "$container_one" '
 '
 
 run_as_hermes "$container_one" 'hermes profile create coder >/tmp/profile-create.log || true'
-run_as_hermes "$container_one" 'test -d /data/home/.hermes/profiles/coder'
+run_as_hermes "$container_one" 'hermes profile show test >/dev/null'
+run_as_hermes "$container_one" 'hermes profile show coder >/dev/null'
+run_as_hermes "$container_one" 'test -d /home/hermes/.hermes/profiles/coder'
+run_as_hermes "$container_one" 'test -d /home/hermes/.hermes/profiles/test'
+run_as_hermes "$container_one" 'hermes config show | grep -F "/home/hermes" >/dev/null'
 
 run_as_hermes "$container_one" '
   mkdir -p \
@@ -317,7 +321,6 @@ run_as_hermes "$container_one" 'nix profile install nixpkgs#opencode >/tmp/nix-o
 wait_for_hermes_condition "$container_one" 'command -v opencode >/dev/null'
 run_as_hermes "$container_one" '
   opencode --version >/tmp/opencode-version.log 2>&1 || true
-  timeout 5 opencode >/tmp/opencode-run.log 2>&1 || true
   mkdir -p \
     ~/.config/opencode \
     ~/.local/share/opencode \
@@ -330,10 +333,19 @@ run_as_hermes "$container_one" '
 '
 
 curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-terminal-open.json
-grep -q '"running": true' /tmp/ghostship-terminal-open.json
-wait_for_http "http://127.0.0.1:7681/terminal/"
-curl -fsS -X POST http://127.0.0.1:7681/api/terminal/close >/tmp/ghostship-terminal-close.json
-grep -q '"running": false' /tmp/ghostship-terminal-close.json
+terminal_one="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open.json)"
+terminal_one_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_one"'") | .terminal_url' /tmp/ghostship-terminal-open.json)"
+wait_for_http "http://127.0.0.1:7681$terminal_one_url"
+
+curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-terminal-open-2.json
+terminal_two="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open-2.json)"
+terminal_two_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_two"'") | .terminal_url' /tmp/ghostship-terminal-open-2.json)"
+wait_for_http "http://127.0.0.1:7681$terminal_two_url"
+
+curl -fsS -X POST "http://127.0.0.1:7681/api/terminals/$terminal_two/close" >/tmp/ghostship-terminal-close-2.json
+assert_file_contains /tmp/ghostship-terminal-close-2.json '"id": "'"$terminal_one"'"'
+curl -fsS -X POST "http://127.0.0.1:7681/api/terminals/$terminal_one/close" >/tmp/ghostship-terminal-close.json
+assert_file_contains /tmp/ghostship-terminal-close.json '"sessions": \[\]'
 
 docker rm -f "$container_one" >/dev/null
 
@@ -345,7 +357,7 @@ docker run -d \
   --tmpfs /run/lock \
   --tmpfs /tmp \
   -e container=docker \
-  -v "$data_dir:/data" \
+  -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
   -v "$nix_volume_root:/nix" \
@@ -355,6 +367,9 @@ docker run -d \
 wait_for_container_ready "$container_two"
 wait_for_http "http://127.0.0.1:7681/"
 wait_for_http "http://127.0.0.1:7681/api/status"
+assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "default"'
+assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "test"'
+assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "coder"'
 
 run_as_hermes "$container_two" 'grep -Fx "hermes-home" ~/.hermes/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/ghostship-test/persist.txt >/dev/null'
@@ -371,9 +386,13 @@ run_as_hermes "$container_two" 'grep -Fx "ssh" ~/.ssh/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "gnupg" ~/.gnupg/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "pki" ~/.pki/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "workspace" /workspace/work-item.txt >/dev/null'
-run_as_hermes "$container_two" 'test -d /data/home/.hermes/profiles/coder'
+run_as_hermes "$container_two" 'hermes profile show test >/dev/null'
+run_as_hermes "$container_two" 'test -d /home/hermes/.hermes/profiles/coder'
+run_as_hermes "$container_two" 'test -d /home/hermes/.hermes/profiles/test'
 run_as_hermes "$container_two" 'hermes profile list | grep -F "coder" >/dev/null'
+run_as_hermes "$container_two" 'hermes profile list | grep -F "test" >/dev/null'
 run_as_hermes "$container_two" 'hello >/tmp/hello.out && grep -F "Hello, world!" /tmp/hello.out >/dev/null'
+run_as_hermes "$container_two" 'command -v tirith >/dev/null'
 run_as_hermes "$container_two" 'command -v opencode >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/opencode/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "share" ~/.local/share/opencode/persist.txt >/dev/null'
@@ -383,10 +402,11 @@ run_as_hermes "$container_two" '
   node -p "require(process.env.HOME + \"/.local/node_modules/cowsay/package.json\").version" | grep -Fx "1.6.0" >/dev/null
 '
 
-curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-terminal-open-2.json
-grep -q '"running": true' /tmp/ghostship-terminal-open-2.json
-wait_for_http "http://127.0.0.1:7681/terminal/"
-curl -fsS -X POST http://127.0.0.1:7681/api/terminal/close >/tmp/ghostship-terminal-close-2.json
-grep -q '"running": false' /tmp/ghostship-terminal-close-2.json
+curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-terminal-open-3.json
+terminal_three="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open-3.json)"
+terminal_three_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_three"'") | .terminal_url' /tmp/ghostship-terminal-open-3.json)"
+wait_for_http "http://127.0.0.1:7681$terminal_three_url"
+curl -fsS -X POST "http://127.0.0.1:7681/api/terminals/$terminal_three/close" >/tmp/ghostship-terminal-close-3.json
+assert_file_contains /tmp/ghostship-terminal-close-3.json '"sessions": \[\]'
 
 printf 'validated ghostship-hermes image persistence with %s\n' "$image_ref"

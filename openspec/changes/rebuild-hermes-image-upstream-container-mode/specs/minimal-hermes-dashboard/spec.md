@@ -14,11 +14,15 @@ Browser terminal sessions SHALL be created only when requested, SHALL support ex
 #### Scenario: Opening a terminal creates an ephemeral session
 - **WHEN** an operator requests a browser terminal from the dashboard
 - **THEN** the runtime launches or proxies a `ttyd` session for that request
+- **AND** the new terminal is represented as a focused tab in the dashboard
+- **AND** the session starts in `/home/hermes`
 - **AND** the session is not represented as a persistent systemd service that remains running after the browser session ends
 
 #### Scenario: Closing a terminal tears down the ephemeral session
 - **WHEN** an operator closes a browser terminal from the dashboard
 - **THEN** the runtime tears down the corresponding on-demand `ttyd` session
+- **AND** the closed session's tab is removed from the dashboard
+- **AND** the dashboard returns to a blank home state when no terminals remain
 - **AND** no background terminal service remains running for that closed session
 
 ### Requirement: Dashboard runtime SHALL NOT depend on profile reconciliation services

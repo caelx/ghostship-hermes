@@ -7,7 +7,7 @@ release="$(tr -d '\n' < "$repo_root/packages/hermes-image/hermes-release.txt")"
 image_tag="${2:-ghostship-hermes:$release}"
 container_name="ghostship-hermes-dashboard-test"
 tmp_root="$(mktemp -d)"
-data_dir="$tmp_root/data"
+home_dir="$tmp_root/home"
 workspace_dir="$tmp_root/workspace"
 container_shell="/bin/sh"
 container_path="/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin"
@@ -72,7 +72,7 @@ if [ "${SKIP_DOCKER_LOAD:-0}" != "1" ]; then
   xz -dc "$image_tar" | docker import - "$image_tag" >/dev/null
 fi
 
-mkdir -p "$data_dir" "$workspace_dir"
+mkdir -p "$home_dir" "$workspace_dir"
 docker rm -f "$container_name" >/dev/null 2>&1 || true
 
 docker run -d \
@@ -84,7 +84,7 @@ docker run -d \
   --tmpfs /tmp \
   -e container=docker \
   -p 7681:7681 \
-  -v "$data_dir:/data" \
+  -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
   -v "$nix_volume_root:/nix" \
@@ -95,20 +95,40 @@ wait_for_http "http://127.0.0.1:7681/api/status"
 
 assert_http_contains "http://127.0.0.1:7681/" 'data-dashboard="ghostship-hermes-dashboard"'
 assert_http_contains "http://127.0.0.1:7681/" "Open Terminal"
-assert_http_contains "http://127.0.0.1:7681/api/status" '"running": false'
+assert_http_contains "http://127.0.0.1:7681/" "Managed service state stays in"
+assert_http_contains "http://127.0.0.1:7681/api/status" '"sessions": \[\]'
+assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "default"'
+assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "test"'
+assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "coder"'
 
-curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-hermes-terminal-open.json
-grep -q '"running": true' /tmp/ghostship-hermes-terminal-open.json
+curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-hermes-terminal-open-1.json
+terminal_one="$(jq -r '.active_terminal_id' /tmp/ghostship-hermes-terminal-open-1.json)"
+terminal_one_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_one"'") | .terminal_url' /tmp/ghostship-hermes-terminal-open-1.json)"
+grep -q '"active_terminal_id"' /tmp/ghostship-hermes-terminal-open-1.json
+wait_for_http "http://127.0.0.1:7681$terminal_one_url"
+assert_http_contains "http://127.0.0.1:7681$terminal_one_url" "ttyd"
 
-wait_for_http "http://127.0.0.1:7681/terminal/"
-assert_http_contains "http://127.0.0.1:7681/terminal/" "ttyd"
-assert_http_contains "http://127.0.0.1:7681/api/status" '"running": true'
+curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-hermes-terminal-open-2.json
+terminal_two="$(jq -r '.active_terminal_id' /tmp/ghostship-hermes-terminal-open-2.json)"
+terminal_two_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_two"'") | .terminal_url' /tmp/ghostship-hermes-terminal-open-2.json)"
+wait_for_http "http://127.0.0.1:7681$terminal_two_url"
+assert_http_contains "http://127.0.0.1:7681$terminal_two_url" "ttyd"
+assert_http_contains "http://127.0.0.1:7681/api/status" "\"id\": \"$terminal_one\""
+assert_http_contains "http://127.0.0.1:7681/api/status" "\"id\": \"$terminal_two\""
 
-curl -fsS -X POST http://127.0.0.1:7681/api/terminal/close >/tmp/ghostship-hermes-terminal-close.json
-grep -q '"running": false' /tmp/ghostship-hermes-terminal-close.json
-assert_http_contains "http://127.0.0.1:7681/api/status" '"running": false'
+curl -fsS -X POST "http://127.0.0.1:7681/api/terminals/$terminal_two/close" >/tmp/ghostship-hermes-terminal-close-2.json
+assert_http_contains "http://127.0.0.1:7681/api/status" "\"id\": \"$terminal_one\""
+
+curl -fsS -X POST "http://127.0.0.1:7681/api/terminals/$terminal_one/close" >/tmp/ghostship-hermes-terminal-close-1.json
+assert_http_contains "http://127.0.0.1:7681/api/status" '"sessions": \[\]'
 
 run_in_container "$container_name" 'id hermes | grep -F "uid=3000" >/dev/null'
 run_in_container "$container_name" 'systemctl is-active hermes-agent.service >/dev/null'
+run_in_container "$container_name" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
+run_in_container "$container_name" 'su - hermes -c "hermes profile show test >/dev/null"'
+run_in_container "$container_name" 'su - hermes -c "hermes profile show coder >/dev/null"'
+run_in_container "$container_name" 'su - hermes -c "test -d /home/hermes/.hermes/profiles/test && test -d /home/hermes/.hermes/profiles/coder"'
+run_in_container "$container_name" 'su - hermes -c "hermes config show 2>/dev/null | grep -F \"/home/hermes\" >/dev/null"'
 run_in_container "$container_name" 'systemctl is-active ghostship-dashboard-controller.service >/dev/null'
-run_in_container "$container_name" 'systemctl is-active ghostship-caddy.service >/dev/null'
+run_in_container "$container_name" 'systemctl cat hermes-agent.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
+run_in_container "$container_name" 'systemctl cat ghostship-hermes-bootstrap.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'

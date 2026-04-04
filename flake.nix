@@ -4,7 +4,6 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     hermes-agent.url = "github:NousResearch/hermes-agent/v2026.4.3";
-    googleworkspace-cli.url = "github:googleworkspace/cli/v0.22.5";
   };
 
   outputs =
@@ -12,7 +11,6 @@
       self,
       nixpkgs,
       hermes-agent,
-      googleworkspace-cli,
     }:
     let
       lib = nixpkgs.lib;
@@ -51,9 +49,6 @@
           ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipChangedetection = pkgs.callPackage ./packages/changedetection-cli/package.nix { inherit ghostshipCliContract; };
-          bitwardenSecretsCli = pkgs.bws;
-          feed = pkgs.callPackage ./packages/feed/package.nix { };
-          googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
           );
@@ -86,9 +81,6 @@
               inherit
                 ghostshipHermesRuntime
                 hermesRelease
-                bitwardenSecretsCli
-                feed
-                googleWorkspaceCli
                 ;
               ghostshipUtilities = allUtilities;
             };
@@ -121,10 +113,6 @@
           ghostship-pricebuddy = ghostshipPricebuddy;
           ghostship-rss-bridge = ghostshipRssBridge;
           ghostship-changedetection = ghostshipChangedetection;
-          bws = bitwardenSecretsCli;
-          inherit feed;
-          gws = googleWorkspaceCli;
-
           ghostship-hermes-runtime = ghostshipHermesRuntime;
           ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;
 
@@ -161,9 +149,6 @@
             ghostship-pricebuddy
             ghostship-rss-bridge
             ghostship-changedetection
-            bws
-            feed
-            gws
             ghostship-hermes-runtime
             ghostship-hermes-system
             ghostship-hermes-image;
@@ -177,9 +162,6 @@
             inherit system;
             config.allowUnfree = true;
           };
-          bitwardenSecretsCli = pkgs.bws;
-          feed = pkgs.callPackage ./packages/feed/package.nix { };
-          googleWorkspaceCli = googleworkspace-cli.packages.${system}.default;
           pythonEnv = pkgs.python311.withPackages (
             ps: with ps; [
               hatchling
@@ -199,9 +181,6 @@
               fd
               gh
               git
-              bitwardenSecretsCli
-              feed
-              googleWorkspaceCli
               jq
               nodejs_22
               pythonEnv

@@ -10,32 +10,62 @@
 }:
 let
   dashboardTree = builtins.path {
-    path = ./rootfs/share/ghostship-hermes/dashboard;
+    path = ./dashboard;
     name = "ghostship-hermes-dashboard";
   };
 
+  bootstrapProfiles = [
+    "test"
+    "coder"
+  ];
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   runtimeBin = "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime";
 
-  basePackages = with pkgs; [
+  runtimePackages = with pkgs; [
     bashInteractive
     cacert
-    caddy
     coreutils
     curl
+    findutils
     git
+    gnugrep
+    gnused
     jq
     nix
     procps
     python3
+    tirith
     ttyd
     util-linux
     ghostshipHermesRuntime
   ];
 
+  servicePath = runtimePackages ++ ghostshipUtilities ++ [ config.services.hermes-agent.package ];
+  userCommandEnv = pkgs.buildEnv {
+    name = "ghostship-hermes-user-env";
+    paths = servicePath;
+  };
+  bootstrapHermesScript = pkgs.writeShellScript "ghostship-hermes-bootstrap.sh" ''
+    set -euo pipefail
+
+    ${lib.concatMapStringsSep "\n" (profile: ''
+      if [ ! -d "/home/hermes/.hermes/profiles/${profile}" ]; then
+        hermes profile create ${lib.escapeShellArg profile} --clone >/dev/null 2>&1 \
+          || hermes profile create ${lib.escapeShellArg profile} >/dev/null 2>&1 \
+          || true
+      fi
+    '') bootstrapProfiles}
+
+    hermes config path >/dev/null 2>&1 || true
+    hermes config env-path >/dev/null 2>&1 || true
+  '';
+
   serviceEnvironment = {
-    HERMES_HOME = "/data/.hermes";
-    MESSAGING_CWD = "/workspace";
+    HERMES_HOME = "/home/hermes/.hermes";
+    TERMINAL_CWD = "/home/hermes";
+    GHOSTSHIP_TERMINAL_CWD = "/home/hermes";
+    GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
+    GHOSTSHIP_DASHBOARD_ROOT = dashboardTree;
     SSL_CERT_FILE = certificateFile;
     NIX_SSL_CERT_FILE = certificateFile;
   };
@@ -44,21 +74,6 @@ let
     HOME = "/home/hermes";
   };
 
-  caddyConfig = pkgs.writeText "ghostship-hermes-caddyfile" ''
-    :7681 {
-      root * ${dashboardTree}
-      handle /api/* {
-        reverse_proxy 127.0.0.1:7683
-      }
-      handle /healthz {
-        reverse_proxy 127.0.0.1:7683
-      }
-      handle /terminal* {
-        reverse_proxy 127.0.0.1:7682
-      }
-      file_server
-    }
-  '';
 in
 {
   imports = [
@@ -94,15 +109,14 @@ in
   services.dbus.enable = true;
   security.sudo.enable = false;
 
-  environment.systemPackages = basePackages ++ ghostshipUtilities;
   environment.variables = serviceEnvironment;
   environment.shellInit = ''
     if [ "$(id -u)" = "3000" ]; then
       export HOME=/home/hermes
     fi
-    export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:$PATH"
-    export HERMES_HOME=/data/.hermes
-    export MESSAGING_CWD=/workspace
+    export PATH="${userCommandEnv}/bin:$HOME/.local/bin:$HOME/.nix-profile/bin:$PATH"
+    export HERMES_HOME=/home/hermes/.hermes
+    export TERMINAL_CWD=/home/hermes
     export SSL_CERT_FILE=${certificateFile}
     export NIX_SSL_CERT_FILE=${certificateFile}
   '';
@@ -120,33 +134,32 @@ in
 
   services.hermes-agent = {
     enable = true;
-    addToSystemPackages = true;
+    addToSystemPackages = false;
     createUser = false;
     user = "hermes";
     group = "hermes";
-    stateDir = "/data";
-    workingDirectory = "/workspace";
+    stateDir = "/home/hermes";
+    workingDirectory = "/home/hermes";
     extraArgs = [
       "run"
       "--replace"
     ];
     environment = {
-      TERMINAL_CWD = "/workspace";
+      TERMINAL_CWD = "/home/hermes";
     };
     settings = {
+      display.personality = "kawaii";
       model.default = "anthropic/claude-sonnet-4";
       terminal = {
         backend = "local";
-        cwd = "/workspace";
+        cwd = "/home/hermes";
         timeout = 180;
       };
     };
     extraPackages = [ pkgs.nix ] ++ ghostshipUtilities;
   };
 
-  systemd.tmpfiles.rules = [
-    "L+ /usr/local/share/ghostship-hermes/dashboard - - - - ${dashboardTree}"
-  ];
+  users.users.hermes.packages = [ userCommandEnv ];
 
   systemd.services.ghostship-storage = {
     description = "Prepare ghostship-hermes persisted storage";
@@ -154,7 +167,6 @@ in
     before = [
       "hermes-agent.service"
       "ghostship-dashboard-controller.service"
-      "ghostship-caddy.service"
     ];
     serviceConfig = {
       Type = "oneshot";
@@ -175,7 +187,29 @@ in
     serviceConfig = {
       User = lib.mkForce "hermes";
       Group = lib.mkForce "hermes";
-      WorkingDirectory = lib.mkForce "/workspace";
+      WorkingDirectory = lib.mkForce "/home/hermes";
+    };
+  };
+
+  systemd.services.ghostship-hermes-bootstrap = {
+    description = "Bootstrap ghostship-hermes Hermes profiles";
+    wantedBy = [ "multi-user.target" ];
+    after = [
+      "ghostship-storage.service"
+      "hermes-agent.service"
+    ];
+    requires = [
+      "ghostship-storage.service"
+      "hermes-agent.service"
+    ];
+    environment = userServiceEnvironment;
+    path = servicePath;
+    serviceConfig = {
+      Type = "oneshot";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = "/home/hermes";
+      ExecStart = bootstrapHermesScript;
     };
   };
 
@@ -185,16 +219,20 @@ in
     wants = [ "network-online.target" ];
     after = [
       "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
       "network-online.target"
     ];
-    requires = [ "ghostship-storage.service" ];
+    requires = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+    ];
     environment = userServiceEnvironment;
-    path = config.environment.systemPackages;
+    path = servicePath;
     serviceConfig = {
       Type = "simple";
       User = "hermes";
       Group = "hermes";
-      WorkingDirectory = "/workspace";
+      WorkingDirectory = "/home/hermes";
       ExecStart = "${runtimeBin} dashboard-controller";
       Restart = "always";
       RestartSec = "2s";
@@ -207,31 +245,7 @@ in
     requires = [ "ghostship-storage.service" ];
   };
 
-  systemd.services.ghostship-caddy = {
-    description = "ghostship-hermes dashboard";
-    wantedBy = [ "multi-user.target" ];
-    after = [
-      "ghostship-storage.service"
-      "ghostship-dashboard-controller.service"
-    ];
-    requires = [
-      "ghostship-storage.service"
-      "ghostship-dashboard-controller.service"
-    ];
-    environment = userServiceEnvironment;
-    path = config.environment.systemPackages;
-    serviceConfig = {
-      Type = "simple";
-      User = "hermes";
-      Group = "hermes";
-      WorkingDirectory = "/workspace";
-      ExecStart = "${pkgs.caddy}/bin/caddy run --config ${caddyConfig} --adapter caddyfile";
-      Restart = "always";
-      RestartSec = "2s";
-    };
-  };
-
-  system.extraDependencies = basePackages ++ ghostshipUtilities ++ [ config.services.hermes-agent.package ];
+  system.extraDependencies = servicePath ++ [ userCommandEnv ];
 
   environment.etc."ghostship-hermes-release".text = hermesRelease + "\n";
 }
