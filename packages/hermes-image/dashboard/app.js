@@ -10,6 +10,7 @@ const managedHermesHome = document.getElementById("managed-hermes-home");
 const popoutLink = document.getElementById("popout-link");
 const frame = document.getElementById("terminal-frame");
 const profileList = document.getElementById("profile-list");
+const terminalLoading = document.getElementById("terminal-loading");
 
 const state = {
   sessions: [],
@@ -108,11 +109,19 @@ function renderStage() {
     frame.dataset.src = "";
     activeLabel.textContent = "Terminal";
     popoutLink.href = "#";
+    terminalLoading.classList.add("is-hidden");
     return;
   }
 
   activeLabel.textContent = session.label;
   popoutLink.href = session.terminal_url;
+  terminalLoading.classList.toggle("is-hidden", Boolean(session.ready));
+  if (!session.ready) {
+    frame.removeAttribute("src");
+    frame.dataset.src = "";
+    return;
+  }
+
   if (frame.dataset.src !== session.terminal_url) {
     frame.src = session.terminal_url;
     frame.dataset.src = session.terminal_url;
@@ -175,5 +184,5 @@ closeButton.addEventListener("click", async () => {
 
 window.addEventListener("DOMContentLoaded", async () => {
   await refreshStatus();
-  window.setInterval(refreshStatus, 4000);
+  window.setInterval(refreshStatus, 1000);
 });

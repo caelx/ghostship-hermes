@@ -15,7 +15,9 @@ Browser terminal sessions SHALL be created only when requested, SHALL support ex
 - **WHEN** an operator requests a browser terminal from the dashboard
 - **THEN** the runtime launches or proxies a `ttyd` session for that request
 - **AND** the new terminal is represented as a focused tab in the dashboard
+- **AND** the focused tab appears immediately even if the `ttyd` process is still starting
 - **AND** the session starts in `/home/hermes`
+- **AND** the tab label reflects the shell cwd while idle and the foreground command name while work is running
 - **AND** the session is not represented as a persistent systemd service that remains running after the browser session ends
 
 #### Scenario: Closing a terminal tears down the ephemeral session

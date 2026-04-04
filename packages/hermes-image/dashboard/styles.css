@@ -431,11 +431,42 @@ dd {
 
 .terminal-stage {
   padding: 1rem;
+  display: grid;
+  grid-template-rows: auto 1fr;
 }
 
 .terminal-header {
   position: relative;
   z-index: 1;
+}
+
+.terminal-loading {
+  position: absolute;
+  inset: 6.4rem 1rem 1rem;
+  display: grid;
+  align-content: center;
+  gap: 0.55rem;
+  padding: 1.4rem;
+  border-radius: 1.1rem;
+  border: 1px dashed var(--line-strong);
+  background:
+    linear-gradient(135deg, rgba(240, 138, 36, 0.12), rgba(31, 107, 117, 0.08)),
+    rgba(255, 252, 247, 0.88);
+  z-index: 2;
+}
+
+.terminal-loading strong {
+  font-size: 1.05rem;
+}
+
+.terminal-loading span {
+  color: var(--muted);
+  line-height: 1.55;
+  max-width: 34rem;
+}
+
+.terminal-loading.is-hidden {
+  display: none;
 }
 
 .popout-link {

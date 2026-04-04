@@ -25,9 +25,9 @@
 - [x] 4.3 Run the full persistence test against reused `/home/hermes`, `/workspace`, and `/nix`.
 - [x] 4.4 Verify `nix profile install` persistence.
 - [x] 4.5 Verify later-installed tool state persistence.
-- [ ] 4.6 Leave a final container running for manual dashboard inspection.
+- [x] 4.6 Leave a final container running for manual dashboard inspection.
 
 ## 5. Cleanup
 
 - [x] 5.1 Update README, CHANGELOG, AGENTS, and the active OpenSpec docs.
-- [ ] 5.2 Aggressively prune stale Docker images, containers, build artifacts, and unused volumes, leaving at most one retained copy of each needed image.
+- [x] 5.2 Aggressively prune stale Docker images, containers, build artifacts, and unused volumes, leaving at most one retained copy of each needed image.

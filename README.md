@@ -17,7 +17,7 @@ Canonical image references:
 - `/nix` should be persisted when you want user-level `nix profile install`, `nix shell`, and related outputs to survive container replacement.
 - The runtime user is `hermes` at `3000:3000`.
 - The public browser surface is a minimal dashboard on port `7681`.
-- The dashboard can launch as many ephemeral `ttyd` sessions as needed, tracks them as left-rail tabs, and returns to a blank home state when the active terminal is closed and no sessions remain.
+- The dashboard can launch as many ephemeral `ttyd` sessions as needed, tracks them as left-rail tabs, opens new tabs immediately with a loading state while `ttyd` starts, labels tabs from the shell cwd or current command, and returns to a blank home state when the active terminal is closed and no sessions remain.
 - Browser terminals start in `/home/hermes`.
 - The image bootstraps two Hermes profiles, `test` and `coder`, at `~/.hermes/profiles/...` so the upstream profile layout is ready to inspect immediately.
 
@@ -122,8 +122,9 @@ After startup:
 
 1. Open `http://localhost:7681`.
 2. Use `Open Terminal` to launch a new shell-backed `ttyd` session rooted at `/home/hermes`.
-3. Each new terminal appears as a focused tab in the left rail.
-4. Use `Close Terminal` to remove the active tab. When no terminals remain, the dashboard returns to the blank home state.
+3. Each new terminal appears as a focused tab in the left rail immediately, even before the underlying `ttyd` process is ready.
+4. Tab labels follow the active shell state, showing `/home/hermes` at the prompt and the current command name while work is running.
+5. Use `Close Terminal` to remove the active tab. When no terminals remain, the dashboard returns to the blank home state.
 
 ## Hermes Configuration
 

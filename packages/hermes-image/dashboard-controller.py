@@ -28,7 +28,6 @@ DASHBOARD_PORT = int(os.environ.get("GHOSTSHIP_DASHBOARD_PORT", "7683"))
 TERMINAL_CWD = os.environ.get("GHOSTSHIP_TERMINAL_CWD", "/home/hermes")
 HOME_DIR = os.environ.get("HOME", "/home/hermes")
 MANAGED_HERMES_HOME = os.environ.get("HERMES_HOME", "/home/hermes/.hermes")
-TTYD_TITLE = os.environ.get("GHOSTSHIP_TTYD_TITLE", "ghostship-hermes")
 DASHBOARD_ROOT = Path(os.environ.get("GHOSTSHIP_DASHBOARD_ROOT", "/srv/dashboard"))
 BASH_PATH = os.environ.get("GHOSTSHIP_BASH") or shutil.which("bash") or "/bin/sh"
 
@@ -40,17 +39,14 @@ def ensure_state_dir() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def wait_for_port(host: str, port: int, timeout: float = 10.0) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(0.2)
-            try:
-                sock.connect((host, port))
-                return True
-            except OSError:
-                time.sleep(0.15)
-    return False
+def port_is_open(host: str, port: int, timeout: float = 0.15) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        try:
+            sock.connect((host, port))
+            return True
+        except OSError:
+            return False
 
 
 def process_is_alive(pid: int) -> bool:
@@ -80,6 +76,68 @@ def save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
+def child_pids(pid: int) -> list[int]:
+    try:
+        children = Path(f"/proc/{pid}/task/{pid}/children").read_text(encoding="utf-8").strip()
+    except OSError:
+        return []
+    if not children:
+        return []
+    return [int(item) for item in children.split() if item.isdigit()]
+
+
+def deepest_descendant(pid: int) -> int:
+    current = pid
+    while True:
+        children = child_pids(current)
+        if not children:
+            return current
+        current = children[-1]
+
+
+def proc_name(pid: int) -> str:
+    for candidate in (f"/proc/{pid}/comm", f"/proc/{pid}/cmdline"):
+        try:
+            raw = Path(candidate).read_bytes()
+        except OSError:
+            continue
+        if not raw:
+            continue
+        if candidate.endswith("/cmdline"):
+            name = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore").strip()
+            if name:
+                return name
+        else:
+            name = raw.decode("utf-8", errors="ignore").strip()
+            if name:
+                return name
+    return ""
+
+
+def proc_cwd(pid: int) -> str:
+    try:
+        cwd = os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return ""
+    if cwd.startswith(HOME_DIR):
+        suffix = cwd[len(HOME_DIR):].lstrip("/")
+        return f"/home/hermes/{suffix}" if suffix else "/home/hermes"
+    return cwd
+
+
+def session_label(session: dict) -> str:
+    ttyd_pid = session["pid"]
+    shell_pid = child_pids(ttyd_pid)
+    if not shell_pid:
+        return session["cwd"] or session["label"]
+    active_pid = deepest_descendant(shell_pid[-1])
+    active_name = proc_name(active_pid)
+    if active_name and Path(active_name.split(" ", 1)[0]).name not in {"bash", "sh"}:
+        return active_name
+    cwd = proc_cwd(active_pid)
+    return cwd or session["cwd"] or session["label"]
+
+
 def prune_dead_sessions(state: dict) -> dict:
     alive_sessions = [session for session in state["sessions"] if process_is_alive(session["pid"])]
     state["sessions"] = alive_sessions
@@ -107,11 +165,12 @@ def terminal_payload(state: dict) -> dict:
         "sessions": [
             {
                 "id": session["id"],
-                "label": session["label"],
+                "label": session_label(session),
                 "pid": session["pid"],
                 "port": session["port"],
                 "terminal_url": session["terminal_url"],
                 "cwd": session["cwd"],
+                "ready": port_is_open(TTYD_HOST, session["port"]),
             }
             for session in state["sessions"]
         ],
@@ -137,8 +196,6 @@ def ttyd_command(session: dict) -> list[str]:
         str(session["port"]),
         "--base-path",
         session["terminal_url"].rstrip("/"),
-        "-t",
-        f"titleFixed={TTYD_TITLE} · {session['label']}",
         BASH_PATH,
         "-lc",
         shell_command,
@@ -170,10 +227,6 @@ def open_terminal() -> dict:
             )
         session["pid"] = process.pid
 
-        if not wait_for_port(TTYD_HOST, session["port"]):
-            terminate_session(session)
-            raise RuntimeError(f"ttyd did not start on {TTYD_HOST}:{session['port']}")
-
         state["next_index"] += 1
         state["sessions"].append(session)
         state["active_terminal_id"] = session_id
@@ -181,7 +234,7 @@ def open_terminal() -> dict:
         return terminal_payload(state)
 
 
-def terminate_session(session: dict) -> None:
+def terminate_session(session: dict, timeout: float = 0.75) -> None:
     pid = session.get("pid")
     if not pid or not process_is_alive(pid):
         return
@@ -189,9 +242,9 @@ def terminate_session(session: dict) -> None:
         os.killpg(pid, signal.SIGTERM)
     except OSError:
         return
-    deadline = time.monotonic() + 5.0
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline and process_is_alive(pid):
-        time.sleep(0.1)
+        time.sleep(0.05)
     if process_is_alive(pid):
         try:
             os.killpg(pid, signal.SIGKILL)
@@ -251,6 +304,9 @@ def hop_by_hop_header(name: str) -> bool:
 
 class RequestHandler(BaseHTTPRequestHandler):
     server_version = "ghostship-hermes-dashboard/2.0"
+    protocol_version = "HTTP/1.1"
+    rbufsize = 0
+    wbufsize = 0
 
     def _write_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, indent=2) + "\n"
@@ -299,9 +355,13 @@ class RequestHandler(BaseHTTPRequestHandler):
         body = None
         if "Content-Length" in self.headers:
             body = self.rfile.read(int(self.headers["Content-Length"]))
-        connection.request(self.command, parsed.path + (f"?{parsed.query}" if parsed.query else ""), body=body, headers=headers)
-        response = connection.getresponse()
-        payload = response.read()
+        try:
+            connection.request(self.command, parsed.path + (f"?{parsed.query}" if parsed.query else ""), body=body, headers=headers)
+            response = connection.getresponse()
+            payload = response.read()
+        except OSError:
+            self._write_json({"error": "terminal is starting"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
 
         self.send_response(response.status, response.reason)
         for key, value in response.getheaders():
@@ -319,8 +379,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         parsed = urlsplit(self.path)
-        upstream = socket.create_connection((TTYD_HOST, session["port"]))
-        upstream.setblocking(False)
+        try:
+            upstream = socket.create_connection((TTYD_HOST, session["port"]), timeout=5)
+        except OSError:
+            self._write_json({"error": "terminal is starting"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         request_lines = [f"{self.command} {parsed.path + (f'?{parsed.query}' if parsed.query else '')} HTTP/1.1"]
         for key, value in self.headers.items():
             if key.lower() == "host":
@@ -330,7 +393,12 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         response_head = bytearray()
         while b"\r\n\r\n" not in response_head:
-            chunk = upstream.recv(65536)
+            try:
+                chunk = upstream.recv(65536)
+            except socket.timeout:
+                upstream.close()
+                self._write_json({"error": "terminal websocket timed out"}, HTTPStatus.BAD_GATEWAY)
+                return
             if not chunk:
                 upstream.close()
                 self.close_connection = True
@@ -339,6 +407,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         head, remainder = response_head.split(b"\r\n\r\n", 1)
         self.connection.sendall(head + b"\r\n\r\n" + remainder)
+        upstream.setblocking(False)
         self.connection.setblocking(False)
 
         sockets = [self.connection, upstream]
@@ -353,8 +422,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                     peer = upstream if current is self.connection else self.connection
                     try:
                         data = current.recv(65536)
+                    except BlockingIOError:
+                        continue
                     except OSError:
-                        data = b""
+                        return
                     if not data:
                         return
                     peer.sendall(data)

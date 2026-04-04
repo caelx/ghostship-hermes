@@ -36,6 +36,8 @@ resolve_store_path() {
 image_output="${GHOSTSHIP_IMAGE_OUTPUT:-}"
 image_tar="${GHOSTSHIP_IMAGE_TAR:-}"
 nix_volume_root="${GHOSTSHIP_NIX_VOLUME_ROOT:-}"
+dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-7681}"
+dashboard_base_url="http://127.0.0.1:${dashboard_port}"
 
 if [ -z "$nix_volume_root" ]; then
   if [ -n "${GHOSTSHIP_NIX_STORE:-}" ]; then
@@ -224,15 +226,15 @@ docker run -d \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
   -v "$nix_volume_root:/nix" \
-  -p 7681:7681 \
+  -p "${dashboard_port}:7681" \
   "$image_ref" /init >/dev/null
 
 wait_for_container_ready "$container_one"
-wait_for_http "http://127.0.0.1:7681/"
-wait_for_http "http://127.0.0.1:7681/api/status"
-assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "default"'
-assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "test"'
-assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "coder"'
+wait_for_http "${dashboard_base_url}/"
+wait_for_http "${dashboard_base_url}/api/status"
+assert_http_contains "${dashboard_base_url}/api/status" '"name": "default"'
+assert_http_contains "${dashboard_base_url}/api/status" '"name": "test"'
+assert_http_contains "${dashboard_base_url}/api/status" '"name": "coder"'
 
 run_in_container "$container_one" 'id hermes | grep -F "uid=3000(hermes) gid=3000(hermes)" >/dev/null'
 run_in_container "$container_one" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
@@ -332,19 +334,19 @@ run_as_hermes "$container_one" '
   printf "cache\n" > ~/.cache/opencode/persist.txt
 '
 
-curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-terminal-open.json
+curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-terminal-open.json
 terminal_one="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open.json)"
 terminal_one_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_one"'") | .terminal_url' /tmp/ghostship-terminal-open.json)"
-wait_for_http "http://127.0.0.1:7681$terminal_one_url"
+wait_for_http "${dashboard_base_url}${terminal_one_url}"
 
-curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-terminal-open-2.json
+curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-terminal-open-2.json
 terminal_two="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open-2.json)"
 terminal_two_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_two"'") | .terminal_url' /tmp/ghostship-terminal-open-2.json)"
-wait_for_http "http://127.0.0.1:7681$terminal_two_url"
+wait_for_http "${dashboard_base_url}${terminal_two_url}"
 
-curl -fsS -X POST "http://127.0.0.1:7681/api/terminals/$terminal_two/close" >/tmp/ghostship-terminal-close-2.json
+curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_two/close" >/tmp/ghostship-terminal-close-2.json
 assert_file_contains /tmp/ghostship-terminal-close-2.json '"id": "'"$terminal_one"'"'
-curl -fsS -X POST "http://127.0.0.1:7681/api/terminals/$terminal_one/close" >/tmp/ghostship-terminal-close.json
+curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_one/close" >/tmp/ghostship-terminal-close.json
 assert_file_contains /tmp/ghostship-terminal-close.json '"sessions": \[\]'
 
 docker rm -f "$container_one" >/dev/null
@@ -361,15 +363,15 @@ docker run -d \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
   -v "$nix_volume_root:/nix" \
-  -p 7681:7681 \
+  -p "${dashboard_port}:7681" \
   "$image_ref" /init >/dev/null
 
 wait_for_container_ready "$container_two"
-wait_for_http "http://127.0.0.1:7681/"
-wait_for_http "http://127.0.0.1:7681/api/status"
-assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "default"'
-assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "test"'
-assert_http_contains "http://127.0.0.1:7681/api/status" '"name": "coder"'
+wait_for_http "${dashboard_base_url}/"
+wait_for_http "${dashboard_base_url}/api/status"
+assert_http_contains "${dashboard_base_url}/api/status" '"name": "default"'
+assert_http_contains "${dashboard_base_url}/api/status" '"name": "test"'
+assert_http_contains "${dashboard_base_url}/api/status" '"name": "coder"'
 
 run_as_hermes "$container_two" 'grep -Fx "hermes-home" ~/.hermes/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/ghostship-test/persist.txt >/dev/null'
@@ -402,11 +404,11 @@ run_as_hermes "$container_two" '
   node -p "require(process.env.HOME + \"/.local/node_modules/cowsay/package.json\").version" | grep -Fx "1.6.0" >/dev/null
 '
 
-curl -fsS -X POST http://127.0.0.1:7681/api/terminal/open >/tmp/ghostship-terminal-open-3.json
+curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-terminal-open-3.json
 terminal_three="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open-3.json)"
 terminal_three_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_three"'") | .terminal_url' /tmp/ghostship-terminal-open-3.json)"
-wait_for_http "http://127.0.0.1:7681$terminal_three_url"
-curl -fsS -X POST "http://127.0.0.1:7681/api/terminals/$terminal_three/close" >/tmp/ghostship-terminal-close-3.json
+wait_for_http "${dashboard_base_url}${terminal_three_url}"
+curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_three/close" >/tmp/ghostship-terminal-close-3.json
 assert_file_contains /tmp/ghostship-terminal-close-3.json '"sessions": \[\]'
 
 printf 'validated ghostship-hermes image persistence with %s\n' "$image_ref"
