@@ -24,6 +24,11 @@ dev = [
 [project.scripts]
 hermes-dashboard = "hermes_dashboard.app:main"
 
+[tool.hatch.build]
+include = [
+  "src/hermes_dashboard/static/**",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/hermes_dashboard"]
 

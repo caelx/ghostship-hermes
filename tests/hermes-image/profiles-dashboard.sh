@@ -206,8 +206,8 @@ wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/status"
 
 assert_http_contains "${dashboard_base_url}/" 'data-dashboard="ghostship-hermes-dashboard"'
-assert_http_contains "${dashboard_base_url}/" "Open Terminal"
-assert_http_contains "${dashboard_base_url}/" "Two declared Hermes profiles"
+assert_http_contains "${dashboard_base_url}/" "HERMES_OS"
+assert_http_contains "${dashboard_base_url}/" "NEW_UNIT"
 assert_http_contains "${dashboard_base_url}/api/status" '"sessions": \[\]'
 assert_http_contains "${dashboard_base_url}/api/status" '"name": "operations"'
 assert_http_contains "${dashboard_base_url}/api/status" '"name": "coder"'
