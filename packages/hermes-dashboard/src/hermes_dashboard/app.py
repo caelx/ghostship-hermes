@@ -11,6 +11,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 import uvicorn
@@ -175,14 +176,20 @@ def parse_env_file(path: Path) -> dict[str, str]:
     return payload
 
 
-def read_model_default(path: Path) -> str | None:
+def _yaml_value(raw_line: str) -> str | None:
+    value = raw_line.split(":", 1)[1].strip().strip("\"'")
+    return value or None
+
+
+def read_model_settings(path: Path) -> dict[str, str | None]:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return None
+        return {"default": None, "base_url": None}
 
     in_model = False
     model_indent = 0
+    settings = {"default": None, "base_url": None}
 
     for raw_line in lines:
         line = raw_line.split("#", 1)[0].rstrip()
@@ -201,10 +208,11 @@ def read_model_default(path: Path) -> str | None:
             in_model = False
 
         if in_model and stripped.startswith("default:"):
-            value = stripped.split(":", 1)[1].strip().strip("\"'")
-            return value or None
+            settings["default"] = _yaml_value(stripped)
+        if in_model and stripped.startswith("base_url:"):
+            settings["base_url"] = _yaml_value(stripped)
 
-    return None
+    return settings
 
 
 def model_vendor_name(model_name: str | None) -> str | None:
@@ -214,8 +222,109 @@ def model_vendor_name(model_name: str | None) -> str | None:
     return vendor or None
 
 
-def has_openrouter_config(env_payload: dict[str, str]) -> bool:
-    return any(env_payload.get(key) for key in ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "OPENROUTER_HTTP_REFERER", "OPENROUTER_TITLE"))
+def endpoint_kind(base_url: str | None) -> str:
+    if not base_url:
+        return "default provider"
+    if is_local_router_base_url(base_url):
+        return "local router"
+    return "custom endpoint"
+
+
+def is_local_router_base_url(base_url: str | None) -> bool:
+    if not base_url:
+        return False
+    parsed = urlparse(base_url)
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return parsed.hostname in {"127.0.0.1", "localhost"} and port == 8788
+
+
+def endpoint_display_name(base_url: str | None, model_name: str | None) -> str:
+    if is_local_router_base_url(base_url):
+        return "ghostship-router"
+    if base_url:
+        parsed = urlparse(base_url)
+        host = parsed.hostname or ""
+        if host == "openrouter.ai":
+            return "openrouter"
+        if host:
+            return host
+    return model_vendor_name(model_name) or "default"
+
+
+def detect_auth_source(base_url: str | None, env_payload: dict[str, str]) -> str | None:
+    if is_local_router_base_url(base_url):
+        for key in ("OPENAI_API_KEY", "GHOSTSHIP_ROUTER_API_KEY", "API_SERVER_KEY"):
+            if env_payload.get(key):
+                return key
+        return None
+    if base_url and urlparse(base_url).hostname == "openrouter.ai" and env_payload.get("OPENROUTER_API_KEY"):
+        return "OPENROUTER_API_KEY"
+    return None
+
+
+def router_http_headers(env_payload: dict[str, str]) -> dict[str, str]:
+    token = (
+        env_payload.get("OPENAI_API_KEY")
+        or env_payload.get("GHOSTSHIP_ROUTER_API_KEY")
+        or env_payload.get("API_SERVER_KEY")
+    )
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def fetch_router_enrichment(base_url: str, env_payload: dict[str, str]) -> dict[str, Any] | None:
+    router_base = base_url.rstrip("/")
+    if router_base.endswith("/v1"):
+        router_base = router_base[:-3]
+    headers = router_http_headers(env_payload)
+
+    try:
+        with httpx.Client(timeout=1.5, follow_redirects=True) as client:
+            ready_response = client.get(f"{router_base}/readyz")
+            ready_response.raise_for_status()
+            ready_payload = ready_response.json()
+
+            providers_response = client.get(f"{router_base}/debug/providers")
+            providers_response.raise_for_status()
+            providers_payload = providers_response.json()
+
+            aliases: list[dict[str, Any]] = []
+            models_response = client.get(f"{router_base}/v1/models", headers=headers)
+            if models_response.status_code == 200:
+                for item in models_response.json().get("data", []):
+                    metadata = item.get("metadata") or {}
+                    aliases.append(
+                        {
+                            "name": item.get("id"),
+                            "description": metadata.get("description"),
+                            "candidate_count": metadata.get("candidate_count", 0),
+                            "candidates": metadata.get("candidates", []),
+                        }
+                    )
+            else:
+                for alias_name in ("lightweight", "coding", "heavyweight"):
+                    route_response = client.get(f"{router_base}/debug/routes/{alias_name}")
+                    if route_response.status_code != 200:
+                        continue
+                    route_payload = route_response.json()
+                    candidates = route_payload.get("candidates", [])
+                    aliases.append(
+                        {
+                            "name": alias_name,
+                            "description": None,
+                            "candidate_count": len(candidates),
+                            "candidates": candidates,
+                        }
+                    )
+
+            return {
+                "reachable": True,
+                "ready": bool(ready_payload.get("ok")),
+                "detail": ready_payload.get("detail"),
+                "providers": providers_payload if isinstance(providers_payload, list) else [],
+                "aliases": aliases,
+            }
+    except (httpx.HTTPError, ValueError):
+        return None
 
 
 def current_environment_payload() -> dict[str, Any]:
@@ -225,24 +334,28 @@ def current_environment_payload() -> dict[str, Any]:
     runtime_env = {
         key: value
         for key in (
+            "OPENAI_API_KEY",
+            "GHOSTSHIP_ROUTER_API_KEY",
+            "API_SERVER_KEY",
             "OPENROUTER_API_KEY",
             "OPENROUTER_BASE_URL",
             "OPENROUTER_HTTP_REFERER",
             "OPENROUTER_TITLE",
-            "OPENROUTER_TEST_MODEL",
         )
         if (value := os.environ.get(key))
     }
     root_env = parse_env_file(root_env_path) or runtime_env
-    root_model = read_model_default(root_config_path) or os.environ.get("OPENROUTER_TEST_MODEL")
-    openrouter_env = root_env | runtime_env
-    has_openrouter = has_openrouter_config(openrouter_env)
-    model_entries: dict[str, dict[str, Any]] = {}
+    root_settings = read_model_settings(root_config_path)
+    root_model = root_settings["default"]
+    root_base_url = root_settings["base_url"]
+    endpoints: dict[str, dict[str, Any]] = {}
+    endpoint_models: dict[str, dict[str, dict[str, Any]]] = {}
 
-    def register_model(model_name: str | None, *, scope: str, profile_name: str | None = None) -> None:
+    def register_model(endpoint_key: str, model_name: str | None, *, scope: str, profile_name: str | None = None) -> None:
         if not model_name:
             return
-        entry = model_entries.setdefault(
+        model_map = endpoint_models.setdefault(endpoint_key, {})
+        entry = model_map.setdefault(
             model_name,
             {
                 "name": model_name,
@@ -256,15 +369,51 @@ def current_environment_payload() -> dict[str, Any]:
         if profile_name and profile_name not in entry["profiles"]:
             entry["profiles"].append(profile_name)
 
-    register_model(root_model, scope="runtime")
+    def register_endpoint(
+        *,
+        base_url: str | None,
+        model_name: str | None,
+        env_payload: dict[str, str],
+        scope: str,
+        profile_name: str | None = None,
+    ) -> None:
+        key = base_url or f"default::{model_vendor_name(model_name) or 'default'}"
+        auth_source = detect_auth_source(base_url, env_payload)
+        entry = endpoints.setdefault(
+            key,
+            {
+                "name": endpoint_display_name(base_url, model_name),
+                "kind": endpoint_kind(base_url),
+                "configured": bool(base_url or model_name),
+                "base_url": base_url,
+                "auth_source": auth_source,
+                "models": [],
+                "profiles": [],
+                "router": None,
+            },
+        )
+        if auth_source and not entry.get("auth_source"):
+            entry["auth_source"] = auth_source
+        if profile_name and profile_name not in entry["profiles"]:
+            entry["profiles"].append(profile_name)
+        register_model(key, model_name, scope=scope, profile_name=profile_name)
 
     profiles = []
+    register_endpoint(base_url=root_base_url, model_name=root_model, env_payload=root_env | runtime_env, scope="root")
+
     for name in MANAGED_PROFILES:
         profile_root = profiles_root / name
         profile_env = parse_env_file(profile_root / ".env")
-        profile_model = read_model_default(profile_root / "config.yaml") or root_model
-        has_openrouter = has_openrouter or has_openrouter_config(profile_env)
-        register_model(profile_model, scope="profile", profile_name=name)
+        profile_settings = read_model_settings(profile_root / "config.yaml")
+        profile_model = profile_settings["default"] or root_model
+        profile_base_url = profile_settings["base_url"] or root_base_url
+        register_endpoint(
+            base_url=profile_base_url,
+            model_name=profile_model,
+            env_payload=profile_env | root_env | runtime_env,
+            scope="profile",
+            profile_name=name,
+        )
 
         profiles.append(
             {
@@ -273,25 +422,22 @@ def current_environment_payload() -> dict[str, Any]:
                 "service": f"ghostship-hermes-profile-{name}.service",
                 "is_default": name == DEFAULT_PROFILE,
                 "model": profile_model,
+                "base_url": profile_base_url,
+                "endpoint_name": endpoint_display_name(profile_base_url, profile_model),
                 "model_vendor": model_vendor_name(profile_model),
                 "has_env": safe_path_exists(profile_root / ".env"),
                 "has_config": safe_path_exists(profile_root / "config.yaml"),
             }
         )
 
-    providers = []
-    if has_openrouter:
-        providers.append(
-            {
-                "name": "openrouter",
-                "configured": bool(openrouter_env.get("OPENROUTER_API_KEY")),
-                "base_url": openrouter_env.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1",
-                "has_api_key": bool(openrouter_env.get("OPENROUTER_API_KEY")),
-                "has_referer": bool(openrouter_env.get("OPENROUTER_HTTP_REFERER")),
-                "title": openrouter_env.get("OPENROUTER_TITLE") or None,
-                "models": sorted(model_entries.values(), key=lambda item: item["name"]),
-            }
-        )
+    providers: list[dict[str, Any]] = []
+    for key, entry in endpoints.items():
+        entry["models"] = sorted(endpoint_models.get(key, {}).values(), key=lambda item: item["name"])
+        if is_local_router_base_url(entry["base_url"]):
+            entry["router"] = fetch_router_enrichment(entry["base_url"], root_env | runtime_env)
+        providers.append(entry)
+
+    default_profile_model = next((profile["model"] for profile in profiles if profile["is_default"]), None)
 
     return {
         "host": socket.gethostname(),
@@ -300,8 +446,11 @@ def current_environment_payload() -> dict[str, Any]:
         "home": HOME_DIR,
         "managed_hermes_home": MANAGED_HERMES_HOME,
         "default_profile": DEFAULT_PROFILE,
+        "root_base_url": root_base_url,
+        "root_model": root_model,
+        "default_profile_model": default_profile_model,
         "model": root_model,
-        "providers": providers,
+        "providers": sorted(providers, key=lambda item: item["name"]),
         "profiles": profiles,
     }
 
