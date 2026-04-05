@@ -16,18 +16,30 @@ let
     "coder"
   ];
   defaultProfile = "operations";
+  routerBaseUrl = "http://127.0.0.1:8788/v1";
+  rootModelDefault = "lightweight";
+  profileModelDefaults = {
+    operations = "heavyweight";
+    coder = "coding";
+  };
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   runtimeBin = "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime";
   yamlFormat = pkgs.formats.yaml { };
-  profileConfig = {
+  mkHermesConfig =
+    modelDefault:
+    {
     display.personality = "kawaii";
-    model.default = "openrouter/free";
+      model = {
+        base_url = routerBaseUrl;
+        default = modelDefault;
+      };
     terminal = {
       backend = "local";
       cwd = "/home/hermes";
       timeout = 180;
     };
   };
+  rootConfig = mkHermesConfig rootModelDefault;
   managedProfileNames = lib.concatStringsSep "," managedProfiles;
   managedProfileRoot = "/home/hermes/.hermes/profiles";
 
@@ -57,7 +69,9 @@ let
     name = "ghostship-hermes-user-env";
     paths = servicePath;
   };
-  profileConfigFile = yamlFormat.generate "ghostship-hermes-profile-config.yaml" profileConfig;
+  profileConfigFiles = lib.mapAttrs (
+    profile: modelDefault: yamlFormat.generate "ghostship-hermes-profile-${profile}-config.yaml" (mkHermesConfig modelDefault)
+  ) profileModelDefaults;
   bootstrapHermesScript = pkgs.writeShellScript "ghostship-hermes-bootstrap.sh" ''
     set -euo pipefail
 
@@ -85,11 +99,18 @@ let
           || true
       fi
 
-      install -D -m 0600 ${profileConfigFile} "${managedProfileRoot}/${profile}/config.yaml"
+      install -D -m 0600 ${profileConfigFiles.${profile}} "${managedProfileRoot}/${profile}/config.yaml"
     '') managedProfiles}
 
     write_profile_env() {
       target="$1"
+      router_api_key="''${OPENAI_API_KEY:-}"
+      if [ -z "$router_api_key" ] && [ -n "''${API_SERVER_KEY:-}" ]; then
+        router_api_key="$API_SERVER_KEY"
+      fi
+      if [ -z "$router_api_key" ] && [ -n "''${GHOSTSHIP_ROUTER_API_KEY:-}" ]; then
+        router_api_key="$GHOSTSHIP_ROUTER_API_KEY"
+      fi
       umask 077
       {
         printf 'TERMINAL_CWD=/home/hermes\n'
@@ -99,18 +120,15 @@ let
             printf '%s=%s\n' "$key" "$value"
           fi
         done
+        if [ -n "$router_api_key" ]; then
+          printf 'OPENAI_API_KEY=%s\n' "$router_api_key"
+        fi
       } >"$target"
     }
 
     write_profile_env "/home/hermes/.hermes/.env"
     write_profile_env "/home/hermes/.hermes/profiles/operations/.env"
     write_profile_env "/home/hermes/.hermes/profiles/coder/.env"
-
-    if [ -n "''${OPENROUTER_TEST_MODEL:-}" ]; then
-      hermes config set model.default "$OPENROUTER_TEST_MODEL" >/dev/null 2>&1 || true
-      hermes -p operations config set model.default "$OPENROUTER_TEST_MODEL" >/dev/null 2>&1 || true
-      hermes -p coder config set model.default "$OPENROUTER_TEST_MODEL" >/dev/null 2>&1 || true
-    fi
 
     hermes profile use ${lib.escapeShellArg defaultProfile} >/dev/null 2>&1 || true
 
@@ -214,7 +232,7 @@ in
       TERMINAL_CWD = "/home/hermes";
     };
     settings = {
-    } // profileConfig;
+    } // rootConfig;
     extraPackages = [ pkgs.nix ] ++ ghostshipUtilities;
   };
 
@@ -271,12 +289,13 @@ in
       PassEnvironment = [
         "OPENROUTER_API_KEY"
         "OPENAI_API_KEY"
+        "GHOSTSHIP_ROUTER_API_KEY"
+        "API_SERVER_KEY"
         "OPENROUTER_BASE_URL"
         "OPENROUTER_HTTP_REFERER"
         "OPENROUTER_TITLE"
         "OPENCODE_API_KEY"
         "OPENCODE_BASE_URL"
-        "OPENROUTER_TEST_MODEL"
       ];
       ExecStart = bootstrapHermesScript;
     };
@@ -359,6 +378,11 @@ in
       User = "hermes";
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
+      PassEnvironment = [
+        "OPENAI_API_KEY"
+        "GHOSTSHIP_ROUTER_API_KEY"
+        "API_SERVER_KEY"
+      ];
       ExecStart = "${runtimeBin} dashboard-controller";
       Restart = "always";
       RestartSec = "2s";
@@ -372,11 +396,13 @@ in
     after = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-router.service"
       "network-online.target"
     ];
     requires = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-router.service"
     ];
     environment = userServiceEnvironment // {
       HERMES_MANAGED = "true";
@@ -387,6 +413,11 @@ in
       User = "hermes";
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
+      PassEnvironment = [
+        "OPENAI_API_KEY"
+        "GHOSTSHIP_ROUTER_API_KEY"
+        "API_SERVER_KEY"
+      ];
       ExecStart = "${config.services.hermes-agent.package}/bin/hermes -p operations gateway run --replace";
       Restart = "always";
       RestartSec = "2s";
@@ -400,11 +431,13 @@ in
     after = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-router.service"
       "network-online.target"
     ];
     requires = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-router.service"
     ];
     environment = userServiceEnvironment // {
       HERMES_MANAGED = "true";
@@ -415,6 +448,11 @@ in
       User = "hermes";
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
+      PassEnvironment = [
+        "OPENAI_API_KEY"
+        "GHOSTSHIP_ROUTER_API_KEY"
+        "API_SERVER_KEY"
+      ];
       ExecStart = "${config.services.hermes-agent.package}/bin/hermes -p coder gateway run --replace";
       Restart = "always";
       RestartSec = "2s";

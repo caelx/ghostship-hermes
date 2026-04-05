@@ -20,7 +20,9 @@ Canonical image references:
 - The dashboard can launch as many ephemeral `ttyd` sessions as needed, tracks them as left-rail tabs, opens new tabs immediately with a loading state while `ttyd` starts, labels tabs from the shell cwd or current command, and returns to a blank home state when the active terminal is closed and no sessions remain.
 - Switching between open tabs keeps each live `ttyd` session attached instead of dropping back to ttyd's reconnect prompt.
 - Browser terminals start in `/home/hermes`.
-- The image bootstraps two Hermes profiles, `operations` and `coder`, at `~/.hermes/profiles/...` and keeps a persistent gateway service running for each one.
+- The image uses `ghostship-hermes-router` at `http://127.0.0.1:8788/v1` as the primary OpenAI-compatible model endpoint for Hermes.
+- The root Hermes default model is `lightweight`.
+- The image bootstraps two Hermes profiles, `operations` and `coder`, at `~/.hermes/profiles/...`, keeps a persistent gateway service running for each one, and assigns `operations -> heavyweight` and `coder -> coding`.
 
 Upstream note:
 
@@ -92,7 +94,7 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-bootstrap.service`
-  is a repo-specific NixOS oneshot that reconciles the approved `operations` and `coder` profiles after the managed Hermes config exists, writes their `.env` files from the runtime OpenRouter env, and sets the sticky default profile to `operations`
+  is a repo-specific NixOS oneshot that reconciles the approved `operations` and `coder` profiles after the managed Hermes config exists, writes their `.env` files from the runtime provider env, assigns the approved router aliases, and sets the sticky default profile to `operations`
 - `ghostship-hermes-profile-operations.service`
   keeps the `operations` gateway running with `hermes -p operations gateway run --replace`
 - `ghostship-hermes-profile-coder.service`
@@ -101,6 +103,7 @@ The container uses a small NixOS-managed unit graph:
   serves the packaged MMX dashboard and proxies on-demand ephemeral `ttyd` sessions on port `7681`
 - `ghostship-hermes-router.service`
   runs the local model router on `127.0.0.1:8788`, persists router state under `/home/hermes/.local/state/ghostship-hermes/router`, and exposes OpenAI-style alias routing plus debug endpoints for local tools and Hermes profiles
+  Startup serves the last persisted inventory and rankings immediately, then refreshes inventory and reruns ranking in the background so the router listener is available before longer warm-up work finishes.
 
 The profile bootstrap unit and the two persistent per-profile gateway services are approved custom deviations from upstream. Upstream Hermes does not currently expose named profiles as a declarative NixOS-module option, so the profile names are declared in Nix here, materialized by a NixOS-managed oneshot, and then supervised by repo-managed systemd units.
 
@@ -130,8 +133,8 @@ Notes:
 - Fix the per-user Nix ownership on the persisted volume before expecting mutable Nix workflows to work for `hermes`. In practice, `hermes` needs usable paths under `/nix/var/nix/profiles/per-user/hermes` and `/nix/var/nix/gcroots/per-user/hermes`.
 - Persisting `/home/hermes` directly is the intended way to keep Hermes managed state, Hermes CLI profiles, XDG state, and later-installed agent tooling across container replacement.
 - The dashboard is the intended browser entrypoint.
-- For local validation, source the repo `.envrc` before `docker run` so `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` are passed into the bootstrap oneshot and written into the declared profiles.
-- The local model router uses `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` for live inference against OpenRouter and OpenCode Zen. Router-local validation does not depend on `OPENROUTER_TEST_MODEL`.
+- For local validation, source the repo `.envrc` before `docker run` so the router can use `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` for live inference against OpenRouter and OpenCode Zen.
+- The shipped Hermes defaults do not depend on a separate `OPENROUTER_TEST_MODEL` override; validation should check the router aliases directly.
 
 After startup:
 
@@ -149,7 +152,10 @@ The image is intentionally declarative-first:
 - Hermes managed config is written into `/home/hermes/.hermes`.
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`.
-- The declared `operations` and `coder` profiles inherit the runtime `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` values during bootstrap so both gateways come up with the same test provider configuration.
+- Hermes uses the local router through `model.base_url = http://127.0.0.1:8788/v1`.
+- The root Hermes default model is `lightweight`.
+- The declared profiles override that default as `operations = heavyweight` and `coder = coding`.
+- If router auth is enabled, Hermes can reuse `OPENAI_API_KEY` against the local router while the router itself continues to use provider credentials such as `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` upstream.
 
 Upstream Hermes docs still apply for CLI behavior:
 
@@ -230,11 +236,11 @@ Optional runtime env for the router:
 
 If `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` or `GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL` is set, it must resolve to a healthy free model ID from the current router inventory.
 
-Hermes named custom provider compatibility:
+Hermes OpenAI-compatible endpoint compatibility:
 
 - use `base_url: http://127.0.0.1:8788/v1`, or bare `http://127.0.0.1:8788` if you prefer
 - use a router alias like `lightweight`, `coding`, or `heavyweight` as the model id
-- if router auth is enabled, Hermes can send the same bearer token through `OPENAI_API_KEY` or a `custom_providers[].api_key` entry
+- if router auth is enabled, Hermes can send the same bearer token through `OPENAI_API_KEY`
 
 ## Local Validation
 
@@ -269,7 +275,7 @@ Run the dashboard smoke test:
 
 ```fish
 # Run this from a shell where ../../.envrc has already exported
-# OPENROUTER_API_KEY and OPENROUTER_TEST_MODEL.
+# OPENROUTER_API_KEY and OPENCODE_API_KEY for the local router.
 bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:ops-coder
 ```
 
@@ -290,9 +296,11 @@ The persistence suite validates:
 - `HERMES_HOME=/home/hermes/.hermes`
 - `HOME=/home/hermes`
 - `hermes` runs as `3000:3000`
+- the root Hermes config uses `http://127.0.0.1:8788/v1` with `lightweight`
 - `operations` and `coder` are present under `~/.hermes/profiles/...`
+- `operations` uses `heavyweight` and `coder` uses `coding` through the local router
 - `/home/hermes` itself is the persisted home volume
-- the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the two profile gateways, and the dashboard
+- the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the router, the two profile gateways, and the dashboard
 - no custom default skills are seeded
 - removed workstation tools are absent by default
 - `ghostship-*` utilities remain available
@@ -304,6 +312,7 @@ The persistence suite validates:
 - the dashboard can manage multiple independent terminal tabs
 - switching between open tabs keeps the live terminal session attached
 - the bootstrap `operations` and `coder` profiles are available under `~/.hermes/profiles/...`
+- the router alias inventory exposes `lightweight`, `coding`, and `heavyweight`
 
 Router package validation:
 

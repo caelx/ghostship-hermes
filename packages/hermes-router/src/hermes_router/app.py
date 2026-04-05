@@ -38,12 +38,17 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        await asyncio.to_thread(resolved_service.refresh_inventory, reason="startup")
+        async def refresh_inventory(reason: str) -> None:
+            try:
+                await asyncio.to_thread(resolved_service.refresh_inventory, reason=reason)
+            except Exception:
+                logger.exception("router inventory refresh failed: reason=%s", reason)
 
         async def refresh_loop() -> None:
+            await refresh_inventory("startup")
             while True:
                 await asyncio.sleep(resolved_config.refresh_interval_seconds)
-                await asyncio.to_thread(resolved_service.refresh_inventory, reason="scheduled")
+                await refresh_inventory("scheduled")
 
         refresh_task = asyncio.create_task(refresh_loop())
         try:

@@ -10,7 +10,7 @@ Current scope:
 - accepts Hermes-compatible `POST /v1/responses` with sync responses, streamed `responses.stream(...)`, and stored `GET /v1/responses/{id}` / `DELETE /v1/responses/{id}`
 - persists inventory, route health, provider health, rankings, overrides, cooldowns, and recent events in SQLite
 - persists stored `responses` objects and lightweight chat session continuity state in SQLite
-- refreshes inventory on startup and on a background interval
+- serves previously persisted inventory and rankings immediately on startup, then refreshes inventory and reruns ranking in the background
 - triggers a forced inventory refresh when a backend model disappears
 - exposes debug surfaces at `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{alias}`, `GET /debug/rankings/{alias}`, and `GET /debug/models/{provider}/{model}`
 - exposes Prometheus-style metrics at `GET /metrics`
@@ -82,9 +82,9 @@ Compatibility note:
 - `responses` now supports Hermes/OpenAI SDK streaming with `response.created`, `response.output_item.added`, `response.output_text.delta`, `response.function_call_arguments.delta`, and `response.completed`
 - `responses` stores and returns richer response objects with message, reasoning, and function-call output items
 - OpenCode Zen mixed endpoint families still normalize back to the local `chat/completions` surface before the router builds the `responses` envelope
-- Hermes named custom providers can use `base_url` `http://127.0.0.1:8788/v1` directly
-- Hermes named custom providers also work with bare `http://127.0.0.1:8788`; the router exposes both `/v1/...` and bare OpenAI endpoint aliases
-- Hermes named custom providers can reuse `OPENAI_API_KEY` as the router bearer token, or set a per-provider `api_key` directly in `custom_providers`
+- Hermes can use `base_url` `http://127.0.0.1:8788/v1` directly as a generic OpenAI-compatible endpoint
+- Hermes also works with bare `http://127.0.0.1:8788`; the router exposes both `/v1/...` and bare OpenAI endpoint aliases
+- Hermes can reuse `OPENAI_API_KEY` as the router bearer token when router auth is enabled
 
 Standalone local runs default router state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router`. The Hermes image overrides that to `/home/hermes/.local/state/ghostship-hermes/router`.
 

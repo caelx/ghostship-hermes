@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -334,6 +335,28 @@ def test_readyz_is_unready_without_providers(tmp_path: Path) -> None:
         response = client.get("/readyz")
         assert response.status_code == 503
         assert response.json()["ok"] is False
+
+
+def test_app_serves_with_persisted_routes_while_startup_refresh_runs(tmp_path: Path) -> None:
+    config = make_config(tmp_path, refresh_interval_seconds=3600)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="persisted")
+
+    original_refresh_inventory = service.refresh_inventory
+
+    def slow_refresh_inventory(*, reason: str) -> list[ProviderModel]:
+        time.sleep(0.5)
+        return original_refresh_inventory(reason=reason)
+
+    service.refresh_inventory = slow_refresh_inventory  # type: ignore[method-assign]
+
+    started_at = time.monotonic()
+    with TestClient(create_app(config=config, service=service)) as client:
+        startup_elapsed = time.monotonic() - started_at
+        assert startup_elapsed < 0.4
+        response = client.get("/v1/models")
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["data"]] == ["lightweight", "coding", "heavyweight"]
 
 
 def test_api_key_protects_router_api_endpoints(tmp_path: Path) -> None:
