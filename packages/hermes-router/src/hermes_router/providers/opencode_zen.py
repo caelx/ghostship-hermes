@@ -8,7 +8,13 @@ import httpx
 
 from ghostship_cli_contract import BaseHttpClient, HttpStatusError, TimeoutError, TransportError
 
-from .base import NormalizedProviderError, ProviderChatResult, ProviderModel
+from .base import (
+    NormalizedProviderError,
+    ProviderChatResult,
+    ProviderChatStreamResult,
+    ProviderChatStreamState,
+    ProviderModel,
+)
 
 _SUPPORTED_FAMILIES = (
     "chat_completions",
@@ -126,6 +132,27 @@ class OpencodeZenProvider:
             provider=self.name,
             backend_model=backend_model,
             retryable=False,
+        )
+
+    def chat_completions_stream(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatStreamResult:
+        result = self.chat_completions(backend_model, payload, timeout=timeout)
+        state = ProviderChatStreamState(
+            first_text_latency_ms=result.first_text_latency_ms,
+            usage=result.payload.get("usage") if isinstance(result.payload.get("usage"), dict) else None,
+            final_payload=result.payload,
+        )
+        text = self._extract_chat_completion_text(result.payload)
+        state.emitted_text = text
+
+        def stream_chunks():
+            if text:
+                yield text
+
+        return ProviderChatStreamResult(
+            chunks=stream_chunks(),
+            provider=result.provider,
+            backend_model=result.backend_model,
+            state=state,
         )
 
     def _endpoint_family_order(self, model_id: str) -> list[str]:
@@ -290,6 +317,14 @@ class OpencodeZenProvider:
                 "usage": payload.get("usageMetadata"),
             }
         return payload
+
+    @staticmethod
+    def _extract_chat_completion_text(payload: dict[str, Any]) -> str:
+        message = ((payload.get("choices") or [{}])[0].get("message") or {})
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        return _text_from_content(content)
 
     @staticmethod
     def _extract_responses_text(payload: dict[str, Any]) -> str:

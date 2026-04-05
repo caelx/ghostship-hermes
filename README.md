@@ -187,15 +187,19 @@ The image now includes a standalone local router service:
 
 - listen address: `127.0.0.1:8788`
 - model aliases: `lightweight`, `coding`, `heavyweight`
-- primary endpoints: `GET /healthz`, `GET /readyz`, `GET /v1/models`, `POST /v1/chat/completions`
+- Hermes-compatible health endpoints: `GET /health`, `GET /v1/health`
+- router health endpoints: `GET /healthz`, `GET /readyz`
+- primary OpenAI-style endpoints: `GET /v1/models`, `POST /v1/chat/completions`, `POST /v1/responses`, `GET /v1/responses/{id}`, `DELETE /v1/responses/{id}`
 - metrics endpoint: `GET /metrics`
 - debug endpoints: `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{alias}`, `GET /debug/rankings/{alias}`, `GET /debug/models/{provider}/{model}`
 - persistent state: `/home/hermes/.local/state/ghostship-hermes/router/router.db`
 - inventory sources: OpenRouter and OpenCode Zen
 - Zen request families: `/chat/completions`, `/responses`, `/messages`, and Google-style model endpoints are normalized back into the local `chat/completions` surface
-- routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, and durable overrides
+- routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, durable overrides, stored `responses`, and lightweight chat session continuity
 - ranking worker: a healthy free model from the `lightweight` pool performs coarse ranking and selective reranking outside the request hot path
 - override controls: provider and model disablement, provider and model weight overrides, and alias pinning
+- optional auth: `GHOSTSHIP_ROUTER_API_KEY` or `API_SERVER_KEY`
+- optional browser CORS allowlist: `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`
 
 Outside the container, standalone router runs default state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router` unless `GHOSTSHIP_ROUTER_STATE_DIR` or `GHOSTSHIP_ROUTER_DB_PATH` is set.
 

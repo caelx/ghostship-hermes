@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import json
+import time
 from typing import Any
 
 import httpx
 
 from ghostship_cli_contract import BaseHttpClient, HttpStatusError, TimeoutError, TransportError
 
-from .base import NormalizedProviderError, ProviderChatResult, ProviderModel
+from .base import (
+    NormalizedProviderError,
+    ProviderChatResult,
+    ProviderChatStreamResult,
+    ProviderChatStreamState,
+    ProviderModel,
+)
 
 
 def _is_zeroish(value: Any) -> bool:
@@ -63,6 +71,72 @@ class OpenRouterProvider:
         except HttpStatusError as exc:
             raise self._normalize_http_error(exc, backend_model=backend_model) from exc
         return ProviderChatResult(payload=response, provider=self.name, backend_model=str(response.get("model") or backend_model))
+
+    def chat_completions_stream(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatStreamResult:
+        body = dict(payload)
+        body["model"] = backend_model
+        body["stream"] = True
+        request_timeout = timeout or self.client.default_timeout
+        state = ProviderChatStreamState()
+        started_at = time.monotonic()
+
+        def stream_chunks():
+            spec = self.client.build_request_spec("POST", "/chat/completions", json_body=body, timeout=request_timeout)
+            url = f"{self.client.base_url}{spec.path}"
+            try:
+                with self.client._client(spec.timeout) as client:
+                    with client.stream(spec.method, url, params=spec.params, json=spec.json_body, headers=spec.headers) as response:
+                        if response.is_error:
+                            details: Any = None
+                            try:
+                                details = response.json()
+                            except Exception:
+                                details = response.text or None
+                            raise self._normalize_http_error(
+                                HttpStatusError(
+                                    f"remote service returned HTTP {response.status_code}",
+                                    status_code=response.status_code,
+                                    details=details,
+                                ),
+                                backend_model=backend_model,
+                            )
+                        for line in response.iter_lines():
+                            if not line or not line.startswith("data: "):
+                                continue
+                            data = line[6:].strip()
+                            if data == "[DONE]":
+                                break
+                            try:
+                                payload_chunk = json.loads(data)
+                            except json.JSONDecodeError:
+                                continue
+                            state.final_payload = payload_chunk
+                            if isinstance(payload_chunk.get("usage"), dict):
+                                state.usage = payload_chunk["usage"]
+                            delta = ((payload_chunk.get("choices") or [{}])[0].get("delta") or {})
+                            content = delta.get("content")
+                            if not isinstance(content, str) or not content:
+                                continue
+                            if state.first_text_latency_ms is None:
+                                state.first_text_latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+                            state.emitted_text += content
+                            yield content
+            except TimeoutError as exc:
+                raise NormalizedProviderError("timeout", str(exc), provider=self.name, backend_model=backend_model, retryable=True, details=exc.details) from exc
+            except TransportError as exc:
+                raise NormalizedProviderError("transport_error", str(exc), provider=self.name, backend_model=backend_model, retryable=True, details=exc.details) from exc
+            except HttpStatusError as exc:
+                raise self._normalize_http_error(exc, backend_model=backend_model) from exc
+            if state.final_payload is None:
+                state.final_payload = {
+                    "id": f"chatcmpl-{backend_model}",
+                    "object": "chat.completion",
+                    "model": backend_model,
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": state.emitted_text}, "finish_reason": "stop"}],
+                    "usage": state.usage,
+                }
+
+        return ProviderChatStreamResult(chunks=stream_chunks(), provider=self.name, backend_model=backend_model, state=state)
 
     @staticmethod
     def _tags_for_model(model_id: str) -> tuple[str, ...]:

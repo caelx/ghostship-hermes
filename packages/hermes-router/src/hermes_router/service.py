@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
 from .config import AliasConfig, RouterConfig
-from .models import ChatCompletionRequest, ModelCard, ModelsResponse, ReadinessResponse
-from .providers.base import ChatProvider, NormalizedProviderError, ProviderModel
+from .models import ChatCompletionRequest, ModelCard, ModelsResponse, ReadinessResponse, ResponsesRequest
+from .providers.base import ChatProvider, NormalizedProviderError, ProviderChatStreamResult, ProviderModel
 from .providers.opencode_zen import OpencodeZenProvider
 from .providers.openrouter import OpenRouterProvider
 from .state import RouteEvent, SqliteStateStore, StateStore
@@ -44,6 +46,12 @@ class RouteCandidate:
     total_score: float
     score_breakdown: dict[str, Any]
     is_fallback: bool = False
+
+
+@dataclass(frozen=True)
+class StreamPlan:
+    body: Iterator[str]
+    headers: dict[str, str]
 
 
 class RouterService:
@@ -110,13 +118,202 @@ class RouterService:
             )
         return ModelsResponse(data=alias_cards)
 
-    def chat_completions(self, request: ChatCompletionRequest) -> tuple[dict[str, Any], dict[str, str]]:
-        if request.stream:
-            raise RouterServiceError(501, {"message": "Streaming chat completions are not implemented yet."})
+    def chat_completions(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> tuple[dict[str, Any], dict[str, str]]:
+        active_session_id, request_for_routing = self._prepare_chat_request(request, session_id=session_id)
+        payload, headers = self._execute_chat_completion(request_for_routing)
+        self.state_store.save_chat_session(active_session_id, self._chat_session_messages(request_for_routing, payload))
+        headers["X-Hermes-Session-Id"] = active_session_id
+        return payload, headers
+
+    def stream_chat_completions(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> StreamPlan:
+        active_session_id, request_for_routing = self._prepare_chat_request(request, session_id=session_id)
+        candidates = self._resolve_candidates(request_for_routing.model)
+        if not candidates:
+            raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request_for_routing.model}'."})
+
+        request_payload = request_for_routing.model_dump(mode="json", exclude_none=True)
+        request_payload.pop("timeout", None)
+        attempt_errors: list[dict[str, Any]] = []
+        selected: tuple[RouteCandidate, ProviderChatStreamResult, str | None, Iterator[str]] | None = None
+        for index, candidate in enumerate(candidates):
+            provider = self.providers.get(candidate.provider_name)
+            if provider is None:
+                continue
+            try:
+                stream_result = provider.chat_completions_stream(
+                    candidate.backend_model,
+                    request_payload,
+                    timeout=request_for_routing.timeout or self.config.default_timeout,
+                )
+                chunk_iter = iter(stream_result.chunks)
+                first_chunk: str | None = None
+                try:
+                    first_chunk = next(chunk_iter)
+                except StopIteration:
+                    first_chunk = None
+                selected = (candidate, stream_result, first_chunk, chunk_iter)
+                break
+            except NormalizedProviderError as exc:
+                self._record_failure(candidate, request_for_routing.model, exc, latency_ms=None, is_fallback=(index > 0))
+                attempt_errors.append(
+                    {
+                        "provider": exc.provider,
+                        "backend_model": exc.backend_model,
+                        "category": exc.category,
+                        "retryable": exc.retryable,
+                        "details": exc.details,
+                    }
+                )
+                if exc.category == "model_missing":
+                    self.refresh_inventory(reason="model_missing")
+                if not exc.retryable:
+                    continue
+        if selected is None:
+            raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors})
+
+        candidate, stream_result, first_chunk, chunk_iter = selected
+        completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
+        created = int(time.time())
+        headers = {
+            "Cache-Control": "no-cache",
+            "X-Ghostship-Router-Backend-Provider": stream_result.provider,
+            "X-Ghostship-Router-Backend-Model": stream_result.backend_model,
+            "X-Hermes-Session-Id": active_session_id,
+        }
+        if stream_result.state.first_text_latency_ms is not None:
+            headers["X-Ghostship-Router-First-Text-Latency-Ms"] = str(stream_result.state.first_text_latency_ms)
+
+        def stream_body() -> Iterator[str]:
+            role_chunk = {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": request_for_routing.model,
+                "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+            }
+            yield f"data: {json.dumps(role_chunk)}\n\n"
+            started_at = time.monotonic()
+            emitted_parts: list[str] = []
+            try:
+                if first_chunk:
+                    emitted_parts.append(first_chunk)
+                    yield self._stream_content_chunk(completion_id, created, request_for_routing.model, first_chunk)
+                for chunk in chunk_iter:
+                    if not chunk:
+                        continue
+                    emitted_parts.append(chunk)
+                    yield self._stream_content_chunk(completion_id, created, request_for_routing.model, chunk)
+            except NormalizedProviderError as exc:
+                self._record_failure(candidate, request_for_routing.model, exc, latency_ms=round((time.monotonic() - started_at) * 1000, 2), is_fallback=candidate.is_fallback)
+                raise
+            latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+            first_text_latency_ms = stream_result.state.first_text_latency_ms or latency_ms
+            final_payload = stream_result.state.final_payload or self._chat_payload_from_text(
+                request_for_routing.model,
+                stream_result.backend_model,
+                "".join(emitted_parts),
+                stream_result.state.usage,
+            )
+            self.state_store.apply_success(
+                candidate.provider_name,
+                candidate.backend_model,
+                latency_ms=latency_ms,
+                first_text_latency_ms=first_text_latency_ms,
+            )
+            self._apply_provider_health_guards(candidate.provider_name)
+            self.state_store.record_attempt(
+                RouteEvent(
+                    alias=request_for_routing.model,
+                    provider_name=candidate.provider_name,
+                    backend_model=candidate.backend_model,
+                    success=True,
+                    retryable=False,
+                    is_fallback=candidate.is_fallback,
+                    category=None,
+                    latency_ms=latency_ms,
+                    first_text_latency_ms=first_text_latency_ms,
+                    details={"score_breakdown": candidate.score_breakdown},
+                    created_at=time.time(),
+                )
+            )
+            self.state_store.save_chat_session(active_session_id, self._chat_session_messages(request_for_routing, final_payload))
+            finish_chunk = {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": request_for_routing.model,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                "usage": self._chat_usage(final_payload),
+            }
+            yield f"data: {json.dumps(finish_chunk)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamPlan(body=stream_body(), headers=headers)
+
+    def responses_create(self, request: ResponsesRequest) -> tuple[dict[str, Any], dict[str, str]]:
+        if request.conversation and request.previous_response_id:
+            raise RouterServiceError(400, {"message": "Cannot use both 'conversation' and 'previous_response_id'."})
+        previous_response_id = request.previous_response_id
+        if request.conversation:
+            previous_response_id = self.state_store.get_conversation_response(request.conversation)
+
+        input_messages = self._responses_input_messages(request.input)
+        if not input_messages:
+            raise RouterServiceError(400, {"message": "No user message found in input."})
+        history: list[dict[str, Any]] = []
+        instructions = request.instructions
+        if previous_response_id:
+            stored = self.state_store.get_response(previous_response_id)
+            if stored is None:
+                raise RouterServiceError(404, {"message": f"Previous response not found: {previous_response_id}"})
+            history = list(stored.get("conversation_history", []))
+            if instructions is None:
+                instructions = stored.get("instructions")
+        history.extend(input_messages[:-1])
+        if request.truncation == "auto" and len(history) > 100:
+            history = history[-100:]
+        chat_messages: list[dict[str, Any]] = []
+        if instructions:
+            chat_messages.append({"role": "system", "content": instructions})
+        chat_messages.extend(history)
+        chat_messages.append(input_messages[-1])
+        chat_request = ChatCompletionRequest.model_validate(
+            {
+                "model": request.model,
+                "messages": chat_messages,
+                "temperature": request.model_extra.get("temperature") if request.model_extra else None,
+                "max_tokens": request.model_extra.get("max_output_tokens") if request.model_extra else None,
+                "timeout": request.timeout,
+            }
+        )
+        payload, headers = self._execute_chat_completion(chat_request)
+        response_id = f"resp_{uuid.uuid4().hex[:28]}"
+        response_payload = self._responses_payload(response_id, request.model, payload)
+        conversation_history = [message for message in chat_messages if message.get("role") != "system"]
+        conversation_history.append({"role": "assistant", "content": self._assistant_text_from_payload(payload)})
+        if request.store:
+            self.state_store.put_response(response_id, response_payload, conversation_history=conversation_history, instructions=instructions)
+            if request.conversation:
+                self.state_store.set_conversation_response(request.conversation, response_id)
+        headers["X-Hermes-Session-Id"] = headers.get("X-Hermes-Session-Id", str(uuid.uuid4()))
+        return response_payload, headers
+
+    def get_response(self, response_id: str) -> dict[str, Any]:
+        stored = self.state_store.get_response(response_id)
+        if stored is None:
+            raise RouterServiceError(404, {"message": f"Response not found: {response_id}"})
+        return stored["response"]
+
+    def delete_response(self, response_id: str) -> dict[str, Any]:
+        deleted = self.state_store.delete_response(response_id)
+        if not deleted:
+            raise RouterServiceError(404, {"message": f"Response not found: {response_id}"})
+        return {"id": response_id, "object": "response", "deleted": True}
+
+    def _execute_chat_completion(self, request: ChatCompletionRequest) -> tuple[dict[str, Any], dict[str, str]]:
         candidates = self._resolve_candidates(request.model)
         if not candidates:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
-
         request_payload = request.model_dump(mode="json", exclude_none=True)
         request_payload.pop("timeout", None)
         errors: list[dict[str, Any]] = []
@@ -129,12 +326,7 @@ class RouterService:
                 result = provider.chat_completions(candidate.backend_model, request_payload, timeout=request.timeout or self.config.default_timeout)
                 latency_ms = round((time.monotonic() - start) * 1000, 2)
                 first_text_latency_ms = result.first_text_latency_ms or latency_ms
-                self.state_store.apply_success(
-                    candidate.provider_name,
-                    candidate.backend_model,
-                    latency_ms=latency_ms,
-                    first_text_latency_ms=first_text_latency_ms,
-                )
+                self.state_store.apply_success(candidate.provider_name, candidate.backend_model, latency_ms=latency_ms, first_text_latency_ms=first_text_latency_ms)
                 self._apply_provider_health_guards(candidate.provider_name)
                 self.state_store.record_attempt(
                     RouteEvent(
@@ -147,10 +339,7 @@ class RouterService:
                         category=None,
                         latency_ms=latency_ms,
                         first_text_latency_ms=first_text_latency_ms,
-                        details={
-                            "result_provider": result.provider,
-                            "score_breakdown": candidate.score_breakdown,
-                        },
+                        details={"result_provider": result.provider, "score_breakdown": candidate.score_breakdown},
                         created_at=time.time(),
                     )
                 )
@@ -163,33 +352,7 @@ class RouterService:
                 return result.payload, headers
             except NormalizedProviderError as exc:
                 latency_ms = round((time.monotonic() - start) * 1000, 2)
-                logger.warning(
-                    "router candidate failed: provider=%s backend_model=%s category=%s retryable=%s",
-                    exc.provider,
-                    exc.backend_model,
-                    exc.category,
-                    exc.retryable,
-                )
-                self.state_store.apply_failure(candidate.provider_name, candidate.backend_model, category=exc.category, retryable=exc.retryable)
-                self._apply_provider_health_guards(candidate.provider_name)
-                self.state_store.record_attempt(
-                    RouteEvent(
-                        alias=request.model,
-                        provider_name=candidate.provider_name,
-                        backend_model=candidate.backend_model,
-                        success=False,
-                        retryable=exc.retryable,
-                        is_fallback=(index > 0),
-                        category=exc.category,
-                        latency_ms=latency_ms,
-                        first_text_latency_ms=None,
-                        details={
-                            "provider_error": exc.details,
-                            "score_breakdown": candidate.score_breakdown,
-                        },
-                        created_at=time.time(),
-                    )
-                )
+                self._record_failure(candidate, request.model, exc, latency_ms=latency_ms, is_fallback=(index > 0))
                 errors.append(
                     {
                         "provider": exc.provider,
@@ -203,14 +366,154 @@ class RouterService:
                     self.refresh_inventory(reason="model_missing")
                 if not exc.retryable:
                     continue
+        raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors})
 
-        raise RouterServiceError(
-            503,
-            {
-                "message": f"All route candidates failed for alias '{request.model}'.",
-                "attempts": errors,
-            },
+    def _prepare_chat_request(self, request: ChatCompletionRequest, *, session_id: str | None) -> tuple[str, ChatCompletionRequest]:
+        active_session_id = session_id or str(uuid.uuid4())
+        if not session_id:
+            return active_session_id, request
+        stored_messages = self.state_store.load_chat_session(session_id)
+        if not stored_messages:
+            return active_session_id, request
+        request_messages = request.model_dump(mode="json", exclude_none=True)["messages"]
+        system_messages = [message for message in request_messages if message.get("role") == "system"]
+        non_system = [message for message in request_messages if message.get("role") != "system"]
+        if non_system:
+            merged = [*system_messages, *stored_messages, non_system[-1]]
+        else:
+            merged = [*system_messages, *stored_messages]
+        return active_session_id, ChatCompletionRequest.model_validate({**request.model_dump(mode="json", exclude_none=True), "messages": merged})
+
+    def _chat_session_messages(self, request: ChatCompletionRequest, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        messages = [message.model_dump(mode="json", exclude_none=True) for message in request.messages if message.role != "system"]
+        messages.append({"role": "assistant", "content": self._assistant_text_from_payload(payload)})
+        return messages
+
+    def _assistant_text_from_payload(self, payload: dict[str, Any]) -> str:
+        message = ((payload.get("choices") or [{}])[0].get("message") or {})
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = [str(item.get("text", "")) for item in content if isinstance(item, dict)]
+            return "\n".join(part for part in parts if part)
+        return str(content or "")
+
+    def _chat_payload_from_text(
+        self,
+        model_alias: str,
+        backend_model: str,
+        text: str,
+        usage: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:29]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": backend_model or model_alias,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
+            "usage": usage,
+        }
+
+    def _chat_usage(self, payload: dict[str, Any]) -> dict[str, int]:
+        usage = payload.get("usage") or {}
+        return {
+            "prompt_tokens": int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0),
+            "completion_tokens": int(usage.get("completion_tokens") or usage.get("output_tokens") or 0),
+            "total_tokens": int(usage.get("total_tokens") or 0),
+        }
+
+    def _stream_content_chunk(self, completion_id: str, created: int, model: str, chunk: str) -> str:
+        payload = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}],
+        }
+        return f"data: {json.dumps(payload)}\n\n"
+
+    def _record_failure(
+        self,
+        candidate: RouteCandidate,
+        alias: str,
+        exc: NormalizedProviderError,
+        *,
+        latency_ms: float | None,
+        is_fallback: bool,
+    ) -> None:
+        logger.warning(
+            "router candidate failed: provider=%s backend_model=%s category=%s retryable=%s",
+            exc.provider,
+            exc.backend_model,
+            exc.category,
+            exc.retryable,
         )
+        self.state_store.apply_failure(candidate.provider_name, candidate.backend_model, category=exc.category, retryable=exc.retryable)
+        self._apply_provider_health_guards(candidate.provider_name)
+        self.state_store.record_attempt(
+            RouteEvent(
+                alias=alias,
+                provider_name=candidate.provider_name,
+                backend_model=candidate.backend_model,
+                success=False,
+                retryable=exc.retryable,
+                is_fallback=is_fallback,
+                category=exc.category,
+                latency_ms=latency_ms,
+                first_text_latency_ms=None,
+                details={"provider_error": exc.details, "score_breakdown": candidate.score_breakdown},
+                created_at=time.time(),
+            )
+        )
+
+    def _responses_input_messages(self, raw_input: Any) -> list[dict[str, Any]]:
+        if isinstance(raw_input, str):
+            return [{"role": "user", "content": raw_input}]
+        if not isinstance(raw_input, list):
+            raise RouterServiceError(400, {"message": "'input' must be a string or array."})
+        messages: list[dict[str, Any]] = []
+        for item in raw_input:
+            if isinstance(item, str):
+                messages.append({"role": "user", "content": item})
+                continue
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "user"))
+            content = item.get("content", "")
+            if isinstance(content, list):
+                parts: list[str] = []
+                for part in content:
+                    if isinstance(part, str):
+                        parts.append(part)
+                    elif isinstance(part, dict):
+                        text = part.get("text")
+                        if isinstance(text, str):
+                            parts.append(text)
+                content = "\n".join(part for part in parts if part)
+            messages.append({"role": role, "content": content})
+        return messages
+
+    def _responses_payload(self, response_id: str, model: str, chat_payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": response_id,
+            "object": "response",
+            "status": "completed",
+            "created_at": int(time.time()),
+            "model": model,
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": self._assistant_text_from_payload(chat_payload)}],
+                }
+            ],
+            "usage": {
+                "input_tokens": int((chat_payload.get("usage") or {}).get("prompt_tokens") or (chat_payload.get("usage") or {}).get("input_tokens") or 0),
+                "output_tokens": int((chat_payload.get("usage") or {}).get("completion_tokens") or (chat_payload.get("usage") or {}).get("output_tokens") or 0),
+                "total_tokens": int((chat_payload.get("usage") or {}).get("total_tokens") or 0),
+            },
+        }
 
     def refresh_inventory(self, *, reason: str) -> list[ProviderModel]:
         refreshed: list[ProviderModel] = []

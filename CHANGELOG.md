@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Expanded `ghostship-hermes-router` again with Hermes-compatible `/health` and `/v1/health`, SSE `chat/completions`, `responses` create/get/delete with stored chaining, lightweight chat session continuity via `X-Hermes-Session-Id`, optional bearer auth and CORS settings, broader router tests, and a router package bump to `0.2.0`.
 - Expanded `ghostship-hermes-router` with rolling model and provider health, Prometheus-style `/metrics`, provider-wide cooldown and recovery, lightweight free-model background ranking and shortlist reranking, durable override storage for disablement, weights, and alias pinning, richer ranking and provider debug endpoints, and runtime wiring for the new router tuning env.
 - Added the new `packages/hermes-router` `FastAPI`/`uvicorn` service with stable alias endpoints, SQLite-backed route state, background inventory refresh, model-level routing and failover, best-effort first-text timing, OpenRouter plus OpenCode Zen inventory support, mixed Zen endpoint-family normalization, and free-model-assisted bucketing, then wired it into the Hermes image as `ghostship-hermes-router.service`.
 - Added repo docs for the free-first model router plan and Hermes Nix setup notes, and gitignored the repo-local `.nix-local-store/` build cache so local validation state does not show up as source changes.

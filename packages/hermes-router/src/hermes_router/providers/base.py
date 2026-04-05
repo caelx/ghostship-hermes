@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -21,6 +22,22 @@ class ProviderChatResult:
     first_text_latency_ms: float | None = None
 
 
+@dataclass
+class ProviderChatStreamState:
+    first_text_latency_ms: float | None = None
+    usage: dict[str, Any] | None = None
+    final_payload: dict[str, Any] | None = None
+    emitted_text: str = ""
+
+
+@dataclass(frozen=True)
+class ProviderChatStreamResult:
+    chunks: Iterator[str]
+    provider: str
+    backend_model: str
+    state: ProviderChatStreamState
+
+
 class NormalizedProviderError(Exception):
     def __init__(self, category: str, message: str, *, provider: str, backend_model: str | None = None, retryable: bool = False, details: Any = None):
         super().__init__(message)
@@ -38,4 +55,7 @@ class ChatProvider(Protocol):
         ...
 
     def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
+        ...
+
+    def chat_completions_stream(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatStreamResult:
         ...

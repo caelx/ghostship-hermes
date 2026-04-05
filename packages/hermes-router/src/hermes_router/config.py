@@ -64,6 +64,8 @@ class RouterConfig:
     host: str
     port: int
     log_level: str
+    api_key: str | None
+    cors_origins: tuple[str, ...]
     default_timeout: float
     inventory_ttl_seconds: int
     refresh_interval_seconds: int
@@ -107,6 +109,8 @@ class RouterConfig:
             host=os.environ.get("GHOSTSHIP_ROUTER_HOST", "127.0.0.1"),
             port=int(os.environ.get("GHOSTSHIP_ROUTER_PORT", "8788")),
             log_level=os.environ.get("GHOSTSHIP_ROUTER_LOG_LEVEL", "info"),
+            api_key=os.environ.get("GHOSTSHIP_ROUTER_API_KEY") or os.environ.get("API_SERVER_KEY"),
+            cors_origins=_parse_csv_env("GHOSTSHIP_ROUTER_CORS_ORIGINS") or _parse_csv_env("API_SERVER_CORS_ORIGINS"),
             default_timeout=float(os.environ.get("GHOSTSHIP_ROUTER_TIMEOUT", "30")),
             inventory_ttl_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_INVENTORY_TTL", "300")),
             refresh_interval_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_REFRESH_INTERVAL", "300")),
