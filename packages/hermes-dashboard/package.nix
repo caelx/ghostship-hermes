@@ -1,6 +1,16 @@
-{ python311Packages }:
+{
+  lib,
+  bashInteractive,
+  makeWrapper,
+  python311Packages,
+  ttyd,
+}:
 let
   pythonSitePackages = python311Packages.python.sitePackages;
+  runtimeBinPath = lib.makeBinPath [
+    bashInteractive
+    ttyd
+  ];
   fastapiRuntime = python311Packages.fastapi.overridePythonAttrs (old: {
     doCheck = false;
     doInstallCheck = false;
@@ -24,6 +34,10 @@ python311Packages.buildPythonApplication {
     httpx
   ];
 
+  nativeBuildInputs = [
+    makeWrapper
+  ];
+
   nativeCheckInputs = with python311Packages; [
     pytestCheckHook
   ];
@@ -31,6 +45,10 @@ python311Packages.buildPythonApplication {
   doCheck = false;
 
   pythonImportsCheck = [ "hermes_dashboard" ];
+
+  postFixup = ''
+    wrapProgram "$out/bin/hermes-dashboard"       --prefix PATH : "${runtimeBinPath}"       --set-default GHOSTSHIP_BASH "${bashInteractive}/bin/bash"
+  '';
 
   postInstall = ''
     test -x "$out/bin/hermes-dashboard"
