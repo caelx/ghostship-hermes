@@ -249,6 +249,16 @@ set rootfs_output (nix path-info --store $store .#packages.x86_64-linux.ghostshi
 set rootfs_tar (find $rootfs_output -type f -name '*.tar.xz' | head -n 1)
 ```
 
+On `x86_64` hosts, keep arm64 validation at derivation-evaluation scope:
+
+```fish
+nix eval .#packages.aarch64-linux.ghostship-hermes-image.drvPath --raw
+```
+
+Full `aarch64-linux` publishable image builds require an arm64-capable runner or
+builder. The GitHub `publish-image` workflow uses `ubuntu-24.04-arm` for the
+arm64 release leg and keeps x86-host validation paths at `nix eval`.
+
 Image output contract:
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.

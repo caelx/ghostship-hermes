@@ -30,4 +30,6 @@ jobs:
         run: nix build .#packages.x86_64-linux.ghostship-hermes-runtime
 
       - name: Evaluate arm64 image derivation
+        # Keep x86-host CI at evaluation-only scope for arm64. Full arm64 image
+        # builds run in publish-image on native arm64 infrastructure.
         run: nix eval .#packages.aarch64-linux.ghostship-hermes-image.drvPath --raw
