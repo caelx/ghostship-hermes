@@ -17,12 +17,14 @@ The workstation SHALL create and repair the managed symlinks from `/home/hermes`
 - **AND** `~/.config/systemd/user` persists through the symlinked home facade
 
 ### Requirement: Systemd runtime preserves the custom dashboard services
-The workstation SHALL continue to run the custom Ghostship Hermes dashboard stack under the `systemd` runtime after the persistence-layout change.
+The workstation SHALL run the packaged MMX Ghostship Hermes dashboard under the image-managed `systemd` runtime.
 
 #### Scenario: Dashboard services still come up under systemd
-- **WHEN** the workstation boots under the new persistence model
-- **THEN** the system-level dashboard services still start under `systemd`
-- **AND** the browser-facing dashboard remains available through the supported runtime path
+- **WHEN** the workstation boots under the current image runtime contract
+- **THEN** the system-level dashboard service starts under `systemd`
+- **AND** that service reaches the packaged `hermes-dashboard` entrypoint through the image runtime path
+- **AND** the browser-facing MMX dashboard remains available through the supported runtime path
+- **AND** the runtime does not depend on a deleted repo-local dashboard asset tree or on pre-generated per-profile terminal services to make the dashboard available
 
 ### Requirement: Hermes-native profiles and gateway install remain persistent
 The workstation SHALL preserve Hermes-native named profile behavior, wrapper paths, and `gateway install` behavior under the new persistence layout.
