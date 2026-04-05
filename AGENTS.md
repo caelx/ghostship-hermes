@@ -91,6 +91,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Scheduled GitHub release polling must authenticate with `GITHUB_TOKEN` or `GH_TOKEN`; anonymous `api.github.com` release queries can hit rate limits and break Actions.
 - Hermes is not packaged in the inspected `nixos-25.11` nixpkgs tree, while `ttyd`, `codex`, `gemini-cli`, and `opencode` are.
 - Local flake evaluation only sees git-tracked files. Stage new Nix files and vendored trees before relying on `nix flake check` or `nix build` in a worktree.
+- Keep `.nix-local-store/` gitignored. It is repo-local build state for Docker and Nix validation, not source content.
 - On the current `x86_64` dev host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired correctly and rely on arm64 runners for full arm builds.
 - Keep `ghostship-hermes-image` as the explicit publishable image bundle contract for CI, GHCR pushes, and image-loading flows, and keep the lower-level `/init` workstation tarball on a separate `ghostship-hermes-rootfs` output so scripts do not guess artifact semantics from one overloaded path.
 - Git worktrees do not carry ignored local `.envrc` files by default. Live-test helpers should check the current worktree first, then another repo worktree with `.envrc`.

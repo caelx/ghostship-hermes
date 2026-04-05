@@ -4,6 +4,7 @@
 .envrc
 .envrc.local
 .hermes/
+.nix-local-store/
 **/.pytest_cache/
 **/.ruff_cache/
 .venv/

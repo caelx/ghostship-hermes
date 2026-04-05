@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added repo docs for the free-first model router plan and Hermes Nix setup notes, and gitignored the repo-local `.nix-local-store/` build cache so local validation state does not show up as source changes.
 - Split the image build contract into an explicit publishable `ghostship-hermes-image` bundle and a separate `ghostship-hermes-rootfs` tarball, added `scripts/export_publishable_image.sh` as the shared Docker materialization helper, updated the GHCR publish workflow and dashboard smoke test to use that bundle, and kept the full persistence validation on the low-level rootfs path.
 - Rebuilt the Hermes image around the upstream Hermes NixOS module with `HERMES_HOME=/home/hermes/.hermes`, `HOME=/home/hermes`, a dedicated `hermes` user at `3000:3000`, a persisted whole-home volume, and a lean default package set that keeps only Hermes, runtime Nix support, the dashboard stack, and the `ghostship-*` utilities.
 - Removed the remaining Ghostship workstation baggage from both the image and the repo tree, including repo-managed skills, vendored Google Workspace assets, `feed`, `honcho-ai`, the old `rootfs`, and the old workstation seed payloads.
