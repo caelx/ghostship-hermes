@@ -186,6 +186,7 @@ All `ghostship-*` utilities emit native JSON by default.
 The image now includes a standalone local router service:
 
 - listen address: `127.0.0.1:8788`
+- systemd unit: `ghostship-hermes-router.service`
 - model aliases: `lightweight`, `coding`, `heavyweight`
 - Hermes-compatible health endpoints: `GET /health`, `GET /v1/health`
 - router health endpoints: `GET /healthz`, `GET /readyz`
@@ -199,7 +200,7 @@ The image now includes a standalone local router service:
 - routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, durable overrides, stored `responses`, and lightweight chat session continuity
 - ranking worker: a healthy free model from the `lightweight` pool performs coarse ranking and selective reranking outside the request hot path
 - override controls: provider and model disablement, provider and model weight overrides, and alias pinning
-- optional auth: `GHOSTSHIP_ROUTER_API_KEY` or `API_SERVER_KEY`
+- optional auth: `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
 - optional browser CORS allowlist: `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`
 
 Outside the container, standalone router runs default state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router` unless `GHOSTSHIP_ROUTER_STATE_DIR` or `GHOSTSHIP_ROUTER_DB_PATH` is set.
@@ -227,6 +228,12 @@ Optional runtime env for the router:
 - `GHOSTSHIP_ROUTER_ALIAS_PIN_HEAVYWEIGHT`
 
 If `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` or `GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL` is set, it must resolve to a healthy free model ID from the current router inventory.
+
+Hermes named custom provider compatibility:
+
+- use `base_url: http://127.0.0.1:8788/v1`, or bare `http://127.0.0.1:8788` if you prefer
+- use a router alias like `lightweight`, `coding`, or `heavyweight` as the model id
+- if router auth is enabled, Hermes can send the same bearer token through `OPENAI_API_KEY` or a `custom_providers[].api_key` entry
 
 ## Local Validation
 

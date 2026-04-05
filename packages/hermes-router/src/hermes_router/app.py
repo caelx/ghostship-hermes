@@ -88,6 +88,7 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
             response.status_code = 503
         return payload
 
+    @app.get("/models")
     @app.get("/v1/models")
     def list_models(request: Request):
         if not _authorized(request, resolved_config):
@@ -134,6 +135,7 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
     def metrics():
         return PlainTextResponse(resolved_service.metrics_text(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
+    @app.post("/chat/completions")
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request):
         if not _authorized(request, resolved_config):
@@ -162,6 +164,7 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
             return JSONResponse(_openai_error(str(detail.get("message", exc.detail))), status_code=exc.status_code)
         return JSONResponse(payload, headers=headers)
 
+    @app.post("/responses")
     @app.post("/v1/responses")
     async def responses_create(request: Request):
         if not _authorized(request, resolved_config):
@@ -184,6 +187,7 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
             return JSONResponse(_openai_error(str(detail.get("message", exc.detail))), status_code=exc.status_code)
         return JSONResponse(payload, headers=headers)
 
+    @app.get("/responses/{response_id}")
     @app.get("/v1/responses/{response_id}")
     def responses_get(response_id: str, request: Request):
         if not _authorized(request, resolved_config):
@@ -194,6 +198,7 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
             detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
             return JSONResponse(_openai_error(str(detail.get("message", exc.detail))), status_code=exc.status_code)
 
+    @app.delete("/responses/{response_id}")
     @app.delete("/v1/responses/{response_id}")
     def responses_delete(response_id: str, request: Request):
         if not _authorized(request, resolved_config):

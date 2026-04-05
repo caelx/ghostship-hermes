@@ -1,4 +1,4 @@
-{ python311Packages }:
+{ python311Packages, ttyd }:
 python311Packages.buildPythonApplication {
   pname = "hermes-dashboard";
   version = "0.1.0";
@@ -14,6 +14,7 @@ python311Packages.buildPythonApplication {
     uvicorn
     websockets
     httpx
+    ttyd
   ];
 
   nativeCheckInputs = with python311Packages; [

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,65 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         ),
     )
     return RouterConfig(**{**base.__dict__, **overrides})
+
+
+def test_config_reads_hermes_api_server_aliases(tmp_path: Path, monkeypatch) -> None:
+    env_keys = (
+        "GHOSTSHIP_ROUTER_HOST",
+        "GHOSTSHIP_ROUTER_PORT",
+        "GHOSTSHIP_ROUTER_API_KEY",
+        "GHOSTSHIP_ROUTER_CORS_ORIGINS",
+        "API_SERVER_HOST",
+        "API_SERVER_PORT",
+        "API_SERVER_KEY",
+        "API_SERVER_CORS_ORIGINS",
+        "GHOSTSHIP_ROUTER_STATE_DIR",
+        "GHOSTSHIP_ROUTER_DB_PATH",
+    )
+    saved = {key: os.environ.get(key) for key in env_keys}
+    try:
+        for key in env_keys:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("API_SERVER_HOST", "0.0.0.0")
+        monkeypatch.setenv("API_SERVER_PORT", "9999")
+        monkeypatch.setenv("API_SERVER_KEY", "router-key")
+        monkeypatch.setenv("API_SERVER_CORS_ORIGINS", "http://localhost:3000,https://example.test")
+        monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
+        config = RouterConfig.from_env()
+        assert config.host == "0.0.0.0"
+        assert config.port == 9999
+        assert config.api_key == "router-key"
+        assert config.cors_origins == ("http://localhost:3000", "https://example.test")
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                monkeypatch.delenv(key, raising=False)
+            else:
+                monkeypatch.setenv(key, value)
+
+
+def test_config_reads_openai_api_key_for_custom_provider_compatibility(tmp_path: Path, monkeypatch) -> None:
+    env_keys = (
+        "GHOSTSHIP_ROUTER_API_KEY",
+        "API_SERVER_KEY",
+        "OPENAI_API_KEY",
+        "GHOSTSHIP_ROUTER_STATE_DIR",
+        "GHOSTSHIP_ROUTER_DB_PATH",
+    )
+    saved = {key: os.environ.get(key) for key in env_keys}
+    try:
+        for key in env_keys:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "custom-provider-key")
+        monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
+        config = RouterConfig.from_env()
+        assert config.api_key == "custom-provider-key"
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                monkeypatch.delenv(key, raising=False)
+            else:
+                monkeypatch.setenv(key, value)
 
 
 class DummyProvider:
@@ -245,6 +305,28 @@ def test_models_endpoint_lists_aliases(tmp_path: Path) -> None:
         assert [item["id"] for item in payload["data"]] == ["lightweight", "coding", "heavyweight"]
 
 
+def test_non_v1_models_alias_lists_aliases(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.get("/models")
+        assert response.status_code == 200
+        payload = response.json()
+        assert [item["id"] for item in payload["data"]] == ["lightweight", "coding", "heavyweight"]
+
+
+def test_health_endpoints_match_hermes_shape(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "platform": "ghostship-hermes-router"}
+        response = client.get("/v1/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "platform": "ghostship-hermes-router"}
+
+
 def test_readyz_is_unready_without_providers(tmp_path: Path) -> None:
     config = make_config(tmp_path, openrouter_api_key=None, opencode_api_key=None)
     service = RouterService(config, providers={}, state_store=SqliteStateStore(config.db_path))
@@ -252,6 +334,18 @@ def test_readyz_is_unready_without_providers(tmp_path: Path) -> None:
         response = client.get("/readyz")
         assert response.status_code == 503
         assert response.json()["ok"] is False
+
+
+def test_api_key_protects_router_api_endpoints(tmp_path: Path) -> None:
+    config = make_config(tmp_path, api_key="router-key")
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.get("/v1/models")
+        assert response.status_code == 401
+        response = client.get("/v1/models", headers={"Authorization": "Bearer router-key"})
+        assert response.status_code == 200
+        response = client.get("/debug/state", headers={"Authorization": "Bearer router-key"})
+        assert response.status_code == 200
 
 
 def test_chat_completion_routes_alias(tmp_path: Path) -> None:
@@ -263,6 +357,16 @@ def test_chat_completion_routes_alias(tmp_path: Path) -> None:
         assert response.status_code == 200
         assert response.headers["x-ghostship-router-backend-model"] == "openrouter/code-1:free"
         assert response.headers["x-ghostship-router-first-text-latency-ms"] == "12.5"
+
+
+def test_non_v1_chat_completion_alias_routes_alias(tmp_path: Path) -> None:
+    provider = DummyProvider("openrouter")
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.post("/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
+        assert response.status_code == 200
+        assert response.headers["x-ghostship-router-backend-model"] == "openrouter/code-1:free"
 
 
 def test_chat_completion_fails_over_to_next_model(tmp_path: Path) -> None:
@@ -656,6 +760,19 @@ def test_responses_create_get_delete_and_chain_previous_response(tmp_path: Path)
         assert deleted.json()["deleted"] is True
         missing = client.get(f"/v1/responses/{response_id}")
         assert missing.status_code == 404
+
+
+def test_non_v1_responses_aliases_work(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        create = client.post("/responses", json={"input": "What is 1+1?", "instructions": "Be terse."})
+        assert create.status_code == 200
+        response_id = create.json()["id"]
+        fetched = client.get(f"/responses/{response_id}")
+        assert fetched.status_code == 200
+        deleted = client.delete(f"/responses/{response_id}")
+        assert deleted.status_code == 200
 
 
 def test_responses_stream_returns_openai_events_and_completed_payload(tmp_path: Path) -> None:
