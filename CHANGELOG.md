@@ -16,3 +16,4 @@ All notable changes to this project will be documented in this file.
 - Fixed the dashboard terminal websocket path so tab switching keeps the live `ttyd` session attached instead of falling into ttyd's reconnect overlay.
 - Reworked the dashboard home state into a runtime environment console with live profile and provider metadata, home navigation on the Hermes logo, and a flatter Hermes-site-inspired dark UI treatment.
 - Collapsed model namespaces under their transport provider in the dashboard, rendered configured models as provider subcards, renamed the home header to `ghostship-hermes`, and made the floating terminal close button a clearer red destructive control.
+- Shifted the floating terminal close button farther left so it keeps the same top rhythm while staying clear of the ttyd scrollbar.

@@ -578,7 +578,7 @@ code {
 .floating-close {
   position: absolute;
   top: 12px;
-  right: 16px;
+  right: 28px;
   z-index: 4;
   width: 36px;
   height: 36px;
@@ -655,7 +655,7 @@ code {
 
   .floating-close {
     top: 10px;
-    right: 14px;
+    right: 24px;
   }
 }
 
@@ -689,6 +689,6 @@ code {
   }
 
   .floating-close {
-    right: 12px;
+    right: 20px;
   }
 }
