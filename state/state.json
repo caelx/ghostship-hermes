@@ -1,0 +1,15 @@
+{
+  "next_index": 2,
+  "active_terminal_id": "83f578a35a",
+  "sessions": [
+    {
+      "id": "83f578a35a",
+      "label": "Terminal 1",
+      "port": 7682,
+      "cwd": "/tmp",
+      "terminal_url": "/terminals/83f578a35a/",
+      "started_at": 1775370843,
+      "pid": 142411
+    }
+  ]
+}
