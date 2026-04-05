@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ghostship-hermes-router"
+version = "0.1.0"
+description = "FastAPI model router for ghostship-hermes"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "ghostship-cli-contract>=0.1.0",
+  "fastapi>=0.111.0",
+  "httpx>=0.28.1",
+  "uvicorn>=0.30.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.18.2",
+  "pytest>=8.4.2",
+]
+
+[project.scripts]
+ghostship-hermes-router = "hermes_router.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hermes_router"]
+
+[tool.uv.sources]
+ghostship-cli-contract = { path = "../ghostship-cli-contract" }
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]

@@ -28,9 +28,25 @@
             inherit system;
             config.allowUnfree = true;
           };
+          routerPython311Packages = pkgs.python311Packages.overrideScope (
+            final: prev: {
+              watchfiles = prev.watchfiles.overridePythonAttrs (_: {
+                doCheck = false;
+              });
+              fastapi-cli = prev.fastapi-cli.overridePythonAttrs (_: {
+                doCheck = false;
+              });
+              fastapi = prev.fastapi.overridePythonAttrs (_: {
+                doCheck = false;
+              });
+            }
+          );
 
           # Utility packages
           ghostshipCliContract = pkgs.callPackage ./packages/ghostship-cli-contract/package.nix { };
+          routerGhostshipCliContract = pkgs.callPackage ./packages/ghostship-cli-contract/package.nix {
+            python311Packages = routerPython311Packages;
+          };
           ghostshipSearxng = pkgs.callPackage ./packages/searxng-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipSonarr = pkgs.callPackage ./packages/sonarr-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRadarr = pkgs.callPackage ./packages/radarr-cli/package.nix { inherit ghostshipCliContract; };
@@ -49,6 +65,10 @@
           ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipChangedetection = pkgs.callPackage ./packages/changedetection-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipHermesRouter = pkgs.callPackage ./packages/hermes-router/package.nix {
+            python311Packages = routerPython311Packages;
+            ghostshipCliContract = routerGhostshipCliContract;
+          };
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
           );
@@ -79,6 +99,7 @@
             inherit system;
             specialArgs = {
               inherit
+                ghostshipHermesRouter
                 ghostshipHermesRuntime
                 hermesRelease
                 ;
@@ -121,6 +142,7 @@
           ghostship-pricebuddy = ghostshipPricebuddy;
           ghostship-rss-bridge = ghostshipRssBridge;
           ghostship-changedetection = ghostshipChangedetection;
+          ghostship-hermes-router = ghostshipHermesRouter;
           ghostship-hermes-runtime = ghostshipHermesRuntime;
           ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;
           ghostship-hermes-rootfs = ghostshipHermesRootfs;
@@ -157,6 +179,7 @@
             ghostship-pricebuddy
             ghostship-rss-bridge
             ghostship-changedetection
+            ghostship-hermes-router
             ghostship-hermes-runtime
             ghostship-hermes-system
             ghostship-hermes-rootfs
@@ -171,6 +194,19 @@
             inherit system;
             config.allowUnfree = true;
           };
+          routerPython311Packages = pkgs.python311Packages.overrideScope (
+            final: prev: {
+              watchfiles = prev.watchfiles.overridePythonAttrs (_: {
+                doCheck = false;
+              });
+              fastapi-cli = prev.fastapi-cli.overridePythonAttrs (_: {
+                doCheck = false;
+              });
+              fastapi = prev.fastapi.overridePythonAttrs (_: {
+                doCheck = false;
+              });
+            }
+          );
           pythonEnv = pkgs.python311.withPackages (
             ps: with ps; [
               hatchling
@@ -178,6 +214,8 @@
               mypy
               pytest
               typer
+              routerPython311Packages.fastapi
+              routerPython311Packages.uvicorn
             ]
           );
         in
@@ -200,7 +238,7 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src:$PWD/packages/changedetection-cli/src${PYTHONPATH:+:$PYTHONPATH}"
+              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src:$PWD/packages/changedetection-cli/src:$PWD/packages/hermes-router/src${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }

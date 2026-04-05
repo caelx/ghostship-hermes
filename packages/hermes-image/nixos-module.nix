@@ -3,6 +3,7 @@
   lib,
   modulesPath,
   pkgs,
+  ghostshipHermesRouter,
   ghostshipHermesRuntime,
   ghostshipUtilities,
   hermesRelease,
@@ -50,6 +51,7 @@ let
     tirith
     ttyd
     util-linux
+    ghostshipHermesRouter
     ghostshipHermesRuntime
   ];
 
@@ -127,6 +129,11 @@ let
     GHOSTSHIP_DASHBOARD_ROOT = dashboardTree;
     GHOSTSHIP_HERMES_PROFILES = managedProfileNames;
     GHOSTSHIP_HERMES_DEFAULT_PROFILE = defaultProfile;
+    GHOSTSHIP_ROUTER_HOST = "127.0.0.1";
+    GHOSTSHIP_ROUTER_PORT = "8788";
+    GHOSTSHIP_ROUTER_STATE_DIR = "/home/hermes/.local/state/ghostship-hermes/router";
+    GHOSTSHIP_ROUTER_DB_PATH = "/home/hermes/.local/state/ghostship-hermes/router/router.db";
+    GHOSTSHIP_ROUTER_REFRESH_INTERVAL = "300";
     SSL_CERT_FILE = certificateFile;
     NIX_SSL_CERT_FILE = certificateFile;
   };
@@ -221,6 +228,7 @@ in
     before = [
       "hermes-agent.service"
       "ghostship-dashboard-controller.service"
+      "ghostship-hermes-router.service"
     ];
     serviceConfig = {
       Type = "oneshot";
@@ -267,9 +275,47 @@ in
         "OPENROUTER_BASE_URL"
         "OPENROUTER_HTTP_REFERER"
         "OPENROUTER_TITLE"
+        "OPENCODE_API_KEY"
+        "OPENCODE_BASE_URL"
         "OPENROUTER_TEST_MODEL"
       ];
       ExecStart = bootstrapHermesScript;
+    };
+  };
+
+  systemd.services.ghostship-hermes-router = {
+    description = "ghostship-hermes model router";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+      "network-online.target"
+    ];
+    requires = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+    ];
+    environment = userServiceEnvironment;
+    path = servicePath;
+    serviceConfig = {
+      Type = "simple";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = "/home/hermes";
+      PassEnvironment = [
+        "OPENROUTER_API_KEY"
+        "OPENROUTER_BASE_URL"
+        "OPENROUTER_HTTP_REFERER"
+        "OPENROUTER_TITLE"
+        "OPENCODE_API_KEY"
+        "OPENCODE_BASE_URL"
+        "GHOSTSHIP_ROUTER_GEMINI_FALLBACK_MODEL"
+        "GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"
+      ];
+      ExecStart = "${ghostshipHermesRouter}/bin/ghostship-hermes-router";
+      Restart = "always";
+      RestartSec = "2s";
     };
   };
 
