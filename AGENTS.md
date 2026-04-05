@@ -113,6 +113,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - RSS-Bridge is action-driven, not CRUD-driven. “Create a feed” means generating a canonical `action=display` URL from bridge schema, not persisting a server-side object.
 - changedetection.io's stable upstream API source of truth is `docs/api-spec.yaml` in the official repo. Persist the repo mirror as `docs/api/changedetection-openapi.json`; treat `/api/v1/full-spec` as the live merged instance-specific extension surface.
 - The deployed RSS-Bridge instance returns two parameter shapes: a dict of contexts or a legacy list of parameter groups that should be treated as the global context.
+- OpenCode Zen `GET /models` currently returns only basic model cards, so router support for mixed Zen endpoint families must learn and cache the working family per model instead of expecting Zen inventory to declare it.
 
 ### Testing And Known Service Conditions
 

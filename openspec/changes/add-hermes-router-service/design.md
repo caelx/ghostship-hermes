@@ -15,7 +15,9 @@ The repo's local validation setup already uses ignored `.envrc` files that are n
 - Deliver the router in stages, with a minimal usable service first and richer routing state later.
 - Keep provider-specific logic behind adapter boundaries so the API and routing layers stay stable.
 - Use existing local provider credentials from environment variables for development and validation without duplicating secrets into the repo.
-- Reserve Gemini for request fallback, while any optional model-assisted bucketing or ranking uses a configured free model.
+- Refresh and score candidate models from both OpenRouter and OpenCode Zen.
+- Support Zen's mixed upstream endpoint families without exposing those differences to router callers.
+- Keep failover, health, and timing data attached to concrete backend models rather than alias-level aggregates.
 - Preserve a path to later integrate the router into the Hermes image and service supervision model.
 
 **Non-Goals:**
@@ -46,7 +48,7 @@ Alternative considered: inventing a router-specific API. Rejected because Hermes
 Implementation will land in phases:
 
 1. Package scaffold, config loading, stable aliases, health endpoints, and a minimal routing path.
-2. Provider adapters, free-first candidate selection, retry/failover, and explicit Gemini fallback.
+2. Provider adapters, free-first candidate selection, retry/failover, and OpenCode Zen inventory support.
 3. SQLite-backed state, startup/background inventory refresh, cooldown tracking, and richer observability.
 4. Repo/runtime integration, image wiring, and operational documentation.
 
@@ -60,9 +62,33 @@ The router should read provider credentials from environment variables so local 
 Alternative considered: checked-in local config fixtures with embedded test credentials. Rejected because it would push secret handling into source control and diverge from how this repo already handles local service validation.
 
 ### Use a free model for optional model-assisted bucketing and ranking
-If the router adds background model-assisted classification or ranking, that maintenance workflow should use a configured free model rather than Gemini. Gemini remains reserved for the caller-facing fallback tier when the free pool cannot satisfy an inference request.
+If the router adds background model-assisted classification or ranking, that maintenance workflow should use a configured free model.
 
-Alternative considered: using Gemini for background bucketing or ranking. Rejected because it spends paid capacity on maintenance work even though the router's policy is free-first and the repo already has free-capable provider paths available for local validation.
+Alternative considered: using a paid model for background bucketing or ranking. Rejected because it spends paid capacity on maintenance work even though the router's policy is free-first where possible.
+
+### Treat OpenCode Zen as a first-class provider with mixed endpoint-family support
+OpenCode Zen will be implemented as a real provider adapter that refreshes the Zen model inventory and can invoke whichever upstream request family a given Zen model requires. The router should normalize those upstream differences back into the same local `chat/completions` response shape.
+
+The adapter should support at least:
+
+- OpenAI-style `/chat/completions`
+- OpenAI `/responses`
+- Anthropic `/messages`
+- Google-style `/models/{model}:generateContent` requests
+
+Because the public Zen `GET /models` payload does not currently expose endpoint-family metadata, the adapter should keep a per-model endpoint-family cache and be able to probe alternate families when necessary.
+
+Alternative considered: limiting the router to Zen models that already use `/chat/completions`. Rejected because it would exclude a large part of Zen's curated inventory and would not meet the stated requirement to support mixed endpoint families.
+
+### Keep routing state and failover decisions at the concrete backend-model level
+The routing engine should make candidate, cooldown, and failover decisions using concrete backend models, not alias-level aggregates. Alias names remain the caller-facing abstraction, but health and retry state are attached to the resolved provider and model pair.
+
+Alternative considered: tracking health primarily at the alias level. Rejected because it hides which concrete backend is failing and makes cross-provider failover less reliable.
+
+### Track best-effort time-to-first-text in addition to total latency
+The router should retain overall request latency and, when the upstream protocol makes it feasible, best-effort latency to first returned text. This should be recorded in routing state and exposed through debug surfaces so operators can distinguish slow first-token behavior from slow total completion time.
+
+Alternative considered: recording only total request duration. Rejected because it hides an important part of perceived responsiveness, especially when candidate selection spans different providers and endpoint families.
 
 ### Separate the API layer from adapters, routing, and state
 The service should be structured as a small set of focused modules:
@@ -89,7 +115,8 @@ Alternative considered: JSON files as the main durable state. Rejected because c
 - [Phase 1 may ship with simpler routing than the final concept] -> Mitigate by keeping the API contract stable and making later stages additive behind the same aliases and endpoints.
 - [Free provider inventories can change faster than static routing assumptions] -> Mitigate with explicit refresh hooks and early adapter boundaries so discovery logic can evolve without changing callers.
 - [Adding persistence too early could slow initial delivery] -> Mitigate by keeping the state-store contract stable and deferring the SQLite implementation to a dedicated stage.
-- [Gemini fallback can mask quality issues in the free pool] -> Mitigate with explicit fallback accounting, logs, and debug endpoints.
+- [Zen endpoint-family metadata is not exposed directly by the Zen models API] -> Mitigate with a provider-side family cache plus controlled probing of alternate request families.
+- [Some upstream formats may not expose clean first-text timing without streaming] -> Mitigate by recording best-effort first-text timing where supported and leaving it unset where it cannot be measured reliably.
 - [Runtime integration can distract from service correctness] -> Mitigate by proving the standalone package first, then wiring it into the Hermes image in a later stage.
 
 ## Migration Plan
@@ -104,7 +131,6 @@ Rollback is straightforward in early stages because the router is additive: the 
 
 ## Open Questions
 
-- Which free-model provider should be the first concrete adapter in phase 2: OpenRouter free inventory only, OpenRouter plus Opencode, or a different free-first combination?
 - Should phase 1 accept only chat/completions-style requests, or should it reserve naming and schemas for future embeddings/responses-style endpoints?
 - How much debug surface should exist before Prometheus-style metrics are added: JSON debug endpoints only, or text metrics from the start?
 - Should runtime integration create a dedicated user service immediately, or first keep the package standalone for local/manual execution?

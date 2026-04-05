@@ -52,8 +52,7 @@ class RouterConfig:
     openrouter_http_referer: str | None
     openrouter_title: str | None
     opencode_api_key: str | None
-    opencode_base_url: str | None
-    gemini_fallback_model: str | None
+    opencode_base_url: str
     assisted_bucket_model: str | None
     assisted_bucket_batch_size: int
     aliases: tuple[AliasConfig, ...]
@@ -81,8 +80,7 @@ class RouterConfig:
             openrouter_http_referer=os.environ.get("OPENROUTER_HTTP_REFERER"),
             openrouter_title=os.environ.get("OPENROUTER_TITLE"),
             opencode_api_key=os.environ.get("OPENCODE_API_KEY"),
-            opencode_base_url=os.environ.get("OPENCODE_BASE_URL"),
-            gemini_fallback_model=os.environ.get("GHOSTSHIP_ROUTER_GEMINI_FALLBACK_MODEL"),
+            opencode_base_url=os.environ.get("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1"),
             assisted_bucket_model=os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"),
             assisted_bucket_batch_size=int(os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE", "20")),
             aliases=(

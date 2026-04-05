@@ -18,6 +18,7 @@ class ProviderChatResult:
     payload: dict[str, Any]
     provider: str
     backend_model: str
+    first_text_latency_ms: float | None = None
 
 
 class NormalizedProviderError(Exception):

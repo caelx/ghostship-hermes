@@ -28,3 +28,11 @@
 - [x] 5.1 Add unit and integration coverage for alias discovery, routing decisions, retry behavior, fallback, refresh, restart-state restoration, and any free-model-assisted bucketing logic.
 - [x] 5.2 Integrate the router package into the Hermes runtime and add service supervision only after the standalone package is verified.
 - [x] 5.3 Document router configuration, local execution, API surface, `.envrc`-driven validation with `OPENROUTER_API_KEY` and `OPENCODE_API_KEY`, staged rollout, and operational debugging in repo docs and changelog entries.
+
+## 6. Provider follow-up adjustments
+
+- [x] 6.1 Remove Gemini fallback wiring from the router package, runtime integration, and docs.
+- [x] 6.2 Add an OpenCode Zen provider adapter that refreshes Zen inventory and contributes Zen models to alias routing.
+- [x] 6.3 Support Zen mixed endpoint families, including model-level endpoint-family caching and normalized chat-completions responses.
+- [x] 6.4 Keep routing health, failover, and cooldown behavior explicitly model-level across providers and expose best-effort first-text latency in state/debug surfaces.
+- [x] 6.5 Extend tests, docs, and live verification for the Zen provider and model-level latency tracking.

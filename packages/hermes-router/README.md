@@ -11,8 +11,10 @@ Current scope:
 - triggers a forced inventory refresh when a backend model disappears
 - exposes debug surfaces at `GET /debug/state`, `GET /debug/events`, and `GET /debug/routes/{alias}`
 - reads local credentials from environment
-- routes aliases to configured or discovered OpenRouter free models
-- reserves Gemini as an explicit fallback tier when configured
+- refreshes inventory from OpenRouter and OpenCode Zen
+- routes and fails over between concrete backend models instead of alias-level buckets
+- supports OpenCode Zen mixed endpoint families and normalizes them back to local `chat/completions`
+- records total latency and best-effort first-text latency per backend model
 - can use a configured free model for background bucket classification when `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` is set
 
 The package is intentionally standalone first so it can be built and tested before Hermes image integration.
@@ -31,7 +33,6 @@ Optional router-specific inputs:
 - `GHOSTSHIP_ROUTER_STATE_DIR`
 - `GHOSTSHIP_ROUTER_DB_PATH`
 - `GHOSTSHIP_ROUTER_REFRESH_INTERVAL`
-- `GHOSTSHIP_ROUTER_GEMINI_FALLBACK_MODEL`
 - `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL`
 - `GHOSTSHIP_ROUTER_LIGHTWEIGHT_MODELS`
 - `GHOSTSHIP_ROUTER_CODING_MODELS`

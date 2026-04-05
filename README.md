@@ -131,7 +131,7 @@ Notes:
 - Persisting `/home/hermes` directly is the intended way to keep Hermes managed state, Hermes CLI profiles, XDG state, and later-installed agent tooling across container replacement.
 - The dashboard is the intended browser entrypoint.
 - For local validation, source the repo `.envrc` before `docker run` so `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` are passed into the bootstrap oneshot and written into the declared profiles.
-- The local model router uses `OPENROUTER_API_KEY` for live inference and may also read `OPENCODE_API_KEY` for future provider expansion. Router-local validation does not depend on `OPENROUTER_TEST_MODEL`.
+- The local model router uses `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` for live inference against OpenRouter and OpenCode Zen. Router-local validation does not depend on `OPENROUTER_TEST_MODEL`.
 
 After startup:
 
@@ -190,15 +190,17 @@ The image now includes a standalone local router service:
 - primary endpoints: `GET /healthz`, `GET /readyz`, `GET /v1/models`, `POST /v1/chat/completions`
 - debug endpoints: `GET /debug/state`, `GET /debug/events`, `GET /debug/routes/{alias}`
 - persistent state: `/home/hermes/.local/state/ghostship-hermes/router/router.db`
+- inventory sources: OpenRouter and OpenCode Zen
+- Zen request families: `/chat/completions`, `/responses`, `/messages`, and Google-style model endpoints are normalized back into the local `chat/completions` surface
+- routing state: model-level health, cooldown, failover, total latency, and best-effort first-text latency
 
 Outside the container, standalone router runs default state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router` unless `GHOSTSHIP_ROUTER_STATE_DIR` or `GHOSTSHIP_ROUTER_DB_PATH` is set.
 
 Optional runtime env for the router:
 
-- `GHOSTSHIP_ROUTER_GEMINI_FALLBACK_MODEL`
 - `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL`
 
-If `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` is set, it must be a free model ID. The router reserves Gemini for request fallback rather than background bucket classification.
+If `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` is set, it must resolve to a free model ID from the current router inventory.
 
 ## Local Validation
 

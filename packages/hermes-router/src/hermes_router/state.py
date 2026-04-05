@@ -20,6 +20,7 @@ class RouteEvent:
     is_fallback: bool
     category: str | None
     latency_ms: float | None
+    first_text_latency_ms: float | None
     details: Any
     created_at: float
 
@@ -37,7 +38,7 @@ class StateStore:
     def record_attempt(self, event: RouteEvent) -> None:
         raise NotImplementedError
 
-    def apply_success(self, provider_name: str, backend_model: str, *, latency_ms: float | None) -> None:
+    def apply_success(self, provider_name: str, backend_model: str, *, latency_ms: float | None, first_text_latency_ms: float | None) -> None:
         raise NotImplementedError
 
     def apply_failure(self, provider_name: str, backend_model: str, *, category: str, retryable: bool) -> None:
@@ -95,6 +96,7 @@ class SqliteStateStore(StateStore):
                     last_error_at REAL,
                     cooldown_until REAL NOT NULL DEFAULT 0,
                     last_latency_ms REAL,
+                    last_first_text_latency_ms REAL,
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (provider_name, backend_model)
                 );
@@ -109,11 +111,20 @@ class SqliteStateStore(StateStore):
                     is_fallback INTEGER NOT NULL,
                     category TEXT,
                     latency_ms REAL,
+                    first_text_latency_ms REAL,
                     details_json TEXT,
                     created_at REAL NOT NULL
                 );
                 """
             )
+            self._ensure_column(connection, "model_state", "last_first_text_latency_ms", "REAL")
+            self._ensure_column(connection, "route_events", "first_text_latency_ms", "REAL")
+
+    @staticmethod
+    def _ensure_column(connection: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        existing = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in existing:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def load_inventory(self, provider_name: str) -> list[ProviderModel]:
         with self._connect() as connection:
@@ -189,8 +200,8 @@ class SqliteStateStore(StateStore):
                 """
                 INSERT INTO route_events (
                     alias, provider_name, backend_model, success, retryable, is_fallback,
-                    category, latency_ms, details_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    category, latency_ms, first_text_latency_ms, details_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.alias,
@@ -201,27 +212,29 @@ class SqliteStateStore(StateStore):
                     1 if event.is_fallback else 0,
                     event.category,
                     event.latency_ms,
+                    event.first_text_latency_ms,
                     json.dumps(event.details, sort_keys=True) if event.details is not None else None,
                     event.created_at,
                 ),
             )
 
-    def apply_success(self, provider_name: str, backend_model: str, *, latency_ms: float | None) -> None:
+    def apply_success(self, provider_name: str, backend_model: str, *, latency_ms: float | None, first_text_latency_ms: float | None) -> None:
         now = time.time()
         with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO model_state (
                     provider_name, backend_model, success_count, failure_count, retryable_failure_count,
-                    last_error_category, last_error_at, cooldown_until, last_latency_ms, updated_at
-                ) VALUES (?, ?, 1, 0, 0, NULL, NULL, 0, ?, ?)
+                    last_error_category, last_error_at, cooldown_until, last_latency_ms, last_first_text_latency_ms, updated_at
+                ) VALUES (?, ?, 1, 0, 0, NULL, NULL, 0, ?, ?, ?)
                 ON CONFLICT(provider_name, backend_model) DO UPDATE SET
                   success_count = model_state.success_count + 1,
                   cooldown_until = 0,
                   last_latency_ms = excluded.last_latency_ms,
+                  last_first_text_latency_ms = excluded.last_first_text_latency_ms,
                   updated_at = excluded.updated_at
                 """,
-                (provider_name, backend_model, latency_ms, now),
+                (provider_name, backend_model, latency_ms, first_text_latency_ms, now),
             )
 
     def apply_failure(self, provider_name: str, backend_model: str, *, category: str, retryable: bool) -> None:
@@ -253,7 +266,7 @@ class SqliteStateStore(StateStore):
             rows = connection.execute(
                 """
                 SELECT provider_name, backend_model, success_count, failure_count, retryable_failure_count,
-                       last_error_category, last_error_at, cooldown_until, last_latency_ms, updated_at
+                       last_error_category, last_error_at, cooldown_until, last_latency_ms, last_first_text_latency_ms, updated_at
                 FROM model_state
                 """
             ).fetchall()
@@ -268,6 +281,7 @@ class SqliteStateStore(StateStore):
                 "last_error_at": row["last_error_at"],
                 "cooldown_until": row["cooldown_until"],
                 "last_latency_ms": row["last_latency_ms"],
+                "last_first_text_latency_ms": row["last_first_text_latency_ms"],
                 "updated_at": row["updated_at"],
             }
             for row in rows
@@ -278,7 +292,7 @@ class SqliteStateStore(StateStore):
             rows = connection.execute(
                 """
                 SELECT alias, provider_name, backend_model, success, retryable, is_fallback,
-                       category, latency_ms, details_json, created_at
+                       category, latency_ms, first_text_latency_ms, details_json, created_at
                 FROM route_events
                 ORDER BY id DESC
                 LIMIT ?
@@ -295,6 +309,7 @@ class SqliteStateStore(StateStore):
                 "is_fallback": bool(row["is_fallback"]),
                 "category": row["category"],
                 "latency_ms": row["latency_ms"],
+                "first_text_latency_ms": row["first_text_latency_ms"],
                 "details": json.loads(row["details_json"]) if row["details_json"] else None,
                 "created_at": row["created_at"],
             }

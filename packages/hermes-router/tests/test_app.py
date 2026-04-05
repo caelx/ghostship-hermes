@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
+
 from fastapi.testclient import TestClient
 
 from hermes_router.app import create_app
 from hermes_router.config import AliasConfig, RouterConfig
 from hermes_router.models import ChatCompletionRequest
 from hermes_router.providers.base import NormalizedProviderError, ProviderChatResult, ProviderModel
-from hermes_router.providers.gemini_fallback import GeminiFallbackAdapter
 from hermes_router.service import RouterService
 from hermes_router.state import SqliteStateStore
 
@@ -35,7 +36,6 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         openrouter_title=None,
         opencode_api_key="opencode-secret",
         opencode_base_url="https://opencode.example/api",
-        gemini_fallback_model="google/gemini-fallback",
         assisted_bucket_model=None,
         assisted_bucket_batch_size=20,
         aliases=(
@@ -48,29 +48,31 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
 
 
 class DummyProvider:
-    name = "openrouter"
-
     def __init__(
         self,
+        name: str,
         *,
         failures: dict[str, list[str]] | None = None,
         models: list[ProviderModel] | None = None,
         classification_payload: dict[str, Any] | None = None,
+        first_text_latency_ms: float | None = 12.5,
     ):
+        self.name = name
         self.failures = {key: list(values) for key, values in (failures or {}).items()}
         self.calls: list[str] = []
         self.list_calls = 0
+        self.first_text_latency_ms = first_text_latency_ms
         self.models = models or [
-            ProviderModel(id="openrouter/light-1:free", provider=self.name, is_free=True, tags=("lightweight",)),
-            ProviderModel(id="openrouter/code-1:free", provider=self.name, is_free=True, tags=("coding",)),
-            ProviderModel(id="openrouter/heavy-1:free", provider=self.name, is_free=True, tags=("heavyweight",)),
+            ProviderModel(id=f"{name}/light-1:free", provider=self.name, is_free=True, tags=("lightweight",)),
+            ProviderModel(id=f"{name}/code-1:free", provider=self.name, is_free=True, tags=("coding",)),
+            ProviderModel(id=f"{name}/heavy-1:free", provider=self.name, is_free=True, tags=("heavyweight",)),
         ]
-        self.classification_payload = classification_payload or {
-            "classifications": [
-                {"id": "openrouter/light-1:free", "tags": ["lightweight"]},
-                {"id": "openrouter/code-1:free", "tags": ["coding"]},
-            ]
-        }
+        default_classifications = []
+        if len(self.models) >= 1:
+            default_classifications.append({"id": self.models[0].id, "tags": ["lightweight"]})
+        if len(self.models) >= 2:
+            default_classifications.append({"id": self.models[1].id, "tags": ["coding"]})
+        self.classification_payload = classification_payload or {"classifications": default_classifications}
 
     def list_models(self, *, timeout: float | None = None) -> list[ProviderModel]:
         self.list_calls += 1
@@ -78,21 +80,34 @@ class DummyProvider:
 
     def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
         self.calls.append(backend_model)
-        if backend_model.endswith(":free") and "classifications" in str(self.classification_payload) and payload.get("temperature") == 0:
+        if payload.get("temperature") == 0 and "classifications" in str(self.classification_payload):
             return ProviderChatResult(
                 payload={
                     "id": "chatcmpl-classify",
                     "object": "chat.completion",
                     "model": backend_model,
-                    "choices": [{"index": 0, "message": {"role": "assistant", "content": __import__("json").dumps(self.classification_payload)}, "finish_reason": "stop"}],
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": json.dumps(self.classification_payload)},
+                            "finish_reason": "stop",
+                        }
+                    ],
                 },
                 provider=self.name,
                 backend_model=backend_model,
+                first_text_latency_ms=self.first_text_latency_ms,
             )
         queued = self.failures.get(backend_model)
         if queued:
             failure = queued.pop(0)
-            raise NormalizedProviderError(failure, failure, provider=self.name, backend_model=backend_model, retryable=(failure != "bad_request"))
+            raise NormalizedProviderError(
+                failure,
+                failure,
+                provider=self.name,
+                backend_model=backend_model,
+                retryable=(failure != "bad_request" and failure != "insufficient_balance"),
+            )
         return ProviderChatResult(
             payload={
                 "id": "chatcmpl-demo",
@@ -102,12 +117,13 @@ class DummyProvider:
             },
             provider=self.name,
             backend_model=backend_model,
+            first_text_latency_ms=self.first_text_latency_ms,
         )
 
 
 def test_models_endpoint_lists_aliases(tmp_path: Path) -> None:
     config = make_config(tmp_path)
-    service = RouterService(config, providers={"openrouter": DummyProvider()}, state_store=SqliteStateStore(config.db_path))
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
     with TestClient(create_app(config=config, service=service)) as client:
         response = client.get("/v1/models")
         assert response.status_code == 200
@@ -116,7 +132,7 @@ def test_models_endpoint_lists_aliases(tmp_path: Path) -> None:
 
 
 def test_readyz_is_unready_without_providers(tmp_path: Path) -> None:
-    config = make_config(tmp_path, openrouter_api_key=None, opencode_api_key=None, gemini_fallback_model=None)
+    config = make_config(tmp_path, openrouter_api_key=None, opencode_api_key=None)
     service = RouterService(config, providers={}, state_store=SqliteStateStore(config.db_path))
     with TestClient(create_app(config=config, service=service)) as client:
         response = client.get("/readyz")
@@ -125,20 +141,18 @@ def test_readyz_is_unready_without_providers(tmp_path: Path) -> None:
 
 
 def test_chat_completion_routes_alias(tmp_path: Path) -> None:
-    provider = DummyProvider()
+    provider = DummyProvider("openrouter")
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
     with TestClient(create_app(config=config, service=service)) as client:
-        response = client.post(
-            "/v1/chat/completions",
-            json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]},
-        )
+        response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
         assert response.status_code == 200
         assert response.headers["x-ghostship-router-backend-model"] == "openrouter/code-1:free"
+        assert response.headers["x-ghostship-router-first-text-latency-ms"] == "12.5"
 
 
-def test_chat_completion_fails_over_to_next_candidate(tmp_path: Path) -> None:
-    provider = DummyProvider(failures={"openrouter/code-1:free": ["rate_limited"]})
+def test_chat_completion_fails_over_to_next_model(tmp_path: Path) -> None:
+    provider = DummyProvider("openrouter", failures={"openrouter/code-1:free": ["rate_limited"]})
     config = make_config(
         tmp_path,
         aliases=(
@@ -149,44 +163,43 @@ def test_chat_completion_fails_over_to_next_candidate(tmp_path: Path) -> None:
     )
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
     with TestClient(create_app(config=config, service=service)) as client:
-        response = client.post(
-            "/v1/chat/completions",
-            json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]},
-        )
+        response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
         assert response.status_code == 200
         assert response.headers["x-ghostship-router-backend-model"] == "openrouter/heavy-1:free"
 
 
-def test_chat_completion_uses_explicit_gemini_fallback(tmp_path: Path) -> None:
-    provider = DummyProvider(failures={"openrouter/code-1:free": ["rate_limited"]})
+def test_chat_completion_fails_over_across_providers_at_model_level(tmp_path: Path) -> None:
+    openrouter = DummyProvider("openrouter", failures={"openrouter/code-1:free": ["rate_limited"]})
+    opencode = DummyProvider(
+        "opencode-zen",
+        models=[
+            ProviderModel(id="qwen3-coder", provider="opencode-zen", is_free=False, tags=("coding",)),
+            ProviderModel(id="gpt-5-nano", provider="opencode-zen", is_free=False, tags=("lightweight",)),
+        ],
+        first_text_latency_ms=8.0,
+    )
     config = make_config(
         tmp_path,
         aliases=(
-            AliasConfig(name="lightweight", description="light", preferred_models=("openrouter/light-1:free",)),
-            AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free",)),
-            AliasConfig(name="heavyweight", description="heavy", preferred_models=("openrouter/heavy-1:free",)),
+            AliasConfig(name="lightweight", description="light", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free", "opencode/qwen3-coder")),
+            AliasConfig(name="heavyweight", description="heavy", preferred_models=()),
         ),
     )
     service = RouterService(
         config,
-        providers={
-            "openrouter": provider,
-            "gemini-fallback": GeminiFallbackAdapter(provider, model_id="google/gemini-fallback"),
-        },
+        providers={"openrouter": openrouter, "opencode-zen": opencode},
         state_store=SqliteStateStore(config.db_path),
     )
     with TestClient(create_app(config=config, service=service)) as client:
-        response = client.post(
-            "/v1/chat/completions",
-            json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]},
-        )
+        response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
         assert response.status_code == 200
-        assert response.headers["x-ghostship-router-fallback"] == "gemini"
-        assert response.headers["x-ghostship-router-backend-provider"] == "gemini-fallback"
+        assert response.headers["x-ghostship-router-backend-provider"] == "opencode-zen"
+        assert response.headers["x-ghostship-router-backend-model"] == "qwen3-coder"
 
 
 def test_model_missing_triggers_refresh(tmp_path: Path) -> None:
-    provider = DummyProvider(failures={"openrouter/code-1:free": ["model_missing"]})
+    provider = DummyProvider("openrouter", failures={"openrouter/code-1:free": ["model_missing"]})
     config = make_config(
         tmp_path,
         aliases=(
@@ -198,15 +211,17 @@ def test_model_missing_triggers_refresh(tmp_path: Path) -> None:
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
     service.refresh_inventory(reason="manual")
     before = provider.list_calls
-    payload, headers = service.chat_completions(
-        ChatCompletionRequest.model_validate({"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
-    )
+    _, headers = service.chat_completions(ChatCompletionRequest.model_validate({"model": "coding", "messages": [{"role": "user", "content": "hello"}]}))
     assert provider.list_calls == before + 1
     assert headers["X-Ghostship-Router-Backend-Model"] == "openrouter/heavy-1:free"
 
 
 def test_refresh_persists_inventory_across_service_restart(tmp_path: Path) -> None:
-    provider = DummyProvider()
+    openrouter = DummyProvider("openrouter")
+    opencode = DummyProvider(
+        "opencode-zen",
+        models=[ProviderModel(id="qwen3-coder", provider="opencode-zen", is_free=False, tags=("coding",))],
+    )
     config = make_config(
         tmp_path,
         aliases=(
@@ -216,16 +231,19 @@ def test_refresh_persists_inventory_across_service_restart(tmp_path: Path) -> No
         ),
     )
     store = SqliteStateStore(config.db_path)
-    service = RouterService(config, providers={"openrouter": provider}, state_store=store)
+    service = RouterService(config, providers={"openrouter": openrouter, "opencode-zen": opencode}, state_store=store)
     service.refresh_inventory(reason="manual")
-    restarted = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    restarted = RouterService(config, providers={"openrouter": openrouter, "opencode-zen": opencode}, state_store=SqliteStateStore(config.db_path))
     preview = restarted.preview_routes("coding")
     assert any(candidate["backend_model"] == "openrouter/code-1:free" for candidate in preview)
+    assert any(candidate["backend_model"] == "qwen3-coder" for candidate in preview)
 
 
 def test_assisted_bucketing_uses_free_model(tmp_path: Path) -> None:
     provider = DummyProvider(
+        "openrouter",
         models=[
+            ProviderModel(id="assistant-free:free", provider="openrouter", is_free=True, tags=()),
             ProviderModel(id="demo/light-1:free", provider="openrouter", is_free=True, tags=()),
             ProviderModel(id="demo/code-1:free", provider="openrouter", is_free=True, tags=()),
         ],
@@ -253,7 +271,7 @@ def test_assisted_bucketing_uses_free_model(tmp_path: Path) -> None:
 
 
 def test_debug_endpoints_return_state_and_events(tmp_path: Path) -> None:
-    provider = DummyProvider()
+    provider = DummyProvider("openrouter")
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
     with TestClient(create_app(config=config, service=service)) as client:
@@ -263,6 +281,7 @@ def test_debug_endpoints_return_state_and_events(tmp_path: Path) -> None:
         assert state.status_code == 200
         assert events.status_code == 200
         assert state.json()["state"]["event_count"] >= 1
+        assert state.json()["state"]["model_state"][0]["last_first_text_latency_ms"] == 12.5
         assert len(events.json()) >= 1
 
 

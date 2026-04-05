@@ -1,5 +1,5 @@
 from .base import NormalizedProviderError, ProviderChatResult, ProviderModel
-from .gemini_fallback import GeminiFallbackAdapter
+from .opencode_zen import OpencodeZenProvider
 from .openrouter import OpenRouterProvider
 
-__all__ = ["GeminiFallbackAdapter", "NormalizedProviderError", "OpenRouterProvider", "ProviderChatResult", "ProviderModel"]
+__all__ = ["NormalizedProviderError", "OpencodeZenProvider", "OpenRouterProvider", "ProviderChatResult", "ProviderModel"]

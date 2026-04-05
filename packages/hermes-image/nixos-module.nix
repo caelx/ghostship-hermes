@@ -310,7 +310,6 @@ in
         "OPENROUTER_TITLE"
         "OPENCODE_API_KEY"
         "OPENCODE_BASE_URL"
-        "GHOSTSHIP_ROUTER_GEMINI_FALLBACK_MODEL"
         "GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"
       ];
       ExecStart = "${ghostshipHermesRouter}/bin/ghostship-hermes-router";
