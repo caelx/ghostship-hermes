@@ -13,21 +13,24 @@ host_uid="$(id -u)"
 host_gid="$(id -g)"
 container_shell="/bin/sh"
 container_path="/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin"
+bind_nix="${GHOSTSHIP_TEST_BIND_NIX:-0}"
 nix_volume_root="${GHOSTSHIP_NIX_VOLUME_ROOT:-}"
 dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-7681}"
 dashboard_base_url="http://127.0.0.1:${dashboard_port}"
 
-if [ -z "$nix_volume_root" ]; then
-  if [ -n "${GHOSTSHIP_NIX_STORE:-}" ]; then
-    nix_volume_root="${GHOSTSHIP_NIX_STORE}/nix"
-  else
-    nix_volume_root="/nix"
+if [ "$bind_nix" = "1" ]; then
+  if [ -z "$nix_volume_root" ]; then
+    if [ -n "${GHOSTSHIP_NIX_STORE:-}" ]; then
+      nix_volume_root="${GHOSTSHIP_NIX_STORE}/nix"
+    else
+      nix_volume_root="/nix"
+    fi
   fi
-fi
 
-if [ ! -d "$nix_volume_root/store" ]; then
-  echo "$nix_volume_root/store is required for dashboard validation" >&2
-  exit 1
+  if [ ! -d "$nix_volume_root/store" ]; then
+    echo "$nix_volume_root/store is required when GHOSTSHIP_TEST_BIND_NIX=1" >&2
+    exit 1
+  fi
 fi
 
 cleanup() {
@@ -182,6 +185,11 @@ fi
 mkdir -p "$home_dir" "$workspace_dir"
 docker rm -f "$container_name" >/dev/null 2>&1 || true
 
+nix_mount_args=()
+if [ "$bind_nix" = "1" ]; then
+  nix_mount_args=(-v "$nix_volume_root:/nix")
+fi
+
 docker run -d \
   --name "$container_name" \
   --privileged \
@@ -199,19 +207,23 @@ docker run -d \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-  -v "$nix_volume_root:/nix" \
+  "${nix_mount_args[@]}" \
   "$image_tag" /init >/dev/null
 
 wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/status"
 
 assert_http_contains "${dashboard_base_url}/" 'data-dashboard="ghostship-hermes-dashboard"'
-assert_http_contains "${dashboard_base_url}/" "Open Terminal"
-assert_http_contains "${dashboard_base_url}/" "Two declared Hermes profiles"
+assert_http_contains "${dashboard_base_url}/" 'data-dashboard-style="hermes-studio"'
+assert_http_contains "${dashboard_base_url}/" 'data-home-view="environment"'
+assert_http_contains "${dashboard_base_url}/" "current environment"
+assert_http_contains "${dashboard_base_url}/" "Providers"
+assert_http_contains "${dashboard_base_url}/" "Profiles"
 assert_http_contains "${dashboard_base_url}/api/status" '"sessions": \[\]'
 assert_http_contains "${dashboard_base_url}/api/status" '"name": "operations"'
 assert_http_contains "${dashboard_base_url}/api/status" '"name": "coder"'
 assert_http_contains "${dashboard_base_url}/api/status" '"default_profile": "operations"'
+assert_http_contains "${dashboard_base_url}/api/status" '"environment": {'
 
 open_started_ms="$(date +%s%3N)"
 curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-hermes-terminal-open-1.json

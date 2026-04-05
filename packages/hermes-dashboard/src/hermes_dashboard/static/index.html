@@ -3,62 +3,84 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hermes Dashboard</title>
+  <title>ghostship-hermes</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=IBM+Plex+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body class="mmx-ui" data-dashboard="ghostship-hermes-dashboard" data-dashboard-style="glass">
-  <main class="dashboard-shell">
-    <aside class="sidebar glass-pane">
-      <header class="brand">
-        <div class="logo-container">
-          <img src="/logo.png" alt="logo" class="brand-logo">
-        </div>
-        <h1 class="brand-title">Hermes</h1>
-      </header>
-
-      <nav class="session-nav">
-        <button id="open-terminal" class="btn-new" type="button" title="New Session">
-          <span class="btn-icon">+</span>
-          <span class="btn-text">New Session</span>
+<body class="hermes-ui" data-dashboard="ghostship-hermes-dashboard" data-dashboard-style="hermes-studio">
+  <div class="shell">
+    <aside class="rail" aria-label="Sessions rail">
+      <div class="rail-top">
+        <button id="home-button" class="rail-home" type="button" title="Home" aria-label="Home">
+          <img class="rail-logo" src="/logo.png" alt="Hermes logo">
         </button>
-        <div id="terminal-tabs" class="terminal-tabs">
-          <!-- Populated by JS -->
-        </div>
-      </nav>
+        <button id="open-terminal" class="rail-action" type="button" title="New unit" aria-label="New unit">
+          <span class="rail-action-plus">+</span>
+        </button>
+      </div>
+      <div class="rail-divider" aria-hidden="true"></div>
+      <nav id="terminal-tabs" class="rail-tabs" aria-label="Terminal sessions"></nav>
     </aside>
 
-    <section class="stage">
-      <div id="blank-home" class="blank-home">
-        <div class="hero-container">
-          <h2 class="hero-title">Ready.</h2>
-          <div class="sub-text">Workstation Active</div>
-        </div>
+    <main class="stage">
+      <div class="stage-atmosphere" aria-hidden="true">
+        <div class="field field-a"></div>
+        <div class="field field-b"></div>
+        <div class="field field-c"></div>
+        <div class="mesh"></div>
+        <div class="scan"></div>
       </div>
 
-      <div id="terminal-stage" class="terminal-stage glass-pane is-hidden">
-        <header class="terminal-controls">
-          <button id="close-terminal" class="btn-kill" type="button" disabled title="Close Session">
-            <span class="btn-icon">✕</span>
-            <span class="btn-text">Close</span>
-          </button>
-        </header>
+      <section id="blank-home" class="home-view" data-home-view="environment">
+        <div class="home-shell">
+          <header class="home-bar panel">
+            <div class="home-bar-copy">
+              <h1 class="home-title">ghostship-hermes</h1>
+            </div>
+            <div id="provider-pills" class="status-rail" aria-label="Configured providers"></div>
+          </header>
 
-        <div id="terminal-loading" class="terminal-loading is-hidden">
-          <div class="mmx-loader">
-            <div class="loader-bar"></div>
+          <div class="home-grid">
+            <section class="panel info-panel runtime-panel">
+              <div class="section-head">
+                <span class="section-label">Runtime</span>
+              </div>
+              <dl id="runtime-facts" class="fact-list" aria-label="Runtime facts"></dl>
+            </section>
+
+            <section class="panel info-panel providers-panel">
+              <div class="section-head">
+                <span class="section-label">Providers</span>
+              </div>
+              <div id="provider-list" class="provider-list" aria-label="Configured providers"></div>
+            </section>
+
+            <section class="panel info-panel profiles-panel">
+              <div class="section-head">
+                <span class="section-label">Profiles</span>
+              </div>
+              <div id="profile-list" class="profile-list" aria-label="Configured profiles"></div>
+            </section>
           </div>
-          <div class="loader-text">Connecting...</div>
+        </div>
+      </section>
+
+      <section id="terminal-stage" class="terminal-stage is-hidden">
+        <button id="close-terminal" class="floating-close is-hidden" type="button" aria-label="Close active session" title="Close active session">
+          <span aria-hidden="true">×</span>
+        </button>
+
+        <div id="terminal-loading" class="terminal-loading is-hidden" aria-live="polite">
+          <div class="loading-bar"></div>
+          <div class="loading-copy">Spawning unit</div>
         </div>
 
-        <div id="terminal-panes" class="terminal-panes">
-          <!-- Iframes injected here -->
-        </div>
-      </div>
-    </section>
-  </main>
+        <div id="terminal-panes" class="terminal-panes"></div>
+      </section>
+    </main>
+  </div>
   <script src="/app.js" defer></script>
 </body>
 </html>

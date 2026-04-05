@@ -75,7 +75,7 @@
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
           );
-          ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix { };
+          ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix { inherit hermesDashboard; };
 
           allUtilities = [
             ghostshipSearxng
@@ -127,6 +127,7 @@
           };
         in
         {
+          hermes-dashboard = hermesDashboard;
           ghostship-cli-contract = ghostshipCliContract;
           ghostship-searxng = ghostshipSearxng;
           ghostship-sonarr = ghostshipSonarr;
@@ -164,6 +165,7 @@
         in
         {
           inherit (self.packages.${system})
+            hermes-dashboard
             ghostship-cli-contract
             ghostship-searxng
             ghostship-sonarr

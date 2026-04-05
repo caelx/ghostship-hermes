@@ -17,6 +17,7 @@ import uvicorn
 import websockets
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 
 logging.basicConfig(level=logging.INFO)
@@ -151,6 +152,160 @@ def session_label(session: dict[str, Any]) -> str:
     return cwd or session["cwd"] or session["label"]
 
 
+def safe_path_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def parse_env_file(path: Path) -> dict[str, str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+
+    payload: dict[str, str] = {}
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        payload[key.strip()] = value.strip()
+    return payload
+
+
+def read_model_default(path: Path) -> str | None:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    in_model = False
+    model_indent = 0
+
+    for raw_line in lines:
+        line = raw_line.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        stripped = line.strip()
+
+        if stripped == "model:":
+            in_model = True
+            model_indent = indent
+            continue
+
+        if in_model and indent <= model_indent:
+            in_model = False
+
+        if in_model and stripped.startswith("default:"):
+            value = stripped.split(":", 1)[1].strip().strip("\"'")
+            return value or None
+
+    return None
+
+
+def model_vendor_name(model_name: str | None) -> str | None:
+    if not model_name or "/" not in model_name:
+        return None
+    vendor = model_name.split("/", 1)[0].strip().lower()
+    return vendor or None
+
+
+def has_openrouter_config(env_payload: dict[str, str]) -> bool:
+    return any(env_payload.get(key) for key in ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "OPENROUTER_HTTP_REFERER", "OPENROUTER_TITLE"))
+
+
+def current_environment_payload() -> dict[str, Any]:
+    profiles_root = Path(MANAGED_HERMES_HOME) / "profiles"
+    root_env_path = Path(MANAGED_HERMES_HOME) / ".env"
+    root_config_path = Path(MANAGED_HERMES_HOME) / "config.yaml"
+    runtime_env = {
+        key: value
+        for key in (
+            "OPENROUTER_API_KEY",
+            "OPENROUTER_BASE_URL",
+            "OPENROUTER_HTTP_REFERER",
+            "OPENROUTER_TITLE",
+            "OPENROUTER_TEST_MODEL",
+        )
+        if (value := os.environ.get(key))
+    }
+    root_env = parse_env_file(root_env_path) or runtime_env
+    root_model = read_model_default(root_config_path) or os.environ.get("OPENROUTER_TEST_MODEL")
+    openrouter_env = root_env | runtime_env
+    has_openrouter = has_openrouter_config(openrouter_env)
+    model_entries: dict[str, dict[str, Any]] = {}
+
+    def register_model(model_name: str | None, *, scope: str, profile_name: str | None = None) -> None:
+        if not model_name:
+            return
+        entry = model_entries.setdefault(
+            model_name,
+            {
+                "name": model_name,
+                "vendor": model_vendor_name(model_name),
+                "scopes": [],
+                "profiles": [],
+            },
+        )
+        if scope not in entry["scopes"]:
+            entry["scopes"].append(scope)
+        if profile_name and profile_name not in entry["profiles"]:
+            entry["profiles"].append(profile_name)
+
+    register_model(root_model, scope="runtime")
+
+    profiles = []
+    for name in MANAGED_PROFILES:
+        profile_root = profiles_root / name
+        profile_env = parse_env_file(profile_root / ".env")
+        profile_model = read_model_default(profile_root / "config.yaml") or root_model
+        has_openrouter = has_openrouter or has_openrouter_config(profile_env)
+        register_model(profile_model, scope="profile", profile_name=name)
+
+        profiles.append(
+            {
+                "name": name,
+                "path": str(profile_root),
+                "service": f"ghostship-hermes-profile-{name}.service",
+                "is_default": name == DEFAULT_PROFILE,
+                "model": profile_model,
+                "model_vendor": model_vendor_name(profile_model),
+                "has_env": safe_path_exists(profile_root / ".env"),
+                "has_config": safe_path_exists(profile_root / "config.yaml"),
+            }
+        )
+
+    providers = []
+    if has_openrouter:
+        providers.append(
+            {
+                "name": "openrouter",
+                "configured": bool(openrouter_env.get("OPENROUTER_API_KEY")),
+                "base_url": openrouter_env.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1",
+                "has_api_key": bool(openrouter_env.get("OPENROUTER_API_KEY")),
+                "has_referer": bool(openrouter_env.get("OPENROUTER_HTTP_REFERER")),
+                "title": openrouter_env.get("OPENROUTER_TITLE") or None,
+                "models": sorted(model_entries.values(), key=lambda item: item["name"]),
+            }
+        )
+
+    return {
+        "host": socket.gethostname(),
+        "dashboard_bind": f"{DASHBOARD_HOST}:{DASHBOARD_PORT}",
+        "terminal_cwd": TERMINAL_CWD,
+        "home": HOME_DIR,
+        "managed_hermes_home": MANAGED_HERMES_HOME,
+        "default_profile": DEFAULT_PROFILE,
+        "model": root_model,
+        "providers": providers,
+        "profiles": profiles,
+    }
+
+
 def prune_dead_sessions(state: dict[str, Any]) -> dict[str, Any]:
     alive_sessions = [session for session in state["sessions"] if process_is_alive(session["pid"])]
     state["sessions"] = alive_sessions
@@ -177,6 +332,7 @@ def terminal_payload(state: dict[str, Any]) -> dict[str, Any]:
         "home": HOME_DIR,
         "managed_hermes_home": MANAGED_HERMES_HOME,
         "default_profile": DEFAULT_PROFILE,
+        "environment": current_environment_payload(),
         "active_terminal_id": state["active_terminal_id"],
         "profiles": profiles,
         "sessions": [
@@ -197,7 +353,7 @@ def terminal_payload(state: dict[str, Any]) -> dict[str, Any]:
 def available_port(state: dict[str, Any]) -> int:
     used_ports = {session["port"] for session in state["sessions"]}
     port = TTYD_PORT_BASE
-    while port in used_ports:
+    while port in used_ports or port_is_open(TTYD_HOST, port):
         port += 1
     return port
 
@@ -252,6 +408,13 @@ async def open_terminal_logic() -> dict[str, Any]:
                 stderr=log_handle,
                 start_new_session=True,
             )
+
+        # ttyd fails fast on bind/path issues; surface that immediately instead
+        # of saving a dead session that points at an unrelated stale listener.
+        await asyncio.sleep(0.15)
+        if process.poll() is not None:
+            raise RuntimeError(f"ttyd exited during startup with code {process.returncode}")
+
         session["pid"] = process.pid
 
         state["next_index"] += 1
@@ -366,18 +529,23 @@ async def _proxy_http(request: Request, session_id: str, path: str):
         raise HTTPException(status_code=503, detail="Terminal is starting")
     
     async def stream_response():
-        async for chunk in resp.aiter_raw():
+        async for chunk in resp.aiter_bytes():
             yield chunk
-            
+
+    async def close_upstream() -> None:
+        await resp.aclose()
+        await client.aclose()
+
     response_headers = dict(resp.headers)
     response_headers.pop("content-encoding", None)
     response_headers.pop("transfer-encoding", None)
     response_headers.pop("content-length", None)
-    
+
     return StreamingResponse(
         stream_response(),
         status_code=resp.status_code,
-        headers=response_headers
+        headers=response_headers,
+        background=BackgroundTask(close_upstream),
     )
 
 
@@ -392,42 +560,61 @@ async def proxy_terminal_websocket(websocket: WebSocket, session_id: str, path: 
     if not session:
         await websocket.close(code=1008)
         return
-        
-    await websocket.accept()
+
     query = websocket.url.query
     target_url = f"ws://{TTYD_HOST}:{session['port']}/terminals/{session_id}/{path}"
     if query:
         target_url += f"?{query}"
-        
+
+    requested_subprotocols = [
+        value.strip()
+        for value in websocket.headers.get("sec-websocket-protocol", "").split(",")
+        if value.strip()
+    ]
+
     try:
-        async with websockets.connect(target_url, subprotocols=websocket.headers.get("sec-websocket-protocol", "").split(", ")) as upstream_ws:
-            async def forward_to_upstream():
-                try:
-                    while True:
-                        data = await websocket.receive()
-                        if "text" in data:
-                            await upstream_ws.send(data["text"])
-                        elif "bytes" in data:
-                            await upstream_ws.send(data["bytes"])
-                except WebSocketDisconnect:
-                    pass
-                except Exception as e:
-                    logger.error(f"Error forwarding to upstream: {e}")
+        async with websockets.connect(
+            target_url,
+            subprotocols=requested_subprotocols or None,
+        ) as upstream_ws:
+            await websocket.accept(subprotocol=upstream_ws.subprotocol)
 
-            async def forward_to_client():
-                try:
-                    while True:
-                        message = await upstream_ws.recv()
-                        if isinstance(message, str):
-                            await websocket.send_text(message)
-                        else:
-                            await websocket.send_bytes(message)
-                except websockets.exceptions.ConnectionClosed:
-                    pass
-                except Exception as e:
-                    logger.error(f"Error forwarding to client: {e}")
+            async def forward_to_upstream() -> None:
+                while True:
+                    data = await websocket.receive()
+                    if data.get("type") == "websocket.disconnect":
+                        break
+                    if "text" in data:
+                        await upstream_ws.send(data["text"])
+                    elif "bytes" in data:
+                        await upstream_ws.send(data["bytes"])
 
-            await asyncio.gather(forward_to_upstream(), forward_to_client())
+            async def forward_to_client() -> None:
+                async for message in upstream_ws:
+                    if isinstance(message, str):
+                        await websocket.send_text(message)
+                    else:
+                        await websocket.send_bytes(message)
+
+            upstream_task = asyncio.create_task(forward_to_upstream())
+            client_task = asyncio.create_task(forward_to_client())
+            done, pending = await asyncio.wait(
+                {upstream_task, client_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            for task in done:
+                exc = task.exception()
+                if exc and not isinstance(exc, WebSocketDisconnect):
+                    raise exc
+    except WebSocketDisconnect:
+        pass
+    except websockets.exceptions.ConnectionClosed:
+        pass
     except Exception as e:
         logger.error(f"WebSocket proxy failed: {e}")
         try:

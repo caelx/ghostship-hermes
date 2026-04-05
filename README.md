@@ -16,7 +16,7 @@ Canonical image references:
 - `/workspace` remains a separate persisted working directory.
 - `/nix` should be persisted when you want user-level `nix profile install`, `nix shell`, and related outputs to survive container replacement.
 - The runtime user is `hermes` at `3000:3000`.
-- The public browser surface is a minimal dashboard on port `7681`.
+- The public browser surface is the packaged MMX dashboard on port `7681`.
 - The dashboard can launch as many ephemeral `ttyd` sessions as needed, tracks them as left-rail tabs, opens new tabs immediately with a loading state while `ttyd` starts, labels tabs from the shell cwd or current command, and returns to a blank home state when the active terminal is closed and no sessions remain.
 - Switching between open tabs keeps each live `ttyd` session attached instead of dropping back to ttyd's reconnect prompt.
 - Browser terminals start in `/home/hermes`.
@@ -52,7 +52,7 @@ Retained in the default image:
 - `tirith`
 - `ttyd`
 - `ghostship-hermes-router`
-- minimal dashboard controller
+- packaged MMX dashboard controller
 - all `ghostship-*` utilities
 
 ## Persistent Paths
@@ -98,7 +98,7 @@ The container uses a small NixOS-managed unit graph:
 - `ghostship-hermes-profile-coder.service`
   keeps the `coder` gateway running with `hermes -p coder gateway run --replace`
 - `ghostship-dashboard-controller.service`
-  serves the static dashboard and proxies on-demand ephemeral `ttyd` sessions on port `7681`
+  serves the packaged MMX dashboard and proxies on-demand ephemeral `ttyd` sessions on port `7681`
 - `ghostship-hermes-router.service`
   runs the local model router on `127.0.0.1:8788`, persists router state under `/home/hermes/.local/state/ghostship-hermes/router`, and exposes OpenAI-style alias routing plus debug endpoints for local tools and Hermes profiles
 
@@ -136,10 +136,11 @@ Notes:
 After startup:
 
 1. Open `http://localhost:7681`.
-2. Use `Open Terminal` to launch a new shell-backed `ttyd` session rooted at `/home/hermes`.
+2. Use the `+` button in the left rail to launch a new shell-backed `ttyd` session rooted at `/home/hermes`.
 3. Each new terminal appears as a focused tab in the left rail immediately, even before the underlying `ttyd` process is ready.
-4. Tab labels follow the active shell state, showing `/home/hermes` at the prompt and the current command name while work is running.
-5. Use `Close Terminal` to remove the active tab. When no terminals remain, the dashboard returns to the blank home state.
+4. The Hermes home screen shows only current runtime facts: paths, detected provider configuration, and the declared Hermes profiles. Use the Hermes logo in the rail to return to that view without closing running terminals.
+5. The terminal fills the stage, the outer dashboard stays non-scrolling, and ttyd owns terminal scrolling and resize behavior.
+6. Use the floating `×` in the top-right corner of the terminal stage to remove the active tab. When no terminals remain, the dashboard returns to the blank home state.
 
 ## Hermes Configuration
 
@@ -242,7 +243,7 @@ Build the publishable image bundle and the low-level rootfs locally:
 ```fish
 mkdir -p .nix-local-store
 set store "local?root=$PWD/.nix-local-store/nix"
-nix build --store $store .#packages.x86_64-linux.ghostship-hermes-image .#packages.x86_64-linux.ghostship-hermes-rootfs -L
+nix build --store $store .#packages.x86_64-linux.hermes-dashboard .#packages.x86_64-linux.ghostship-hermes-image .#packages.x86_64-linux.ghostship-hermes-rootfs -L
 set image_bundle (nix path-info --store $store .#packages.x86_64-linux.ghostship-hermes-image)
 set rootfs_output (nix path-info --store $store .#packages.x86_64-linux.ghostship-hermes-rootfs)
 set rootfs_tar (find $rootfs_output -type f -name '*.tar.xz' | head -n 1)
@@ -250,6 +251,7 @@ set rootfs_tar (find $rootfs_output -type f -name '*.tar.xz' | head -n 1)
 
 Image output contract:
 
+- `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.
 - `ghostship-hermes-image` is the explicit publishable image bundle consumed by `scripts/export_publishable_image.sh`, the GHCR publish workflow, and the dashboard smoke test.
 - `ghostship-hermes-rootfs` is the lower-level NixOS rootfs tarball used for `/init`-oriented persistence validation.
 
@@ -258,8 +260,12 @@ Run the dashboard smoke test:
 ```fish
 # Run this from a shell where ../../.envrc has already exported
 # OPENROUTER_API_KEY and OPENROUTER_TEST_MODEL.
-GHOSTSHIP_NIX_VOLUME_ROOT="$PWD/.nix-local-store/nix/nix" bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:ops-coder
+bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:ops-coder
 ```
+
+The dashboard smoke test no longer bind-mounts `/nix` by default. If you need
+to exercise a persisted host store explicitly, set
+`GHOSTSHIP_TEST_BIND_NIX=1 GHOSTSHIP_NIX_VOLUME_ROOT=...`.
 
 Run the full persistence validation:
 
