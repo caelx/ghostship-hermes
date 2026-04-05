@@ -15,3 +15,5 @@ The runtime entrypoint is:
 ```fish
 hermes-dashboard
 ```
+
+The home view is an environment console for the current runtime: declared profiles, provider metadata, and Hermes paths.

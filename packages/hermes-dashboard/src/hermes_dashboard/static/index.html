@@ -13,7 +13,9 @@
   <div class="shell">
     <aside class="rail" aria-label="Sessions rail">
       <div class="rail-top">
-        <img class="rail-logo" src="/logo.png" alt="Hermes logo">
+        <button id="home-button" class="rail-home" type="button" title="Home" aria-label="Home">
+          <img class="rail-logo" src="/logo.png" alt="Hermes logo">
+        </button>
         <button id="open-terminal" class="rail-action" type="button" title="New unit" aria-label="New unit">
           <span class="rail-action-plus">+</span>
         </button>
@@ -31,42 +33,37 @@
         <div class="scan"></div>
       </div>
 
-      <section id="blank-home" class="home-view">
+      <section id="blank-home" class="home-view" data-home-view="environment">
         <div class="home-shell">
-          <div class="home-header">
-            <p class="eyebrow">ghostship-hermes / browser surface</p>
-            <div class="status-rail" aria-label="Runtime summary">
-              <span class="status-pill">operations default</span>
-              <span class="status-pill">coder provisioned</span>
-              <span class="status-pill">same-origin ttyd</span>
+          <header class="home-bar panel">
+            <div class="home-bar-copy">
+              <p class="eyebrow">current environment</p>
+              <h1 class="home-title">Runtime</h1>
             </div>
-          </div>
+            <div id="provider-pills" class="status-rail" aria-label="Configured providers"></div>
+          </header>
 
           <div class="home-grid">
-            <section class="home-main panel">
-              <p class="home-intro">Hermes runtime access for declared profiles and ephemeral shells.</p>
-              <p class="home-copy">
-                Launch a unit from the rail to open a ttyd session rooted at <code>/home/hermes</code>.
-                The browser chrome stays thin, terminals stay transient, and the runtime remains the center of gravity.
-              </p>
-              <div class="profile-strip" aria-label="Managed profiles">
-                <span class="profile-chip">operations</span>
-                <span class="profile-chip">coder</span>
+            <section class="panel info-panel runtime-panel">
+              <div class="section-head">
+                <span class="section-label">Runtime</span>
               </div>
+              <dl id="runtime-facts" class="fact-list" aria-label="Runtime facts"></dl>
             </section>
 
-            <aside class="home-side">
-              <section class="panel note-card">
-                <span class="note-label">Active shape</span>
-                <strong class="note-value">Minimal rail. Full terminal stage.</strong>
-                <span class="note-meta">No extra browser chrome beyond launch, focus, and close.</span>
-              </section>
-              <section class="panel note-card note-card-accent">
-                <span class="note-label">Terminal policy</span>
-                <strong class="note-value">Ephemeral sessions, direct fit.</strong>
-                <span class="note-meta">The outer page does not scroll. ttyd owns terminal scrolling and resizing.</span>
-              </section>
-            </aside>
+            <section class="panel info-panel providers-panel">
+              <div class="section-head">
+                <span class="section-label">Providers</span>
+              </div>
+              <div id="provider-list" class="provider-list" aria-label="Configured providers"></div>
+            </section>
+
+            <section class="panel info-panel profiles-panel">
+              <div class="section-head">
+                <span class="section-label">Profiles</span>
+              </div>
+              <div id="profile-list" class="profile-list" aria-label="Configured profiles"></div>
+            </section>
           </div>
         </div>
       </section>

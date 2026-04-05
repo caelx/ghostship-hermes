@@ -215,12 +215,15 @@ wait_for_http "${dashboard_base_url}/api/status"
 
 assert_http_contains "${dashboard_base_url}/" 'data-dashboard="ghostship-hermes-dashboard"'
 assert_http_contains "${dashboard_base_url}/" 'data-dashboard-style="hermes-studio"'
-assert_http_contains "${dashboard_base_url}/" "ghostship-hermes / browser surface"
-assert_http_contains "${dashboard_base_url}/" "Hermes runtime access for declared profiles and ephemeral shells."
+assert_http_contains "${dashboard_base_url}/" 'data-home-view="environment"'
+assert_http_contains "${dashboard_base_url}/" "current environment"
+assert_http_contains "${dashboard_base_url}/" "Providers"
+assert_http_contains "${dashboard_base_url}/" "Profiles"
 assert_http_contains "${dashboard_base_url}/api/status" '"sessions": \[\]'
 assert_http_contains "${dashboard_base_url}/api/status" '"name": "operations"'
 assert_http_contains "${dashboard_base_url}/api/status" '"name": "coder"'
 assert_http_contains "${dashboard_base_url}/api/status" '"default_profile": "operations"'
+assert_http_contains "${dashboard_base_url}/api/status" '"environment": {'
 
 open_started_ms="$(date +%s%3N)"
 curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-hermes-terminal-open-1.json

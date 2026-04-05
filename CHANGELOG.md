@@ -14,3 +14,4 @@ All notable changes to this project will be documented in this file.
 - Wired the bootstrap flow to consume `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` from the runtime environment so both declared profiles come up with the same test provider configuration.
 - Updated the image tests and validation flow to prove the final runtime contract, including gateway boot, `/home/hermes` persistence, multi-profile layout, multi-terminal dashboard behavior, persisted `/nix` installs, and later-installed tool state persistence across container replacement.
 - Fixed the dashboard terminal websocket path so tab switching keeps the live `ttyd` session attached instead of falling into ttyd's reconnect overlay.
+- Reworked the dashboard home state into a runtime environment console with live profile and provider metadata, home navigation on the Hermes logo, and a flatter Hermes-site-inspired dark UI treatment.

@@ -152,6 +152,161 @@ def session_label(session: dict[str, Any]) -> str:
     return cwd or session["cwd"] or session["label"]
 
 
+def safe_path_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def parse_env_file(path: Path) -> dict[str, str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+
+    payload: dict[str, str] = {}
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        payload[key.strip()] = value.strip()
+    return payload
+
+
+def read_model_default(path: Path) -> str | None:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    in_model = False
+    model_indent = 0
+
+    for raw_line in lines:
+        line = raw_line.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        stripped = line.strip()
+
+        if stripped == "model:":
+            in_model = True
+            model_indent = indent
+            continue
+
+        if in_model and indent <= model_indent:
+            in_model = False
+
+        if in_model and stripped.startswith("default:"):
+            value = stripped.split(":", 1)[1].strip().strip("\"'")
+            return value or None
+
+    return None
+
+
+def model_provider_name(model_name: str | None) -> str | None:
+    if not model_name or "/" not in model_name:
+        return None
+    provider = model_name.split("/", 1)[0].strip().lower()
+    return provider or None
+
+
+def provider_names_from_env(env_payload: dict[str, str]) -> set[str]:
+    providers: set[str] = set()
+    if any(env_payload.get(key) for key in ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "OPENROUTER_HTTP_REFERER", "OPENROUTER_TITLE")):
+        providers.add("openrouter")
+    return providers
+
+
+def current_environment_payload() -> dict[str, Any]:
+    profiles_root = Path(MANAGED_HERMES_HOME) / "profiles"
+    root_env_path = Path(MANAGED_HERMES_HOME) / ".env"
+    root_config_path = Path(MANAGED_HERMES_HOME) / "config.yaml"
+    runtime_env = {
+        key: value
+        for key in (
+            "OPENROUTER_API_KEY",
+            "OPENROUTER_BASE_URL",
+            "OPENROUTER_HTTP_REFERER",
+            "OPENROUTER_TITLE",
+            "OPENROUTER_TEST_MODEL",
+        )
+        if (value := os.environ.get(key))
+    }
+    root_env = parse_env_file(root_env_path) or runtime_env
+    root_model = read_model_default(root_config_path) or os.environ.get("OPENROUTER_TEST_MODEL")
+    provider_names = provider_names_from_env(root_env)
+    if root_model:
+        provider_name = model_provider_name(root_model)
+        if provider_name:
+            provider_names.add(provider_name)
+
+    profiles = []
+    for name in MANAGED_PROFILES:
+        profile_root = profiles_root / name
+        profile_env = parse_env_file(profile_root / ".env")
+        profile_model = read_model_default(profile_root / "config.yaml") or root_model
+        profile_provider = model_provider_name(profile_model)
+        provider_names.update(provider_names_from_env(profile_env))
+        if profile_provider:
+            provider_names.add(profile_provider)
+
+        profiles.append(
+            {
+                "name": name,
+                "path": str(profile_root),
+                "service": f"ghostship-hermes-profile-{name}.service",
+                "is_default": name == DEFAULT_PROFILE,
+                "model": profile_model,
+                "provider": profile_provider,
+                "has_env": safe_path_exists(profile_root / ".env"),
+                "has_config": safe_path_exists(profile_root / "config.yaml"),
+            }
+        )
+
+    providers = []
+    for name in sorted(provider_names):
+        if name == "openrouter":
+            openrouter_env = root_env | runtime_env
+            providers.append(
+                {
+                    "name": "openrouter",
+                    "configured": bool(openrouter_env.get("OPENROUTER_API_KEY")),
+                    "base_url": openrouter_env.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1",
+                    "has_api_key": bool(openrouter_env.get("OPENROUTER_API_KEY")),
+                    "has_referer": bool(openrouter_env.get("OPENROUTER_HTTP_REFERER")),
+                    "title": openrouter_env.get("OPENROUTER_TITLE") or None,
+                }
+            )
+            continue
+
+        providers.append(
+            {
+                "name": name,
+                "configured": True,
+                "base_url": None,
+                "has_api_key": False,
+                "has_referer": False,
+                "title": None,
+            }
+        )
+
+    return {
+        "host": socket.gethostname(),
+        "dashboard_bind": f"{DASHBOARD_HOST}:{DASHBOARD_PORT}",
+        "terminal_cwd": TERMINAL_CWD,
+        "home": HOME_DIR,
+        "managed_hermes_home": MANAGED_HERMES_HOME,
+        "default_profile": DEFAULT_PROFILE,
+        "model": root_model,
+        "providers": providers,
+        "profiles": profiles,
+    }
+
+
 def prune_dead_sessions(state: dict[str, Any]) -> dict[str, Any]:
     alive_sessions = [session for session in state["sessions"] if process_is_alive(session["pid"])]
     state["sessions"] = alive_sessions
@@ -178,6 +333,7 @@ def terminal_payload(state: dict[str, Any]) -> dict[str, Any]:
         "home": HOME_DIR,
         "managed_hermes_home": MANAGED_HERMES_HOME,
         "default_profile": DEFAULT_PROFILE,
+        "environment": current_environment_payload(),
         "active_terminal_id": state["active_terminal_id"],
         "profiles": profiles,
         "sessions": [
