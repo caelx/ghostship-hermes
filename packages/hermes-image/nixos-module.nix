@@ -6,15 +6,11 @@
   ghostshipHermesRouter,
   ghostshipHermesRuntime,
   ghostshipUtilities,
+  hermesDashboard,
   hermesRelease,
   ...
 }:
 let
-  dashboardTree = builtins.path {
-    path = ./dashboard;
-    name = "ghostship-hermes-dashboard";
-  };
-
   managedProfiles = [
     "operations"
     "coder"
@@ -53,6 +49,7 @@ let
     util-linux
     ghostshipHermesRouter
     ghostshipHermesRuntime
+    hermesDashboard
   ];
 
   servicePath = runtimePackages ++ ghostshipUtilities ++ [ config.services.hermes-agent.package ];
@@ -126,7 +123,6 @@ let
     TERMINAL_CWD = "/home/hermes";
     GHOSTSHIP_TERMINAL_CWD = "/home/hermes";
     GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
-    GHOSTSHIP_DASHBOARD_ROOT = dashboardTree;
     GHOSTSHIP_HERMES_PROFILES = managedProfileNames;
     GHOSTSHIP_HERMES_DEFAULT_PROFILE = defaultProfile;
     GHOSTSHIP_ROUTER_HOST = "127.0.0.1";

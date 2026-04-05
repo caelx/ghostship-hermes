@@ -1,23 +1,13 @@
 const openButton = document.getElementById("open-terminal");
 const closeButton = document.getElementById("close-terminal");
 const tabsRoot = document.getElementById("terminal-tabs");
-const tabCount = document.getElementById("tab-count");
 const blankHome = document.getElementById("blank-home");
 const terminalStage = document.getElementById("terminal-stage");
-const activeLabel = document.getElementById("active-label");
 const terminalPanes = document.getElementById("terminal-panes");
 const terminalLoading = document.getElementById("terminal-loading");
-const profileList = document.getElementById("profile-list");
-const homePath = document.getElementById("home-path");
-const profileRoot = document.getElementById("profile-root");
-const defaultProfile = document.getElementById("default-profile");
 
 const state = {
   activeTerminalId: null,
-  home: "/home/hermes",
-  managedHermesHome: "/home/hermes/.hermes",
-  defaultProfile: "operations",
-  profiles: [],
   sessions: [],
 };
 
@@ -28,7 +18,7 @@ async function requestJson(path, options = {}) {
   });
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error || `request failed: ${response.status}`);
+    throw new Error(payload.detail || payload.error || `request failed: ${response.status}`);
   }
   return payload;
 }
@@ -47,45 +37,23 @@ function syncActiveId(payload) {
 
 function renderTabs() {
   tabsRoot.innerHTML = "";
-  tabCount.textContent = String(state.sessions.length);
 
-  for (const session of state.sessions) {
+  state.sessions.forEach((session, index) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "terminal-tab";
     button.title = session.label;
     if (session.id === state.activeTerminalId) {
       button.classList.add("is-active");
-      button.setAttribute("aria-current", "page");
     }
+    // Show the actual label now that we have a wide sidebar
     button.textContent = session.label;
     button.addEventListener("click", () => {
       state.activeTerminalId = session.id;
       render();
     });
     tabsRoot.appendChild(button);
-    if (session.id === state.activeTerminalId) {
-      button.scrollIntoView({ block: "nearest" });
-    }
-  }
-}
-
-function renderProfiles() {
-  profileList.innerHTML = "";
-  for (const profile of state.profiles) {
-    const item = document.createElement("article");
-    item.className = "profile-card";
-    const defaultBadge = profile.is_default ? `<span class="profile-badge">default</span>` : "";
-    item.innerHTML = `
-      <div class="profile-head">
-        <strong>${profile.name}</strong>
-        ${defaultBadge}
-      </div>
-      <code>${profile.service}</code>
-      <p>${profile.path}</p>
-    `;
-    profileList.appendChild(item);
-  }
+  });
 }
 
 function ensureFrame(session) {
@@ -97,9 +65,7 @@ function ensureFrame(session) {
 
     const frame = document.createElement("iframe");
     frame.className = "terminal-frame";
-    frame.title = `ghostship-hermes terminal ${session.id}`;
-    frame.loading = "lazy";
-    frame.referrerPolicy = "same-origin";
+    frame.title = `tty-${session.id}`;
     frame.setAttribute("sandbox", "allow-same-origin allow-scripts allow-forms allow-downloads");
     pane.appendChild(frame);
     terminalPanes.appendChild(pane);
@@ -141,34 +107,22 @@ function renderStage() {
   closeButton.disabled = !hasSession;
 
   if (!hasSession) {
-    activeLabel.textContent = "No terminal selected";
     terminalLoading.classList.add("is-hidden");
     terminalPanes.classList.add("is-hidden");
     return;
   }
 
-  activeLabel.textContent = session.label;
   terminalLoading.classList.toggle("is-hidden", Boolean(session.ready));
   syncFrames();
 }
 
 function render() {
   renderTabs();
-  renderProfiles();
   renderStage();
 }
 
 function applyPayload(payload) {
-  state.home = payload.home || "/home/hermes";
-  state.managedHermesHome = payload.managed_hermes_home || "/home/hermes/.hermes";
-  state.defaultProfile = payload.default_profile || "operations";
-  state.profiles = payload.profiles || [];
   state.sessions = payload.sessions || [];
-
-  homePath.textContent = state.home;
-  profileRoot.textContent = `${state.managedHermesHome}/profiles`;
-  defaultProfile.textContent = state.defaultProfile;
-
   syncActiveId(payload);
   render();
 }
@@ -178,7 +132,7 @@ async function refreshStatus() {
     const payload = await requestJson("/api/status");
     applyPayload(payload);
   } catch (error) {
-    console.error(error);
+    console.error("Status refresh failed:", error);
   }
 }
 
@@ -189,7 +143,7 @@ async function openTerminal() {
     state.activeTerminalId = payload.active_terminal_id || null;
     applyPayload(payload);
   } catch (error) {
-    console.error(error);
+    console.error("Open terminal failed:", error);
   } finally {
     openButton.disabled = false;
   }
@@ -197,9 +151,7 @@ async function openTerminal() {
 
 async function closeTerminal() {
   const session = currentSession();
-  if (!session) {
-    return;
-  }
+  if (!session) return;
 
   closeButton.disabled = true;
   try {
@@ -207,7 +159,7 @@ async function closeTerminal() {
     state.activeTerminalId = payload.active_terminal_id || null;
     applyPayload(payload);
   } catch (error) {
-    console.error(error);
+    console.error("Close terminal failed:", error);
   } finally {
     closeButton.disabled = false;
   }
@@ -216,18 +168,13 @@ async function closeTerminal() {
 function startPolling() {
   const tick = async () => {
     await refreshStatus();
-    window.setTimeout(tick, 400);
+    window.setTimeout(tick, 500);
   };
   void tick();
 }
 
-openButton.addEventListener("click", () => {
-  void openTerminal();
-});
-
-closeButton.addEventListener("click", () => {
-  void closeTerminal();
-});
+openButton.addEventListener("click", () => void openTerminal());
+closeButton.addEventListener("click", () => void closeTerminal());
 
 window.addEventListener("DOMContentLoaded", () => {
   startPolling();

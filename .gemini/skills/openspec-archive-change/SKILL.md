@@ -113,11 +113,15 @@ All artifacts complete. All tasks complete.
 - If sync is requested, use openspec-sync-specs approach (agent-driven)
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
 
-
 <!-- ghostship:.gemini-openspec-archive-change:begin -->
 ## Ghostship Override
 
-- Before archive, commit the change branch and fast-forward merge it back into `main`.
-- Run the archive flow from the main worktree after that merge.
-- After archive succeeds, delete the change worktree with `git worktree remove <worktree-path>`.
+- If the user does not specify a change, assume `archive` applies to the change currently being worked on.
+- Before archiving, check whether the change has a matching worktree.
+- If it does, explicitly use `$using-git-worktrees` to work from that isolated checkout while reconciling and cleaning up the change.
+- If it does, commit all pending work in the worktree.
+- Merge `main` into the worktree and resolve any issues there.
+- Merge the worktree back into `main`.
+- Run the archive flow on `main` and commit the resulting archive move there.
+- After the archive commit succeeds, delete the change worktree with `git worktree remove <worktree-path>`.
 <!-- ghostship:.gemini-openspec-archive-change:end -->
