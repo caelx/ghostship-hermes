@@ -101,6 +101,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 
 - Keep local topology such as service URLs, hostnames, ports, profile names, and workspace paths in env/config by default unless the value itself contains credential material.
 - Standalone `ghostship-hermes-router` runs should default state under `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router`; only the Hermes image runtime should override that path to `/home/hermes/.local/state/ghostship-hermes/router`.
+- Hermes router compatibility should be judged against the OpenAI-compatible backend API Hermes runtime calls directly, especially `responses.stream/create` and streamed `chat.completions` reasoning/tool-call deltas, not just the lighter Hermes gateway frontend surface.
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.
 - CloakBrowser Manager auth uses the server `AUTH_TOKEN` as `Authorization: Bearer <token>`; `/api/status` stays unauthenticated for health checks.

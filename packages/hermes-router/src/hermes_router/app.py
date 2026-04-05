@@ -174,9 +174,10 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
             responses_request = ResponsesRequest.model_validate(raw_body)
         except ValidationError as exc:
             return JSONResponse(_openai_error(str(exc.errors()[0].get("msg", "Invalid request"))), status_code=400)
-        if responses_request.stream:
-            return JSONResponse(_openai_error("Streaming responses are not implemented.", code="not_implemented"), status_code=501)
         try:
+            if responses_request.stream:
+                plan = resolved_service.responses_create_stream(responses_request)
+                return StreamingResponse(plan.body, media_type="text/event-stream", headers=plan.headers)
             payload, headers = resolved_service.responses_create(responses_request)
         except RouterServiceError as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}

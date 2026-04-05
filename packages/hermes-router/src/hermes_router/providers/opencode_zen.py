@@ -11,6 +11,7 @@ from ghostship_cli_contract import BaseHttpClient, HttpStatusError, TimeoutError
 from .base import (
     NormalizedProviderError,
     ProviderChatResult,
+    ProviderChatStreamEvent,
     ProviderChatStreamResult,
     ProviderChatStreamState,
     ProviderModel,
@@ -141,12 +142,56 @@ class OpencodeZenProvider:
             usage=result.payload.get("usage") if isinstance(result.payload.get("usage"), dict) else None,
             final_payload=result.payload,
         )
+        message = ((result.payload.get("choices") or [{}])[0].get("message") or {})
         text = self._extract_chat_completion_text(result.payload)
+        reasoning = message.get("reasoning_content") or message.get("reasoning")
+        tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else None
+        finish_reason = ((result.payload.get("choices") or [{}])[0].get("finish_reason") or None)
         state.emitted_text = text
+        if isinstance(reasoning, str):
+            state.emitted_reasoning = reasoning
 
         def stream_chunks():
+            delta: dict[str, Any] = {}
             if text:
-                yield text
+                delta["content"] = text
+            if isinstance(reasoning, str) and reasoning:
+                delta["reasoning_content"] = reasoning
+            if tool_calls:
+                delta["tool_calls"] = tool_calls
+            if delta:
+                yield ProviderChatStreamEvent(
+                    content=text or None,
+                    reasoning=reasoning if isinstance(reasoning, str) and reasoning else None,
+                    tool_calls=tool_calls,
+                    finish_reason=finish_reason if isinstance(finish_reason, str) else None,
+                    usage=state.usage,
+                    raw_chunk={
+                        "id": result.payload.get("id") or f"chatcmpl-{backend_model}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": backend_model,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": delta,
+                                "finish_reason": finish_reason if isinstance(finish_reason, str) else None,
+                            }
+                        ],
+                    },
+                )
+            if state.usage:
+                yield ProviderChatStreamEvent(
+                    usage=state.usage,
+                    raw_chunk={
+                        "id": result.payload.get("id") or f"chatcmpl-{backend_model}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": backend_model,
+                        "choices": [],
+                        "usage": state.usage,
+                    },
+                )
 
         return ProviderChatStreamResult(
             chunks=stream_chunks(),

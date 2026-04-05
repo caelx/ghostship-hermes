@@ -190,6 +190,7 @@ The image now includes a standalone local router service:
 - Hermes-compatible health endpoints: `GET /health`, `GET /v1/health`
 - router health endpoints: `GET /healthz`, `GET /readyz`
 - primary OpenAI-style endpoints: `GET /v1/models`, `POST /v1/chat/completions`, `POST /v1/responses`, `GET /v1/responses/{id}`, `DELETE /v1/responses/{id}`
+- streaming contract: `chat/completions` SSE plus Hermes/OpenAI SDK-compatible `responses.stream(...)`
 - metrics endpoint: `GET /metrics`
 - debug endpoints: `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{alias}`, `GET /debug/rankings/{alias}`, `GET /debug/models/{provider}/{model}`
 - persistent state: `/home/hermes/.local/state/ghostship-hermes/router/router.db`

@@ -28,11 +28,22 @@ class ProviderChatStreamState:
     usage: dict[str, Any] | None = None
     final_payload: dict[str, Any] | None = None
     emitted_text: str = ""
+    emitted_reasoning: str = ""
+
+
+@dataclass(frozen=True)
+class ProviderChatStreamEvent:
+    content: str | None = None
+    reasoning: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    finish_reason: str | None = None
+    usage: dict[str, Any] | None = None
+    raw_chunk: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
 class ProviderChatStreamResult:
-    chunks: Iterator[str]
+    chunks: Iterator[ProviderChatStreamEvent]
     provider: str
     backend_model: str
     state: ProviderChatStreamState
