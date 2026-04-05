@@ -29,6 +29,16 @@ The router SHALL prefer eligible free backends for each logical alias, track hea
 - **WHEN** all eligible backend-model candidates for the requested alias are unusable
 - **THEN** the router returns an error that indicates the alias pool is currently exhausted or unavailable
 
+#### Scenario: Candidate ordering uses persisted ranking and recent health
+- **WHEN** the router orders eligible candidates for a logical alias
+- **THEN** it combines free-model preference, alias fit, rolling live health data, and persisted ranking outputs
+- **AND** it does not rely only on static name heuristics once ranking data is available
+
+#### Scenario: Provider-wide suppression affects candidate selection
+- **WHEN** a provider enters temporary cooldown or disablement because of broad auth, timeout, rate-limit, or exhaustion signals
+- **THEN** the router deprioritizes or excludes models from that provider during candidate selection
+- **AND** the provider becomes eligible again after recovery conditions or cooldown expiry
+
 ### Requirement: Router refreshes inventory from OpenRouter and OpenCode Zen
 The router SHALL maintain candidate inventory from both OpenRouter and OpenCode Zen so alias routing and model-level failover can use either provider.
 
@@ -71,6 +81,11 @@ If the router uses model-assisted background classification or ranking, it SHALL
 - **THEN** it uses a configured free model path for that maintenance workflow
 - **AND** it does not consume a paid fallback model as part of routine bucketing or ranking work
 
+#### Scenario: Ranking worker comes from the lightweight free pool
+- **WHEN** the router selects a background ranking worker
+- **THEN** it chooses a currently healthy free model from the `lightweight` bucket or an operator-approved equivalent
+- **AND** that selection happens outside the request hot path
+
 ### Requirement: Router persists routing state and exposes observability surfaces
 The router SHALL preserve the state needed for unattended operation and expose enough health and debug information to explain routing behavior.
 
@@ -87,9 +102,44 @@ The router SHALL preserve the state needed for unattended operation and expose e
 - **THEN** the router records best-effort time-to-first-text for that concrete backend model
 - **AND** debug or state surfaces include that timing alongside total latency
 
+#### Scenario: Metrics endpoint exposes routing and ranking health
+- **WHEN** an operator scrapes the router metrics endpoint
+- **THEN** the router exposes request, failover, refresh, cooldown, latency, and ranking metrics in a stable machine-readable format
+
+#### Scenario: Observability shows ranking rationale
+- **WHEN** an operator inspects a candidate list or ranking debug surface
+- **THEN** the router exposes the current ranking score, health-derived score inputs, and any active override or cooldown state for each candidate
+
 ### Requirement: Router behavior is configurable without code changes
 The router SHALL support operator configuration for providers, alias buckets, refresh behavior, cooldown thresholds, routing weights, fallback policy, and allow or block controls without requiring source edits.
 
 #### Scenario: Configuration changes affect future routing decisions
 - **WHEN** the operator updates supported router configuration for provider enablement, weights, bucket rules, cooldown thresholds, or fallback policy
 - **THEN** future routing decisions reflect the updated policy without requiring application code changes
+
+#### Scenario: Durable operator overrides affect ranking and eligibility
+- **WHEN** the operator applies a persistent override for model or provider disablement, weighting, or alias pinning
+- **THEN** future routing and ranking decisions reflect that override
+- **AND** the override remains visible and durable across service restarts
+
+### Requirement: Router maintains provider-wide health state
+The router SHALL track provider-wide health independently from concrete-model health so it can react to broad provider issues without waiting for every model to fail independently.
+
+#### Scenario: Broad provider failures trigger provider cooldown
+- **WHEN** repeated recent failures indicate that many requests or refreshes against a provider are failing for the same systemic reason
+- **THEN** the router records provider-wide degraded state and applies a temporary cooldown or disablement to that provider
+
+#### Scenario: Provider recovers automatically after cooldown or refresh
+- **WHEN** a provider cooldown expires or a later refresh succeeds
+- **THEN** the router allows that provider to compete for routing again without manual intervention
+
+### Requirement: Router stores rolling health and performance windows
+The router SHALL maintain recent health and timing data that is suitable for ranking volatile free-model inventories.
+
+#### Scenario: Recent behavior outweighs lifetime totals
+- **WHEN** the router evaluates a candidate model or provider
+- **THEN** recent rolling latency, failure, rate-limit, and success signals influence ranking more strongly than long-lived aggregate counters
+
+#### Scenario: Likely free-tier exhaustion affects ranking
+- **WHEN** recent failure patterns suggest probable free-tier exhaustion for a model or provider
+- **THEN** the router penalizes that candidate or provider until recovery signals appear
