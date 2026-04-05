@@ -28,7 +28,7 @@
             inherit system;
             config.allowUnfree = true;
           };
-          routerPython311Packages = pkgs.python311Packages.overrideScope (
+          python311Packages = pkgs.python311Packages.overrideScope (
             final: prev: {
               watchfiles = prev.watchfiles.overridePythonAttrs (_: {
                 doCheck = false;
@@ -43,37 +43,55 @@
           );
 
           # Utility packages
-          ghostshipCliContract = pkgs.callPackage ./packages/ghostship-cli-contract/package.nix { };
-          routerGhostshipCliContract = pkgs.callPackage ./packages/ghostship-cli-contract/package.nix {
-            python311Packages = routerPython311Packages;
+          ghostshipCliContract = pkgs.callPackage ./packages/ghostship-cli-contract/package.nix {
+            inherit python311Packages;
           };
-          hermesDashboard = pkgs.callPackage ./packages/hermes-dashboard/package.nix { };
-          ghostshipSearxng = pkgs.callPackage ./packages/searxng-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipSonarr = pkgs.callPackage ./packages/sonarr-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipRadarr = pkgs.callPackage ./packages/radarr-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipProwlarr = pkgs.callPackage ./packages/prowlarr-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipPlex = pkgs.callPackage ./packages/plex-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipRomm = pkgs.callPackage ./packages/romm-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipNzbget = pkgs.callPackage ./packages/nzbget-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipQbittorrent = pkgs.callPackage ./packages/qbittorrent-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipGrimmory = pkgs.callPackage ./packages/grimmory-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipTautulli = pkgs.callPackage ./packages/tautulli-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipBazarr = pkgs.callPackage ./packages/bazarr-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipSynology = pkgs.callPackage ./packages/synology-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipFlaresolverr = pkgs.callPackage ./packages/flaresolverr-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipPyloadNg = pkgs.callPackage ./packages/pyload-ng-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipCloakbrowser = pkgs.callPackage ./packages/cloakbrowser-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
-          ghostshipChangedetection = pkgs.callPackage ./packages/changedetection-cli/package.nix { inherit ghostshipCliContract; };
+          hermesDashboard = pkgs.callPackage ./packages/hermes-dashboard/package.nix {
+            inherit python311Packages;
+          };
+          ghostshipSearxng = pkgs.callPackage ./packages/searxng-cli/package.nix {
+            inherit ghostshipCliContract;
+            inherit python311Packages;
+          };
+          ghostshipSonarr = pkgs.callPackage ./packages/sonarr-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipRadarr = pkgs.callPackage ./packages/radarr-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipProwlarr = pkgs.callPackage ./packages/prowlarr-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipPlex = pkgs.callPackage ./packages/plex-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipRomm = pkgs.callPackage ./packages/romm-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipNzbget = pkgs.callPackage ./packages/nzbget-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipQbittorrent = pkgs.callPackage ./packages/qbittorrent-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipGrimmory = pkgs.callPackage ./packages/grimmory-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipTautulli = pkgs.callPackage ./packages/tautulli-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipBazarr = pkgs.callPackage ./packages/bazarr-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipSynology = pkgs.callPackage ./packages/synology-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipFlaresolverr = pkgs.callPackage ./packages/flaresolverr-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipPyloadNg = pkgs.callPackage ./packages/pyload-ng-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipCloakbrowser = pkgs.callPackage ./packages/cloakbrowser-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract python311Packages; };
+          ghostshipChangedetection = pkgs.callPackage ./packages/changedetection-cli/package.nix { inherit ghostshipCliContract python311Packages; };
           ghostshipHermesRouter = pkgs.callPackage ./packages/hermes-router/package.nix {
-            python311Packages = routerPython311Packages;
-            ghostshipCliContract = routerGhostshipCliContract;
+            inherit python311Packages;
+            ghostshipCliContract = ghostshipCliContract;
           };
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
           );
-          ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix { };
+          ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix {
+            python3 = pkgs.python311.withPackages (
+              ps: [
+                (ps.fastapi.overridePythonAttrs (_: {
+                  doCheck = false;
+                }))
+                (ps.watchfiles.overridePythonAttrs (_: {
+                  doCheck = false;
+                }))
+                ps.uvicorn
+                ps.websockets
+                ps.httpx
+              ]
+            );
+          };
 
           allUtilities = [
             ghostshipSearxng
@@ -144,6 +162,7 @@
           ghostship-pricebuddy = ghostshipPricebuddy;
           ghostship-rss-bridge = ghostshipRssBridge;
           ghostship-changedetection = ghostshipChangedetection;
+          ghostship-hermes-dashboard = hermesDashboard;
           ghostship-hermes-router = ghostshipHermesRouter;
           ghostship-hermes-runtime = ghostshipHermesRuntime;
           ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;

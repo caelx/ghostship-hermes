@@ -39,7 +39,6 @@ writeShellApplication {
     export GHOSTSHIP_TTYD_HOST="''${GHOSTSHIP_TTYD_HOST:-127.0.0.1}"
     export GHOSTSHIP_TTYD_TITLE="''${GHOSTSHIP_TTYD_TITLE:-ghostship-hermes}"
     export GHOSTSHIP_TERMINAL_CWD="''${GHOSTSHIP_TERMINAL_CWD:-/home/hermes}"
-    export GHOSTSHIP_DASHBOARD_ROOT="''${GHOSTSHIP_DASHBOARD_ROOT:-${./dashboard}}"
     export XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-$HOME/.config}"
     export XDG_DATA_HOME="''${XDG_DATA_HOME:-$HOME/.local/share}"
     export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
