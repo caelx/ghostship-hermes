@@ -17,6 +17,7 @@ import uvicorn
 import websockets
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 
 logging.basicConfig(level=logging.INFO)
@@ -373,18 +374,23 @@ async def _proxy_http(request: Request, session_id: str, path: str):
         raise HTTPException(status_code=503, detail="Terminal is starting")
     
     async def stream_response():
-        async for chunk in resp.aiter_raw():
+        async for chunk in resp.aiter_bytes():
             yield chunk
-            
+
+    async def close_upstream() -> None:
+        await resp.aclose()
+        await client.aclose()
+
     response_headers = dict(resp.headers)
     response_headers.pop("content-encoding", None)
     response_headers.pop("transfer-encoding", None)
     response_headers.pop("content-length", None)
-    
+
     return StreamingResponse(
         stream_response(),
         status_code=resp.status_code,
-        headers=response_headers
+        headers=response_headers,
+        background=BackgroundTask(close_upstream),
     )
 
 
@@ -399,42 +405,61 @@ async def proxy_terminal_websocket(websocket: WebSocket, session_id: str, path: 
     if not session:
         await websocket.close(code=1008)
         return
-        
-    await websocket.accept()
+
     query = websocket.url.query
     target_url = f"ws://{TTYD_HOST}:{session['port']}/terminals/{session_id}/{path}"
     if query:
         target_url += f"?{query}"
-        
+
+    requested_subprotocols = [
+        value.strip()
+        for value in websocket.headers.get("sec-websocket-protocol", "").split(",")
+        if value.strip()
+    ]
+
     try:
-        async with websockets.connect(target_url, subprotocols=websocket.headers.get("sec-websocket-protocol", "").split(", ")) as upstream_ws:
-            async def forward_to_upstream():
-                try:
-                    while True:
-                        data = await websocket.receive()
-                        if "text" in data:
-                            await upstream_ws.send(data["text"])
-                        elif "bytes" in data:
-                            await upstream_ws.send(data["bytes"])
-                except WebSocketDisconnect:
-                    pass
-                except Exception as e:
-                    logger.error(f"Error forwarding to upstream: {e}")
+        async with websockets.connect(
+            target_url,
+            subprotocols=requested_subprotocols or None,
+        ) as upstream_ws:
+            await websocket.accept(subprotocol=upstream_ws.subprotocol)
 
-            async def forward_to_client():
-                try:
-                    while True:
-                        message = await upstream_ws.recv()
-                        if isinstance(message, str):
-                            await websocket.send_text(message)
-                        else:
-                            await websocket.send_bytes(message)
-                except websockets.exceptions.ConnectionClosed:
-                    pass
-                except Exception as e:
-                    logger.error(f"Error forwarding to client: {e}")
+            async def forward_to_upstream() -> None:
+                while True:
+                    data = await websocket.receive()
+                    if data.get("type") == "websocket.disconnect":
+                        break
+                    if "text" in data:
+                        await upstream_ws.send(data["text"])
+                    elif "bytes" in data:
+                        await upstream_ws.send(data["bytes"])
 
-            await asyncio.gather(forward_to_upstream(), forward_to_client())
+            async def forward_to_client() -> None:
+                async for message in upstream_ws:
+                    if isinstance(message, str):
+                        await websocket.send_text(message)
+                    else:
+                        await websocket.send_bytes(message)
+
+            upstream_task = asyncio.create_task(forward_to_upstream())
+            client_task = asyncio.create_task(forward_to_client())
+            done, pending = await asyncio.wait(
+                {upstream_task, client_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            for task in done:
+                exc = task.exception()
+                if exc and not isinstance(exc, WebSocketDisconnect):
+                    raise exc
+    except WebSocketDisconnect:
+        pass
+    except websockets.exceptions.ConnectionClosed:
+        pass
     except Exception as e:
         logger.error(f"WebSocket proxy failed: {e}")
         try:

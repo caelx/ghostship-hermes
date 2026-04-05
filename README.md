@@ -132,11 +132,11 @@ Notes:
 After startup:
 
 1. Open `http://localhost:7681`.
-2. Use `NEW_UNIT` to launch a new shell-backed `ttyd` session rooted at `/home/hermes`.
+2. Use the `+` button in the left rail to launch a new shell-backed `ttyd` session rooted at `/home/hermes`.
 3. Each new terminal appears as a focused tab in the left rail immediately, even before the underlying `ttyd` process is ready.
-4. The MMX home screen shows `READY` and `GHOSTSHIP_HERMES` until a terminal is active.
-5. Tab labels follow the active shell state, showing `/home/hermes` at the prompt and the current command name while work is running.
-6. Use `TERMINATE_SESSION` to remove the active tab. When no terminals remain, the dashboard returns to the blank home state.
+4. The glass home screen shows `ghostship-hermes / dashboard` and `Clear glass. Live shell.` until a terminal is active.
+5. The terminal fills the stage, the outer dashboard stays non-scrolling, and ttyd owns terminal scrolling and resize behavior.
+6. Use the floating `×` in the top-right corner of the terminal stage to remove the active tab. When no terminals remain, the dashboard returns to the blank home state.
 
 ## Hermes Configuration
 

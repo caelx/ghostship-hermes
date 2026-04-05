@@ -67,6 +67,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Upstream Hermes does not expose named profiles as a declarative NixOS-module option. Precreating `operations` and `coder` from Nix and supervising each one with its own gateway service is an approved repo-specific deviation and should stay implemented as NixOS-managed units, not as mutable runtime drift.
 - The browser dashboard should treat terminals as ephemeral tabs: opening spawns a fresh `ttyd` session focused on `/home/hermes`, closing removes only that session, and zero sessions returns the UI to a blank home state.
 - The dashboard proxies ttyd from its own origin on `:7681`; do not turn ttyd `--check-origin` back on for proxied sessions or tab switches will fall into ttyd's reconnect overlay.
+- The ttyd proxy must stream decoded HTTP bytes and preserve websocket subprotocol negotiation; stripping `content-encoding` while forwarding raw gzip bytes or accepting the browser websocket before upstream subprotocol negotiation will break the embedded terminal.
 - The image should bootstrap `operations` and `coder` profiles so operators can inspect the upstream `~/.hermes/profiles/...` layout immediately after boot, with `operations` set as the sticky default profile.
 - The bootstrap oneshot should source `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` from the runtime environment, write the profile `.env` files, and set both declared profiles to the requested test model without depending on extra Python packages like PyYAML.
 

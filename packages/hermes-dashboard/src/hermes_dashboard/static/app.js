@@ -41,13 +41,14 @@ function renderTabs() {
   state.sessions.forEach((session, index) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "terminal-tab";
+    button.className = "rail-tab";
     button.title = session.label;
+    button.dataset.label = session.label;
+    button.setAttribute("aria-label", session.label);
+    button.textContent = String(index + 1).padStart(2, "0");
     if (session.id === state.activeTerminalId) {
       button.classList.add("is-active");
     }
-    // Show the actual label now that we have a wide sidebar
-    button.textContent = session.label;
     button.addEventListener("click", () => {
       state.activeTerminalId = session.id;
       render();
@@ -66,6 +67,7 @@ function ensureFrame(session) {
     const frame = document.createElement("iframe");
     frame.className = "terminal-frame";
     frame.title = `tty-${session.id}`;
+    frame.scrolling = "no";
     frame.setAttribute("sandbox", "allow-same-origin allow-scripts allow-forms allow-downloads");
     pane.appendChild(frame);
     terminalPanes.appendChild(pane);
@@ -104,6 +106,7 @@ function renderStage() {
 
   blankHome.classList.toggle("is-hidden", hasSession);
   terminalStage.classList.toggle("is-hidden", !hasSession);
+  closeButton.classList.toggle("is-hidden", !hasSession);
   closeButton.disabled = !hasSession;
 
   if (!hasSession) {
