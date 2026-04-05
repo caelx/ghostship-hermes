@@ -33,6 +33,9 @@
               watchfiles = prev.watchfiles.overridePythonAttrs (_: {
                 doCheck = false;
               });
+              websockets = prev.websockets.overridePythonAttrs (_: {
+                doCheck = false;
+              });
               fastapi-cli = prev.fastapi-cli.overridePythonAttrs (_: {
                 doCheck = false;
               });
@@ -203,6 +206,9 @@
           routerPython311Packages = pkgs.python311Packages.overrideScope (
             final: prev: {
               watchfiles = prev.watchfiles.overridePythonAttrs (_: {
+                doCheck = false;
+              });
+              websockets = prev.websockets.overridePythonAttrs (_: {
                 doCheck = false;
               });
               fastapi-cli = prev.fastapi-cli.overridePythonAttrs (_: {

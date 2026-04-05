@@ -96,6 +96,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Keep `.nix-local-store/` gitignored. It is repo-local build state for Docker and Nix validation, not source content.
 - On the current `x86_64` dev host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired correctly and rely on arm64 runners for full arm builds.
 - GitHub Actions image publication must run the `aarch64-linux` image leg on native arm64 infrastructure such as `ubuntu-24.04-arm`; Docker QEMU plus Nix `extra-platforms` on an x86 runner are not enough for the native arm64 Nix image build.
+- `python3.11-websockets-15.0.1` is currently flaky on native `aarch64-linux` in nixpkgs `nixos-25.11`; keep its checks disabled in the shared router/dashboard Python override scope until upstream or nixpkgs lands a fix.
 - Keep `ghostship-hermes-image` as the explicit publishable image bundle contract for CI, GHCR pushes, and image-loading flows, and keep the lower-level `/init` workstation tarball on a separate `ghostship-hermes-rootfs` output so scripts do not guess artifact semantics from one overloaded path.
 - Git worktrees do not carry ignored local `.envrc` files by default. Live-test helpers should check the current worktree first, then another repo worktree with `.envrc`.
 - Cloudflare Access service-token headers are test-only. Use `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID` and `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET` in utilities, and derive them from local `.envrc` values in the live-test harness.
