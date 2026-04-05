@@ -31,6 +31,7 @@
 
           # Utility packages
           ghostshipCliContract = pkgs.callPackage ./packages/ghostship-cli-contract/package.nix { };
+          hermesDashboard = pkgs.callPackage ./packages/hermes-dashboard/package.nix { };
           ghostshipSearxng = pkgs.callPackage ./packages/searxng-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipSonarr = pkgs.callPackage ./packages/sonarr-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRadarr = pkgs.callPackage ./packages/radarr-cli/package.nix { inherit ghostshipCliContract; };
@@ -81,6 +82,7 @@
               inherit
                 ghostshipHermesRuntime
                 hermesRelease
+                hermesDashboard
                 ;
               ghostshipUtilities = allUtilities;
             };

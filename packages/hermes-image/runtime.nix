@@ -91,9 +91,8 @@ writeShellApplication {
     }
 
     run_dashboard_controller() {
-      exec python ${./dashboard-controller.py}
+      exec hermes-dashboard
     }
-
     usage() {
       printf 'usage: ghostship-hermes-runtime <prepare-storage|dashboard-controller>\n' >&2
       exit 1
