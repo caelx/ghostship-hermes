@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from .providers.base import ProviderModel
+
+_LATENCY_ALPHA = 0.3
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,12 @@ class RouteEvent:
     created_at: float
 
 
+def _json_loads(value: str | None, *, default: Any) -> Any:
+    if not value:
+        return default
+    return json.loads(value)
+
+
 class StateStore:
     def load_inventory(self, provider_name: str) -> list[ProviderModel]:
         raise NotImplementedError
@@ -33,6 +42,16 @@ class StateStore:
         raise NotImplementedError
 
     def save_classifications(self, classifications: dict[str, tuple[str, ...]], *, source: str) -> None:
+        raise NotImplementedError
+
+    def save_rankings(
+        self,
+        rankings: dict[str, dict[str, Any]],
+        *,
+        source: str,
+        worker_provider_name: str | None,
+        worker_backend_model: str | None,
+    ) -> None:
         raise NotImplementedError
 
     def record_attempt(self, event: RouteEvent) -> None:
@@ -44,10 +63,49 @@ class StateStore:
     def apply_failure(self, provider_name: str, backend_model: str, *, category: str, retryable: bool) -> None:
         raise NotImplementedError
 
+    def record_refresh(
+        self,
+        provider_name: str,
+        *,
+        reason: str,
+        success: bool,
+        model_count: int = 0,
+        category: str | None = None,
+        details: Any = None,
+    ) -> None:
+        raise NotImplementedError
+
     def get_model_state(self) -> dict[str, dict[str, Any]]:
         raise NotImplementedError
 
+    def get_provider_state(self) -> dict[str, dict[str, Any]]:
+        raise NotImplementedError
+
+    def get_rankings(self) -> dict[str, dict[str, Any]]:
+        raise NotImplementedError
+
+    def get_overrides(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def upsert_model_override(self, provider_name: str, backend_model: str, *, enabled: bool | None = None, weight: float | None = None) -> None:
+        raise NotImplementedError
+
+    def upsert_provider_override(self, provider_name: str, *, enabled: bool | None = None, weight: float | None = None) -> None:
+        raise NotImplementedError
+
+    def upsert_alias_pin(self, alias: str, model_ids: tuple[str, ...]) -> None:
+        raise NotImplementedError
+
+    def set_provider_cooldown(self, provider_name: str, *, cooldown_until: float, category: str, details: Any = None) -> None:
+        raise NotImplementedError
+
     def get_recent_events(self, limit: int) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    def get_route_metric_rows(self) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    def get_refresh_metric_rows(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
     def snapshot(self) -> dict[str, Any]:
@@ -55,8 +113,9 @@ class StateStore:
 
 
 class SqliteStateStore(StateStore):
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, *, rolling_window_seconds: float = 3600.0):
         self.db_path = db_path
+        self.rolling_window_seconds = max(rolling_window_seconds, 1.0)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -92,13 +151,90 @@ class SqliteStateStore(StateStore):
                     success_count INTEGER NOT NULL DEFAULT 0,
                     failure_count INTEGER NOT NULL DEFAULT 0,
                     retryable_failure_count INTEGER NOT NULL DEFAULT 0,
+                    recent_success REAL NOT NULL DEFAULT 0,
+                    recent_failure REAL NOT NULL DEFAULT 0,
+                    recent_rate_limit REAL NOT NULL DEFAULT 0,
+                    recent_timeout REAL NOT NULL DEFAULT 0,
+                    recent_auth_failure REAL NOT NULL DEFAULT 0,
+                    recent_transport_failure REAL NOT NULL DEFAULT 0,
+                    recent_server_error REAL NOT NULL DEFAULT 0,
+                    recent_exhaustion REAL NOT NULL DEFAULT 0,
                     last_error_category TEXT,
                     last_error_at REAL,
                     cooldown_until REAL NOT NULL DEFAULT 0,
                     last_latency_ms REAL,
                     last_first_text_latency_ms REAL,
+                    latency_avg_ms REAL,
+                    first_text_latency_avg_ms REAL,
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (provider_name, backend_model)
+                );
+
+                CREATE TABLE IF NOT EXISTS provider_state (
+                    provider_name TEXT PRIMARY KEY,
+                    success_count INTEGER NOT NULL DEFAULT 0,
+                    failure_count INTEGER NOT NULL DEFAULT 0,
+                    request_success_count INTEGER NOT NULL DEFAULT 0,
+                    request_failure_count INTEGER NOT NULL DEFAULT 0,
+                    refresh_success_count INTEGER NOT NULL DEFAULT 0,
+                    refresh_failure_count INTEGER NOT NULL DEFAULT 0,
+                    recent_success REAL NOT NULL DEFAULT 0,
+                    recent_failure REAL NOT NULL DEFAULT 0,
+                    recent_rate_limit REAL NOT NULL DEFAULT 0,
+                    recent_timeout REAL NOT NULL DEFAULT 0,
+                    recent_auth_failure REAL NOT NULL DEFAULT 0,
+                    recent_transport_failure REAL NOT NULL DEFAULT 0,
+                    recent_server_error REAL NOT NULL DEFAULT 0,
+                    recent_refresh_failure REAL NOT NULL DEFAULT 0,
+                    recent_exhaustion REAL NOT NULL DEFAULT 0,
+                    last_error_category TEXT,
+                    last_error_at REAL,
+                    cooldown_until REAL NOT NULL DEFAULT 0,
+                    last_latency_ms REAL,
+                    last_first_text_latency_ms REAL,
+                    latency_avg_ms REAL,
+                    first_text_latency_avg_ms REAL,
+                    last_refresh_at REAL,
+                    last_refresh_reason TEXT,
+                    last_refresh_ok INTEGER,
+                    last_refresh_error_json TEXT,
+                    updated_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS model_rankings (
+                    provider_name TEXT NOT NULL,
+                    backend_model TEXT NOT NULL,
+                    alias_scores_json TEXT NOT NULL,
+                    rerank_scores_json TEXT NOT NULL,
+                    reason TEXT,
+                    confidence REAL,
+                    source TEXT NOT NULL,
+                    worker_provider_name TEXT,
+                    worker_backend_model TEXT,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (provider_name, backend_model)
+                );
+
+                CREATE TABLE IF NOT EXISTS model_overrides (
+                    provider_name TEXT NOT NULL,
+                    backend_model TEXT NOT NULL,
+                    enabled INTEGER,
+                    weight REAL NOT NULL DEFAULT 0,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (provider_name, backend_model)
+                );
+
+                CREATE TABLE IF NOT EXISTS provider_overrides (
+                    provider_name TEXT PRIMARY KEY,
+                    enabled INTEGER,
+                    weight REAL NOT NULL DEFAULT 0,
+                    updated_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS alias_pins (
+                    alias TEXT PRIMARY KEY,
+                    models_json TEXT NOT NULL,
+                    updated_at REAL NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS route_events (
@@ -115,9 +251,30 @@ class SqliteStateStore(StateStore):
                     details_json TEXT,
                     created_at REAL NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS refresh_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider_name TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    success INTEGER NOT NULL,
+                    model_count INTEGER NOT NULL DEFAULT 0,
+                    category TEXT,
+                    details_json TEXT,
+                    created_at REAL NOT NULL
+                );
                 """
             )
+            self._ensure_column(connection, "model_state", "recent_success", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "model_state", "recent_failure", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "model_state", "recent_rate_limit", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "model_state", "recent_timeout", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "model_state", "recent_auth_failure", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "model_state", "recent_transport_failure", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "model_state", "recent_server_error", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "model_state", "recent_exhaustion", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(connection, "model_state", "last_first_text_latency_ms", "REAL")
+            self._ensure_column(connection, "model_state", "latency_avg_ms", "REAL")
+            self._ensure_column(connection, "model_state", "first_text_latency_avg_ms", "REAL")
             self._ensure_column(connection, "route_events", "first_text_latency_ms", "REAL")
 
     @staticmethod
@@ -140,8 +297,8 @@ class SqliteStateStore(StateStore):
             ).fetchall()
         models: list[ProviderModel] = []
         for row in rows:
-            base_tags = tuple(json.loads(row["tags_json"]))
-            classified_tags = tuple(json.loads(row["classified_tags"])) if row["classified_tags"] else ()
+            base_tags = tuple(_json_loads(row["tags_json"], default=[]))
+            classified_tags = tuple(_json_loads(row["classified_tags"], default=[]))
             tags = tuple(dict.fromkeys([*base_tags, *classified_tags]))
             models.append(
                 ProviderModel(
@@ -149,7 +306,7 @@ class SqliteStateStore(StateStore):
                     provider=provider_name,
                     is_free=bool(row["is_free"]),
                     tags=tags,
-                    metadata=json.loads(row["metadata_json"]),
+                    metadata=_json_loads(row["metadata_json"], default={}),
                 )
             )
         return models
@@ -194,6 +351,49 @@ class SqliteStateStore(StateStore):
                 ],
             )
 
+    def save_rankings(
+        self,
+        rankings: dict[str, dict[str, Any]],
+        *,
+        source: str,
+        worker_provider_name: str | None,
+        worker_backend_model: str | None,
+    ) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            connection.executemany(
+                """
+                INSERT INTO model_rankings (
+                    provider_name, backend_model, alias_scores_json, rerank_scores_json,
+                    reason, confidence, source, worker_provider_name, worker_backend_model, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(provider_name, backend_model) DO UPDATE SET
+                  alias_scores_json = excluded.alias_scores_json,
+                  rerank_scores_json = excluded.rerank_scores_json,
+                  reason = excluded.reason,
+                  confidence = excluded.confidence,
+                  source = excluded.source,
+                  worker_provider_name = excluded.worker_provider_name,
+                  worker_backend_model = excluded.worker_backend_model,
+                  updated_at = excluded.updated_at
+                """,
+                [
+                    (
+                        ranking["provider_name"],
+                        ranking["backend_model"],
+                        json.dumps(ranking.get("alias_scores", {}), sort_keys=True),
+                        json.dumps(ranking.get("rerank_scores", {}), sort_keys=True),
+                        ranking.get("reason"),
+                        ranking.get("confidence"),
+                        source,
+                        worker_provider_name,
+                        worker_backend_model,
+                        now,
+                    )
+                    for ranking in rankings.values()
+                ],
+            )
+
     def record_attempt(self, event: RouteEvent) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -221,35 +421,161 @@ class SqliteStateStore(StateStore):
     def apply_success(self, provider_name: str, backend_model: str, *, latency_ms: float | None, first_text_latency_ms: float | None) -> None:
         now = time.time()
         with self._connect() as connection:
+            model_row = self._fetch_model_row(connection, provider_name, backend_model)
+            provider_row = self._fetch_provider_row(connection, provider_name)
+            model_payload = self._success_payload(model_row, now, latency_ms=latency_ms, first_text_latency_ms=first_text_latency_ms)
+            provider_payload = self._success_payload(provider_row, now, latency_ms=latency_ms, first_text_latency_ms=first_text_latency_ms)
             connection.execute(
                 """
                 INSERT INTO model_state (
                     provider_name, backend_model, success_count, failure_count, retryable_failure_count,
-                    last_error_category, last_error_at, cooldown_until, last_latency_ms, last_first_text_latency_ms, updated_at
-                ) VALUES (?, ?, 1, 0, 0, NULL, NULL, 0, ?, ?, ?)
+                    recent_success, recent_failure, recent_rate_limit, recent_timeout, recent_auth_failure,
+                    recent_transport_failure, recent_server_error, recent_exhaustion,
+                    last_error_category, last_error_at, cooldown_until,
+                    last_latency_ms, last_first_text_latency_ms, latency_avg_ms, first_text_latency_avg_ms, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(provider_name, backend_model) DO UPDATE SET
-                  success_count = model_state.success_count + 1,
-                  cooldown_until = 0,
+                  success_count = excluded.success_count,
+                  failure_count = excluded.failure_count,
+                  retryable_failure_count = excluded.retryable_failure_count,
+                  recent_success = excluded.recent_success,
+                  recent_failure = excluded.recent_failure,
+                  recent_rate_limit = excluded.recent_rate_limit,
+                  recent_timeout = excluded.recent_timeout,
+                  recent_auth_failure = excluded.recent_auth_failure,
+                  recent_transport_failure = excluded.recent_transport_failure,
+                  recent_server_error = excluded.recent_server_error,
+                  recent_exhaustion = excluded.recent_exhaustion,
+                  last_error_category = excluded.last_error_category,
+                  last_error_at = excluded.last_error_at,
+                  cooldown_until = excluded.cooldown_until,
                   last_latency_ms = excluded.last_latency_ms,
                   last_first_text_latency_ms = excluded.last_first_text_latency_ms,
+                  latency_avg_ms = excluded.latency_avg_ms,
+                  first_text_latency_avg_ms = excluded.first_text_latency_avg_ms,
                   updated_at = excluded.updated_at
                 """,
-                (provider_name, backend_model, latency_ms, first_text_latency_ms, now),
+                (
+                    provider_name,
+                    backend_model,
+                    model_payload["success_count"],
+                    model_payload["failure_count"],
+                    model_payload["retryable_failure_count"],
+                    model_payload["recent_success"],
+                    model_payload["recent_failure"],
+                    model_payload["recent_rate_limit"],
+                    model_payload["recent_timeout"],
+                    model_payload["recent_auth_failure"],
+                    model_payload["recent_transport_failure"],
+                    model_payload["recent_server_error"],
+                    model_payload["recent_exhaustion"],
+                    None,
+                    None,
+                    0,
+                    latency_ms,
+                    first_text_latency_ms,
+                    model_payload["latency_avg_ms"],
+                    model_payload["first_text_latency_avg_ms"],
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO provider_state (
+                    provider_name, success_count, failure_count, request_success_count, request_failure_count,
+                    refresh_success_count, refresh_failure_count,
+                    recent_success, recent_failure, recent_rate_limit, recent_timeout, recent_auth_failure,
+                    recent_transport_failure, recent_server_error, recent_refresh_failure, recent_exhaustion,
+                    last_error_category, last_error_at, cooldown_until, last_latency_ms, last_first_text_latency_ms,
+                    latency_avg_ms, first_text_latency_avg_ms, last_refresh_at, last_refresh_reason,
+                    last_refresh_ok, last_refresh_error_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(provider_name) DO UPDATE SET
+                  success_count = excluded.success_count,
+                  failure_count = excluded.failure_count,
+                  request_success_count = excluded.request_success_count,
+                  request_failure_count = excluded.request_failure_count,
+                  refresh_success_count = excluded.refresh_success_count,
+                  refresh_failure_count = excluded.refresh_failure_count,
+                  recent_success = excluded.recent_success,
+                  recent_failure = excluded.recent_failure,
+                  recent_rate_limit = excluded.recent_rate_limit,
+                  recent_timeout = excluded.recent_timeout,
+                  recent_auth_failure = excluded.recent_auth_failure,
+                  recent_transport_failure = excluded.recent_transport_failure,
+                  recent_server_error = excluded.recent_server_error,
+                  recent_refresh_failure = excluded.recent_refresh_failure,
+                  recent_exhaustion = excluded.recent_exhaustion,
+                  last_error_category = excluded.last_error_category,
+                  last_error_at = excluded.last_error_at,
+                  cooldown_until = excluded.cooldown_until,
+                  last_latency_ms = excluded.last_latency_ms,
+                  last_first_text_latency_ms = excluded.last_first_text_latency_ms,
+                  latency_avg_ms = excluded.latency_avg_ms,
+                  first_text_latency_avg_ms = excluded.first_text_latency_avg_ms,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    provider_name,
+                    provider_payload["success_count"],
+                    provider_payload["failure_count"],
+                    provider_payload["request_success_count"],
+                    provider_payload["request_failure_count"],
+                    provider_payload["refresh_success_count"],
+                    provider_payload["refresh_failure_count"],
+                    provider_payload["recent_success"],
+                    provider_payload["recent_failure"],
+                    provider_payload["recent_rate_limit"],
+                    provider_payload["recent_timeout"],
+                    provider_payload["recent_auth_failure"],
+                    provider_payload["recent_transport_failure"],
+                    provider_payload["recent_server_error"],
+                    provider_payload["recent_refresh_failure"],
+                    provider_payload["recent_exhaustion"],
+                    provider_row["last_error_category"] if provider_row else None,
+                    provider_row["last_error_at"] if provider_row else None,
+                    0,
+                    latency_ms,
+                    first_text_latency_ms,
+                    provider_payload["latency_avg_ms"],
+                    provider_payload["first_text_latency_avg_ms"],
+                    provider_row["last_refresh_at"] if provider_row else None,
+                    provider_row["last_refresh_reason"] if provider_row else None,
+                    provider_row["last_refresh_ok"] if provider_row else None,
+                    provider_row["last_refresh_error_json"] if provider_row else None,
+                    now,
+                ),
             )
 
     def apply_failure(self, provider_name: str, backend_model: str, *, category: str, retryable: bool) -> None:
         now = time.time()
         cooldown_until = now + self._cooldown_seconds(category)
         with self._connect() as connection:
+            model_row = self._fetch_model_row(connection, provider_name, backend_model)
+            provider_row = self._fetch_provider_row(connection, provider_name)
+            model_payload = self._failure_payload(model_row, now, category=category, retryable=retryable)
+            provider_payload = self._failure_payload(provider_row, now, category=category, retryable=retryable, provider_level=True)
             connection.execute(
                 """
                 INSERT INTO model_state (
                     provider_name, backend_model, success_count, failure_count, retryable_failure_count,
-                    last_error_category, last_error_at, cooldown_until, last_latency_ms, updated_at
-                ) VALUES (?, ?, 0, 1, ?, ?, ?, ?, NULL, ?)
+                    recent_success, recent_failure, recent_rate_limit, recent_timeout, recent_auth_failure,
+                    recent_transport_failure, recent_server_error, recent_exhaustion,
+                    last_error_category, last_error_at, cooldown_until,
+                    last_latency_ms, last_first_text_latency_ms, latency_avg_ms, first_text_latency_avg_ms, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(provider_name, backend_model) DO UPDATE SET
-                  failure_count = model_state.failure_count + 1,
-                  retryable_failure_count = model_state.retryable_failure_count + excluded.retryable_failure_count,
+                  success_count = excluded.success_count,
+                  failure_count = excluded.failure_count,
+                  retryable_failure_count = excluded.retryable_failure_count,
+                  recent_success = excluded.recent_success,
+                  recent_failure = excluded.recent_failure,
+                  recent_rate_limit = excluded.recent_rate_limit,
+                  recent_timeout = excluded.recent_timeout,
+                  recent_auth_failure = excluded.recent_auth_failure,
+                  recent_transport_failure = excluded.recent_transport_failure,
+                  recent_server_error = excluded.recent_server_error,
+                  recent_exhaustion = excluded.recent_exhaustion,
                   last_error_category = excluded.last_error_category,
                   last_error_at = excluded.last_error_at,
                   cooldown_until = CASE
@@ -258,34 +584,403 @@ class SqliteStateStore(StateStore):
                   END,
                   updated_at = excluded.updated_at
                 """,
-                (provider_name, backend_model, 1 if retryable else 0, category, now, cooldown_until, now),
+                (
+                    provider_name,
+                    backend_model,
+                    model_payload["success_count"],
+                    model_payload["failure_count"],
+                    model_payload["retryable_failure_count"],
+                    model_payload["recent_success"],
+                    model_payload["recent_failure"],
+                    model_payload["recent_rate_limit"],
+                    model_payload["recent_timeout"],
+                    model_payload["recent_auth_failure"],
+                    model_payload["recent_transport_failure"],
+                    model_payload["recent_server_error"],
+                    model_payload["recent_exhaustion"],
+                    category,
+                    now,
+                    cooldown_until,
+                    model_row["last_latency_ms"] if model_row else None,
+                    model_row["last_first_text_latency_ms"] if model_row else None,
+                    model_row["latency_avg_ms"] if model_row else None,
+                    model_row["first_text_latency_avg_ms"] if model_row else None,
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO provider_state (
+                    provider_name, success_count, failure_count, request_success_count, request_failure_count,
+                    refresh_success_count, refresh_failure_count,
+                    recent_success, recent_failure, recent_rate_limit, recent_timeout, recent_auth_failure,
+                    recent_transport_failure, recent_server_error, recent_refresh_failure, recent_exhaustion,
+                    last_error_category, last_error_at, cooldown_until, last_latency_ms, last_first_text_latency_ms,
+                    latency_avg_ms, first_text_latency_avg_ms, last_refresh_at, last_refresh_reason,
+                    last_refresh_ok, last_refresh_error_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(provider_name) DO UPDATE SET
+                  success_count = excluded.success_count,
+                  failure_count = excluded.failure_count,
+                  request_success_count = excluded.request_success_count,
+                  request_failure_count = excluded.request_failure_count,
+                  refresh_success_count = excluded.refresh_success_count,
+                  refresh_failure_count = excluded.refresh_failure_count,
+                  recent_success = excluded.recent_success,
+                  recent_failure = excluded.recent_failure,
+                  recent_rate_limit = excluded.recent_rate_limit,
+                  recent_timeout = excluded.recent_timeout,
+                  recent_auth_failure = excluded.recent_auth_failure,
+                  recent_transport_failure = excluded.recent_transport_failure,
+                  recent_server_error = excluded.recent_server_error,
+                  recent_refresh_failure = excluded.recent_refresh_failure,
+                  recent_exhaustion = excluded.recent_exhaustion,
+                  last_error_category = excluded.last_error_category,
+                  last_error_at = excluded.last_error_at,
+                  cooldown_until = CASE
+                    WHEN excluded.cooldown_until > provider_state.cooldown_until THEN excluded.cooldown_until
+                    ELSE provider_state.cooldown_until
+                  END,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    provider_name,
+                    provider_payload["success_count"],
+                    provider_payload["failure_count"],
+                    provider_payload["request_success_count"],
+                    provider_payload["request_failure_count"],
+                    provider_payload["refresh_success_count"],
+                    provider_payload["refresh_failure_count"],
+                    provider_payload["recent_success"],
+                    provider_payload["recent_failure"],
+                    provider_payload["recent_rate_limit"],
+                    provider_payload["recent_timeout"],
+                    provider_payload["recent_auth_failure"],
+                    provider_payload["recent_transport_failure"],
+                    provider_payload["recent_server_error"],
+                    provider_payload["recent_refresh_failure"],
+                    provider_payload["recent_exhaustion"],
+                    category,
+                    now,
+                    cooldown_until,
+                    provider_row["last_latency_ms"] if provider_row else None,
+                    provider_row["last_first_text_latency_ms"] if provider_row else None,
+                    provider_row["latency_avg_ms"] if provider_row else None,
+                    provider_row["first_text_latency_avg_ms"] if provider_row else None,
+                    provider_row["last_refresh_at"] if provider_row else None,
+                    provider_row["last_refresh_reason"] if provider_row else None,
+                    provider_row["last_refresh_ok"] if provider_row else None,
+                    provider_row["last_refresh_error_json"] if provider_row else None,
+                    now,
+                ),
+            )
+
+    def record_refresh(
+        self,
+        provider_name: str,
+        *,
+        reason: str,
+        success: bool,
+        model_count: int = 0,
+        category: str | None = None,
+        details: Any = None,
+    ) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            provider_row = self._fetch_provider_row(connection, provider_name)
+            payload = self._refresh_payload(provider_row, now, success=success, category=category)
+            cooldown_until = 0 if success else (provider_row["cooldown_until"] if provider_row else 0)
+            if not success and category == "unauthorized":
+                cooldown_until = max(cooldown_until or 0, now + self._cooldown_seconds(category))
+            connection.execute(
+                """
+                INSERT INTO provider_state (
+                    provider_name, success_count, failure_count, request_success_count, request_failure_count,
+                    refresh_success_count, refresh_failure_count,
+                    recent_success, recent_failure, recent_rate_limit, recent_timeout, recent_auth_failure,
+                    recent_transport_failure, recent_server_error, recent_refresh_failure, recent_exhaustion,
+                    last_error_category, last_error_at, cooldown_until, last_latency_ms, last_first_text_latency_ms,
+                    latency_avg_ms, first_text_latency_avg_ms, last_refresh_at, last_refresh_reason,
+                    last_refresh_ok, last_refresh_error_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(provider_name) DO UPDATE SET
+                  success_count = excluded.success_count,
+                  failure_count = excluded.failure_count,
+                  request_success_count = excluded.request_success_count,
+                  request_failure_count = excluded.request_failure_count,
+                  refresh_success_count = excluded.refresh_success_count,
+                  refresh_failure_count = excluded.refresh_failure_count,
+                  recent_success = excluded.recent_success,
+                  recent_failure = excluded.recent_failure,
+                  recent_rate_limit = excluded.recent_rate_limit,
+                  recent_timeout = excluded.recent_timeout,
+                  recent_auth_failure = excluded.recent_auth_failure,
+                  recent_transport_failure = excluded.recent_transport_failure,
+                  recent_server_error = excluded.recent_server_error,
+                  recent_refresh_failure = excluded.recent_refresh_failure,
+                  recent_exhaustion = excluded.recent_exhaustion,
+                  last_error_category = excluded.last_error_category,
+                  last_error_at = excluded.last_error_at,
+                  cooldown_until = excluded.cooldown_until,
+                  last_refresh_at = excluded.last_refresh_at,
+                  last_refresh_reason = excluded.last_refresh_reason,
+                  last_refresh_ok = excluded.last_refresh_ok,
+                  last_refresh_error_json = excluded.last_refresh_error_json,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    provider_name,
+                    payload["success_count"],
+                    payload["failure_count"],
+                    payload["request_success_count"],
+                    payload["request_failure_count"],
+                    payload["refresh_success_count"],
+                    payload["refresh_failure_count"],
+                    payload["recent_success"],
+                    payload["recent_failure"],
+                    payload["recent_rate_limit"],
+                    payload["recent_timeout"],
+                    payload["recent_auth_failure"],
+                    payload["recent_transport_failure"],
+                    payload["recent_server_error"],
+                    payload["recent_refresh_failure"],
+                    payload["recent_exhaustion"],
+                    category if not success else (provider_row["last_error_category"] if provider_row else None),
+                    now if not success else (provider_row["last_error_at"] if provider_row else None),
+                    cooldown_until,
+                    provider_row["last_latency_ms"] if provider_row else None,
+                    provider_row["last_first_text_latency_ms"] if provider_row else None,
+                    provider_row["latency_avg_ms"] if provider_row else None,
+                    provider_row["first_text_latency_avg_ms"] if provider_row else None,
+                    now,
+                    reason,
+                    1 if success else 0,
+                    json.dumps(details, sort_keys=True) if details is not None else None,
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO refresh_events (provider_name, reason, success, model_count, category, details_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    provider_name,
+                    reason,
+                    1 if success else 0,
+                    model_count,
+                    category,
+                    json.dumps(details, sort_keys=True) if details is not None else None,
+                    now,
+                ),
             )
 
     def get_model_state(self) -> dict[str, dict[str, Any]]:
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT provider_name, backend_model, success_count, failure_count, retryable_failure_count,
-                       last_error_category, last_error_at, cooldown_until, last_latency_ms, last_first_text_latency_ms, updated_at
-                FROM model_state
-                """
-            ).fetchall()
+            rows = connection.execute("SELECT * FROM model_state").fetchall()
         return {
-            f"{row['provider_name']}::{row['backend_model']}": {
-                "provider_name": row["provider_name"],
-                "backend_model": row["backend_model"],
-                "success_count": row["success_count"],
-                "failure_count": row["failure_count"],
-                "retryable_failure_count": row["retryable_failure_count"],
-                "last_error_category": row["last_error_category"],
-                "last_error_at": row["last_error_at"],
-                "cooldown_until": row["cooldown_until"],
-                "last_latency_ms": row["last_latency_ms"],
-                "last_first_text_latency_ms": row["last_first_text_latency_ms"],
-                "updated_at": row["updated_at"],
-            }
+            f"{row['provider_name']}::{row['backend_model']}": dict(row)
             for row in rows
         }
+
+    def get_provider_state(self) -> dict[str, dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM provider_state").fetchall()
+        return {
+            str(row["provider_name"]): dict(row)
+            for row in rows
+        }
+
+    def get_rankings(self) -> dict[str, dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM model_rankings").fetchall()
+        rankings: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            key = f"{row['provider_name']}::{row['backend_model']}"
+            rankings[key] = {
+                "provider_name": row["provider_name"],
+                "backend_model": row["backend_model"],
+                "alias_scores": _json_loads(row["alias_scores_json"], default={}),
+                "rerank_scores": _json_loads(row["rerank_scores_json"], default={}),
+                "reason": row["reason"],
+                "confidence": row["confidence"],
+                "source": row["source"],
+                "worker_provider_name": row["worker_provider_name"],
+                "worker_backend_model": row["worker_backend_model"],
+                "updated_at": row["updated_at"],
+            }
+        return rankings
+
+    def get_overrides(self) -> dict[str, Any]:
+        with self._connect() as connection:
+            model_rows = connection.execute("SELECT * FROM model_overrides ORDER BY provider_name, backend_model").fetchall()
+            provider_rows = connection.execute("SELECT * FROM provider_overrides ORDER BY provider_name").fetchall()
+            alias_rows = connection.execute("SELECT * FROM alias_pins ORDER BY alias").fetchall()
+        return {
+            "models": [
+                {
+                    "provider_name": row["provider_name"],
+                    "backend_model": row["backend_model"],
+                    "enabled": None if row["enabled"] is None else bool(row["enabled"]),
+                    "weight": row["weight"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in model_rows
+            ],
+            "providers": [
+                {
+                    "provider_name": row["provider_name"],
+                    "enabled": None if row["enabled"] is None else bool(row["enabled"]),
+                    "weight": row["weight"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in provider_rows
+            ],
+            "alias_pins": [
+                {
+                    "alias": row["alias"],
+                    "models": tuple(_json_loads(row["models_json"], default=[])),
+                    "updated_at": row["updated_at"],
+                }
+                for row in alias_rows
+            ],
+        }
+
+    def upsert_model_override(self, provider_name: str, backend_model: str, *, enabled: bool | None = None, weight: float | None = None) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT enabled, weight FROM model_overrides WHERE provider_name = ? AND backend_model = ?",
+                (provider_name, backend_model),
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT INTO model_overrides (provider_name, backend_model, enabled, weight, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(provider_name, backend_model) DO UPDATE SET
+                  enabled = excluded.enabled,
+                  weight = excluded.weight,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    provider_name,
+                    backend_model,
+                    (
+                        existing["enabled"]
+                        if enabled is None and existing is not None
+                        else (None if enabled is None else (1 if enabled else 0))
+                    ),
+                    weight if weight is not None else (existing["weight"] if existing else 0.0),
+                    now,
+                ),
+            )
+
+    def upsert_provider_override(self, provider_name: str, *, enabled: bool | None = None, weight: float | None = None) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT enabled, weight FROM provider_overrides WHERE provider_name = ?",
+                (provider_name,),
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT INTO provider_overrides (provider_name, enabled, weight, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(provider_name) DO UPDATE SET
+                  enabled = excluded.enabled,
+                  weight = excluded.weight,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    provider_name,
+                    (
+                        existing["enabled"]
+                        if enabled is None and existing is not None
+                        else (None if enabled is None else (1 if enabled else 0))
+                    ),
+                    weight if weight is not None else (existing["weight"] if existing else 0.0),
+                    now,
+                ),
+            )
+
+    def upsert_alias_pin(self, alias: str, model_ids: tuple[str, ...]) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO alias_pins (alias, models_json, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(alias) DO UPDATE SET
+                  models_json = excluded.models_json,
+                  updated_at = excluded.updated_at
+                """,
+                (alias, json.dumps(list(model_ids)), now),
+            )
+
+    def set_provider_cooldown(self, provider_name: str, *, cooldown_until: float, category: str, details: Any = None) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            row = self._fetch_provider_row(connection, provider_name)
+            payload = self._refresh_payload(row, now, success=False, category=category)
+            connection.execute(
+                """
+                INSERT INTO provider_state (
+                    provider_name, success_count, failure_count, request_success_count, request_failure_count,
+                    refresh_success_count, refresh_failure_count,
+                    recent_success, recent_failure, recent_rate_limit, recent_timeout, recent_auth_failure,
+                    recent_transport_failure, recent_server_error, recent_refresh_failure, recent_exhaustion,
+                    last_error_category, last_error_at, cooldown_until, last_latency_ms, last_first_text_latency_ms,
+                    latency_avg_ms, first_text_latency_avg_ms, last_refresh_at, last_refresh_reason,
+                    last_refresh_ok, last_refresh_error_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(provider_name) DO UPDATE SET
+                  cooldown_until = CASE
+                    WHEN excluded.cooldown_until > provider_state.cooldown_until THEN excluded.cooldown_until
+                    ELSE provider_state.cooldown_until
+                  END,
+                  last_error_category = excluded.last_error_category,
+                  last_error_at = excluded.last_error_at,
+                  recent_failure = excluded.recent_failure,
+                  recent_rate_limit = excluded.recent_rate_limit,
+                  recent_timeout = excluded.recent_timeout,
+                  recent_auth_failure = excluded.recent_auth_failure,
+                  recent_transport_failure = excluded.recent_transport_failure,
+                  recent_server_error = excluded.recent_server_error,
+                  recent_refresh_failure = excluded.recent_refresh_failure,
+                  recent_exhaustion = excluded.recent_exhaustion,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    provider_name,
+                    payload["success_count"],
+                    payload["failure_count"],
+                    payload["request_success_count"],
+                    payload["request_failure_count"],
+                    payload["refresh_success_count"],
+                    payload["refresh_failure_count"],
+                    payload["recent_success"],
+                    payload["recent_failure"],
+                    payload["recent_rate_limit"],
+                    payload["recent_timeout"],
+                    payload["recent_auth_failure"],
+                    payload["recent_transport_failure"],
+                    payload["recent_server_error"],
+                    payload["recent_refresh_failure"],
+                    payload["recent_exhaustion"],
+                    category,
+                    now,
+                    cooldown_until,
+                    row["last_latency_ms"] if row else None,
+                    row["last_first_text_latency_ms"] if row else None,
+                    row["latency_avg_ms"] if row else None,
+                    row["first_text_latency_avg_ms"] if row else None,
+                    row["last_refresh_at"] if row else None,
+                    row["last_refresh_reason"] if row else None,
+                    row["last_refresh_ok"] if row else None,
+                    json.dumps(details, sort_keys=True) if details is not None else (row["last_refresh_error_json"] if row else None),
+                    now,
+                ),
+            )
 
     def get_recent_events(self, limit: int) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -310,24 +1005,181 @@ class SqliteStateStore(StateStore):
                 "category": row["category"],
                 "latency_ms": row["latency_ms"],
                 "first_text_latency_ms": row["first_text_latency_ms"],
-                "details": json.loads(row["details_json"]) if row["details_json"] else None,
+                "details": _json_loads(row["details_json"], default=None),
                 "created_at": row["created_at"],
             }
             for row in rows
         ]
 
+    def get_route_metric_rows(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT alias, provider_name, backend_model, success, retryable, is_fallback, category, COUNT(*) AS count
+                FROM route_events
+                GROUP BY alias, provider_name, backend_model, success, retryable, is_fallback, category
+                ORDER BY alias, provider_name, backend_model
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_refresh_metric_rows(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT provider_name, reason, success, category, COUNT(*) AS count
+                FROM refresh_events
+                GROUP BY provider_name, reason, success, category
+                ORDER BY provider_name, reason
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def snapshot(self) -> dict[str, Any]:
         with self._connect() as connection:
             inventory_count = connection.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
             classification_count = connection.execute("SELECT COUNT(*) FROM classifications").fetchone()[0]
+            ranking_count = connection.execute("SELECT COUNT(*) FROM model_rankings").fetchone()[0]
             event_count = connection.execute("SELECT COUNT(*) FROM route_events").fetchone()[0]
+            refresh_event_count = connection.execute("SELECT COUNT(*) FROM refresh_events").fetchone()[0]
         return {
             "db_path": str(self.db_path),
             "inventory_count": inventory_count,
             "classification_count": classification_count,
+            "ranking_count": ranking_count,
             "event_count": event_count,
+            "refresh_event_count": refresh_event_count,
             "model_state": list(self.get_model_state().values()),
+            "provider_state": list(self.get_provider_state().values()),
+            "rankings": list(self.get_rankings().values()),
+            "overrides": self.get_overrides(),
         }
+
+    def _fetch_model_row(self, connection: sqlite3.Connection, provider_name: str, backend_model: str) -> sqlite3.Row | None:
+        return connection.execute(
+            "SELECT * FROM model_state WHERE provider_name = ? AND backend_model = ?",
+            (provider_name, backend_model),
+        ).fetchone()
+
+    def _fetch_provider_row(self, connection: sqlite3.Connection, provider_name: str) -> sqlite3.Row | None:
+        return connection.execute(
+            "SELECT * FROM provider_state WHERE provider_name = ?",
+            (provider_name,),
+        ).fetchone()
+
+    def _success_payload(self, row: sqlite3.Row | None, now: float, *, latency_ms: float | None, first_text_latency_ms: float | None) -> dict[str, Any]:
+        updated_at = float(row["updated_at"]) if row and row["updated_at"] is not None else now
+        return {
+            "success_count": int(row["success_count"]) + 1 if row else 1,
+            "failure_count": int(row["failure_count"]) if row else 0,
+            "retryable_failure_count": int(row["retryable_failure_count"]) if row and "retryable_failure_count" in row.keys() else 0,
+            "request_success_count": int(row["request_success_count"]) + 1 if row and "request_success_count" in row.keys() else 1,
+            "request_failure_count": int(row["request_failure_count"]) if row and "request_failure_count" in row.keys() else 0,
+            "refresh_success_count": int(row["refresh_success_count"]) if row and "refresh_success_count" in row.keys() else 0,
+            "refresh_failure_count": int(row["refresh_failure_count"]) if row and "refresh_failure_count" in row.keys() else 0,
+            "recent_success": self._decayed_increment(row["recent_success"] if row and "recent_success" in row.keys() else 0, updated_at, now),
+            "recent_failure": self._decay(row["recent_failure"] if row and "recent_failure" in row.keys() else 0, updated_at, now),
+            "recent_rate_limit": self._decay(row["recent_rate_limit"] if row and "recent_rate_limit" in row.keys() else 0, updated_at, now),
+            "recent_timeout": self._decay(row["recent_timeout"] if row and "recent_timeout" in row.keys() else 0, updated_at, now),
+            "recent_auth_failure": self._decay(row["recent_auth_failure"] if row and "recent_auth_failure" in row.keys() else 0, updated_at, now),
+            "recent_transport_failure": self._decay(row["recent_transport_failure"] if row and "recent_transport_failure" in row.keys() else 0, updated_at, now),
+            "recent_server_error": self._decay(row["recent_server_error"] if row and "recent_server_error" in row.keys() else 0, updated_at, now),
+            "recent_refresh_failure": self._decay(row["recent_refresh_failure"] if row and "recent_refresh_failure" in row.keys() else 0, updated_at, now),
+            "recent_exhaustion": self._decay(row["recent_exhaustion"] if row and "recent_exhaustion" in row.keys() else 0, updated_at, now),
+            "latency_avg_ms": self._ema(row["latency_avg_ms"] if row and "latency_avg_ms" in row.keys() else None, latency_ms),
+            "first_text_latency_avg_ms": self._ema(row["first_text_latency_avg_ms"] if row and "first_text_latency_avg_ms" in row.keys() else None, first_text_latency_ms),
+        }
+
+    def _failure_payload(self, row: sqlite3.Row | None, now: float, *, category: str, retryable: bool, provider_level: bool = False) -> dict[str, Any]:
+        updated_at = float(row["updated_at"]) if row and row["updated_at"] is not None else now
+        payload = {
+            "success_count": int(row["success_count"]) if row and "success_count" in row.keys() else 0,
+            "failure_count": int(row["failure_count"]) + 1 if row else 1,
+            "retryable_failure_count": (
+                int(row["retryable_failure_count"]) + (1 if retryable else 0)
+                if row and "retryable_failure_count" in row.keys()
+                else (1 if retryable else 0)
+            ),
+            "request_success_count": int(row["request_success_count"]) if row and "request_success_count" in row.keys() else 0,
+            "request_failure_count": int(row["request_failure_count"]) + 1 if row and "request_failure_count" in row.keys() else 1,
+            "refresh_success_count": int(row["refresh_success_count"]) if row and "refresh_success_count" in row.keys() else 0,
+            "refresh_failure_count": int(row["refresh_failure_count"]) if row and "refresh_failure_count" in row.keys() else 0,
+            "recent_success": self._decay(row["recent_success"] if row and "recent_success" in row.keys() else 0, updated_at, now),
+            "recent_failure": self._decayed_increment(row["recent_failure"] if row and "recent_failure" in row.keys() else 0, updated_at, now),
+            "recent_rate_limit": self._decay_category(row, "recent_rate_limit", updated_at, now, category == "rate_limited"),
+            "recent_timeout": self._decay_category(row, "recent_timeout", updated_at, now, category == "timeout"),
+            "recent_auth_failure": self._decay_category(row, "recent_auth_failure", updated_at, now, category == "unauthorized"),
+            "recent_transport_failure": self._decay_category(row, "recent_transport_failure", updated_at, now, category == "transport_error"),
+            "recent_server_error": self._decay_category(row, "recent_server_error", updated_at, now, category == "server_error"),
+            "recent_refresh_failure": self._decay(row["recent_refresh_failure"] if row and "recent_refresh_failure" in row.keys() else 0, updated_at, now),
+            "recent_exhaustion": self._decay_category(
+                row,
+                "recent_exhaustion",
+                updated_at,
+                now,
+                category in {"rate_limited", "insufficient_balance", "quota_exhausted"},
+            ),
+        }
+        if provider_level and category == "unauthorized":
+            payload["recent_auth_failure"] += 1.0
+        return payload
+
+    def _refresh_payload(self, row: sqlite3.Row | None, now: float, *, success: bool, category: str | None) -> dict[str, Any]:
+        updated_at = float(row["updated_at"]) if row and row["updated_at"] is not None else now
+        payload = {
+            "success_count": int(row["success_count"]) if row else 0,
+            "failure_count": int(row["failure_count"]) if row else 0,
+            "request_success_count": int(row["request_success_count"]) if row and "request_success_count" in row.keys() else 0,
+            "request_failure_count": int(row["request_failure_count"]) if row and "request_failure_count" in row.keys() else 0,
+            "refresh_success_count": int(row["refresh_success_count"]) + (1 if success else 0) if row else (1 if success else 0),
+            "refresh_failure_count": int(row["refresh_failure_count"]) + (0 if success else 1) if row else (0 if success else 1),
+            "recent_success": self._decay(row["recent_success"] if row and "recent_success" in row.keys() else 0, updated_at, now),
+            "recent_failure": self._decay(row["recent_failure"] if row and "recent_failure" in row.keys() else 0, updated_at, now),
+            "recent_rate_limit": self._decay_category(row, "recent_rate_limit", updated_at, now, (not success and category == "rate_limited")),
+            "recent_timeout": self._decay_category(row, "recent_timeout", updated_at, now, (not success and category == "timeout")),
+            "recent_auth_failure": self._decay_category(row, "recent_auth_failure", updated_at, now, (not success and category == "unauthorized")),
+            "recent_transport_failure": self._decay_category(row, "recent_transport_failure", updated_at, now, (not success and category == "transport_error")),
+            "recent_server_error": self._decay_category(row, "recent_server_error", updated_at, now, (not success and category == "server_error")),
+            "recent_refresh_failure": self._decayed_increment(
+                row["recent_refresh_failure"] if row and "recent_refresh_failure" in row.keys() else 0,
+                updated_at,
+                now,
+                amount=(0.0 if success else 1.0),
+            ),
+            "recent_exhaustion": self._decay_category(
+                row,
+                "recent_exhaustion",
+                updated_at,
+                now,
+                (not success and category in {"rate_limited", "insufficient_balance", "quota_exhausted"}),
+            ),
+        }
+        if success:
+            payload["recent_refresh_failure"] = self._decay(row["recent_refresh_failure"] if row and "recent_refresh_failure" in row.keys() else 0, updated_at, now)
+        return payload
+
+    def _decay_category(self, row: sqlite3.Row | None, key: str, updated_at: float, now: float, triggered: bool) -> float:
+        baseline = self._decay(row[key] if row and key in row.keys() else 0, updated_at, now)
+        return baseline + 1.0 if triggered else baseline
+
+    def _decayed_increment(self, value: float | None, updated_at: float, now: float, *, amount: float = 1.0) -> float:
+        baseline = self._decay(value, updated_at, now)
+        return baseline + amount
+
+    def _decay(self, value: float | None, updated_at: float, now: float) -> float:
+        baseline = float(value or 0.0)
+        elapsed = max(0.0, now - updated_at)
+        if baseline == 0.0 or elapsed == 0.0:
+            return baseline
+        return round(baseline * math.exp(-elapsed / self.rolling_window_seconds), 6)
+
+    @staticmethod
+    def _ema(previous: float | None, current: float | None) -> float | None:
+        if current is None:
+            return previous
+        if previous is None:
+            return round(current, 2)
+        return round((float(previous) * (1.0 - _LATENCY_ALPHA)) + (current * _LATENCY_ALPHA), 2)
 
     @staticmethod
     def _cooldown_seconds(category: str) -> float:
@@ -339,4 +1191,6 @@ class SqliteStateStore(StateStore):
             "model_missing": 15.0,
             "unauthorized": 3600.0,
             "bad_request": 600.0,
+            "quota_exhausted": 600.0,
+            "insufficient_balance": 900.0,
         }.get(category, 30.0)

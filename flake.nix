@@ -47,7 +47,9 @@
           routerGhostshipCliContract = pkgs.callPackage ./packages/ghostship-cli-contract/package.nix {
             python311Packages = routerPython311Packages;
           };
-          hermesDashboard = pkgs.callPackage ./packages/hermes-dashboard/package.nix { };
+          hermesDashboard = pkgs.callPackage ./packages/hermes-dashboard/package.nix {
+            python311Packages = routerPython311Packages;
+          };
           ghostshipSearxng = pkgs.callPackage ./packages/searxng-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipSonarr = pkgs.callPackage ./packages/sonarr-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRadarr = pkgs.callPackage ./packages/radarr-cli/package.nix { inherit ghostshipCliContract; };

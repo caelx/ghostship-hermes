@@ -188,19 +188,40 @@ The image now includes a standalone local router service:
 - listen address: `127.0.0.1:8788`
 - model aliases: `lightweight`, `coding`, `heavyweight`
 - primary endpoints: `GET /healthz`, `GET /readyz`, `GET /v1/models`, `POST /v1/chat/completions`
-- debug endpoints: `GET /debug/state`, `GET /debug/events`, `GET /debug/routes/{alias}`
+- metrics endpoint: `GET /metrics`
+- debug endpoints: `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{alias}`, `GET /debug/rankings/{alias}`, `GET /debug/models/{provider}/{model}`
 - persistent state: `/home/hermes/.local/state/ghostship-hermes/router/router.db`
 - inventory sources: OpenRouter and OpenCode Zen
 - Zen request families: `/chat/completions`, `/responses`, `/messages`, and Google-style model endpoints are normalized back into the local `chat/completions` surface
-- routing state: model-level health, cooldown, failover, total latency, and best-effort first-text latency
+- routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, and durable overrides
+- ranking worker: a healthy free model from the `lightweight` pool performs coarse ranking and selective reranking outside the request hot path
+- override controls: provider and model disablement, provider and model weight overrides, and alias pinning
 
 Outside the container, standalone router runs default state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router` unless `GHOSTSHIP_ROUTER_STATE_DIR` or `GHOSTSHIP_ROUTER_DB_PATH` is set.
 
 Optional runtime env for the router:
 
+- `GHOSTSHIP_ROUTER_RANKING_ENABLED`
+- `GHOSTSHIP_ROUTER_RANKING_INTERVAL`
+- `GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL`
+- `GHOSTSHIP_ROUTER_RANKING_SHORTLIST_SIZE`
+- `GHOSTSHIP_ROUTER_ROLLING_WINDOW_SECONDS`
+- `GHOSTSHIP_ROUTER_PROVIDER_COOLDOWN_SECONDS`
+- `GHOSTSHIP_ROUTER_PROVIDER_FAILURE_THRESHOLD`
+- `GHOSTSHIP_ROUTER_PROVIDER_RATE_LIMIT_THRESHOLD`
+- `GHOSTSHIP_ROUTER_PROVIDER_TIMEOUT_THRESHOLD`
+- `GHOSTSHIP_ROUTER_PROVIDER_EXHAUSTION_THRESHOLD`
 - `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL`
+- `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE`
+- `GHOSTSHIP_ROUTER_DISABLED_PROVIDERS`
+- `GHOSTSHIP_ROUTER_DISABLED_MODELS`
+- `GHOSTSHIP_ROUTER_PROVIDER_WEIGHT_OVERRIDES`
+- `GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_LIGHTWEIGHT`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_CODING`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_HEAVYWEIGHT`
 
-If `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` is set, it must resolve to a free model ID from the current router inventory.
+If `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` or `GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL` is set, it must resolve to a healthy free model ID from the current router inventory.
 
 ## Local Validation
 

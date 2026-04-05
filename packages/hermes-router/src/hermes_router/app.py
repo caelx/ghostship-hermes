@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .config import RouterConfig
 from .models import ChatCompletionRequest, HealthResponse
@@ -67,9 +67,31 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
     def debug_events():
         return resolved_service.debug_events()
 
+    @app.get("/debug/providers")
+    def debug_providers():
+        return resolved_service.debug_providers()
+
+    @app.get("/debug/rankings/{alias}")
+    def debug_rankings(alias: str):
+        try:
+            return resolved_service.debug_rankings(alias)
+        except RouterServiceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
     @app.get("/debug/routes/{alias}")
     def debug_routes(alias: str):
         return {"alias": alias, "candidates": resolved_service.preview_routes(alias)}
+
+    @app.get("/debug/models/{provider_name}/{backend_model:path}")
+    def debug_model(provider_name: str, backend_model: str):
+        try:
+            return resolved_service.debug_model(provider_name, backend_model)
+        except RouterServiceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    @app.get("/metrics")
+    def metrics():
+        return PlainTextResponse(resolved_service.metrics_text(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
     @app.post("/v1/chat/completions")
     def chat_completions(request: ChatCompletionRequest):
