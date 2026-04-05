@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed the Hermes router-primary image config to write `model.provider = auto` with the local router `base_url`, because upstream Hermes otherwise prefers its OpenRouter credential pool and bypasses the configured local endpoint whenever `OPENROUTER_API_KEY` is present.
 - Disabled the flaky `python3.11-websockets` unittest suite in the shared router/dashboard Python package set so the native `aarch64-linux` image publication build can complete again on GitHub Actions.
 - Corrected the multi-arch image publish workflow so the amd64 leg stays on `ubuntu-24.04`, the arm64 leg builds on `ubuntu-24.04-arm`, x86-host validation remains `nix eval`-only for arm64 wiring, and the docs now spell out that Docker QEMU plus Nix `extra-platforms` are not enough to publish the native arm64 image artifact.
 - Switched the Hermes image to a router-primary runtime with root `lightweight`, `operations` `heavyweight`, and `coder` `coding` over `http://127.0.0.1:8788/v1`, made the dashboard report generic root/profile endpoint config with live local-router enrichment, updated smoke and persistence validation to prove the router path, and moved router startup refresh/ranking off the listener-critical path so persisted rankings remain usable while fresh rankings regenerate in the background.

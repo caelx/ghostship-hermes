@@ -30,6 +30,7 @@ let
     {
     display.personality = "kawaii";
       model = {
+        provider = "auto";
         base_url = routerBaseUrl;
         default = modelDefault;
       };

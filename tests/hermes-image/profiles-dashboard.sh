@@ -150,6 +150,7 @@ assert_model_config() {
     command="hermes -p $scope config show"
   fi
 
+  run_as_hermes "$container_name" "$command | grep -F 'provider: auto' >/dev/null"
   run_as_hermes "$container_name" "$command | grep -F 'base_url: http://127.0.0.1:8788/v1' >/dev/null"
   run_as_hermes "$container_name" "$command | grep -F 'default: $expected_model' >/dev/null"
 }
