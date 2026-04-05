@@ -202,8 +202,12 @@ Run the dashboard smoke test:
 ```fish
 # Run this from a shell where ../../.envrc has already exported
 # OPENROUTER_API_KEY and OPENROUTER_TEST_MODEL.
-GHOSTSHIP_NIX_VOLUME_ROOT="$PWD/.nix-local-store/nix/nix" bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:ops-coder
+bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:ops-coder
 ```
+
+The dashboard smoke test no longer bind-mounts `/nix` by default. If you need
+to exercise a persisted host store explicitly, set
+`GHOSTSHIP_TEST_BIND_NIX=1 GHOSTSHIP_NIX_VOLUME_ROOT=...`.
 
 Run the full persistence validation:
 

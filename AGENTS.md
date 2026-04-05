@@ -75,6 +75,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - The runtime needs a root init phase to prepare `/home/hermes`, `/home/hermes/.hermes`, `/workspace`, and `/nix` before dropping to the `hermes` user.
 - Mounting an empty Docker volume over `/nix` on a fresh Nix-built image is unsafe: it can hide or copy the image store and stall `docker run`.
 - Docker validation against a repo-local Nix store must mount that same store root into the container at `/nix`; binding the host `/nix` while the image was built in `.nix-local-store` hides the needed store paths.
+- Docker Desktop imports of the NixOS rootfs can fail with `exec /init: no such file or directory` if a WSL bind mount replaces `/nix` before startup; the dashboard smoke test should avoid binding `/nix` unless it is explicitly validating persisted store behavior.
 - Imported NixOS images may not expose `bash` through `docker exec bash`; image tests should use `/bin/sh` plus an explicit PATH to the NixOS system profile.
 - The docker-container NixOS profile leaves the firewall active inside the container; published dashboard traffic requires explicitly allowing TCP `7681`.
 - Persisted `/nix` must include a writable `/nix/var/nix/daemon-socket` path and the image must start `nix-daemon.socket` after storage preparation, or user-level `nix profile install` will fail even though `nix` is installed.
