@@ -5,12 +5,11 @@ import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .config import RouterConfig
-from .models import ApiHealthResponse, ChatCompletionRequest, HealthResponse
+from .models import ChatCompletionRequest, HealthResponse
 from .service import RouterService, RouterServiceError
 
 logging.basicConfig(level=logging.INFO)
@@ -42,32 +41,6 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
 
     app = FastAPI(title="ghostship-hermes-router", lifespan=lifespan)
 
-    if resolved_config.cors_origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=list(resolved_config.cors_origins),
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
-
-    def require_api_key(request: Request) -> None:
-        if resolved_config.api_key is None:
-            return
-        auth_header = request.headers.get("authorization")
-        expected = f"Bearer {resolved_config.api_key}"
-        if auth_header == expected:
-            return
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    @app.get("/health")
-    def health() -> ApiHealthResponse:
-        return ApiHealthResponse(status="ok")
-
-    @app.get("/v1/health")
-    def api_health() -> ApiHealthResponse:
-        return ApiHealthResponse(status="ok")
-
     @app.get("/healthz")
     def healthz() -> HealthResponse:
         return HealthResponse(ok=True)
@@ -80,31 +53,48 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
         return payload
 
     @app.get("/v1/models")
-    def list_models(request: Request):
-        require_api_key(request)
+    def list_models():
         try:
             return resolved_service.list_models()
         except RouterServiceError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     @app.get("/debug/state")
-    def debug_state(request: Request):
-        require_api_key(request)
+    def debug_state():
         return resolved_service.debug_state()
 
     @app.get("/debug/events")
-    def debug_events(request: Request):
-        require_api_key(request)
+    def debug_events():
         return resolved_service.debug_events()
 
+    @app.get("/debug/providers")
+    def debug_providers():
+        return resolved_service.debug_providers()
+
+    @app.get("/debug/rankings/{alias}")
+    def debug_rankings(alias: str):
+        try:
+            return resolved_service.debug_rankings(alias)
+        except RouterServiceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
     @app.get("/debug/routes/{alias}")
-    def debug_routes(alias: str, request: Request):
-        require_api_key(request)
+    def debug_routes(alias: str):
         return {"alias": alias, "candidates": resolved_service.preview_routes(alias)}
 
+    @app.get("/debug/models/{provider_name}/{backend_model:path}")
+    def debug_model(provider_name: str, backend_model: str):
+        try:
+            return resolved_service.debug_model(provider_name, backend_model)
+        except RouterServiceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    @app.get("/metrics")
+    def metrics():
+        return PlainTextResponse(resolved_service.metrics_text(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
     @app.post("/v1/chat/completions")
-    def chat_completions(request: ChatCompletionRequest, raw_request: Request):
-        require_api_key(raw_request)
+    def chat_completions(request: ChatCompletionRequest):
         try:
             payload, headers = resolved_service.chat_completions(request)
         except RouterServiceError as exc:

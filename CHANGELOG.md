@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Added Hermes API-server env-name compatibility for `ghostship-hermes-router`, including `API_SERVER_HOST`, `API_SERVER_PORT`, `API_SERVER_KEY`, and `API_SERVER_CORS_ORIGINS`, plus `/health` and `/v1/health` endpoints and optional bearer auth/CORS handling.
+- Expanded `ghostship-hermes-router` with rolling model and provider health, Prometheus-style `/metrics`, provider-wide cooldown and recovery, lightweight free-model background ranking and shortlist reranking, durable override storage for disablement, weights, and alias pinning, richer ranking and provider debug endpoints, and runtime wiring for the new router tuning env.
 - Added the new `packages/hermes-router` `FastAPI`/`uvicorn` service with stable alias endpoints, SQLite-backed route state, background inventory refresh, model-level routing and failover, best-effort first-text timing, OpenRouter plus OpenCode Zen inventory support, mixed Zen endpoint-family normalization, and free-model-assisted bucketing, then wired it into the Hermes image as `ghostship-hermes-router.service`.
 - Added repo docs for the free-first model router plan and Hermes Nix setup notes, and gitignored the repo-local `.nix-local-store/` build cache so local validation state does not show up as source changes.
 - Split the image build contract into an explicit publishable `ghostship-hermes-image` bundle and a separate `ghostship-hermes-rootfs` tarball, added `scripts/export_publishable_image.sh` as the shared Docker materialization helper, updated the GHCR publish workflow and dashboard smoke test to use that bundle, and kept the full persistence validation on the low-level rootfs path.
