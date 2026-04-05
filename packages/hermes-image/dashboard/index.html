@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ghostship-hermes</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-dashboard="ghostship-hermes-dashboard">
+    <main class="dashboard-shell">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="brand">
+            <img class="brand-logo" src="/logo.png" alt="Hermes logo" />
+            <div>
+              <p class="eyebrow">ghostship-hermes</p>
+              <h1>Gateway deck</h1>
+            </div>
+          </div>
+
+          <p class="lede">
+            Upstream Hermes config stays in <code>/home/hermes/.hermes</code>. Browser terminals
+            launch on demand, start in <code>/home/hermes</code>, and disappear cleanly when you
+            close them.
+          </p>
+
+          <div class="controls">
+            <button id="open-terminal" type="button">Open Terminal</button>
+            <button id="close-terminal" type="button" class="secondary">Close Terminal</button>
+          </div>
+        </div>
+
+        <section class="session-panel" aria-label="Terminal sessions">
+          <div class="panel-header">
+            <p class="eyebrow">Sessions</p>
+            <span id="tab-count">0</span>
+          </div>
+          <div id="terminal-tabs" class="terminal-tabs"></div>
+        </section>
+      </aside>
+
+      <section class="stage">
+        <div id="blank-home" class="blank-home">
+          <div class="hero">
+            <div class="hero-copy">
+              <p class="eyebrow">Nix Native</p>
+              <h2>Two declared Hermes profiles, one persistent home.</h2>
+              <p>
+                <code>operations</code> is the default CLI profile. <code>operations</code> and <code>coder</code> each run their
+                own gateway service from <code>/home/hermes/.hermes/profiles</code>.
+              </p>
+            </div>
+
+            <div class="hero-grid">
+              <article class="hero-card">
+                <span>Home volume</span>
+                <strong id="home-path">/home/hermes</strong>
+              </article>
+              <article class="hero-card">
+                <span>Profile root</span>
+                <strong id="profile-root">/home/hermes/.hermes/profiles</strong>
+              </article>
+              <article class="hero-card">
+                <span>Default CLI profile</span>
+                <strong id="default-profile">operations</strong>
+              </article>
+            </div>
+          </div>
+
+          <section class="profiles-panel" aria-label="Declared Hermes profiles">
+            <div class="panel-header">
+              <p class="eyebrow">Declared Profiles</p>
+              <span>Persistent gateways</span>
+            </div>
+            <div id="profile-list" class="profile-list"></div>
+          </section>
+        </div>
+
+        <div id="terminal-stage" class="terminal-stage is-hidden">
+          <div class="terminal-header">
+            <div>
+              <p class="eyebrow">Active terminal</p>
+              <h2 id="active-label">No terminal selected</h2>
+            </div>
+          </div>
+
+          <div id="terminal-loading" class="terminal-loading">
+            <p class="eyebrow">Spawning</p>
+            <strong>Preparing the next shell.</strong>
+            <span>The tab is live now. The terminal will attach as soon as ttyd is ready.</span>
+          </div>
+
+          <div id="terminal-panes" class="terminal-panes"></div>
+        </div>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
