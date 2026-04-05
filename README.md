@@ -51,6 +51,7 @@ Retained in the default image:
 - Nix runtime support
 - `tirith`
 - `ttyd`
+- `ghostship-hermes-router`
 - packaged MMX dashboard controller
 - all `ghostship-*` utilities
 
@@ -98,6 +99,8 @@ The container uses a small NixOS-managed unit graph:
   keeps the `coder` gateway running with `hermes -p coder gateway run --replace`
 - `ghostship-dashboard-controller.service`
   serves the packaged MMX dashboard and proxies on-demand ephemeral `ttyd` sessions on port `7681`
+- `ghostship-hermes-router.service`
+  runs the local model router on `127.0.0.1:8788`, persists router state under `/home/hermes/.local/state/ghostship-hermes/router`, and exposes OpenAI-style alias routing plus debug endpoints for local tools and Hermes profiles
 
 The profile bootstrap unit and the two persistent per-profile gateway services are approved custom deviations from upstream. Upstream Hermes does not currently expose named profiles as a declarative NixOS-module option, so the profile names are declared in Nix here, materialized by a NixOS-managed oneshot, and then supervised by repo-managed systemd units.
 
@@ -128,6 +131,7 @@ Notes:
 - Persisting `/home/hermes` directly is the intended way to keep Hermes managed state, Hermes CLI profiles, XDG state, and later-installed agent tooling across container replacement.
 - The dashboard is the intended browser entrypoint.
 - For local validation, source the repo `.envrc` before `docker run` so `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` are passed into the bootstrap oneshot and written into the declared profiles.
+- The local model router uses `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` for live inference against OpenRouter and OpenCode Zen. Router-local validation does not depend on `OPENROUTER_TEST_MODEL`.
 
 After startup:
 
@@ -177,6 +181,60 @@ The image still bundles the repo-managed service CLIs:
 - `ghostship-tautulli`
 
 All `ghostship-*` utilities emit native JSON by default.
+
+## Hermes Router
+
+The image now includes a standalone local router service:
+
+- listen address: `127.0.0.1:8788`
+- systemd unit: `ghostship-hermes-router.service`
+- model aliases: `lightweight`, `coding`, `heavyweight`
+- Hermes-compatible health endpoints: `GET /health`, `GET /v1/health`
+- router health endpoints: `GET /healthz`, `GET /readyz`
+- primary OpenAI-style endpoints: `GET /v1/models`, `POST /v1/chat/completions`, `POST /v1/responses`, `GET /v1/responses/{id}`, `DELETE /v1/responses/{id}`
+- streaming contract: `chat/completions` SSE plus Hermes/OpenAI SDK-compatible `responses.stream(...)`
+- metrics endpoint: `GET /metrics`
+- debug endpoints: `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{alias}`, `GET /debug/rankings/{alias}`, `GET /debug/models/{provider}/{model}`
+- persistent state: `/home/hermes/.local/state/ghostship-hermes/router/router.db`
+- inventory sources: OpenRouter and OpenCode Zen
+- Zen request families: `/chat/completions`, `/responses`, `/messages`, and Google-style model endpoints are normalized back into the local `chat/completions` surface
+- routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, durable overrides, stored `responses`, and lightweight chat session continuity
+- ranking worker: a healthy free model from the `lightweight` pool performs coarse ranking and selective reranking outside the request hot path
+- override controls: provider and model disablement, provider and model weight overrides, and alias pinning
+- optional auth: `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
+- optional browser CORS allowlist: `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`
+
+Outside the container, standalone router runs default state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router` unless `GHOSTSHIP_ROUTER_STATE_DIR` or `GHOSTSHIP_ROUTER_DB_PATH` is set.
+
+Optional runtime env for the router:
+
+- `GHOSTSHIP_ROUTER_RANKING_ENABLED`
+- `GHOSTSHIP_ROUTER_RANKING_INTERVAL`
+- `GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL`
+- `GHOSTSHIP_ROUTER_RANKING_SHORTLIST_SIZE`
+- `GHOSTSHIP_ROUTER_ROLLING_WINDOW_SECONDS`
+- `GHOSTSHIP_ROUTER_PROVIDER_COOLDOWN_SECONDS`
+- `GHOSTSHIP_ROUTER_PROVIDER_FAILURE_THRESHOLD`
+- `GHOSTSHIP_ROUTER_PROVIDER_RATE_LIMIT_THRESHOLD`
+- `GHOSTSHIP_ROUTER_PROVIDER_TIMEOUT_THRESHOLD`
+- `GHOSTSHIP_ROUTER_PROVIDER_EXHAUSTION_THRESHOLD`
+- `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL`
+- `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE`
+- `GHOSTSHIP_ROUTER_DISABLED_PROVIDERS`
+- `GHOSTSHIP_ROUTER_DISABLED_MODELS`
+- `GHOSTSHIP_ROUTER_PROVIDER_WEIGHT_OVERRIDES`
+- `GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_LIGHTWEIGHT`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_CODING`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_HEAVYWEIGHT`
+
+If `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` or `GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL` is set, it must resolve to a healthy free model ID from the current router inventory.
+
+Hermes named custom provider compatibility:
+
+- use `base_url: http://127.0.0.1:8788/v1`, or bare `http://127.0.0.1:8788` if you prefer
+- use a router alias like `lightweight`, `coding`, or `heavyweight` as the model id
+- if router auth is enabled, Hermes can send the same bearer token through `OPENAI_API_KEY` or a `custom_providers[].api_key` entry
 
 ## Local Validation
 
@@ -236,6 +294,17 @@ The persistence suite validates:
 - the dashboard can manage multiple independent terminal tabs
 - switching between open tabs keeps the live terminal session attached
 - the bootstrap `operations` and `coder` profiles are available under `~/.hermes/profiles/...`
+
+Router package validation:
+
+```fish
+cd packages/hermes-router
+uv sync --extra dev
+.venv/bin/python -m pytest -q
+set -a
+source ../../.envrc >/dev/null 2>&1
+.venv/bin/python -m hermes_router.app
+```
 
 ## Python Utility Workflow
 

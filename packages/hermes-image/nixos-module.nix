@@ -3,6 +3,7 @@
   lib,
   modulesPath,
   pkgs,
+  ghostshipHermesRouter,
   ghostshipHermesRuntime,
   ghostshipUtilities,
   hermesDashboard,
@@ -46,6 +47,7 @@ let
     tirith
     ttyd
     util-linux
+    ghostshipHermesRouter
     ghostshipHermesRuntime
     hermesDashboard
   ];
@@ -123,6 +125,13 @@ let
     GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
     GHOSTSHIP_HERMES_PROFILES = managedProfileNames;
     GHOSTSHIP_HERMES_DEFAULT_PROFILE = defaultProfile;
+    GHOSTSHIP_ROUTER_HOST = "127.0.0.1";
+    GHOSTSHIP_ROUTER_PORT = "8788";
+    API_SERVER_HOST = "127.0.0.1";
+    API_SERVER_PORT = "8788";
+    GHOSTSHIP_ROUTER_STATE_DIR = "/home/hermes/.local/state/ghostship-hermes/router";
+    GHOSTSHIP_ROUTER_DB_PATH = "/home/hermes/.local/state/ghostship-hermes/router/router.db";
+    GHOSTSHIP_ROUTER_REFRESH_INTERVAL = "300";
     SSL_CERT_FILE = certificateFile;
     NIX_SSL_CERT_FILE = certificateFile;
   };
@@ -217,6 +226,7 @@ in
     before = [
       "hermes-agent.service"
       "ghostship-dashboard-controller.service"
+      "ghostship-hermes-router.service"
     ];
     serviceConfig = {
       Type = "oneshot";
@@ -260,12 +270,72 @@ in
       WorkingDirectory = "/home/hermes";
       PassEnvironment = [
         "OPENROUTER_API_KEY"
+        "OPENAI_API_KEY"
         "OPENROUTER_BASE_URL"
         "OPENROUTER_HTTP_REFERER"
         "OPENROUTER_TITLE"
+        "OPENCODE_API_KEY"
+        "OPENCODE_BASE_URL"
         "OPENROUTER_TEST_MODEL"
       ];
       ExecStart = bootstrapHermesScript;
+    };
+  };
+
+  systemd.services.ghostship-hermes-router = {
+    description = "ghostship-hermes model router";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+      "network-online.target"
+    ];
+    requires = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+    ];
+    environment = userServiceEnvironment;
+    path = servicePath;
+    serviceConfig = {
+      Type = "simple";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = "/home/hermes";
+      PassEnvironment = [
+        "OPENROUTER_API_KEY"
+        "OPENROUTER_BASE_URL"
+        "OPENROUTER_HTTP_REFERER"
+        "OPENROUTER_TITLE"
+        "OPENCODE_API_KEY"
+        "OPENCODE_BASE_URL"
+        "GHOSTSHIP_ROUTER_API_KEY"
+        "GHOSTSHIP_ROUTER_CORS_ORIGINS"
+        "API_SERVER_KEY"
+        "API_SERVER_CORS_ORIGINS"
+        "GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"
+        "GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE"
+        "GHOSTSHIP_ROUTER_RANKING_ENABLED"
+        "GHOSTSHIP_ROUTER_RANKING_INTERVAL"
+        "GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL"
+        "GHOSTSHIP_ROUTER_RANKING_SHORTLIST_SIZE"
+        "GHOSTSHIP_ROUTER_ROLLING_WINDOW_SECONDS"
+        "GHOSTSHIP_ROUTER_PROVIDER_COOLDOWN_SECONDS"
+        "GHOSTSHIP_ROUTER_PROVIDER_FAILURE_THRESHOLD"
+        "GHOSTSHIP_ROUTER_PROVIDER_RATE_LIMIT_THRESHOLD"
+        "GHOSTSHIP_ROUTER_PROVIDER_TIMEOUT_THRESHOLD"
+        "GHOSTSHIP_ROUTER_PROVIDER_EXHAUSTION_THRESHOLD"
+        "GHOSTSHIP_ROUTER_DISABLED_PROVIDERS"
+        "GHOSTSHIP_ROUTER_DISABLED_MODELS"
+        "GHOSTSHIP_ROUTER_PROVIDER_WEIGHT_OVERRIDES"
+        "GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES"
+        "GHOSTSHIP_ROUTER_ALIAS_PIN_LIGHTWEIGHT"
+        "GHOSTSHIP_ROUTER_ALIAS_PIN_CODING"
+        "GHOSTSHIP_ROUTER_ALIAS_PIN_HEAVYWEIGHT"
+      ];
+      ExecStart = "${ghostshipHermesRouter}/bin/ghostship-hermes-router";
+      Restart = "always";
+      RestartSec = "2s";
     };
   };
 
