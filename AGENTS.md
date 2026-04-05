@@ -105,7 +105,8 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Standalone `ghostship-hermes-router` runs should default state under `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router`; only the Hermes image runtime should override that path to `/home/hermes/.local/state/ghostship-hermes/router`.
 - The local router should accept Hermes API-server env aliases (`API_SERVER_HOST`, `API_SERVER_PORT`, `API_SERVER_KEY`, `API_SERVER_CORS_ORIGINS`) alongside repo-specific `GHOSTSHIP_ROUTER_*` names so image wiring and standalone runs can share one config contract.
 - Hermes router compatibility should be judged against the OpenAI-compatible backend API Hermes runtime calls directly, especially `responses.stream/create` and streamed `chat.completions` reasoning/tool-call deltas, not just the lighter Hermes gateway frontend surface.
-- When Hermes talks to the local router through a named custom provider, `OPENAI_API_KEY` is the compatibility auth input to reuse for the router bearer token unless the custom provider entry stores its own `api_key`.
+- When Hermes talks to the local router through its generic OpenAI-compatible `model.base_url`, `OPENAI_API_KEY` is the compatibility auth input to reuse for the router bearer token.
+- Router startup must not block the listener on fresh ranking generation; keep serving persisted inventory/rankings from SQLite while startup refresh and reranking continue in the background.
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.
 - CloakBrowser Manager auth uses the server `AUTH_TOKEN` as `Authorization: Bearer <token>`; `/api/status` stays unauthenticated for health checks.

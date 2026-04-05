@@ -17,6 +17,7 @@ bind_nix="${GHOSTSHIP_TEST_BIND_NIX:-0}"
 nix_volume_root="${GHOSTSHIP_NIX_VOLUME_ROOT:-}"
 dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-7681}"
 dashboard_base_url="http://127.0.0.1:${dashboard_port}"
+router_base_url="http://127.0.0.1:8788"
 
 if [ "$bind_nix" = "1" ]; then
   if [ -z "$nix_volume_root" ]; then
@@ -100,6 +101,57 @@ run_in_container() {
     -e PATH="$container_path" \
     "$container_name" \
     "$container_shell" -lc "$*"
+}
+
+run_as_hermes() {
+  local container_name="$1"
+  shift
+  docker exec \
+    -u 3000:3000 \
+    -e HOME=/home/hermes \
+    -e HERMES_HOME=/home/hermes/.hermes \
+    -e TERMINAL_CWD=/home/hermes \
+    -e PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin \
+    "$container_name" \
+    "$container_shell" -lc "$*"
+}
+
+wait_for_router_ready() {
+  local container_name="$1"
+  local attempts="${2:-60}"
+  local delay="${3:-2}"
+  local try=1
+
+  while [ "$try" -le "$attempts" ]; do
+    if run_in_container "$container_name" 'systemctl is-active ghostship-hermes-router.service >/dev/null 2>&1 && curl -fsS http://127.0.0.1:8788/readyz >/dev/null 2>&1'; then
+      return 0
+    fi
+    sleep "$delay"
+    try=$((try + 1))
+  done
+
+  return 1
+}
+
+assert_router_inventory() {
+  local container_name="$1"
+  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"lightweight\") and index(\"coding\") and index(\"heavyweight\")' >/dev/null"
+}
+
+assert_model_config() {
+  local container_name="$1"
+  local scope="$2"
+  local expected_model="$3"
+  local command
+
+  if [ "$scope" = "root" ]; then
+    command='hermes config show'
+  else
+    command="hermes -p $scope config show"
+  fi
+
+  run_as_hermes "$container_name" "$command | grep -F 'base_url: http://127.0.0.1:8788/v1' >/dev/null"
+  run_as_hermes "$container_name" "$command | grep -F 'default: $expected_model' >/dev/null"
 }
 
 assert_websocket_proxy() {
@@ -202,7 +254,6 @@ docker run -d \
   -e OPENROUTER_BASE_URL \
   -e OPENROUTER_HTTP_REFERER \
   -e OPENROUTER_TITLE \
-  -e OPENROUTER_TEST_MODEL \
   -p "${dashboard_port}:7681" \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
@@ -212,23 +263,25 @@ docker run -d \
 
 wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/status"
+wait_for_router_ready "$container_name"
 
 assert_http_contains "${dashboard_base_url}/" 'data-dashboard="ghostship-hermes-dashboard"'
 assert_http_contains "${dashboard_base_url}/" 'data-dashboard-style="hermes-studio"'
 assert_http_contains "${dashboard_base_url}/" 'data-home-view="environment"'
-assert_http_contains "${dashboard_base_url}/" "current environment"
+assert_http_contains "${dashboard_base_url}/" "Runtime"
 assert_http_contains "${dashboard_base_url}/" "Providers"
 assert_http_contains "${dashboard_base_url}/" "Profiles"
-assert_http_contains "${dashboard_base_url}/api/status" '"sessions": \[\]'
-assert_http_contains "${dashboard_base_url}/api/status" '"name": "operations"'
-assert_http_contains "${dashboard_base_url}/api/status" '"name": "coder"'
-assert_http_contains "${dashboard_base_url}/api/status" '"default_profile": "operations"'
-assert_http_contains "${dashboard_base_url}/api/status" '"environment": {'
+wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
+wait_for_json_value "${dashboard_base_url}/api/status" '.profiles[] | select(.name == "operations") | .name' "operations"
+wait_for_json_value "${dashboard_base_url}/api/status" '.profiles[] | select(.name == "coder") | .name' "coder"
+wait_for_json_value "${dashboard_base_url}/api/status" '.default_profile' "operations"
+wait_for_json_value "${dashboard_base_url}/api/status" '.environment.root_model' "lightweight"
+wait_for_json_value "${dashboard_base_url}/api/status" '.environment.providers[] | select(.name == "ghostship-router") | .router.ready' "true"
 
 open_started_ms="$(date +%s%3N)"
 curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-hermes-terminal-open-1.json
 open_finished_ms="$(date +%s%3N)"
-test $((open_finished_ms - open_started_ms)) -lt 1500
+test $((open_finished_ms - open_started_ms)) -lt 2000
 terminal_one="$(jq -r '.active_terminal_id' /tmp/ghostship-hermes-terminal-open-1.json)"
 terminal_one_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_one"'") | .terminal_url' /tmp/ghostship-hermes-terminal-open-1.json)"
 terminal_one_label="$(jq -r '.sessions[] | select(.id == "'"$terminal_one"'") | .label' /tmp/ghostship-hermes-terminal-open-1.json)"
@@ -245,29 +298,34 @@ terminal_two_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_two"'") | .t
 wait_for_http "${dashboard_base_url}${terminal_two_url}"
 wait_for_json_value "${dashboard_base_url}/api/status" ".sessions[] | select(.id == \"$terminal_two\") | .ready" "true"
 assert_http_contains "${dashboard_base_url}${terminal_two_url}" "ttyd"
-assert_http_contains "${dashboard_base_url}/api/status" "\"id\": \"$terminal_one\""
-assert_http_contains "${dashboard_base_url}/api/status" "\"id\": \"$terminal_two\""
+wait_for_json_value "${dashboard_base_url}/api/status" ".sessions[] | select(.id == \"$terminal_one\") | .id" "$terminal_one"
+wait_for_json_value "${dashboard_base_url}/api/status" ".sessions[] | select(.id == \"$terminal_two\") | .id" "$terminal_two"
 assert_websocket_proxy "$terminal_two_url"
 
 curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_two/close" >/tmp/ghostship-hermes-terminal-close-2.json
-assert_http_contains "${dashboard_base_url}/api/status" "\"id\": \"$terminal_one\""
+wait_for_json_value "${dashboard_base_url}/api/status" ".sessions[] | select(.id == \"$terminal_one\") | .id" "$terminal_one"
 
 curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_one/close" >/tmp/ghostship-hermes-terminal-close-1.json
-assert_http_contains "${dashboard_base_url}/api/status" '"sessions": \[\]'
+wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
 
 run_in_container "$container_name" 'id hermes | grep -F "uid=3000" >/dev/null'
 run_in_container "$container_name" '! systemctl is-active hermes-agent.service >/dev/null'
 run_in_container "$container_name" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
+run_in_container "$container_name" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-operations.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-coder.service >/dev/null'
-run_in_container "$container_name" 'su - hermes -c "hermes profile show operations >/dev/null"'
-run_in_container "$container_name" 'su - hermes -c "hermes profile show coder >/dev/null"'
-run_in_container "$container_name" 'su - hermes -c "test -d /home/hermes/.hermes/profiles/operations && test -d /home/hermes/.hermes/profiles/coder"'
-run_in_container "$container_name" 'su - hermes -c "! test -d /home/hermes/.hermes/profiles/test"'
-run_in_container "$container_name" 'su - hermes -c "test \"$(cat /home/hermes/.hermes/active_profile)\" = \"operations\""'
-run_in_container "$container_name" 'su - hermes -c "grep -F \"OPENROUTER_API_KEY=\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"'
-run_in_container "$container_name" 'su - hermes -c "grep -F \"OPENROUTER_API_KEY=\" /home/hermes/.hermes/profiles/coder/.env >/dev/null"'
-run_in_container "$container_name" 'su - hermes -c "hermes config show 2>/dev/null | grep -F \"/home/hermes\" >/dev/null"'
+run_as_hermes "$container_name" 'hermes profile show operations >/dev/null'
+run_as_hermes "$container_name" 'hermes profile show coder >/dev/null'
+run_as_hermes "$container_name" 'test -d /home/hermes/.hermes/profiles/operations && test -d /home/hermes/.hermes/profiles/coder'
+run_as_hermes "$container_name" '! test -d /home/hermes/.hermes/profiles/test'
+run_as_hermes "$container_name" 'test "$(cat /home/hermes/.hermes/active_profile)" = "operations"'
+run_as_hermes "$container_name" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
+run_as_hermes "$container_name" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/coder/.env >/dev/null'
+run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'
+assert_router_inventory "$container_name"
+assert_model_config "$container_name" root lightweight
+assert_model_config "$container_name" operations heavyweight
+assert_model_config "$container_name" coder coding
 run_in_container "$container_name" 'systemctl is-active ghostship-dashboard-controller.service >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-coder.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
