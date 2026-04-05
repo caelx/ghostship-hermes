@@ -18,7 +18,10 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Validate flake evaluation
-        run: nix flake check
+        # Keep this step at evaluation-only scope so it catches broken flake
+        # wiring without redundantly building every check before the targeted
+        # test/build steps below run.
+        run: nix flake check --no-build
 
       - name: Run Python utility tests
         run: nix develop -c python3 scripts/python_utility.py test packages/searxng-cli
