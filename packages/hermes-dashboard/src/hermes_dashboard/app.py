@@ -197,7 +197,7 @@ def terminal_payload(state: dict[str, Any]) -> dict[str, Any]:
 def available_port(state: dict[str, Any]) -> int:
     used_ports = {session["port"] for session in state["sessions"]}
     port = TTYD_PORT_BASE
-    while port in used_ports:
+    while port in used_ports or port_is_open(TTYD_HOST, port):
         port += 1
     return port
 
@@ -252,6 +252,13 @@ async def open_terminal_logic() -> dict[str, Any]:
                 stderr=log_handle,
                 start_new_session=True,
             )
+
+        # ttyd fails fast on bind/path issues; surface that immediately instead
+        # of saving a dead session that points at an unrelated stale listener.
+        await asyncio.sleep(0.15)
+        if process.poll() is not None:
+            raise RuntimeError(f"ttyd exited during startup with code {process.returncode}")
+
         session["pid"] = process.pid
 
         state["next_index"] += 1
