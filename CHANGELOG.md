@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Tightened Hermes custom-provider compatibility for `ghostship-hermes-router` by accepting `API_SERVER_HOST` and `API_SERVER_PORT`, allowing `OPENAI_API_KEY` as the router bearer-token alias, and documenting the `custom_providers` base URL contract at `http://127.0.0.1:8788/v1`.
 - Expanded `ghostship-hermes-router` again with Hermes-compatible `/health` and `/v1/health`, richer `chat/completions` SSE that preserves reasoning, tool-call, and usage deltas, SDK-compatible `responses.stream(...)`, richer stored `responses` objects, broader router contract tests, and a router package bump to `0.3.0`.
 - Expanded `ghostship-hermes-router` with rolling model and provider health, Prometheus-style `/metrics`, provider-wide cooldown and recovery, lightweight free-model background ranking and shortlist reranking, durable override storage for disablement, weights, and alias pinning, richer ranking and provider debug endpoints, and runtime wiring for the new router tuning env.
 - Added the new `packages/hermes-router` `FastAPI`/`uvicorn` service with stable alias endpoints, SQLite-backed route state, background inventory refresh, model-level routing and failover, best-effort first-text timing, OpenRouter plus OpenCode Zen inventory support, mixed Zen endpoint-family normalization, and free-model-assisted bucketing, then wired it into the Hermes image as `ghostship-hermes-router.service`.

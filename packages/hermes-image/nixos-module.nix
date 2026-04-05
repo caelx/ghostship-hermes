@@ -270,6 +270,7 @@ in
       WorkingDirectory = "/home/hermes";
       PassEnvironment = [
         "OPENROUTER_API_KEY"
+        "OPENAI_API_KEY"
         "OPENROUTER_BASE_URL"
         "OPENROUTER_HTTP_REFERER"
         "OPENROUTER_TITLE"

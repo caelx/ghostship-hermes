@@ -23,7 +23,7 @@ Current scope:
 - tracks rolling model and provider health so broad provider failures can temporarily suppress a provider without losing model-level failover
 - uses a healthy free model from the `lightweight` pool for background ranking and selective reranking outside the request hot path
 - supports durable provider and model overrides plus alias pinning
-- supports optional bearer auth through `GHOSTSHIP_ROUTER_API_KEY` or `API_SERVER_KEY`
+- supports optional bearer auth through `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
 - supports optional browser CORS allowlists through `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`
 
 The package is intentionally standalone first so it can be built and tested before Hermes image integration.
@@ -67,6 +67,14 @@ Optional router-specific inputs:
 - `GHOSTSHIP_ROUTER_CODING_MODELS`
 - `GHOSTSHIP_ROUTER_HEAVYWEIGHT_MODELS`
 
+Hermes-compatible aliases and client auth inputs:
+
+- `API_SERVER_HOST`
+- `API_SERVER_PORT`
+- `API_SERVER_KEY`
+- `API_SERVER_CORS_ORIGINS`
+- `OPENAI_API_KEY`
+
 Compatibility note:
 
 - `chat/completions` streaming is true SSE
@@ -74,6 +82,9 @@ Compatibility note:
 - `responses` now supports Hermes/OpenAI SDK streaming with `response.created`, `response.output_item.added`, `response.output_text.delta`, `response.function_call_arguments.delta`, and `response.completed`
 - `responses` stores and returns richer response objects with message, reasoning, and function-call output items
 - OpenCode Zen mixed endpoint families still normalize back to the local `chat/completions` surface before the router builds the `responses` envelope
+- Hermes named custom providers can use `base_url` `http://127.0.0.1:8788/v1` directly
+- Hermes named custom providers also work with bare `http://127.0.0.1:8788`; the router exposes both `/v1/...` and bare OpenAI endpoint aliases
+- Hermes named custom providers can reuse `OPENAI_API_KEY` as the router bearer token, or set a per-provider `api_key` directly in `custom_providers`
 
 Standalone local runs default router state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router`. The Hermes image overrides that to `/home/hermes/.local/state/ghostship-hermes/router`.
 

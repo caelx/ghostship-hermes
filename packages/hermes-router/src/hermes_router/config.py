@@ -19,6 +19,14 @@ def _parse_csv_env(name: str) -> tuple[str, ...]:
     return tuple(values)
 
 
+def _first_env(*names: str, default: str | None = None) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value is not None:
+            return value
+    return default
+
+
 def _parse_bool_env(name: str, *, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None:
@@ -106,10 +114,10 @@ class RouterConfig:
         state_dir = Path(os.environ.get("GHOSTSHIP_ROUTER_STATE_DIR", str(_default_state_dir())))
         db_path = Path(os.environ.get("GHOSTSHIP_ROUTER_DB_PATH", str(state_dir / "router.db")))
         return cls(
-            host=os.environ.get("GHOSTSHIP_ROUTER_HOST", "127.0.0.1"),
-            port=int(os.environ.get("GHOSTSHIP_ROUTER_PORT", "8788")),
+            host=_first_env("GHOSTSHIP_ROUTER_HOST", "API_SERVER_HOST", default="127.0.0.1") or "127.0.0.1",
+            port=int(_first_env("GHOSTSHIP_ROUTER_PORT", "API_SERVER_PORT", default="8788") or "8788"),
             log_level=os.environ.get("GHOSTSHIP_ROUTER_LOG_LEVEL", "info"),
-            api_key=os.environ.get("GHOSTSHIP_ROUTER_API_KEY") or os.environ.get("API_SERVER_KEY"),
+            api_key=_first_env("GHOSTSHIP_ROUTER_API_KEY", "API_SERVER_KEY", "OPENAI_API_KEY"),
             cors_origins=_parse_csv_env("GHOSTSHIP_ROUTER_CORS_ORIGINS") or _parse_csv_env("API_SERVER_CORS_ORIGINS"),
             default_timeout=float(os.environ.get("GHOSTSHIP_ROUTER_TIMEOUT", "30")),
             inventory_ttl_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_INVENTORY_TTL", "300")),
