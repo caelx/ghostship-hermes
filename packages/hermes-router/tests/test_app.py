@@ -215,6 +215,24 @@ class DummyProvider:
             first_text_latency_ms=self.first_text_latency_ms,
         )
 
+    def chat_completions_stream(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None):
+        result = self.chat_completions(backend_model, payload, timeout=timeout)
+        from hermes_router.providers.base import ProviderChatStreamResult, ProviderChatStreamState
+
+        state = ProviderChatStreamState(
+            first_text_latency_ms=result.first_text_latency_ms,
+            usage=result.payload.get("usage") if isinstance(result.payload.get("usage"), dict) else None,
+            final_payload=result.payload,
+        )
+        content = ((result.payload.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        state.emitted_text = str(content)
+
+        def chunks():
+            if content:
+                yield str(content)
+
+        return ProviderChatStreamResult(chunks=chunks(), provider=self.name, backend_model=backend_model, state=state)
+
 
 def test_models_endpoint_lists_aliases(tmp_path: Path) -> None:
     config = make_config(tmp_path)
@@ -529,3 +547,121 @@ def test_config_prefers_xdg_state_home(monkeypatch) -> None:
     config = RouterConfig.from_env()
     assert config.state_dir == Path("/tmp/router-xdg/ghostship-hermes/router")
     assert config.db_path == Path("/tmp/router-xdg/ghostship-hermes/router/router.db")
+
+
+def test_health_endpoints_match_hermes_shape(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        health = client.get("/health")
+        v1_health = client.get("/v1/health")
+        assert health.status_code == 200
+        assert v1_health.status_code == 200
+        assert health.json()["status"] == "ok"
+        assert v1_health.json()["status"] == "ok"
+        assert health.headers["x-content-type-options"] == "nosniff"
+
+
+def test_chat_completion_stream_returns_sse_and_session_header(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={"model": "coding", "messages": [{"role": "user", "content": "hello"}], "stream": True},
+        )
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+        assert response.headers["x-hermes-session-id"]
+        assert "chat.completion.chunk" in response.text
+        assert "data: [DONE]" in response.text
+        assert "ok" in response.text
+
+
+def test_chat_completion_session_header_reuses_stored_history(tmp_path: Path) -> None:
+    provider = DummyProvider("openrouter")
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        first = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "first"}]})
+        session_id = first.headers["x-hermes-session-id"]
+        second = client.post(
+            "/v1/chat/completions",
+            headers={"X-Hermes-Session-Id": session_id},
+            json={
+                "model": "coding",
+                "messages": [
+                    {"role": "user", "content": "ignored-old"},
+                    {"role": "assistant", "content": "ignored-answer"},
+                    {"role": "user", "content": "second"},
+                ],
+            },
+        )
+        assert second.status_code == 200
+        session_messages = service.state_store.load_chat_session(session_id)
+        assert session_messages[0]["content"] == "first"
+        assert session_messages[-2]["content"] == "second"
+
+
+def test_responses_create_get_delete_and_chain_previous_response(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        create = client.post("/v1/responses", json={"input": "What is 1+1?", "instructions": "Be terse."})
+        assert create.status_code == 200
+        created = create.json()
+        response_id = created["id"]
+        assert created["object"] == "response"
+        assert created["output"][0]["content"][0]["type"] == "output_text"
+
+        fetched = client.get(f"/v1/responses/{response_id}")
+        assert fetched.status_code == 200
+        assert fetched.json()["id"] == response_id
+
+        chained = client.post("/v1/responses", json={"input": "And 1 more?", "previous_response_id": response_id})
+        assert chained.status_code == 200
+        chained_id = chained.json()["id"]
+        stored = service.state_store.get_response(chained_id)
+        assert stored is not None
+        assert stored["instructions"] == "Be terse."
+        assert any(message["role"] == "assistant" for message in stored["conversation_history"])
+
+        deleted = client.delete(f"/v1/responses/{response_id}")
+        assert deleted.status_code == 200
+        assert deleted.json()["deleted"] is True
+        missing = client.get(f"/v1/responses/{response_id}")
+        assert missing.status_code == 404
+
+
+def test_responses_conversation_name_tracks_latest_response(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        first = client.post("/v1/responses", json={"input": "hello", "conversation": "demo"})
+        second = client.post("/v1/responses", json={"input": "again", "conversation": "demo"})
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert service.state_store.get_conversation_response("demo") == second.json()["id"]
+
+
+def test_auth_protects_openai_endpoints_but_not_health(tmp_path: Path) -> None:
+    config = make_config(tmp_path, api_key="sk-test")
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        assert client.get("/health").status_code == 200
+        assert client.get("/v1/models").status_code == 401
+        authorized = client.get("/v1/models", headers={"Authorization": "Bearer sk-test"})
+        assert authorized.status_code == 200
+
+
+def test_invalid_json_returns_openai_style_error(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            data="not-json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 400
+        assert "error" in response.json()

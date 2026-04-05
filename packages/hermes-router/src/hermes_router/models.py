@@ -23,6 +23,20 @@ class ChatCompletionRequest(BaseModel):
     timeout: float | None = None
 
 
+class ResponsesRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    model: str = "coding"
+    input: Any
+    instructions: str | None = None
+    previous_response_id: str | None = None
+    conversation: str | None = None
+    store: bool = True
+    stream: bool = False
+    truncation: str | None = None
+    timeout: float | None = None
+
+
 class ModelCard(BaseModel):
     id: str
     object: str = "model"
@@ -39,9 +53,9 @@ class HealthResponse(BaseModel):
     ok: bool
 
 
-class ApiHealthResponse(BaseModel):
+class HealthStatusResponse(BaseModel):
     status: str
-    platform: str = "ghostship-hermes-router"
+    platform: str
 
 
 class ReadinessResponse(BaseModel):

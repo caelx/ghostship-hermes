@@ -4,9 +4,12 @@ Local `FastAPI` model router for `ghostship-hermes`.
 
 Current scope:
 
+- exposes Hermes-style health endpoints at `GET /health` and `GET /v1/health`
 - exposes stable logical aliases at `GET /v1/models`
-- accepts `POST /v1/chat/completions`
+- accepts `POST /v1/chat/completions` with OpenAI-style JSON responses and SSE streaming
+- accepts Hermes-compatible `POST /v1/responses` plus `GET /v1/responses/{id}` and `DELETE /v1/responses/{id}`
 - persists inventory, route health, provider health, rankings, overrides, cooldowns, and recent events in SQLite
+- persists stored `responses` objects and lightweight chat session continuity state in SQLite
 - refreshes inventory on startup and on a background interval
 - triggers a forced inventory refresh when a backend model disappears
 - exposes debug surfaces at `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{alias}`, `GET /debug/rankings/{alias}`, and `GET /debug/models/{provider}/{model}`
@@ -16,9 +19,12 @@ Current scope:
 - routes and fails over between concrete backend models instead of alias-level buckets
 - supports OpenCode Zen mixed endpoint families and normalizes them back to local `chat/completions`
 - records total latency and best-effort first-text latency per backend model
+- returns `X-Hermes-Session-Id` on chat completions and can reuse that session id on later requests
 - tracks rolling model and provider health so broad provider failures can temporarily suppress a provider without losing model-level failover
 - uses a healthy free model from the `lightweight` pool for background ranking and selective reranking outside the request hot path
 - supports durable provider and model overrides plus alias pinning
+- supports optional bearer auth through `GHOSTSHIP_ROUTER_API_KEY` or `API_SERVER_KEY`
+- supports optional browser CORS allowlists through `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`
 
 The package is intentionally standalone first so it can be built and tested before Hermes image integration.
 
@@ -61,16 +67,13 @@ Optional router-specific inputs:
 - `GHOSTSHIP_ROUTER_CODING_MODELS`
 - `GHOSTSHIP_ROUTER_HEAVYWEIGHT_MODELS`
 
-Hermes API-server-compatible aliases are also accepted:
+Compatibility note:
 
-- `API_SERVER_HOST`
-- `API_SERVER_PORT`
-- `API_SERVER_KEY`
-- `API_SERVER_CORS_ORIGINS`
+- `chat/completions` streaming is true SSE
+- `responses` currently implements Hermes-compatible request, storage, chaining, and retrieval semantics
+- OpenCode Zen mixed endpoint families still normalize back to the local `chat/completions` surface before the router builds the `responses` envelope
 
 Standalone local runs default router state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router`. The Hermes image overrides that to `/home/hermes/.local/state/ghostship-hermes/router`.
-
-In the Hermes image, the router is managed by `ghostship-hermes-router.service` and listens on `127.0.0.1:8788` by default.
 
 ## Local Development
 

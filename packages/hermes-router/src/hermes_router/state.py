@@ -99,6 +99,27 @@ class StateStore:
     def set_provider_cooldown(self, provider_name: str, *, cooldown_until: float, category: str, details: Any = None) -> None:
         raise NotImplementedError
 
+    def put_response(self, response_id: str, payload: dict[str, Any], *, conversation_history: list[dict[str, Any]], instructions: str | None) -> None:
+        raise NotImplementedError
+
+    def get_response(self, response_id: str) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    def delete_response(self, response_id: str) -> bool:
+        raise NotImplementedError
+
+    def get_conversation_response(self, conversation: str) -> str | None:
+        raise NotImplementedError
+
+    def set_conversation_response(self, conversation: str, response_id: str) -> None:
+        raise NotImplementedError
+
+    def load_chat_session(self, session_id: str) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    def save_chat_session(self, session_id: str, messages: list[dict[str, Any]]) -> None:
+        raise NotImplementedError
+
     def get_recent_events(self, limit: int) -> list[dict[str, Any]]:
         raise NotImplementedError
 
@@ -261,6 +282,26 @@ class SqliteStateStore(StateStore):
                     category TEXT,
                     details_json TEXT,
                     created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS stored_responses (
+                    response_id TEXT PRIMARY KEY,
+                    response_json TEXT NOT NULL,
+                    conversation_history_json TEXT NOT NULL,
+                    instructions TEXT,
+                    accessed_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS response_conversations (
+                    conversation TEXT PRIMARY KEY,
+                    response_id TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    messages_json TEXT NOT NULL,
+                    updated_at REAL NOT NULL
                 );
                 """
             )
@@ -982,6 +1023,106 @@ class SqliteStateStore(StateStore):
                 ),
             )
 
+    def put_response(self, response_id: str, payload: dict[str, Any], *, conversation_history: list[dict[str, Any]], instructions: str | None) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO stored_responses (
+                    response_id, response_json, conversation_history_json, instructions, accessed_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(response_id) DO UPDATE SET
+                  response_json = excluded.response_json,
+                  conversation_history_json = excluded.conversation_history_json,
+                  instructions = excluded.instructions,
+                  accessed_at = excluded.accessed_at
+                """,
+                (
+                    response_id,
+                    json.dumps(payload, sort_keys=True),
+                    json.dumps(conversation_history, sort_keys=True),
+                    instructions,
+                    now,
+                ),
+            )
+
+    def get_response(self, response_id: str) -> dict[str, Any] | None:
+        now = time.time()
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT response_json, conversation_history_json, instructions
+                FROM stored_responses
+                WHERE response_id = ?
+                """,
+                (response_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                "UPDATE stored_responses SET accessed_at = ? WHERE response_id = ?",
+                (now, response_id),
+            )
+        return {
+            "response": _json_loads(row["response_json"], default={}),
+            "conversation_history": _json_loads(row["conversation_history_json"], default=[]),
+            "instructions": row["instructions"],
+        }
+
+    def delete_response(self, response_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM stored_responses WHERE response_id = ?",
+                (response_id,),
+            )
+        return cursor.rowcount > 0
+
+    def get_conversation_response(self, conversation: str) -> str | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT response_id FROM response_conversations WHERE conversation = ?",
+                (conversation,),
+            ).fetchone()
+        return str(row["response_id"]) if row else None
+
+    def set_conversation_response(self, conversation: str, response_id: str) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO response_conversations (conversation, response_id, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(conversation) DO UPDATE SET
+                  response_id = excluded.response_id,
+                  updated_at = excluded.updated_at
+                """,
+                (conversation, response_id, now),
+            )
+
+    def load_chat_session(self, session_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT messages_json FROM chat_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return []
+        return _json_loads(row["messages_json"], default=[])
+
+    def save_chat_session(self, session_id: str, messages: list[dict[str, Any]]) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO chat_sessions (session_id, messages_json, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                  messages_json = excluded.messages_json,
+                  updated_at = excluded.updated_at
+                """,
+                (session_id, json.dumps(messages, sort_keys=True), now),
+            )
+
     def get_recent_events(self, limit: int) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -1042,6 +1183,8 @@ class SqliteStateStore(StateStore):
             ranking_count = connection.execute("SELECT COUNT(*) FROM model_rankings").fetchone()[0]
             event_count = connection.execute("SELECT COUNT(*) FROM route_events").fetchone()[0]
             refresh_event_count = connection.execute("SELECT COUNT(*) FROM refresh_events").fetchone()[0]
+            stored_response_count = connection.execute("SELECT COUNT(*) FROM stored_responses").fetchone()[0]
+            chat_session_count = connection.execute("SELECT COUNT(*) FROM chat_sessions").fetchone()[0]
         return {
             "db_path": str(self.db_path),
             "inventory_count": inventory_count,
@@ -1049,6 +1192,8 @@ class SqliteStateStore(StateStore):
             "ranking_count": ranking_count,
             "event_count": event_count,
             "refresh_event_count": refresh_event_count,
+            "stored_response_count": stored_response_count,
+            "chat_session_count": chat_session_count,
             "model_state": list(self.get_model_state().values()),
             "provider_state": list(self.get_provider_state().values()),
             "rankings": list(self.get_rankings().values()),
