@@ -11,6 +11,7 @@ from ghostship_cli_contract import BaseHttpClient, HttpStatusError, TimeoutError
 from .base import (
     NormalizedProviderError,
     ProviderChatResult,
+    ProviderChatStreamEvent,
     ProviderChatStreamResult,
     ProviderChatStreamState,
     ProviderModel,
@@ -79,6 +80,8 @@ class OpenRouterProvider:
         request_timeout = timeout or self.client.default_timeout
         state = ProviderChatStreamState()
         started_at = time.monotonic()
+        tool_calls_acc: dict[int, dict[str, Any]] = {}
+        finish_reason: str | None = None
 
         def stream_chunks():
             spec = self.client.build_request_spec("POST", "/chat/completions", json_body=body, timeout=request_timeout)
@@ -110,17 +113,70 @@ class OpenRouterProvider:
                                 payload_chunk = json.loads(data)
                             except json.JSONDecodeError:
                                 continue
-                            state.final_payload = payload_chunk
                             if isinstance(payload_chunk.get("usage"), dict):
                                 state.usage = payload_chunk["usage"]
-                            delta = ((payload_chunk.get("choices") or [{}])[0].get("delta") or {})
-                            content = delta.get("content")
-                            if not isinstance(content, str) or not content:
+                            choices = payload_chunk.get("choices") or []
+                            if not choices:
+                                yield ProviderChatStreamEvent(
+                                    usage=state.usage,
+                                    raw_chunk=payload_chunk,
+                                )
                                 continue
-                            if state.first_text_latency_ms is None:
-                                state.first_text_latency_ms = round((time.monotonic() - started_at) * 1000, 2)
-                            state.emitted_text += content
-                            yield content
+                            choice = choices[0] or {}
+                            delta = choice.get("delta") or {}
+                            content = delta.get("content")
+                            if isinstance(content, str) and content:
+                                if state.first_text_latency_ms is None:
+                                    state.first_text_latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+                                state.emitted_text += content
+                            else:
+                                content = None
+                            reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                            if isinstance(reasoning, str) and reasoning:
+                                state.emitted_reasoning += reasoning
+                            else:
+                                reasoning = None
+                            raw_tool_calls = delta.get("tool_calls")
+                            tool_calls: list[dict[str, Any]] | None = None
+                            if isinstance(raw_tool_calls, list):
+                                tool_calls = []
+                                for raw_tool_call in raw_tool_calls:
+                                    if not isinstance(raw_tool_call, dict):
+                                        continue
+                                    index = int(raw_tool_call.get("index") or 0)
+                                    function = raw_tool_call.get("function") if isinstance(raw_tool_call.get("function"), dict) else {}
+                                    entry = tool_calls_acc.setdefault(
+                                        index,
+                                        {
+                                            "index": index,
+                                            "id": raw_tool_call.get("id"),
+                                            "type": raw_tool_call.get("type") or "function",
+                                            "function": {
+                                                "name": "",
+                                                "arguments": "",
+                                            },
+                                        },
+                                    )
+                                    if raw_tool_call.get("id"):
+                                        entry["id"] = raw_tool_call["id"]
+                                    if raw_tool_call.get("type"):
+                                        entry["type"] = raw_tool_call["type"]
+                                    if function.get("name"):
+                                        entry["function"]["name"] += str(function["name"])
+                                    if function.get("arguments"):
+                                        entry["function"]["arguments"] += str(function["arguments"])
+                                    tool_calls.append(raw_tool_call)
+                            choice_finish_reason = choice.get("finish_reason")
+                            if isinstance(choice_finish_reason, str) and choice_finish_reason:
+                                finish_reason = choice_finish_reason
+                            yield ProviderChatStreamEvent(
+                                content=content,
+                                reasoning=reasoning,
+                                tool_calls=tool_calls,
+                                finish_reason=choice_finish_reason if isinstance(choice_finish_reason, str) else None,
+                                usage=state.usage,
+                                raw_chunk=payload_chunk,
+                            )
             except TimeoutError as exc:
                 raise NormalizedProviderError("timeout", str(exc), provider=self.name, backend_model=backend_model, retryable=True, details=exc.details) from exc
             except TransportError as exc:
@@ -128,11 +184,34 @@ class OpenRouterProvider:
             except HttpStatusError as exc:
                 raise self._normalize_http_error(exc, backend_model=backend_model) from exc
             if state.final_payload is None:
+                message: dict[str, Any] = {"role": "assistant"}
+                if state.emitted_text:
+                    message["content"] = state.emitted_text
+                if state.emitted_reasoning:
+                    message["reasoning_content"] = state.emitted_reasoning
+                if tool_calls_acc:
+                    message["tool_calls"] = [
+                        {
+                            "id": item.get("id"),
+                            "type": item.get("type") or "function",
+                            "function": {
+                                "name": item.get("function", {}).get("name", ""),
+                                "arguments": item.get("function", {}).get("arguments", ""),
+                            },
+                        }
+                        for _, item in sorted(tool_calls_acc.items())
+                    ]
                 state.final_payload = {
                     "id": f"chatcmpl-{backend_model}",
                     "object": "chat.completion",
                     "model": backend_model,
-                    "choices": [{"index": 0, "message": {"role": "assistant", "content": state.emitted_text}, "finish_reason": "stop"}],
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": message,
+                            "finish_reason": finish_reason or ("tool_calls" if tool_calls_acc else "stop"),
+                        }
+                    ],
                     "usage": state.usage,
                 }
 

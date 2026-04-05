@@ -6,11 +6,12 @@ import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import chain
 from typing import Any
 
 from .config import AliasConfig, RouterConfig
 from .models import ChatCompletionRequest, ModelCard, ModelsResponse, ReadinessResponse, ResponsesRequest
-from .providers.base import ChatProvider, NormalizedProviderError, ProviderChatStreamResult, ProviderModel
+from .providers.base import ChatProvider, NormalizedProviderError, ProviderChatStreamEvent, ProviderChatStreamResult, ProviderModel
 from .providers.opencode_zen import OpencodeZenProvider
 from .providers.openrouter import OpenRouterProvider
 from .state import RouteEvent, SqliteStateStore, StateStore
@@ -52,6 +53,15 @@ class RouteCandidate:
 class StreamPlan:
     body: Iterator[str]
     headers: dict[str, str]
+
+
+@dataclass(frozen=True)
+class PreparedResponsesRequest:
+    chat_request: ChatCompletionRequest
+    instructions: str | None
+    conversation_history: list[dict[str, Any]]
+    previous_response_id: str | None
+    request: ResponsesRequest
 
 
 class RouterService:
@@ -127,51 +137,7 @@ class RouterService:
 
     def stream_chat_completions(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> StreamPlan:
         active_session_id, request_for_routing = self._prepare_chat_request(request, session_id=session_id)
-        candidates = self._resolve_candidates(request_for_routing.model)
-        if not candidates:
-            raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request_for_routing.model}'."})
-
-        request_payload = request_for_routing.model_dump(mode="json", exclude_none=True)
-        request_payload.pop("timeout", None)
-        attempt_errors: list[dict[str, Any]] = []
-        selected: tuple[RouteCandidate, ProviderChatStreamResult, str | None, Iterator[str]] | None = None
-        for index, candidate in enumerate(candidates):
-            provider = self.providers.get(candidate.provider_name)
-            if provider is None:
-                continue
-            try:
-                stream_result = provider.chat_completions_stream(
-                    candidate.backend_model,
-                    request_payload,
-                    timeout=request_for_routing.timeout or self.config.default_timeout,
-                )
-                chunk_iter = iter(stream_result.chunks)
-                first_chunk: str | None = None
-                try:
-                    first_chunk = next(chunk_iter)
-                except StopIteration:
-                    first_chunk = None
-                selected = (candidate, stream_result, first_chunk, chunk_iter)
-                break
-            except NormalizedProviderError as exc:
-                self._record_failure(candidate, request_for_routing.model, exc, latency_ms=None, is_fallback=(index > 0))
-                attempt_errors.append(
-                    {
-                        "provider": exc.provider,
-                        "backend_model": exc.backend_model,
-                        "category": exc.category,
-                        "retryable": exc.retryable,
-                        "details": exc.details,
-                    }
-                )
-                if exc.category == "model_missing":
-                    self.refresh_inventory(reason="model_missing")
-                if not exc.retryable:
-                    continue
-        if selected is None:
-            raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors})
-
-        candidate, stream_result, first_chunk, chunk_iter = selected
+        candidate, stream_result, first_chunk, chunk_iter = self._open_chat_stream(request_for_routing)
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         created = int(time.time())
         headers = {
@@ -193,26 +159,37 @@ class RouterService:
             }
             yield f"data: {json.dumps(role_chunk)}\n\n"
             started_at = time.monotonic()
-            emitted_parts: list[str] = []
+            saw_finish_reason = False
             try:
                 if first_chunk:
-                    emitted_parts.append(first_chunk)
-                    yield self._stream_content_chunk(completion_id, created, request_for_routing.model, first_chunk)
+                    for payload in self._chat_stream_payloads_from_event(
+                        completion_id,
+                        created,
+                        request_for_routing.model,
+                        first_chunk,
+                    ):
+                        if self._chunk_has_finish_reason(payload):
+                            saw_finish_reason = True
+                        yield f"data: {json.dumps(payload)}\n\n"
                 for chunk in chunk_iter:
-                    if not chunk:
-                        continue
-                    emitted_parts.append(chunk)
-                    yield self._stream_content_chunk(completion_id, created, request_for_routing.model, chunk)
+                    for payload in self._chat_stream_payloads_from_event(
+                        completion_id,
+                        created,
+                        request_for_routing.model,
+                        chunk,
+                    ):
+                        if self._chunk_has_finish_reason(payload):
+                            saw_finish_reason = True
+                        yield f"data: {json.dumps(payload)}\n\n"
             except NormalizedProviderError as exc:
                 self._record_failure(candidate, request_for_routing.model, exc, latency_ms=round((time.monotonic() - started_at) * 1000, 2), is_fallback=candidate.is_fallback)
                 raise
             latency_ms = round((time.monotonic() - started_at) * 1000, 2)
             first_text_latency_ms = stream_result.state.first_text_latency_ms or latency_ms
-            final_payload = stream_result.state.final_payload or self._chat_payload_from_text(
+            final_payload = stream_result.state.final_payload or self._chat_payload_from_stream_state(
                 request_for_routing.model,
                 stream_result.backend_model,
-                "".join(emitted_parts),
-                stream_result.state.usage,
+                stream_result.state,
             )
             self.state_store.apply_success(
                 candidate.provider_name,
@@ -237,66 +214,265 @@ class RouterService:
                 )
             )
             self.state_store.save_chat_session(active_session_id, self._chat_session_messages(request_for_routing, final_payload))
-            finish_chunk = {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": request_for_routing.model,
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                "usage": self._chat_usage(final_payload),
-            }
-            yield f"data: {json.dumps(finish_chunk)}\n\n"
+            if not saw_finish_reason:
+                finish_chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": request_for_routing.model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {},
+                            "finish_reason": self._chat_finish_reason(final_payload),
+                        }
+                    ],
+                    "usage": self._chat_usage(final_payload),
+                }
+                yield f"data: {json.dumps(finish_chunk)}\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamPlan(body=stream_body(), headers=headers)
 
     def responses_create(self, request: ResponsesRequest) -> tuple[dict[str, Any], dict[str, str]]:
-        if request.conversation and request.previous_response_id:
-            raise RouterServiceError(400, {"message": "Cannot use both 'conversation' and 'previous_response_id'."})
-        previous_response_id = request.previous_response_id
-        if request.conversation:
-            previous_response_id = self.state_store.get_conversation_response(request.conversation)
-
-        input_messages = self._responses_input_messages(request.input)
-        if not input_messages:
-            raise RouterServiceError(400, {"message": "No user message found in input."})
-        history: list[dict[str, Any]] = []
-        instructions = request.instructions
-        if previous_response_id:
-            stored = self.state_store.get_response(previous_response_id)
-            if stored is None:
-                raise RouterServiceError(404, {"message": f"Previous response not found: {previous_response_id}"})
-            history = list(stored.get("conversation_history", []))
-            if instructions is None:
-                instructions = stored.get("instructions")
-        history.extend(input_messages[:-1])
-        if request.truncation == "auto" and len(history) > 100:
-            history = history[-100:]
-        chat_messages: list[dict[str, Any]] = []
-        if instructions:
-            chat_messages.append({"role": "system", "content": instructions})
-        chat_messages.extend(history)
-        chat_messages.append(input_messages[-1])
-        chat_request = ChatCompletionRequest.model_validate(
-            {
-                "model": request.model,
-                "messages": chat_messages,
-                "temperature": request.model_extra.get("temperature") if request.model_extra else None,
-                "max_tokens": request.model_extra.get("max_output_tokens") if request.model_extra else None,
-                "timeout": request.timeout,
-            }
-        )
-        payload, headers = self._execute_chat_completion(chat_request)
+        prepared = self._prepare_responses_request(request)
+        payload, headers = self._execute_chat_completion(prepared.chat_request)
         response_id = f"resp_{uuid.uuid4().hex[:28]}"
-        response_payload = self._responses_payload(response_id, request.model, payload)
-        conversation_history = [message for message in chat_messages if message.get("role") != "system"]
-        conversation_history.append({"role": "assistant", "content": self._assistant_text_from_payload(payload)})
+        response_payload = self._responses_payload(response_id, prepared, payload)
+        conversation_history = list(prepared.conversation_history)
+        conversation_history.append(self._chat_message_from_payload(payload))
         if request.store:
-            self.state_store.put_response(response_id, response_payload, conversation_history=conversation_history, instructions=instructions)
+            self.state_store.put_response(response_id, response_payload, conversation_history=conversation_history, instructions=prepared.instructions)
             if request.conversation:
                 self.state_store.set_conversation_response(request.conversation, response_id)
         headers["X-Hermes-Session-Id"] = headers.get("X-Hermes-Session-Id", str(uuid.uuid4()))
         return response_payload, headers
+
+    def responses_create_stream(self, request: ResponsesRequest) -> StreamPlan:
+        prepared = self._prepare_responses_request(request)
+        response_id = f"resp_{uuid.uuid4().hex[:28]}"
+        candidate, stream_result, first_chunk, chunk_iter = self._open_chat_stream(prepared.chat_request)
+        response_headers = {
+            "Cache-Control": "no-cache",
+            "X-Ghostship-Router-Backend-Provider": stream_result.provider,
+            "X-Ghostship-Router-Backend-Model": stream_result.backend_model,
+        }
+        if stream_result.state.first_text_latency_ms is not None:
+            response_headers["X-Ghostship-Router-First-Text-Latency-Ms"] = str(stream_result.state.first_text_latency_ms)
+
+        def stream_body() -> Iterator[str]:
+            sequence_number = 0
+            created_at = int(time.time())
+            output_items: list[dict[str, Any]] = []
+            message_item_id = f"msg_{uuid.uuid4().hex[:24]}"
+            reasoning_item_id = f"rs_{uuid.uuid4().hex[:24]}"
+            message_started = False
+            reasoning_started = False
+            tool_output_indices: dict[int, int] = {}
+            response_stub = self._responses_response_stub(response_id, prepared, created_at, output_items)
+            yield self._sse_event("response.created", {"response": response_stub, "sequence_number": sequence_number, "type": "response.created"})
+            sequence_number += 1
+
+            started_at = time.monotonic()
+            finish_reason: str | None = None
+            try:
+                for event in chain(() if first_chunk is None else (first_chunk,), chunk_iter):
+                    if isinstance(event.reasoning, str) and event.reasoning:
+                        if not reasoning_started:
+                            output_items.append(
+                                {
+                                    "id": reasoning_item_id,
+                                    "type": "reasoning",
+                                    "summary": [],
+                                    "content": [],
+                                    "status": "in_progress",
+                                }
+                            )
+                            yield self._sse_event(
+                                "response.output_item.added",
+                                {
+                                    "item": output_items[-1],
+                                    "output_index": len(output_items) - 1,
+                                    "sequence_number": sequence_number,
+                                    "type": "response.output_item.added",
+                                },
+                            )
+                            sequence_number += 1
+                            reasoning_started = True
+                        yield self._sse_event(
+                            "response.reasoning_text.delta",
+                            {
+                                "content_index": 0,
+                                "delta": event.reasoning,
+                                "item_id": reasoning_item_id,
+                                "output_index": 0,
+                                "sequence_number": sequence_number,
+                                "type": "response.reasoning_text.delta",
+                            },
+                        )
+                        sequence_number += 1
+                    if isinstance(event.content, str) and event.content:
+                        if not message_started:
+                            output_items.append(
+                                {
+                                    "id": message_item_id,
+                                    "type": "message",
+                                    "role": "assistant",
+                                    "status": "in_progress",
+                                    "content": [],
+                                }
+                            )
+                            message_index = len(output_items) - 1
+                            yield self._sse_event(
+                                "response.output_item.added",
+                                {
+                                    "item": output_items[-1],
+                                    "output_index": message_index,
+                                    "sequence_number": sequence_number,
+                                    "type": "response.output_item.added",
+                                },
+                            )
+                            sequence_number += 1
+                            message_part = {"type": "output_text", "text": "", "annotations": []}
+                            output_items[message_index]["content"].append(message_part)
+                            yield self._sse_event(
+                                "response.content_part.added",
+                                {
+                                    "content_index": 0,
+                                    "item_id": message_item_id,
+                                    "output_index": message_index,
+                                    "part": message_part,
+                                    "sequence_number": sequence_number,
+                                    "type": "response.content_part.added",
+                                },
+                            )
+                            sequence_number += 1
+                            message_started = True
+                        message_index = next(index for index, item in enumerate(output_items) if item.get("id") == message_item_id)
+                        message_part = output_items[message_index]["content"][0]
+                        message_part["text"] += event.content
+                        yield self._sse_event(
+                            "response.output_text.delta",
+                            {
+                                "content_index": 0,
+                                "delta": event.content,
+                                "item_id": message_item_id,
+                                "logprobs": [],
+                                "output_index": message_index,
+                                "sequence_number": sequence_number,
+                                "type": "response.output_text.delta",
+                            },
+                        )
+                        sequence_number += 1
+                    if isinstance(event.tool_calls, list):
+                        for raw_tool_call in event.tool_calls:
+                            if not isinstance(raw_tool_call, dict):
+                                continue
+                            raw_index = int(raw_tool_call.get("index") or 0)
+                            output_index = tool_output_indices.get(raw_index)
+                            if output_index is None:
+                                tool_item = self._responses_function_call_item(raw_tool_call)
+                                output_items.append(tool_item)
+                                output_index = len(output_items) - 1
+                                tool_output_indices[raw_index] = output_index
+                                yield self._sse_event(
+                                    "response.output_item.added",
+                                    {
+                                        "item": tool_item,
+                                        "output_index": output_index,
+                                        "sequence_number": sequence_number,
+                                        "type": "response.output_item.added",
+                                    },
+                                )
+                                sequence_number += 1
+                            else:
+                                tool_item = output_items[output_index]
+                                function = raw_tool_call.get("function") if isinstance(raw_tool_call.get("function"), dict) else {}
+                                if raw_tool_call.get("id"):
+                                    tool_item["id"] = raw_tool_call["id"]
+                                if function.get("name"):
+                                    tool_item["name"] += str(function["name"])
+                                if function.get("arguments"):
+                                    tool_item["arguments"] += str(function["arguments"])
+                            function = raw_tool_call.get("function") if isinstance(raw_tool_call.get("function"), dict) else {}
+                            arguments_delta = function.get("arguments")
+                            if isinstance(arguments_delta, str) and arguments_delta:
+                                yield self._sse_event(
+                                    "response.function_call_arguments.delta",
+                                    {
+                                        "delta": arguments_delta,
+                                        "item_id": tool_item["id"],
+                                        "output_index": output_index,
+                                        "sequence_number": sequence_number,
+                                        "type": "response.function_call_arguments.delta",
+                                    },
+                                )
+                                sequence_number += 1
+                    if isinstance(event.finish_reason, str) and event.finish_reason:
+                        finish_reason = event.finish_reason
+                        break
+            except NormalizedProviderError as exc:
+                self._record_failure(
+                    candidate,
+                    prepared.chat_request.model,
+                    exc,
+                    latency_ms=round((time.monotonic() - started_at) * 1000, 2),
+                    is_fallback=candidate.is_fallback,
+                )
+                raise
+
+            latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+            first_text_latency_ms = stream_result.state.first_text_latency_ms or latency_ms
+            final_chat_payload = stream_result.state.final_payload or self._chat_payload_from_stream_state(
+                prepared.chat_request.model,
+                stream_result.backend_model,
+                stream_result.state,
+                finish_reason=finish_reason,
+            )
+            self.state_store.apply_success(
+                candidate.provider_name,
+                candidate.backend_model,
+                latency_ms=latency_ms,
+                first_text_latency_ms=first_text_latency_ms,
+            )
+            self._apply_provider_health_guards(candidate.provider_name)
+            self.state_store.record_attempt(
+                RouteEvent(
+                    alias=prepared.chat_request.model,
+                    provider_name=candidate.provider_name,
+                    backend_model=candidate.backend_model,
+                    success=True,
+                    retryable=False,
+                    is_fallback=candidate.is_fallback,
+                    category=None,
+                    latency_ms=latency_ms,
+                    first_text_latency_ms=first_text_latency_ms,
+                    details={"score_breakdown": candidate.score_breakdown},
+                    created_at=time.time(),
+                )
+            )
+            final_response_payload = self._responses_payload(response_id, prepared, final_chat_payload)
+            if prepared.request.store:
+                conversation_history = list(prepared.conversation_history)
+                conversation_history.append(self._chat_message_from_payload(final_chat_payload))
+                self.state_store.put_response(
+                    response_id,
+                    final_response_payload,
+                    conversation_history=conversation_history,
+                    instructions=prepared.instructions,
+                )
+                if prepared.request.conversation:
+                    self.state_store.set_conversation_response(prepared.request.conversation, response_id)
+            yield self._sse_event(
+                "response.completed",
+                {
+                    "response": final_response_payload,
+                    "sequence_number": sequence_number,
+                    "type": "response.completed",
+                },
+            )
+
+        return StreamPlan(body=stream_body(), headers=response_headers)
 
     def get_response(self, response_id: str) -> dict[str, Any]:
         stored = self.state_store.get_response(response_id)
@@ -368,6 +544,50 @@ class RouterService:
                     continue
         raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors})
 
+    def _open_chat_stream(
+        self,
+        request: ChatCompletionRequest,
+    ) -> tuple[RouteCandidate, ProviderChatStreamResult, ProviderChatStreamEvent | None, Iterator[ProviderChatStreamEvent]]:
+        candidates = self._resolve_candidates(request.model)
+        if not candidates:
+            raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
+
+        request_payload = request.model_dump(mode="json", exclude_none=True)
+        request_payload.pop("timeout", None)
+        attempt_errors: list[dict[str, Any]] = []
+        for index, candidate in enumerate(candidates):
+            provider = self.providers.get(candidate.provider_name)
+            if provider is None:
+                continue
+            try:
+                stream_result = provider.chat_completions_stream(
+                    candidate.backend_model,
+                    request_payload,
+                    timeout=request.timeout or self.config.default_timeout,
+                )
+                chunk_iter = iter(stream_result.chunks)
+                try:
+                    first_chunk = next(chunk_iter)
+                except StopIteration:
+                    first_chunk = None
+                return candidate, stream_result, first_chunk, chunk_iter
+            except NormalizedProviderError as exc:
+                self._record_failure(candidate, request.model, exc, latency_ms=None, is_fallback=(index > 0))
+                attempt_errors.append(
+                    {
+                        "provider": exc.provider,
+                        "backend_model": exc.backend_model,
+                        "category": exc.category,
+                        "retryable": exc.retryable,
+                        "details": exc.details,
+                    }
+                )
+                if exc.category == "model_missing":
+                    self.refresh_inventory(reason="model_missing")
+                if not exc.retryable:
+                    continue
+        raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors})
+
     def _prepare_chat_request(self, request: ChatCompletionRequest, *, session_id: str | None) -> tuple[str, ChatCompletionRequest]:
         active_session_id = session_id or str(uuid.uuid4())
         if not session_id:
@@ -386,7 +606,7 @@ class RouterService:
 
     def _chat_session_messages(self, request: ChatCompletionRequest, payload: dict[str, Any]) -> list[dict[str, Any]]:
         messages = [message.model_dump(mode="json", exclude_none=True) for message in request.messages if message.role != "system"]
-        messages.append({"role": "assistant", "content": self._assistant_text_from_payload(payload)})
+        messages.append(self._chat_message_from_payload(payload))
         return messages
 
     def _assistant_text_from_payload(self, payload: dict[str, Any]) -> str:
@@ -398,6 +618,19 @@ class RouterService:
             parts = [str(item.get("text", "")) for item in content if isinstance(item, dict)]
             return "\n".join(part for part in parts if part)
         return str(content or "")
+
+    def _chat_message_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        message = ((payload.get("choices") or [{}])[0].get("message") or {})
+        chat_message: dict[str, Any] = {
+            "role": str(message.get("role") or "assistant"),
+            "content": self._assistant_text_from_payload(payload),
+        }
+        if isinstance(message.get("tool_calls"), list):
+            chat_message["tool_calls"] = message["tool_calls"]
+        reasoning = message.get("reasoning_content") or message.get("reasoning")
+        if isinstance(reasoning, str) and reasoning:
+            chat_message["reasoning_content"] = reasoning
+        return chat_message
 
     def _chat_payload_from_text(
         self,
@@ -415,6 +648,26 @@ class RouterService:
             "usage": usage,
         }
 
+    def _chat_payload_from_stream_state(
+        self,
+        model_alias: str,
+        backend_model: str,
+        state: Any,
+        *,
+        finish_reason: str | None = None,
+    ) -> dict[str, Any]:
+        message: dict[str, Any] = {"role": "assistant", "content": state.emitted_text}
+        if getattr(state, "emitted_reasoning", ""):
+            message["reasoning_content"] = state.emitted_reasoning
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:29]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": backend_model or model_alias,
+            "choices": [{"index": 0, "message": message, "finish_reason": finish_reason or "stop"}],
+            "usage": state.usage,
+        }
+
     def _chat_usage(self, payload: dict[str, Any]) -> dict[str, int]:
         usage = payload.get("usage") or {}
         return {
@@ -423,15 +676,67 @@ class RouterService:
             "total_tokens": int(usage.get("total_tokens") or 0),
         }
 
-    def _stream_content_chunk(self, completion_id: str, created: int, model: str, chunk: str) -> str:
-        payload = {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model,
-            "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}],
-        }
-        return f"data: {json.dumps(payload)}\n\n"
+    def _chat_finish_reason(self, payload: dict[str, Any]) -> str:
+        finish_reason = ((payload.get("choices") or [{}])[0].get("finish_reason") or None)
+        return finish_reason if isinstance(finish_reason, str) and finish_reason else "stop"
+
+    def _chunk_has_finish_reason(self, payload: dict[str, Any]) -> bool:
+        for choice in payload.get("choices") or []:
+            if isinstance(choice, dict) and isinstance(choice.get("finish_reason"), str) and choice.get("finish_reason"):
+                return True
+        return False
+
+    def _chat_stream_payloads_from_event(
+        self,
+        completion_id: str,
+        created: int,
+        model: str,
+        event: ProviderChatStreamEvent,
+    ) -> list[dict[str, Any]]:
+        if event.raw_chunk:
+            payload = json.loads(json.dumps(event.raw_chunk))
+            payload.setdefault("id", completion_id)
+            payload.setdefault("object", "chat.completion.chunk")
+            payload.setdefault("created", created)
+            payload["model"] = model
+            for choice in payload.get("choices") or []:
+                if not isinstance(choice, dict):
+                    continue
+                delta = choice.get("delta")
+                if isinstance(delta, dict) and delta.get("role") == "assistant":
+                    delta.pop("role", None)
+            return [payload]
+
+        delta: dict[str, Any] = {}
+        if isinstance(event.content, str) and event.content:
+            delta["content"] = event.content
+        if isinstance(event.reasoning, str) and event.reasoning:
+            delta["reasoning_content"] = event.reasoning
+        if isinstance(event.tool_calls, list) and event.tool_calls:
+            delta["tool_calls"] = event.tool_calls
+        if not delta and event.usage:
+            return [
+                {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [],
+                    "usage": event.usage,
+                }
+            ]
+        if not delta and not event.finish_reason:
+            return []
+        return [
+            {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": event.finish_reason}],
+                **({"usage": event.usage} if event.usage else {}),
+            }
+        ]
 
     def _record_failure(
         self,
@@ -479,6 +784,36 @@ class RouterService:
                 continue
             if not isinstance(item, dict):
                 continue
+            item_type = item.get("type")
+            if item_type == "function_call":
+                function_name = str(item.get("name") or "").strip()
+                if not function_name:
+                    continue
+                arguments = item.get("arguments", "{}")
+                if not isinstance(arguments, str):
+                    arguments = json.dumps(arguments)
+                call_id = str(item.get("call_id") or f"call_{uuid.uuid4().hex[:24]}")
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": call_id,
+                                "call_id": call_id,
+                                "type": "function",
+                                "function": {"name": function_name, "arguments": arguments},
+                            }
+                        ],
+                    }
+                )
+                continue
+            if item_type == "function_call_output":
+                call_id = str(item.get("call_id") or "").strip()
+                if not call_id:
+                    continue
+                messages.append({"role": "tool", "tool_call_id": call_id, "content": str(item.get("output") or "")})
+                continue
             role = str(item.get("role", "user"))
             content = item.get("content", "")
             if isinstance(content, list):
@@ -494,26 +829,153 @@ class RouterService:
             messages.append({"role": role, "content": content})
         return messages
 
-    def _responses_payload(self, response_id: str, model: str, chat_payload: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "id": response_id,
-            "object": "response",
-            "status": "completed",
-            "created_at": int(time.time()),
-            "model": model,
-            "output": [
+    def _prepare_responses_request(self, request: ResponsesRequest) -> PreparedResponsesRequest:
+        if request.conversation and request.previous_response_id:
+            raise RouterServiceError(400, {"message": "Cannot use both 'conversation' and 'previous_response_id'."})
+        previous_response_id = request.previous_response_id
+        if request.conversation:
+            previous_response_id = self.state_store.get_conversation_response(request.conversation)
+
+        input_messages = self._responses_input_messages(request.input)
+        if not input_messages:
+            raise RouterServiceError(400, {"message": "No user message found in input."})
+
+        history: list[dict[str, Any]] = []
+        instructions = request.instructions
+        if previous_response_id:
+            stored = self.state_store.get_response(previous_response_id)
+            if stored is None:
+                raise RouterServiceError(404, {"message": f"Previous response not found: {previous_response_id}"})
+            history = list(stored.get("conversation_history", []))
+            if instructions is None:
+                instructions = stored.get("instructions")
+        history.extend(input_messages[:-1])
+        if request.truncation == "auto" and len(history) > 100:
+            history = history[-100:]
+        chat_messages: list[dict[str, Any]] = []
+        if instructions:
+            chat_messages.append({"role": "system", "content": instructions})
+        chat_messages.extend(history)
+        chat_messages.append(input_messages[-1])
+        passthrough = dict(request.model_extra or {})
+        max_output_tokens = passthrough.pop("max_output_tokens", None)
+        passthrough.pop("stream", None)
+        passthrough.pop("store", None)
+        chat_request = ChatCompletionRequest.model_validate(
+            {
+                "model": request.model,
+                "messages": chat_messages,
+                "max_tokens": max_output_tokens,
+                "timeout": request.timeout,
+                **passthrough,
+            }
+        )
+        return PreparedResponsesRequest(
+            chat_request=chat_request,
+            instructions=instructions,
+            conversation_history=[message for message in chat_messages if message.get("role") != "system"],
+            previous_response_id=previous_response_id,
+            request=request,
+        )
+
+    def _responses_payload(self, response_id: str, prepared: PreparedResponsesRequest, chat_payload: dict[str, Any]) -> dict[str, Any]:
+        output: list[dict[str, Any]] = []
+        message = ((chat_payload.get("choices") or [{}])[0].get("message") or {})
+        reasoning = message.get("reasoning_content") or message.get("reasoning")
+        if isinstance(reasoning, str) and reasoning:
+            output.append(
                 {
+                    "id": f"rs_{uuid.uuid4().hex[:24]}",
+                    "type": "reasoning",
+                    "summary": [{"type": "summary_text", "text": reasoning}],
+                    "content": [{"type": "reasoning_text", "text": reasoning}],
+                    "status": "completed",
+                }
+            )
+        assistant_text = self._assistant_text_from_payload(chat_payload)
+        if assistant_text:
+            output.append(
+                {
+                    "id": f"msg_{uuid.uuid4().hex[:24]}",
                     "type": "message",
                     "role": "assistant",
-                    "content": [{"type": "output_text", "text": self._assistant_text_from_payload(chat_payload)}],
+                    "status": "completed",
+                    "content": [{"type": "output_text", "text": assistant_text, "annotations": []}],
                 }
-            ],
+            )
+        for tool_call in message.get("tool_calls") or []:
+            if not isinstance(tool_call, dict):
+                continue
+            output.append(self._responses_function_call_item(tool_call, completed=True))
+        model_extra = prepared.request.model_extra or {}
+        return {
+            "id": response_id,
+            "created_at": int(time.time()),
+            "error": None,
+            "incomplete_details": None,
+            "instructions": prepared.instructions,
+            "model": prepared.request.model,
+            "object": "response",
+            "output": output,
+            "parallel_tool_calls": bool(model_extra.get("parallel_tool_calls", True)),
+            "tool_choice": model_extra.get("tool_choice") or "auto",
+            "tools": model_extra.get("tools") or [],
+            "previous_response_id": prepared.previous_response_id,
+            "status": "completed",
+            "text": {"format": {"type": "text"}},
+            "truncation": prepared.request.truncation,
             "usage": {
                 "input_tokens": int((chat_payload.get("usage") or {}).get("prompt_tokens") or (chat_payload.get("usage") or {}).get("input_tokens") or 0),
+                "input_tokens_details": {"cached_tokens": 0},
                 "output_tokens": int((chat_payload.get("usage") or {}).get("completion_tokens") or (chat_payload.get("usage") or {}).get("output_tokens") or 0),
+                "output_tokens_details": {"reasoning_tokens": 0},
                 "total_tokens": int((chat_payload.get("usage") or {}).get("total_tokens") or 0),
             },
         }
+
+    def _responses_response_stub(
+        self,
+        response_id: str,
+        prepared: PreparedResponsesRequest,
+        created_at: int,
+        output: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        model_extra = prepared.request.model_extra or {}
+        return {
+            "id": response_id,
+            "created_at": created_at,
+            "error": None,
+            "incomplete_details": None,
+            "instructions": prepared.instructions,
+            "model": prepared.request.model,
+            "object": "response",
+            "output": output,
+            "parallel_tool_calls": bool(model_extra.get("parallel_tool_calls", True)),
+            "tool_choice": model_extra.get("tool_choice") or "auto",
+            "tools": model_extra.get("tools") or [],
+            "previous_response_id": prepared.previous_response_id,
+            "status": "in_progress",
+            "text": {"format": {"type": "text"}},
+            "truncation": prepared.request.truncation,
+            "usage": None,
+        }
+
+    def _responses_function_call_item(self, tool_call: dict[str, Any], *, completed: bool = False) -> dict[str, Any]:
+        function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+        raw_id = str(tool_call.get("id") or "")
+        call_id = str(tool_call.get("call_id") or raw_id or f"call_{uuid.uuid4().hex[:24]}")
+        item_id = raw_id if raw_id.startswith("fc_") else f"fc_{call_id.removeprefix('call_')}"
+        return {
+            "id": item_id,
+            "type": "function_call",
+            "call_id": call_id,
+            "name": str(function.get("name") or ""),
+            "arguments": str(function.get("arguments") or ""),
+            "status": "completed" if completed else "in_progress",
+        }
+
+    def _sse_event(self, event_type: str, payload: dict[str, Any]) -> str:
+        return f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
 
     def refresh_inventory(self, *, reason: str) -> list[ProviderModel]:
         refreshed: list[ProviderModel] = []

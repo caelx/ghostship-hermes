@@ -7,7 +7,7 @@ Current scope:
 - exposes Hermes-style health endpoints at `GET /health` and `GET /v1/health`
 - exposes stable logical aliases at `GET /v1/models`
 - accepts `POST /v1/chat/completions` with OpenAI-style JSON responses and SSE streaming
-- accepts Hermes-compatible `POST /v1/responses` plus `GET /v1/responses/{id}` and `DELETE /v1/responses/{id}`
+- accepts Hermes-compatible `POST /v1/responses` with sync responses, streamed `responses.stream(...)`, and stored `GET /v1/responses/{id}` / `DELETE /v1/responses/{id}`
 - persists inventory, route health, provider health, rankings, overrides, cooldowns, and recent events in SQLite
 - persists stored `responses` objects and lightweight chat session continuity state in SQLite
 - refreshes inventory on startup and on a background interval
@@ -70,7 +70,9 @@ Optional router-specific inputs:
 Compatibility note:
 
 - `chat/completions` streaming is true SSE
-- `responses` currently implements Hermes-compatible request, storage, chaining, and retrieval semantics
+- `chat/completions` streaming now preserves usage chunks plus reasoning and tool-call deltas when the backend provider emits them
+- `responses` now supports Hermes/OpenAI SDK streaming with `response.created`, `response.output_item.added`, `response.output_text.delta`, `response.function_call_arguments.delta`, and `response.completed`
+- `responses` stores and returns richer response objects with message, reasoning, and function-call output items
 - OpenCode Zen mixed endpoint families still normalize back to the local `chat/completions` surface before the router builds the `responses` envelope
 
 Standalone local runs default router state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router`. The Hermes image overrides that to `/home/hermes/.local/state/ghostship-hermes/router`.

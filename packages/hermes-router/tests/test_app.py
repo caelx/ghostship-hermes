@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from hermes_router.app import create_app
 from hermes_router.config import AliasConfig, RouterConfig
 from hermes_router.models import ChatCompletionRequest
-from hermes_router.providers.base import NormalizedProviderError, ProviderChatResult, ProviderModel
+from hermes_router.providers.base import NormalizedProviderError, ProviderChatResult, ProviderChatStreamEvent, ProviderModel
 from hermes_router.service import RouterService
 from hermes_router.state import SqliteStateStore
 
@@ -224,12 +224,49 @@ class DummyProvider:
             usage=result.payload.get("usage") if isinstance(result.payload.get("usage"), dict) else None,
             final_payload=result.payload,
         )
-        content = ((result.payload.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        message = ((result.payload.get("choices") or [{}])[0].get("message") or {})
+        content = message.get("content") or ""
+        reasoning = message.get("reasoning_content") or message.get("reasoning")
+        tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else None
         state.emitted_text = str(content)
+        if isinstance(reasoning, str):
+            state.emitted_reasoning = reasoning
 
         def chunks():
-            if content:
-                yield str(content)
+            if content or reasoning or tool_calls:
+                delta: dict[str, Any] = {}
+                if content:
+                    delta["content"] = str(content)
+                if isinstance(reasoning, str) and reasoning:
+                    delta["reasoning_content"] = reasoning
+                if tool_calls:
+                    delta["tool_calls"] = tool_calls
+                yield ProviderChatStreamEvent(
+                    content=str(content) if content else None,
+                    reasoning=reasoning if isinstance(reasoning, str) and reasoning else None,
+                    tool_calls=tool_calls,
+                    finish_reason=((result.payload.get("choices") or [{}])[0].get("finish_reason") or None),
+                    usage=state.usage,
+                    raw_chunk={
+                        "id": result.payload.get("id") or "chatcmpl-demo",
+                        "object": "chat.completion.chunk",
+                        "created": 0,
+                        "model": backend_model,
+                        "choices": [{"index": 0, "delta": delta, "finish_reason": ((result.payload.get("choices") or [{}])[0].get("finish_reason") or None)}],
+                    },
+                )
+            if state.usage:
+                yield ProviderChatStreamEvent(
+                    usage=state.usage,
+                    raw_chunk={
+                        "id": result.payload.get("id") or "chatcmpl-demo",
+                        "object": "chat.completion.chunk",
+                        "created": 0,
+                        "model": backend_model,
+                        "choices": [],
+                        "usage": state.usage,
+                    },
+                )
 
         return ProviderChatStreamResult(chunks=chunks(), provider=self.name, backend_model=backend_model, state=state)
 
@@ -578,6 +615,54 @@ def test_chat_completion_stream_returns_sse_and_session_header(tmp_path: Path) -
         assert "ok" in response.text
 
 
+def test_chat_completion_stream_preserves_tool_calls_and_reasoning(tmp_path: Path) -> None:
+    class ToolProvider(DummyProvider):
+        def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
+            self.calls.append(backend_model)
+            return ProviderChatResult(
+                payload={
+                    "id": "chatcmpl-tool",
+                    "object": "chat.completion",
+                    "model": backend_model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "reasoning_content": "thinking",
+                                "tool_calls": [
+                                    {
+                                        "id": "call_demo",
+                                        "type": "function",
+                                        "function": {"name": "terminal", "arguments": "{\"cmd\":\"pwd\"}"},
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+                },
+                provider=self.name,
+                backend_model=backend_model,
+                first_text_latency_ms=self.first_text_latency_ms,
+            )
+
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": ToolProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={"model": "coding", "messages": [{"role": "user", "content": "use a tool"}], "stream": True},
+        )
+        assert response.status_code == 200
+        assert "\"reasoning_content\": \"thinking\"" in response.text
+        assert "\"tool_calls\"" in response.text
+        assert "\"finish_reason\": \"tool_calls\"" in response.text
+        assert "\"usage\"" in response.text
+
+
 def test_chat_completion_session_header_reuses_stored_history(tmp_path: Path) -> None:
     provider = DummyProvider("openrouter")
     config = make_config(tmp_path)
@@ -631,6 +716,88 @@ def test_responses_create_get_delete_and_chain_previous_response(tmp_path: Path)
         assert deleted.json()["deleted"] is True
         missing = client.get(f"/v1/responses/{response_id}")
         assert missing.status_code == 404
+
+
+def test_responses_stream_returns_openai_events_and_completed_payload(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.post(
+            "/v1/responses",
+            json={
+                "input": "Hello",
+                "stream": True,
+                "tools": [{"type": "function", "name": "terminal", "description": "run", "parameters": {"type": "object"}}],
+                "tool_choice": "auto",
+                "parallel_tool_calls": True,
+            },
+        )
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+        assert "event: response.created" in response.text
+        assert "event: response.output_item.added" in response.text
+        assert "event: response.content_part.added" in response.text
+        assert "event: response.output_text.delta" in response.text
+        assert "event: response.completed" in response.text
+        completed_line = [line for line in response.text.splitlines() if line.startswith("data: {\"response\":")][-1]
+        payload = json.loads(completed_line[6:])
+        assert payload["response"]["parallel_tool_calls"] is True
+        assert payload["response"]["tool_choice"] == "auto"
+        assert payload["response"]["tools"][0]["name"] == "terminal"
+        assert payload["response"]["output"][0]["type"] == "message"
+
+
+def test_responses_stream_preserves_function_call_items(tmp_path: Path) -> None:
+    class ToolProvider(DummyProvider):
+        def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
+            self.calls.append(backend_model)
+            return ProviderChatResult(
+                payload={
+                    "id": "chatcmpl-tool",
+                    "object": "chat.completion",
+                    "model": backend_model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call_demo",
+                                        "type": "function",
+                                        "function": {"name": "terminal", "arguments": "{\"cmd\":\"pwd\"}"},
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+                },
+                provider=self.name,
+                backend_model=backend_model,
+                first_text_latency_ms=self.first_text_latency_ms,
+            )
+
+    config = make_config(tmp_path)
+    service = RouterService(config, providers={"openrouter": ToolProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.post(
+            "/v1/responses",
+            json={
+                "input": "use a tool",
+                "stream": True,
+                "tools": [{"type": "function", "name": "terminal", "description": "run", "parameters": {"type": "object"}}],
+            },
+        )
+        assert response.status_code == 200
+        assert "event: response.function_call_arguments.delta" in response.text
+        completed_line = [line for line in response.text.splitlines() if line.startswith("data: {\"response\":")][-1]
+        payload = json.loads(completed_line[6:])
+        function_item = next(item for item in payload["response"]["output"] if item["type"] == "function_call")
+        assert function_item["name"] == "terminal"
+        assert function_item["call_id"] == "call_demo"
 
 
 def test_responses_conversation_name_tracks_latest_response(tmp_path: Path) -> None:
