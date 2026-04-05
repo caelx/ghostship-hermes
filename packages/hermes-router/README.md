@@ -30,6 +30,8 @@ Optional router-specific inputs:
 
 - `GHOSTSHIP_ROUTER_HOST`
 - `GHOSTSHIP_ROUTER_PORT`
+- `GHOSTSHIP_ROUTER_API_KEY`
+- `GHOSTSHIP_ROUTER_CORS_ORIGINS`
 - `GHOSTSHIP_ROUTER_STATE_DIR`
 - `GHOSTSHIP_ROUTER_DB_PATH`
 - `GHOSTSHIP_ROUTER_REFRESH_INTERVAL`
@@ -38,7 +40,16 @@ Optional router-specific inputs:
 - `GHOSTSHIP_ROUTER_CODING_MODELS`
 - `GHOSTSHIP_ROUTER_HEAVYWEIGHT_MODELS`
 
+Hermes API-server-compatible aliases are also accepted:
+
+- `API_SERVER_HOST`
+- `API_SERVER_PORT`
+- `API_SERVER_KEY`
+- `API_SERVER_CORS_ORIGINS`
+
 Standalone local runs default router state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router`. The Hermes image overrides that to `/home/hermes/.local/state/ghostship-hermes/router`.
+
+In the Hermes image, the router is managed by `ghostship-hermes-router.service` and listens on `127.0.0.1:8788` by default.
 
 ## Local Development
 

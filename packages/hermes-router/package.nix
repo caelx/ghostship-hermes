@@ -1,7 +1,7 @@
 { python311Packages, ghostshipCliContract }:
 python311Packages.buildPythonApplication {
   pname = "ghostship-hermes-router";
-  version = "0.1.0";
+  version = "0.1.1";
   pyproject = true;
   src = ./.;
 

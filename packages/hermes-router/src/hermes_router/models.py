@@ -39,6 +39,11 @@ class HealthResponse(BaseModel):
     ok: bool
 
 
+class ApiHealthResponse(BaseModel):
+    status: str
+    platform: str = "ghostship-hermes-router"
+
+
 class ReadinessResponse(BaseModel):
     ok: bool
     providers: list[str]

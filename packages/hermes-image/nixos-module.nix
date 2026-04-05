@@ -127,6 +127,8 @@ let
     GHOSTSHIP_HERMES_DEFAULT_PROFILE = defaultProfile;
     GHOSTSHIP_ROUTER_HOST = "127.0.0.1";
     GHOSTSHIP_ROUTER_PORT = "8788";
+    API_SERVER_HOST = "127.0.0.1";
+    API_SERVER_PORT = "8788";
     GHOSTSHIP_ROUTER_STATE_DIR = "/home/hermes/.local/state/ghostship-hermes/router";
     GHOSTSHIP_ROUTER_DB_PATH = "/home/hermes/.local/state/ghostship-hermes/router/router.db";
     GHOSTSHIP_ROUTER_REFRESH_INTERVAL = "300";
@@ -306,6 +308,10 @@ in
         "OPENROUTER_TITLE"
         "OPENCODE_API_KEY"
         "OPENCODE_BASE_URL"
+        "GHOSTSHIP_ROUTER_API_KEY"
+        "GHOSTSHIP_ROUTER_CORS_ORIGINS"
+        "API_SERVER_KEY"
+        "API_SERVER_CORS_ORIGINS"
         "GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"
       ];
       ExecStart = "${ghostshipHermesRouter}/bin/ghostship-hermes-router";
