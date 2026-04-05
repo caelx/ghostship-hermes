@@ -148,6 +148,62 @@ function renderHome() {
       });
 
       card.append(top, grid);
+
+      const models = provider.models || [];
+      if (models.length) {
+        const modelsWrap = document.createElement("section");
+        modelsWrap.className = "provider-models";
+
+        const label = document.createElement("span");
+        label.className = "subsection-label";
+        label.textContent = "Configured models";
+        modelsWrap.appendChild(label);
+
+        const subcards = document.createElement("div");
+        subcards.className = "model-subcards";
+
+        models.forEach((model) => {
+          const modelCard = document.createElement("article");
+          modelCard.className = "model-subcard";
+
+          const modelTop = document.createElement("div");
+          modelTop.className = "card-topline";
+
+          const modelName = document.createElement("strong");
+          modelName.className = "card-title model-title";
+          modelName.textContent = model.name;
+
+          const modelFlags = document.createElement("div");
+          modelFlags.className = "meta-row";
+          if (model.vendor) {
+            modelFlags.appendChild(makePill(model.vendor));
+          }
+          if ((model.scopes || []).includes("runtime")) {
+            modelFlags.appendChild(makePill("runtime", true));
+          }
+          modelTop.append(modelName, modelFlags);
+
+          modelCard.appendChild(modelTop);
+
+          const profileRow = document.createElement("div");
+          profileRow.className = "meta-row";
+          const linkedProfiles = model.profiles || [];
+          if (linkedProfiles.length) {
+            linkedProfiles.forEach((profileName) => {
+              profileRow.appendChild(makePill(profileName));
+            });
+          } else {
+            profileRow.appendChild(makePill("global"));
+          }
+
+          modelCard.appendChild(profileRow);
+          subcards.appendChild(modelCard);
+        });
+
+        modelsWrap.appendChild(subcards);
+        card.appendChild(modelsWrap);
+      }
+
       providerListRoot.appendChild(card);
     });
   }
@@ -167,7 +223,7 @@ function renderHome() {
     const flags = document.createElement("div");
     flags.className = "meta-row";
     flags.appendChild(makePill(profile.is_default ? "default" : "profile", profile.is_default));
-    flags.appendChild(makePill(formatValue(profile.provider, "provider unknown")));
+    flags.appendChild(makePill(formatValue(profile.model_vendor, "vendor unknown")));
     flags.appendChild(makePill(formatValue(profile.model, "model unset")));
     top.append(name, flags);
 

@@ -207,18 +207,15 @@ def read_model_default(path: Path) -> str | None:
     return None
 
 
-def model_provider_name(model_name: str | None) -> str | None:
+def model_vendor_name(model_name: str | None) -> str | None:
     if not model_name or "/" not in model_name:
         return None
-    provider = model_name.split("/", 1)[0].strip().lower()
-    return provider or None
+    vendor = model_name.split("/", 1)[0].strip().lower()
+    return vendor or None
 
 
-def provider_names_from_env(env_payload: dict[str, str]) -> set[str]:
-    providers: set[str] = set()
-    if any(env_payload.get(key) for key in ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "OPENROUTER_HTTP_REFERER", "OPENROUTER_TITLE")):
-        providers.add("openrouter")
-    return providers
+def has_openrouter_config(env_payload: dict[str, str]) -> bool:
+    return any(env_payload.get(key) for key in ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "OPENROUTER_HTTP_REFERER", "OPENROUTER_TITLE"))
 
 
 def current_environment_payload() -> dict[str, Any]:
@@ -238,21 +235,36 @@ def current_environment_payload() -> dict[str, Any]:
     }
     root_env = parse_env_file(root_env_path) or runtime_env
     root_model = read_model_default(root_config_path) or os.environ.get("OPENROUTER_TEST_MODEL")
-    provider_names = provider_names_from_env(root_env)
-    if root_model:
-        provider_name = model_provider_name(root_model)
-        if provider_name:
-            provider_names.add(provider_name)
+    openrouter_env = root_env | runtime_env
+    has_openrouter = has_openrouter_config(openrouter_env)
+    model_entries: dict[str, dict[str, Any]] = {}
+
+    def register_model(model_name: str | None, *, scope: str, profile_name: str | None = None) -> None:
+        if not model_name:
+            return
+        entry = model_entries.setdefault(
+            model_name,
+            {
+                "name": model_name,
+                "vendor": model_vendor_name(model_name),
+                "scopes": [],
+                "profiles": [],
+            },
+        )
+        if scope not in entry["scopes"]:
+            entry["scopes"].append(scope)
+        if profile_name and profile_name not in entry["profiles"]:
+            entry["profiles"].append(profile_name)
+
+    register_model(root_model, scope="runtime")
 
     profiles = []
     for name in MANAGED_PROFILES:
         profile_root = profiles_root / name
         profile_env = parse_env_file(profile_root / ".env")
         profile_model = read_model_default(profile_root / "config.yaml") or root_model
-        profile_provider = model_provider_name(profile_model)
-        provider_names.update(provider_names_from_env(profile_env))
-        if profile_provider:
-            provider_names.add(profile_provider)
+        has_openrouter = has_openrouter or has_openrouter_config(profile_env)
+        register_model(profile_model, scope="profile", profile_name=name)
 
         profiles.append(
             {
@@ -261,36 +273,23 @@ def current_environment_payload() -> dict[str, Any]:
                 "service": f"ghostship-hermes-profile-{name}.service",
                 "is_default": name == DEFAULT_PROFILE,
                 "model": profile_model,
-                "provider": profile_provider,
+                "model_vendor": model_vendor_name(profile_model),
                 "has_env": safe_path_exists(profile_root / ".env"),
                 "has_config": safe_path_exists(profile_root / "config.yaml"),
             }
         )
 
     providers = []
-    for name in sorted(provider_names):
-        if name == "openrouter":
-            openrouter_env = root_env | runtime_env
-            providers.append(
-                {
-                    "name": "openrouter",
-                    "configured": bool(openrouter_env.get("OPENROUTER_API_KEY")),
-                    "base_url": openrouter_env.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1",
-                    "has_api_key": bool(openrouter_env.get("OPENROUTER_API_KEY")),
-                    "has_referer": bool(openrouter_env.get("OPENROUTER_HTTP_REFERER")),
-                    "title": openrouter_env.get("OPENROUTER_TITLE") or None,
-                }
-            )
-            continue
-
+    if has_openrouter:
         providers.append(
             {
-                "name": name,
-                "configured": True,
-                "base_url": None,
-                "has_api_key": False,
-                "has_referer": False,
-                "title": None,
+                "name": "openrouter",
+                "configured": bool(openrouter_env.get("OPENROUTER_API_KEY")),
+                "base_url": openrouter_env.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1",
+                "has_api_key": bool(openrouter_env.get("OPENROUTER_API_KEY")),
+                "has_referer": bool(openrouter_env.get("OPENROUTER_HTTP_REFERER")),
+                "title": openrouter_env.get("OPENROUTER_TITLE") or None,
+                "models": sorted(model_entries.values(), key=lambda item: item["name"]),
             }
         )
 

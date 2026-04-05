@@ -15,3 +15,4 @@ All notable changes to this project will be documented in this file.
 - Updated the image tests and validation flow to prove the final runtime contract, including gateway boot, `/home/hermes` persistence, multi-profile layout, multi-terminal dashboard behavior, persisted `/nix` installs, and later-installed tool state persistence across container replacement.
 - Fixed the dashboard terminal websocket path so tab switching keeps the live `ttyd` session attached instead of falling into ttyd's reconnect overlay.
 - Reworked the dashboard home state into a runtime environment console with live profile and provider metadata, home navigation on the Hermes logo, and a flatter Hermes-site-inspired dark UI treatment.
+- Collapsed model namespaces under their transport provider in the dashboard, rendered configured models as provider subcards, renamed the home header to `ghostship-hermes`, and made the floating terminal close button a clearer red destructive control.
