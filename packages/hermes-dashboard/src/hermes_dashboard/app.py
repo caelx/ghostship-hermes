@@ -301,7 +301,7 @@ def fetch_router_enrichment(base_url: str, env_payload: dict[str, str]) -> dict[
                         }
                     )
             else:
-                for alias_name in ("auxiliary", "coding", "vision", "tts"):
+                for alias_name in ("auxiliary", "coding", "agentic", "vision", "tts"):
                     route_response = client.get(f"{router_base}/debug/routes/{alias_name}")
                     if route_response.status_code != 200:
                         continue

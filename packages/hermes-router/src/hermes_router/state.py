@@ -137,13 +137,32 @@ class SqliteStateStore(StateStore):
     def __init__(self, db_path: Path, *, rolling_window_seconds: float = 3600.0):
         self.db_path = db_path
         self.rolling_window_seconds = max(rolling_window_seconds, 1.0)
+        self._model_state_cache: dict[str, dict[str, Any]] | None = None
+        self._provider_state_cache: dict[str, dict[str, Any]] | None = None
+        self._rankings_cache: dict[str, dict[str, Any]] | None = None
+        self._overrides_cache: dict[str, Any] | None = None
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.db_path.touch(exist_ok=True)
+        except OSError:
+            pass
+        connection = sqlite3.connect(str(self.db_path), timeout=30.0)
         connection.row_factory = sqlite3.Row
         return connection
+
+    def _invalidate_read_caches(self, *cache_names: str) -> None:
+        names = cache_names or (
+            "_model_state_cache",
+            "_provider_state_cache",
+            "_rankings_cache",
+            "_overrides_cache",
+        )
+        for name in names:
+            setattr(self, name, None)
 
     def _init_db(self) -> None:
         with self._connect() as connection:
@@ -373,6 +392,7 @@ class SqliteStateStore(StateStore):
                     for model in models
                 ],
             )
+        self._invalidate_read_caches()
 
     def save_classifications(self, classifications: dict[str, tuple[str, ...]], *, source: str) -> None:
         now = time.time()
@@ -391,6 +411,7 @@ class SqliteStateStore(StateStore):
                     for model_id, tags in classifications.items()
                 ],
             )
+        self._invalidate_read_caches("_rankings_cache")
 
     def save_rankings(
         self,
@@ -434,6 +455,7 @@ class SqliteStateStore(StateStore):
                     for ranking in rankings.values()
                 ],
             )
+        self._invalidate_read_caches("_rankings_cache")
 
     def record_attempt(self, event: RouteEvent) -> None:
         with self._connect() as connection:
@@ -458,6 +480,7 @@ class SqliteStateStore(StateStore):
                     event.created_at,
                 ),
             )
+        self._invalidate_read_caches("_model_state_cache", "_provider_state_cache")
 
     def apply_success(self, provider_name: str, backend_model: str, *, latency_ms: float | None, first_text_latency_ms: float | None) -> None:
         now = time.time()
@@ -715,6 +738,7 @@ class SqliteStateStore(StateStore):
                     now,
                 ),
             )
+        self._invalidate_read_caches("_model_state_cache", "_provider_state_cache")
 
     def record_refresh(
         self,
@@ -815,77 +839,86 @@ class SqliteStateStore(StateStore):
                     now,
                 ),
             )
+        self._invalidate_read_caches("_provider_state_cache")
 
     def get_model_state(self) -> dict[str, dict[str, Any]]:
-        with self._connect() as connection:
-            rows = connection.execute("SELECT * FROM model_state").fetchall()
-        return {
-            f"{row['provider_name']}::{row['backend_model']}": dict(row)
-            for row in rows
-        }
+        if self._model_state_cache is None:
+            with self._connect() as connection:
+                rows = connection.execute("SELECT * FROM model_state").fetchall()
+            self._model_state_cache = {
+                f"{row['provider_name']}::{row['backend_model']}": dict(row)
+                for row in rows
+            }
+        return self._model_state_cache
 
     def get_provider_state(self) -> dict[str, dict[str, Any]]:
-        with self._connect() as connection:
-            rows = connection.execute("SELECT * FROM provider_state").fetchall()
-        return {
-            str(row["provider_name"]): dict(row)
-            for row in rows
-        }
+        if self._provider_state_cache is None:
+            with self._connect() as connection:
+                rows = connection.execute("SELECT * FROM provider_state").fetchall()
+            self._provider_state_cache = {
+                str(row["provider_name"]): dict(row)
+                for row in rows
+            }
+        return self._provider_state_cache
 
     def get_rankings(self) -> dict[str, dict[str, Any]]:
-        with self._connect() as connection:
-            rows = connection.execute("SELECT * FROM model_rankings").fetchall()
-        rankings: dict[str, dict[str, Any]] = {}
-        for row in rows:
-            key = f"{row['provider_name']}::{row['backend_model']}"
-            rankings[key] = {
-                "provider_name": row["provider_name"],
-                "backend_model": row["backend_model"],
-                "alias_scores": _json_loads(row["alias_scores_json"], default={}),
-                "rerank_scores": _json_loads(row["rerank_scores_json"], default={}),
-                "reason": row["reason"],
-                "confidence": row["confidence"],
-                "source": row["source"],
-                "worker_provider_name": row["worker_provider_name"],
-                "worker_backend_model": row["worker_backend_model"],
-                "updated_at": row["updated_at"],
-            }
-        return rankings
-
-    def get_overrides(self) -> dict[str, Any]:
-        with self._connect() as connection:
-            model_rows = connection.execute("SELECT * FROM model_overrides ORDER BY provider_name, backend_model").fetchall()
-            provider_rows = connection.execute("SELECT * FROM provider_overrides ORDER BY provider_name").fetchall()
-            alias_rows = connection.execute("SELECT * FROM alias_pins ORDER BY alias").fetchall()
-        return {
-            "models": [
-                {
+        if self._rankings_cache is None:
+            with self._connect() as connection:
+                rows = connection.execute("SELECT * FROM model_rankings").fetchall()
+            rankings: dict[str, dict[str, Any]] = {}
+            for row in rows:
+                key = f"{row['provider_name']}::{row['backend_model']}"
+                rankings[key] = {
                     "provider_name": row["provider_name"],
                     "backend_model": row["backend_model"],
-                    "enabled": None if row["enabled"] is None else bool(row["enabled"]),
-                    "weight": row["weight"],
+                    "alias_scores": _json_loads(row["alias_scores_json"], default={}),
+                    "rerank_scores": _json_loads(row["rerank_scores_json"], default={}),
+                    "reason": row["reason"],
+                    "confidence": row["confidence"],
+                    "source": row["source"],
+                    "worker_provider_name": row["worker_provider_name"],
+                    "worker_backend_model": row["worker_backend_model"],
                     "updated_at": row["updated_at"],
                 }
-                for row in model_rows
-            ],
-            "providers": [
-                {
-                    "provider_name": row["provider_name"],
-                    "enabled": None if row["enabled"] is None else bool(row["enabled"]),
-                    "weight": row["weight"],
-                    "updated_at": row["updated_at"],
-                }
-                for row in provider_rows
-            ],
-            "alias_pins": [
-                {
-                    "alias": row["alias"],
-                    "models": tuple(_json_loads(row["models_json"], default=[])),
-                    "updated_at": row["updated_at"],
-                }
-                for row in alias_rows
-            ],
-        }
+            self._rankings_cache = rankings
+        return self._rankings_cache
+
+    def get_overrides(self) -> dict[str, Any]:
+        if self._overrides_cache is None:
+            with self._connect() as connection:
+                model_rows = connection.execute("SELECT * FROM model_overrides ORDER BY provider_name, backend_model").fetchall()
+                provider_rows = connection.execute("SELECT * FROM provider_overrides ORDER BY provider_name").fetchall()
+                alias_rows = connection.execute("SELECT * FROM alias_pins ORDER BY alias").fetchall()
+            self._overrides_cache = {
+                "models": [
+                    {
+                        "provider_name": row["provider_name"],
+                        "backend_model": row["backend_model"],
+                        "enabled": None if row["enabled"] is None else bool(row["enabled"]),
+                        "weight": row["weight"],
+                        "updated_at": row["updated_at"],
+                    }
+                    for row in model_rows
+                ],
+                "providers": [
+                    {
+                        "provider_name": row["provider_name"],
+                        "enabled": None if row["enabled"] is None else bool(row["enabled"]),
+                        "weight": row["weight"],
+                        "updated_at": row["updated_at"],
+                    }
+                    for row in provider_rows
+                ],
+                "alias_pins": [
+                    {
+                        "alias": row["alias"],
+                        "models": tuple(_json_loads(row["models_json"], default=[])),
+                        "updated_at": row["updated_at"],
+                    }
+                    for row in alias_rows
+                ],
+            }
+        return self._overrides_cache
 
     def upsert_model_override(self, provider_name: str, backend_model: str, *, enabled: bool | None = None, weight: float | None = None) -> None:
         now = time.time()
@@ -915,6 +948,7 @@ class SqliteStateStore(StateStore):
                     now,
                 ),
             )
+        self._invalidate_read_caches("_overrides_cache")
 
     def upsert_provider_override(self, provider_name: str, *, enabled: bool | None = None, weight: float | None = None) -> None:
         now = time.time()
@@ -943,6 +977,7 @@ class SqliteStateStore(StateStore):
                     now,
                 ),
             )
+        self._invalidate_read_caches("_overrides_cache")
 
     def upsert_alias_pin(self, alias: str, model_ids: tuple[str, ...]) -> None:
         now = time.time()
@@ -957,6 +992,7 @@ class SqliteStateStore(StateStore):
                 """,
                 (alias, json.dumps(list(model_ids)), now),
             )
+        self._invalidate_read_caches("_overrides_cache")
 
     def set_provider_cooldown(self, provider_name: str, *, cooldown_until: float, category: str, details: Any = None) -> None:
         now = time.time()
@@ -1022,6 +1058,7 @@ class SqliteStateStore(StateStore):
                     now,
                 ),
             )
+        self._invalidate_read_caches("_provider_state_cache")
 
     def put_response(self, response_id: str, payload: dict[str, Any], *, conversation_history: list[dict[str, Any]], instructions: str | None) -> None:
         now = time.time()

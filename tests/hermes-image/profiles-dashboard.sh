@@ -135,16 +135,16 @@ wait_for_router_ready() {
 
 assert_router_inventory() {
   local container_name="$1"
-  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"vision\") and index(\"tts\")' >/dev/null"
+  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"agentic\") and index(\"vision\") and index(\"tts\")' >/dev/null"
 }
 
 assert_free_router_buckets() {
   local container_name="$1"
   run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '
-    [.data[] | select(.id == "auxiliary" or .id == "coding" or .id == "vision" or .id == "tts")]
-    | length == 4
-    and all(.[]; .metadata.candidate_count > 0)
+    [.data[] | select(.id == \"auxiliary\" or .id == \"coding\" or .id == \"agentic\" or .id == \"vision\" or .id == \"tts\")]
+    | length == 5
     and all(.[]; all(.metadata.candidates[]; .is_free == true))
+    and all(.[]; if .id == \"tts\" then true else .metadata.candidate_count > 0 end)
   ' >/dev/null"
 }
 

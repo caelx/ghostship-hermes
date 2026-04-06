@@ -19,10 +19,10 @@ Current scope:
 - enriches OpenCode Zen inventory with matched public OpenRouter metadata when normalized ids line up closely enough
 - routes and fails over between concrete backend models instead of alias-level buckets
 - keeps paid models in inventory and debug state, but only free models can become route candidates
-- if persisted inventory exists, startup reuses it immediately; otherwise the router stays unready until the first background discovery pass classifies free models into `auxiliary`, `coding`, `vision`, and `tts`
+- if persisted inventory exists, startup reuses it immediately; otherwise the router stays unready until the first background discovery pass classifies free models into `auxiliary`, `coding`, `agentic`, `vision`, and `tts`
 - dynamic bucketing prefers an OpenCode Zen free text worker when available and falls back to OpenRouter when Zen cannot supply a usable worker
-- when provider metadata exposes capabilities, `coding` and `auxiliary` candidates must support tool calling with text-only outputs, `vision` candidates must accept image or video input with text output, and `tts` candidates must expose speech-style audio output while excluding music-generation models such as Lyria
-- coding candidates also get a strong family prior based on repo-maintained benchmark guidance, newer models get a meaningful recency lift after capability filtering, and larger models get an extra parameter-count bonus with a heavier weight for `vision`
+- when provider metadata exposes capabilities, `coding`, `agentic`, and `auxiliary` candidates must support tool calling with text-only outputs, `vision` candidates must accept image or video input with text output, and `tts` candidates must expose speech-style audio output while excluding music-generation models such as Lyria
+- coding, agentic, and auxiliary candidates all get alias-specific family orderings based on repo-maintained benchmark guidance, then receive relative rank bonuses only among families that are actually present; newer models get a strong recency lift after capability filtering; exact id/name family matches beat description-only matches; `coding`, `agentic`, and `vision` add only a modest global size-rank bonus and only penalize smaller variants when a larger sibling exists in the same family or inferred subfamily, while `auxiliary` intentionally prefers smaller helper models
 - preferred-model pins may use `openrouter/` or `opencode/` prefixes in config, but backend dispatch must normalize them back to the provider's real model id before routing
 - supports OpenCode Zen mixed endpoint families and normalizes them back to local `chat/completions`
 - records total latency and best-effort first-text latency per backend model

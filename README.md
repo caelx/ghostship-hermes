@@ -41,7 +41,7 @@ Removed from the default image:
 - `skills`
 - `bws`
 - `feed`
-- repo-managed skill seeding
+- repo-managed default skill seeding
 - honcho compatibility wiring
 - profile reconciler and persistent per-profile terminals
 - app/update timers for mutable workstation tooling
@@ -76,6 +76,7 @@ Inside the running container:
 - `/home/hermes/.hermes` is the managed Hermes service state written by the upstream NixOS module
 - named profiles live under `/home/hermes/.hermes/profiles/operations` and `/home/hermes/.hermes/profiles/coder`
 - `/workspace` remains a separate persisted work directory and is not folded into the home facade
+- optional shared skills can be staged under `/workspace/skills/shared/<skill>/...` and optional profile skills under `/workspace/skills/profiles/<profile>/<skill>/...`
 
 This layout is important:
 
@@ -94,7 +95,7 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-bootstrap.service`
-  is a repo-specific NixOS oneshot that reconciles the approved `operations` and `coder` profiles after the managed Hermes config exists, writes their `.env` files from the runtime provider env, assigns the approved router aliases, and sets the sticky default profile to `operations`
+  is a repo-specific NixOS oneshot that reconciles the approved `operations` and `coder` profiles after the managed Hermes config exists, writes their `.env` files from the runtime provider env, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, assigns the approved router aliases, and sets the sticky default profile to `operations`
 - `ghostship-hermes-profile-operations.service`
   keeps the `operations` gateway running with `hermes -p operations gateway run --replace`
 - `ghostship-hermes-profile-coder.service`
@@ -194,7 +195,7 @@ The image now includes a standalone local router service:
 
 - listen address: `127.0.0.1:8788`
 - systemd unit: `ghostship-hermes-router.service`
-- model aliases: `auxiliary`, `coding`, `vision`, `tts`
+- model aliases: `auxiliary`, `coding`, `agentic`, `vision`, `tts`
 - Hermes-compatible health endpoints: `GET /health`, `GET /v1/health`
 - router health endpoints: `GET /healthz`, `GET /readyz`
 - primary OpenAI-style endpoints: `GET /v1/models`, `POST /v1/chat/completions`, `POST /v1/responses`, `GET /v1/responses/{id}`, `DELETE /v1/responses/{id}`
@@ -208,9 +209,9 @@ The image now includes a standalone local router service:
 - routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, durable overrides, stored `responses`, and lightweight chat session continuity
 - startup behavior: the router serves the last persisted inventory and rankings immediately when they exist; otherwise it stays unready until the first background discovery pass completes
 - ranking worker: a healthy free OpenCode Zen text model is preferred for coarse ranking and selective reranking outside the request hot path, with OpenRouter fallback
-- routing filter: when provider metadata exposes modalities and supported parameters, `coding` and `auxiliary` require tool calling with text output, `vision` requires image or video input with text output, and `tts` requires speech-style audio output while excluding music-generation models such as Lyria
-- recency bias: newer models get a meaningful score lift after free-only and capability filters, while coding-family priors still dominate coding selection
-- parameter bias: larger parameter-count models get an extra size bonus, with a heavier weight on `vision` so larger Gemma-class multimodal models rise above smaller ones
+- routing filter: when provider metadata exposes modalities and supported parameters, `coding`, `agentic`, and `auxiliary` require tool calling with text output, `vision` requires image or video input with text output, and `tts` requires speech-style audio output while excluding music-generation models such as Lyria
+- recency bias: newer models get a strong score lift after free-only and capability filters, but alias-specific family preference now comes from relative rank bonuses among the families that are actually present, with exact id/name family matches beating description-only hints
+- size bias: `coding`, `agentic`, and `vision` apply a modest global size-rank bonus for models with parsed parameter counts, and only apply a smaller-model penalty when a larger sibling exists in the same family or a more specific inferred subfamily; `auxiliary` keeps a smaller-is-better size penalty so helper lanes stay compact
 - override controls: provider and model disablement, provider and model weight overrides, and alias pinning
 - optional auth: `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
 - optional browser CORS allowlist: `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`
@@ -306,7 +307,8 @@ The persistence suite validates:
 - `operations` and `coder` both use `coding` through the local router
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the router, the two profile gateways, and the dashboard
-- no custom default skills are seeded
+ - no repo-managed default skills are seeded by default
+- optional shared and profile skill trees staged under `/workspace/skills/...` are copied once without overwriting existing Hermes-managed skill directories
 - removed workstation tools other than `gws` are absent by default
 - `ghostship-*` utilities remain available
 - HOME-backed state survives container replacement
@@ -317,7 +319,7 @@ The persistence suite validates:
 - the dashboard can manage multiple independent terminal tabs
 - switching between open tabs keeps the live terminal session attached
 - the bootstrap `operations` and `coder` profiles are available under `~/.hermes/profiles/...`
-- the router alias inventory exposes `auxiliary`, `coding`, `vision`, and `tts`
+- the router alias inventory exposes `auxiliary`, `coding`, `agentic`, `vision`, and `tts`
 
 Router package validation:
 

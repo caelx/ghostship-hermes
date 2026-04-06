@@ -218,16 +218,16 @@ wait_for_hermes_condition() {
 
 assert_router_inventory() {
   local container_name="$1"
-  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"vision\") and index(\"tts\")' >/dev/null"
+  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"agentic\") and index(\"vision\") and index(\"tts\")' >/dev/null"
 }
 
 assert_free_router_buckets() {
   local container_name="$1"
   run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '
-    [.data[] | select(.id == "auxiliary" or .id == "coding" or .id == "vision" or .id == "tts")]
-    | length == 4
-    and all(.[]; .metadata.candidate_count > 0)
+    [.data[] | select(.id == \"auxiliary\" or .id == \"coding\" or .id == \"agentic\" or .id == \"vision\" or .id == \"tts\")]
+    | length == 5
     and all(.[]; all(.metadata.candidates[]; .is_free == true))
+    and all(.[]; if .id == \"tts\" then true else .metadata.candidate_count > 0 end)
   ' >/dev/null"
 }
 
@@ -249,6 +249,13 @@ assert_model_config() {
 }
 
 mkdir -p "$home_dir" "$workspace_dir"
+mkdir -p \
+  "$workspace_dir/skills/shared/workflow-shared" \
+  "$workspace_dir/skills/profiles/operations/workflow-operations" \
+  "$workspace_dir/skills/profiles/coder/workflow-coder"
+printf 'shared-source-v1\n' > "$workspace_dir/skills/shared/workflow-shared/SKILL.md"
+printf 'operations-source-v1\n' > "$workspace_dir/skills/profiles/operations/workflow-operations/SKILL.md"
+printf 'coder-source-v1\n' > "$workspace_dir/skills/profiles/coder/workflow-coder/SKILL.md"
 xz -dc "$rootfs_tar" | docker import - "$image_ref" >/dev/null
 
 docker run -d \
@@ -333,6 +340,9 @@ assert_model_config "$container_one" operations coding
 assert_model_config "$container_one" coder coding
 run_as_hermes "$container_one" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
 run_as_hermes "$container_one" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/coder/.env >/dev/null'
+run_as_hermes "$container_one" 'grep -Fx "shared-source-v1" /home/hermes/.hermes/skills/workflow-shared/SKILL.md >/dev/null'
+run_as_hermes "$container_one" 'grep -Fx "operations-source-v1" /home/hermes/.hermes/profiles/operations/skills/workflow-operations/SKILL.md >/dev/null'
+run_as_hermes "$container_one" 'grep -Fx "coder-source-v1" /home/hermes/.hermes/profiles/coder/skills/workflow-coder/SKILL.md >/dev/null'
 
 run_as_hermes "$container_one" '
   mkdir -p \
@@ -410,6 +420,15 @@ assert_file_contains /tmp/ghostship-terminal-close-2.json '"id": "'"$terminal_on
 curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_one/close" >/tmp/ghostship-terminal-close.json
 assert_file_contains /tmp/ghostship-terminal-close.json '"sessions": \[\]'
 
+run_as_hermes "$container_one" '
+  printf "shared-user-v2\n" > /home/hermes/.hermes/skills/workflow-shared/SKILL.md
+  printf "operations-user-v2\n" > /home/hermes/.hermes/profiles/operations/skills/workflow-operations/SKILL.md
+  printf "coder-user-v2\n" > /home/hermes/.hermes/profiles/coder/skills/workflow-coder/SKILL.md
+'
+printf 'shared-source-v2\n' > "$workspace_dir/skills/shared/workflow-shared/SKILL.md"
+printf 'operations-source-v2\n' > "$workspace_dir/skills/profiles/operations/workflow-operations/SKILL.md"
+printf 'coder-source-v2\n' > "$workspace_dir/skills/profiles/coder/workflow-coder/SKILL.md"
+
 docker rm -f "$container_one" >/dev/null
 
 docker run -d \
@@ -470,6 +489,12 @@ assert_model_config "$container_two" coder coding
 run_as_hermes "$container_two" 'hello >/tmp/hello.out && grep -F "Hello, world!" /tmp/hello.out >/dev/null'
 run_as_hermes "$container_two" 'command -v tirith >/dev/null'
 run_as_hermes "$container_two" 'command -v opencode >/dev/null'
+run_as_hermes "$container_two" 'grep -Fx "shared-user-v2" /home/hermes/.hermes/skills/workflow-shared/SKILL.md >/dev/null'
+run_as_hermes "$container_two" 'grep -Fx "operations-user-v2" /home/hermes/.hermes/profiles/operations/skills/workflow-operations/SKILL.md >/dev/null'
+run_as_hermes "$container_two" 'grep -Fx "coder-user-v2" /home/hermes/.hermes/profiles/coder/skills/workflow-coder/SKILL.md >/dev/null'
+run_as_hermes "$container_two" '! grep -Fx "shared-source-v2" /home/hermes/.hermes/skills/workflow-shared/SKILL.md >/dev/null'
+run_as_hermes "$container_two" '! grep -Fx "operations-source-v2" /home/hermes/.hermes/profiles/operations/skills/workflow-operations/SKILL.md >/dev/null'
+run_as_hermes "$container_two" '! grep -Fx "coder-source-v2" /home/hermes/.hermes/profiles/coder/skills/workflow-coder/SKILL.md >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/opencode/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "share" ~/.local/share/opencode/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "state" ~/.local/state/opencode/persist.txt >/dev/null'

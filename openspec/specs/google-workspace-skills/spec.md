@@ -3,31 +3,26 @@
 ## Purpose
 TBD - created by archiving change add-google-workspace-cli-and-vendor-skills. Update Purpose after archive.
 ## Requirements
-### Requirement: Repo vendors the upstream Google Workspace skill catalog
-The repo SHALL store a committed snapshot of the upstream Google Workspace skill catalog so image builds and runtime skill seeding do not depend on live network fetches.
+### Requirement: Default image excludes Google Workspace skill bundles
+The default Hermes image and repository SHALL NOT vendor, commit, or otherwise depend on a Google Workspace skill catalog to provide Google Workspace support.
 
-#### Scenario: Vendored snapshot is present in the repo
+#### Scenario: Repository contents stay CLI-only
 - **WHEN** maintainers inspect the repository contents for the Google Workspace integration
-- **THEN** the upstream `gws-*`, persona, and recipe skill directories are present as committed files in a repo-managed vendor location
-- **AND** the snapshot corresponds to the same upstream revision used for the packaged `gws` CLI
+- **THEN** there is no repo-managed vendor snapshot of upstream Google Workspace skills required by the default image
+- **AND** Google Workspace support is represented by the packaged `gws` CLI contract instead
 
-### Requirement: Runtime seeds vendored Google Workspace skills without overwriting user content
-The Hermes runtime SHALL copy vendored Google Workspace skills into `~/.hermes/skills` on first start only when the destination skill directory does not already exist.
+### Requirement: Runtime does not seed Google Workspace skills
+The Hermes runtime SHALL NOT copy Google Workspace skill directories into `~/.hermes/skills` or another default runtime skill tree as part of image bootstrap or first-start setup.
 
-#### Scenario: Missing vendored skill is seeded
-- **WHEN** a vendored Google Workspace skill directory is absent from `~/.hermes/skills`
-- **THEN** runtime skill seeding copies that skill into the Hermes profile
+#### Scenario: Fresh runtime does not add Google Workspace skills
+- **WHEN** a fresh Hermes profile starts from the default image
+- **THEN** the runtime does not create Google Workspace skill directories as part of bootstrap
+- **AND** Google Workspace support remains limited to the `gws` executable on `PATH`
 
-#### Scenario: Existing skill directory is preserved
-- **WHEN** a skill directory with the same name already exists in `~/.hermes/skills`
-- **THEN** runtime skill seeding leaves the existing directory unchanged
-- **AND** the seeding flow does not overwrite user-managed content
+### Requirement: Default skill inventory remains repo-specific
+The default skill inventory SHALL remain limited to repo-managed local skills and SHALL NOT imply that Google Workspace skills are bundled by default.
 
-### Requirement: Repo-managed local skills remain available alongside vendored skills
-The default skill inventory SHALL continue to include repo-managed local skills together with the vendored Google Workspace skills.
-
-#### Scenario: Seeded inventory contains both local and upstream skills
-- **WHEN** a fresh Hermes profile receives default skills
-- **THEN** the seeded inventory includes repo-managed local skills such as runtime/container guidance skills
-- **AND** it also includes the vendored Google Workspace skills in the same default skill tree
-
+#### Scenario: Default skills do not include Google Workspace content
+- **WHEN** maintainers inspect the default runtime skill tree and related documentation
+- **THEN** repo-managed local skills may still be present according to repo policy
+- **AND** Google Workspace skills are not described or shipped as part of that default inventory

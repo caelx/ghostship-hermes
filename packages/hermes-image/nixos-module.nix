@@ -43,6 +43,8 @@ let
   rootConfig = mkHermesConfig rootModelDefault;
   managedProfileNames = lib.concatStringsSep "," managedProfiles;
   managedProfileRoot = "/home/hermes/.hermes/profiles";
+  sharedSkillSourceDir = "/workspace/skills/shared";
+  profileSkillSourceRoot = "/workspace/skills/profiles";
 
   runtimePackages = with pkgs; [
     bashInteractive
@@ -103,6 +105,34 @@ let
       install -D -m 0600 ${profileConfigFiles.${profile}} "${managedProfileRoot}/${profile}/config.yaml"
     '') managedProfiles}
 
+    copy_skill_tree_if_missing() {
+      source_root="$1"
+      target_root="$2"
+
+      [ -d "$source_root" ] || return 0
+      mkdir -p "$target_root"
+
+      while IFS= read -r skill_dir; do
+        [ -f "$skill_dir/SKILL.md" ] || continue
+        skill_name="$(basename "$skill_dir")"
+        if [ ! -e "$target_root/$skill_name" ]; then
+          cp -R "$skill_dir" "$target_root/$skill_name"
+        fi
+      done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
+    }
+
+    reconcile_seed_skills() {
+      shared_source="''${GHOSTSHIP_HERMES_SHARED_SKILLS_DIR:-${sharedSkillSourceDir}}"
+      profile_root="''${GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT:-${profileSkillSourceRoot}}"
+
+      copy_skill_tree_if_missing "$shared_source" "/home/hermes/.hermes/skills"
+
+      for profile in ${lib.concatStringsSep " " managedProfiles}; do
+        profile_source="''${profile_root}/$profile"
+        copy_skill_tree_if_missing "$profile_source" "/home/hermes/.hermes/profiles/$profile/skills"
+      done
+    }
+
     write_profile_env() {
       target="$1"
       router_api_key="''${OPENAI_API_KEY:-}"
@@ -130,6 +160,7 @@ let
     write_profile_env "/home/hermes/.hermes/.env"
     write_profile_env "/home/hermes/.hermes/profiles/operations/.env"
     write_profile_env "/home/hermes/.hermes/profiles/coder/.env"
+    reconcile_seed_skills
 
     hermes profile use ${lib.escapeShellArg defaultProfile} >/dev/null 2>&1 || true
 
@@ -195,6 +226,7 @@ in
   security.sudo.enable = false;
 
   environment.variables = serviceEnvironment;
+  environment.systemPackages = servicePath;
   environment.shellInit = ''
     if [ "$(id -u)" = "3000" ]; then
       export HOME=/home/hermes
@@ -297,6 +329,8 @@ in
         "OPENROUTER_TITLE"
         "OPENCODE_API_KEY"
         "OPENCODE_BASE_URL"
+        "GHOSTSHIP_HERMES_SHARED_SKILLS_DIR"
+        "GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT"
       ];
       ExecStart = bootstrapHermesScript;
     };
@@ -351,6 +385,7 @@ in
         "GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES"
         "GHOSTSHIP_ROUTER_ALIAS_PIN_AUXILIARY"
         "GHOSTSHIP_ROUTER_ALIAS_PIN_CODING"
+        "GHOSTSHIP_ROUTER_ALIAS_PIN_AGENTIC"
         "GHOSTSHIP_ROUTER_ALIAS_PIN_VISION"
         "GHOSTSHIP_ROUTER_ALIAS_PIN_TTS"
       ];
