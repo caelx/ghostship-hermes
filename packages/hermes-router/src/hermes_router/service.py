@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import Iterator
@@ -1475,6 +1476,7 @@ class RouterService:
         )
         latency_penalty = -((float(model_state.get("first_text_latency_avg_ms") or model_state.get("latency_avg_ms") or 0.0)) / 1000.0)
         family_name, family_bias = self._family_bias(alias, model)
+        parameter_count_b, parameter_bias = self._parameter_bias(alias, model)
         created_bias = self._recency_bias(model)
         alias_scores = ranking.get("alias_scores", {})
         rerank_scores = ranking.get("rerank_scores", {})
@@ -1492,6 +1494,7 @@ class RouterService:
             + provider_health
             + latency_penalty
             + family_bias
+            + parameter_bias
             + created_bias
             + learned_score
             + provider_weight
@@ -1511,6 +1514,8 @@ class RouterService:
             "latency_penalty": round(latency_penalty, 3),
             "family_bias": round(family_bias, 3),
             "family_name": family_name,
+            "parameter_count_b": parameter_count_b,
+            "parameter_bias": round(parameter_bias, 3),
             "recency_bias": round(created_bias, 3),
             "learned_ranking_score": round(learned_score, 3),
             "provider_weight": provider_weight,
@@ -1904,6 +1909,35 @@ class RouterService:
             if any(token in haystack for token in tokens):
                 return family_name, bias
         return None, 0.0
+
+    def _parameter_bias(self, alias: str, model: ProviderModel) -> tuple[float | None, float]:
+        parameter_count = self._parameter_count_b(model)
+        if parameter_count is None:
+            return None, 0.0
+        if alias == "vision":
+            return parameter_count, min(parameter_count * 0.25, 12.0)
+        if alias == "coding":
+            return parameter_count, min(parameter_count * 0.08, 6.0)
+        if alias == "auxiliary":
+            return parameter_count, 0.0
+        if alias == "tts":
+            return parameter_count, min(parameter_count * 0.05, 3.0)
+        return parameter_count, 0.0
+
+    def _parameter_count_b(self, model: ProviderModel) -> float | None:
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        haystack = " ".join(
+            str(value).lower()
+            for value in (
+                model.id,
+                metadata.get("name"),
+            )
+            if value
+        )
+        matches = [float(match) for match in re.findall(r"(?<!\d)(\d+(?:\.\d+)?)b(?![a-z])", haystack)]
+        if not matches:
+            return None
+        return max(matches)
 
     def _recency_bias(self, model: ProviderModel) -> float:
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
