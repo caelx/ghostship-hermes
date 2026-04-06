@@ -261,10 +261,20 @@ docker run -d \
   --tmpfs /run/lock \
   --tmpfs /tmp \
   -e container=docker \
-  -e OPENROUTER_API_KEY \
-  -e OPENROUTER_BASE_URL \
-  -e OPENROUTER_HTTP_REFERER \
-  -e OPENROUTER_TITLE \
+  -e BWS_ACCESS_TOKEN \
+  -e GOOGLE_AI_STUDIO_API_KEY \
+  -e OPENCODE_GO_API_KEY \
+  -e DISCORD_GENERAL_CHANNEL_ID \
+  -e DISCORD_ASSISTANT_BOT_TOKEN \
+  -e DISCORD_ASSISTANT_ALLOWED_USERS \
+  -e DISCORD_ASSISTANT_CHANNEL_ID \
+  -e DISCORD_OPERATIONS_BOT_TOKEN \
+  -e DISCORD_OPERATIONS_ALLOWED_USERS \
+  -e DISCORD_OPERATIONS_CHANNEL_ID \
+  -e DISCORD_SUPERVISOR_BOT_TOKEN \
+  -e DISCORD_SUPERVISOR_ALLOWED_USERS \
+  -e DISCORD_SUPERVISOR_CHANNEL_ID \
+  -e BROWSER_CDP_URL \
   -p "${dashboard_port}:7681" \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
@@ -283,11 +293,10 @@ assert_http_contains "${dashboard_base_url}/" "Runtime"
 assert_http_contains "${dashboard_base_url}/" "Providers"
 assert_http_contains "${dashboard_base_url}/" "Profiles"
 wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
+wait_for_json_value "${dashboard_base_url}/api/status" '.profiles[] | select(.name == "assistant") | .name' "assistant"
 wait_for_json_value "${dashboard_base_url}/api/status" '.profiles[] | select(.name == "operations") | .name' "operations"
-wait_for_json_value "${dashboard_base_url}/api/status" '.profiles[] | select(.name == "coder") | .name' "coder"
-wait_for_json_value "${dashboard_base_url}/api/status" '.default_profile' "operations"
-wait_for_json_value "${dashboard_base_url}/api/status" '.environment.root_model' "coding"
-wait_for_json_value "${dashboard_base_url}/api/status" '.environment.providers[] | select(.name == "ghostship-router") | .router.ready' "true"
+wait_for_json_value "${dashboard_base_url}/api/status" '.profiles[] | select(.name == "supervisor") | .name' "supervisor"
+wait_for_json_value "${dashboard_base_url}/api/status" '.default_profile' "assistant"
 
 open_started_ms="$(date +%s%3N)"
 curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-hermes-terminal-open-1.json
@@ -323,21 +332,23 @@ run_in_container "$container_name" 'id hermes | grep -F "uid=3000" >/dev/null'
 run_in_container "$container_name" '! systemctl is-active hermes-agent.service >/dev/null'
 run_in_container "$container_name" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
+run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-assistant.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-operations.service >/dev/null'
-run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-coder.service >/dev/null'
+run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-supervisor.service >/dev/null'
+run_as_hermes "$container_name" 'hermes profile show assistant >/dev/null'
 run_as_hermes "$container_name" 'hermes profile show operations >/dev/null'
-run_as_hermes "$container_name" 'hermes profile show coder >/dev/null'
-run_as_hermes "$container_name" 'test -d /home/hermes/.hermes/profiles/operations && test -d /home/hermes/.hermes/profiles/coder'
-run_as_hermes "$container_name" '! test -d /home/hermes/.hermes/profiles/test'
-run_as_hermes "$container_name" 'test "$(cat /home/hermes/.hermes/active_profile)" = "operations"'
-run_as_hermes "$container_name" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
-run_as_hermes "$container_name" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/coder/.env >/dev/null'
+run_as_hermes "$container_name" 'hermes profile show supervisor >/dev/null'
+run_as_hermes "$container_name" 'test -d /home/hermes/.hermes/profiles/assistant && test -d /home/hermes/.hermes/profiles/operations && test -d /home/hermes/.hermes/profiles/supervisor'
+run_as_hermes "$container_name" '! test -d /home/hermes/.hermes/profiles/coder'
+run_as_hermes "$container_name" 'test "$(cat /home/hermes/.hermes/active_profile)" = "assistant"'
 run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'
-assert_router_inventory "$container_name"
-assert_free_router_buckets "$container_name"
-assert_model_config "$container_name" root coding
-assert_model_config "$container_name" operations coding
-assert_model_config "$container_name" coder coding
+run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Model:" | grep -F "gpt-5.4" >/dev/null'
+run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Model:" | grep -F "openai-codex" >/dev/null'
+run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Working dir:" | grep -F "/workspace" >/dev/null'
+run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Vision" | grep -F "gemini-3.1-flash-lite-preview" >/dev/null'
+run_as_hermes "$container_name" 'grep -F "provider: holographic" /home/hermes/.hermes/profiles/assistant/config.yaml >/dev/null'
+run_as_hermes "$container_name" 'grep -F "cloud_provider: local" /home/hermes/.hermes/profiles/assistant/config.yaml >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-dashboard-controller.service >/dev/null'
-run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
-run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-coder.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
+run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-assistant.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
+run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
+run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-supervisor.service | grep -F "WorkingDirectory=/workspace" >/dev/null'

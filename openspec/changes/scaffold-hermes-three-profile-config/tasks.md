@@ -18,5 +18,5 @@
 
 ## 4. Validation And Docs
 
-- [ ] 4.1 Update image validation to prove the new managed profile scaffold and `assistant` sticky default
+- [x] 4.1 Update image validation to prove the new managed profile scaffold and `assistant` sticky default
 - [x] 4.2 Update README and supporting docs to describe the three-profile scaffold, shared skills directory, and runtime-owned skills/secrets model
