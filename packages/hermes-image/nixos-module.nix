@@ -12,40 +12,60 @@
 }:
 let
   managedProfiles = [
+    "assistant"
     "operations"
-    "coder"
+    "supervisor"
   ];
-  defaultProfile = "operations";
-  routerBaseUrl = "http://127.0.0.1:8788/v1";
-  rootModelDefault = "coding";
-  profileModelDefaults = {
-    operations = "coding";
-    coder = "coding";
+  defaultProfile = "assistant";
+  rootTerminalCwd = "/home/hermes";
+  managedProfileRoot = "/home/hermes/.hermes/profiles";
+  sharedSkillSourceDir = "/workspace/skills/shared";
+  profileSkillSourceRoot = "/workspace/skills/profiles";
+  profileScaffold = {
+    assistant = {
+      personality = "assistant";
+      modelProvider = "openai";
+      modelDefault = "gpt-5.4";
+      terminalCwd = "/home/hermes";
+    };
+    operations = {
+      personality = "operations";
+      modelProvider = "openai";
+      modelDefault = "gpt-5.4";
+      terminalCwd = "/workspace";
+    };
+    supervisor = {
+      personality = "supervisor";
+      modelProvider = "openai";
+      modelDefault = "gpt-5.4";
+      terminalCwd = "/workspace";
+    };
   };
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   runtimeBin = "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime";
   yamlFormat = pkgs.formats.yaml { };
-  mkHermesConfig =
-    modelDefault:
-    {
-    display.personality = "kawaii";
-      model = {
-        provider = "auto";
-        base_url = routerBaseUrl;
-        default = modelDefault;
-      };
+  rootConfig = {
     terminal = {
       backend = "local";
-      cwd = "/home/hermes";
+      cwd = rootTerminalCwd;
       timeout = 180;
     };
   };
-  rootConfig = mkHermesConfig rootModelDefault;
+  mkProfileConfig =
+    profileName: profileDef:
+    {
+      display.personality = profileDef.personality;
+      model = {
+        provider = profileDef.modelProvider;
+        default = profileDef.modelDefault;
+      };
+      terminal = {
+        backend = "local";
+        cwd = profileDef.terminalCwd;
+        timeout = 180;
+      };
+    };
   managedProfileNames = lib.concatStringsSep "," managedProfiles;
-  managedProfileRoot = "/home/hermes/.hermes/profiles";
-  sharedSkillSourceDir = "/workspace/skills/shared";
-  profileSkillSourceRoot = "/workspace/skills/profiles";
-
   runtimePackages = with pkgs; [
     bashInteractive
     cacert
@@ -72,9 +92,62 @@ let
     name = "ghostship-hermes-user-env";
     paths = servicePath;
   };
-  profileConfigFiles = lib.mapAttrs (
-    profile: modelDefault: yamlFormat.generate "ghostship-hermes-profile-${profile}-config.yaml" (mkHermesConfig modelDefault)
-  ) profileModelDefaults;
+  profileDefinitions = lib.genAttrs managedProfiles (
+    profile:
+    let
+      profileDef = profileScaffold.${profile};
+      profileRoot = "${managedProfileRoot}/${profile}";
+    in
+    profileDef
+    // {
+      name = profile;
+      profileRoot = profileRoot;
+      configPath = "${profileRoot}/config.yaml";
+      envPath = "${profileRoot}/.env";
+      skillPath = "${profileRoot}/skills";
+      serviceName = "ghostship-hermes-profile-${profile}";
+      serviceDescription = "ghostship-hermes ${profile} gateway";
+      serviceWorkingDirectory = profileDef.terminalCwd;
+      configFile = yamlFormat.generate "ghostship-hermes-profile-${profile}-config.yaml" (mkProfileConfig profile profileDef);
+    }
+  );
+  mkProfileGatewayService =
+    profile:
+    let
+      profileDef = profileDefinitions.${profile};
+    in
+    {
+      description = profileDef.serviceDescription;
+      wantedBy = [ "multi-user.target" ];
+      wants = [ "network-online.target" ];
+      after = [
+        "ghostship-storage.service"
+        "ghostship-hermes-bootstrap.service"
+        "network-online.target"
+      ];
+      requires = [
+        "ghostship-storage.service"
+        "ghostship-hermes-bootstrap.service"
+      ];
+      environment = userServiceEnvironment // {
+        HERMES_MANAGED = "true";
+      };
+      path = servicePath;
+      serviceConfig = {
+        Type = "simple";
+        User = "hermes";
+        Group = "hermes";
+        WorkingDirectory = profileDef.serviceWorkingDirectory;
+        PassEnvironment = [
+          "OPENAI_API_KEY"
+          "GHOSTSHIP_ROUTER_API_KEY"
+          "API_SERVER_KEY"
+        ];
+        ExecStart = "${config.services.hermes-agent.package}/bin/hermes -p ${profile} gateway run --replace";
+        Restart = "always";
+        RestartSec = "2s";
+      };
+    };
   bootstrapHermesScript = pkgs.writeShellScript "ghostship-hermes-bootstrap.sh" ''
     set -euo pipefail
 
@@ -96,13 +169,13 @@ let
     done
 
     ${lib.concatMapStringsSep "\n" (profile: ''
-      if [ ! -d "${managedProfileRoot}/${profile}" ]; then
+      if [ ! -d "${profileDefinitions.${profile}.profileRoot}" ]; then
         hermes profile create ${lib.escapeShellArg profile} --clone >/dev/null 2>&1 \
           || hermes profile create ${lib.escapeShellArg profile} >/dev/null 2>&1 \
           || true
       fi
 
-      install -D -m 0600 ${profileConfigFiles.${profile}} "${managedProfileRoot}/${profile}/config.yaml"
+      install -D -m 0600 ${profileDefinitions.${profile}.configFile} "${profileDefinitions.${profile}.configPath}"
     '') managedProfiles}
 
     copy_skill_tree_if_missing() {
@@ -127,14 +200,17 @@ let
 
       copy_skill_tree_if_missing "$shared_source" "/home/hermes/.hermes/skills"
 
-      for profile in ${lib.concatStringsSep " " managedProfiles}; do
-        profile_source="''${profile_root}/$profile"
-        copy_skill_tree_if_missing "$profile_source" "/home/hermes/.hermes/profiles/$profile/skills"
-      done
+      profile_source="''${profile_root}/assistant"
+      copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.assistant.skillPath}"
+      profile_source="''${profile_root}/operations"
+      copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.operations.skillPath}"
+      profile_source="''${profile_root}/supervisor"
+      copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.supervisor.skillPath}"
     }
 
     write_profile_env() {
       target="$1"
+      terminal_cwd="$2"
       router_api_key="''${OPENAI_API_KEY:-}"
       if [ -z "$router_api_key" ] && [ -n "''${API_SERVER_KEY:-}" ]; then
         router_api_key="$API_SERVER_KEY"
@@ -144,7 +220,7 @@ let
       fi
       umask 077
       {
-        printf 'TERMINAL_CWD=/home/hermes\n'
+        printf 'TERMINAL_CWD=%s\n' "$terminal_cwd"
         for key in OPENROUTER_API_KEY OPENROUTER_BASE_URL OPENROUTER_HTTP_REFERER OPENROUTER_TITLE; do
           value="''${!key:-}"
           if [ -n "$value" ]; then
@@ -157,9 +233,10 @@ let
       } >"$target"
     }
 
-    write_profile_env "/home/hermes/.hermes/.env"
-    write_profile_env "/home/hermes/.hermes/profiles/operations/.env"
-    write_profile_env "/home/hermes/.hermes/profiles/coder/.env"
+    write_profile_env "/home/hermes/.hermes/.env" "${rootTerminalCwd}"
+    write_profile_env "${profileDefinitions.assistant.envPath}" "${profileDefinitions.assistant.terminalCwd}"
+    write_profile_env "${profileDefinitions.operations.envPath}" "${profileDefinitions.operations.terminalCwd}"
+    write_profile_env "${profileDefinitions.supervisor.envPath}" "${profileDefinitions.supervisor.terminalCwd}"
     reconcile_seed_skills
 
     hermes profile use ${lib.escapeShellArg defaultProfile} >/dev/null 2>&1 || true
@@ -427,75 +504,11 @@ in
     };
   };
 
-  systemd.services.ghostship-hermes-profile-operations = {
-    description = "ghostship-hermes operations gateway";
-    wantedBy = [ "multi-user.target" ];
-    wants = [ "network-online.target" ];
-    after = [
-      "ghostship-storage.service"
-      "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-router.service"
-      "network-online.target"
-    ];
-    requires = [
-      "ghostship-storage.service"
-      "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-router.service"
-    ];
-    environment = userServiceEnvironment // {
-      HERMES_MANAGED = "true";
-    };
-    path = servicePath;
-    serviceConfig = {
-      Type = "simple";
-      User = "hermes";
-      Group = "hermes";
-      WorkingDirectory = "/home/hermes";
-      PassEnvironment = [
-        "OPENAI_API_KEY"
-        "GHOSTSHIP_ROUTER_API_KEY"
-        "API_SERVER_KEY"
-      ];
-      ExecStart = "${config.services.hermes-agent.package}/bin/hermes -p operations gateway run --replace";
-      Restart = "always";
-      RestartSec = "2s";
-    };
-  };
+  systemd.services.ghostship-hermes-profile-assistant = mkProfileGatewayService "assistant";
 
-  systemd.services.ghostship-hermes-profile-coder = {
-    description = "ghostship-hermes coder gateway";
-    wantedBy = [ "multi-user.target" ];
-    wants = [ "network-online.target" ];
-    after = [
-      "ghostship-storage.service"
-      "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-router.service"
-      "network-online.target"
-    ];
-    requires = [
-      "ghostship-storage.service"
-      "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-router.service"
-    ];
-    environment = userServiceEnvironment // {
-      HERMES_MANAGED = "true";
-    };
-    path = servicePath;
-    serviceConfig = {
-      Type = "simple";
-      User = "hermes";
-      Group = "hermes";
-      WorkingDirectory = "/home/hermes";
-      PassEnvironment = [
-        "OPENAI_API_KEY"
-        "GHOSTSHIP_ROUTER_API_KEY"
-        "API_SERVER_KEY"
-      ];
-      ExecStart = "${config.services.hermes-agent.package}/bin/hermes -p coder gateway run --replace";
-      Restart = "always";
-      RestartSec = "2s";
-    };
-  };
+  systemd.services.ghostship-hermes-profile-operations = mkProfileGatewayService "operations";
+
+  systemd.services.ghostship-hermes-profile-supervisor = mkProfileGatewayService "supervisor";
 
   systemd.sockets.nix-daemon = {
     wantedBy = lib.mkForce [ "multi-user.target" ];

@@ -1,8 +1,8 @@
 ## 1. Basic Scaffold
 
-- [ ] 1.1 Introduce a single declarative Nix profile matrix for `assistant`, `operations`, and `supervisor`
-- [ ] 1.2 Generate the basic managed profile config scaffold, env destinations, skill destinations, and service metadata from that matrix
-- [ ] 1.3 Switch the sticky default profile scaffold from `operations` to `assistant` while keeping the root config minimal
+- [x] 1.1 Introduce a single declarative Nix profile matrix for `assistant`, `operations`, and `supervisor`
+- [x] 1.2 Generate the basic managed profile config scaffold, env destinations, skill destinations, and service metadata from that matrix
+- [x] 1.3 Switch the sticky default profile scaffold from `operations` to `assistant` while keeping the root config minimal
 
 ## 2. Hermes Settings Audit
 

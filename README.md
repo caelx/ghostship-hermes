@@ -20,9 +20,10 @@ Canonical image references:
 - The dashboard can launch as many ephemeral `ttyd` sessions as needed, tracks them as left-rail tabs, opens new tabs immediately with a loading state while `ttyd` starts, labels tabs from the shell cwd or current command, and returns to a blank home state when the active terminal is closed and no sessions remain.
 - Switching between open tabs keeps each live `ttyd` session attached instead of dropping back to ttyd's reconnect prompt.
 - Browser terminals start in `/home/hermes`.
-- The image uses `ghostship-hermes-router` at `http://127.0.0.1:8788/v1` as the primary OpenAI-compatible model endpoint for Hermes.
-- The root Hermes default model is `coding`.
-- The image bootstraps two Hermes profiles, `operations` and `coder`, at `~/.hermes/profiles/...`, keeps a persistent gateway service running for each one, and assigns `operations -> coding` and `coder -> coding`.
+- The image currently scaffolds three long-running Hermes profiles, `assistant`, `operations`, and `supervisor`, at `~/.hermes/profiles/...`.
+- `assistant` is the sticky default profile.
+- The root Hermes config stays minimal; the scaffolded profiles carry the current Nix-managed defaults.
+- Each scaffolded profile currently uses a direct `openai` provider placeholder with `gpt-5.4`, pending the later settings-audit pass for final provider/auth tuning.
 
 Upstream note:
 
@@ -74,7 +75,7 @@ Inside the running container:
 
 - `/home/hermes` is both the interactive home directory and the persisted state mount
 - `/home/hermes/.hermes` is the managed Hermes service state written by the upstream NixOS module
-- named profiles live under `/home/hermes/.hermes/profiles/operations` and `/home/hermes/.hermes/profiles/coder`
+- named profiles live under `/home/hermes/.hermes/profiles/assistant`, `/home/hermes/.hermes/profiles/operations`, and `/home/hermes/.hermes/profiles/supervisor`
 - `/workspace` remains a separate persisted work directory and is not folded into the home facade
 - optional shared skills can be staged under `/workspace/skills/shared/<skill>/...` and optional profile skills under `/workspace/skills/profiles/<profile>/<skill>/...`
 
@@ -95,18 +96,20 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-bootstrap.service`
-  is a repo-specific NixOS oneshot that reconciles the approved `operations` and `coder` profiles after the managed Hermes config exists, writes their `.env` files from the runtime provider env, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, assigns the approved router aliases, and sets the sticky default profile to `operations`
+  is a repo-specific NixOS oneshot that reconciles the approved `assistant`, `operations`, and `supervisor` profiles after the managed Hermes config exists, writes the root and profile `.env` files from the runtime provider env, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, and sets the sticky default profile to `assistant`
+- `ghostship-hermes-profile-assistant.service`
+  keeps the `assistant` gateway running with `hermes -p assistant gateway run --replace`
 - `ghostship-hermes-profile-operations.service`
   keeps the `operations` gateway running with `hermes -p operations gateway run --replace`
-- `ghostship-hermes-profile-coder.service`
-  keeps the `coder` gateway running with `hermes -p coder gateway run --replace`
+- `ghostship-hermes-profile-supervisor.service`
+  keeps the `supervisor` gateway running with `hermes -p supervisor gateway run --replace`
 - `ghostship-dashboard-controller.service`
   serves the packaged MMX dashboard and proxies on-demand ephemeral `ttyd` sessions on port `7681`
 - `ghostship-hermes-router.service`
   runs the local model router on `127.0.0.1:8788`, persists router state under `/home/hermes/.local/state/ghostship-hermes/router`, and exposes OpenAI-style alias routing plus debug endpoints for local tools and Hermes profiles
   Startup serves the last persisted inventory and rankings immediately, then refreshes inventory and reruns ranking in the background so the router listener is available before longer warm-up work finishes.
 
-The profile bootstrap unit and the two persistent per-profile gateway services are approved custom deviations from upstream. Upstream Hermes does not currently expose named profiles as a declarative NixOS-module option, so the profile names are declared in Nix here, materialized by a NixOS-managed oneshot, and then supervised by repo-managed systemd units.
+The profile bootstrap unit and the persistent per-profile gateway services are approved custom deviations from upstream. Upstream Hermes does not currently expose named profiles as a declarative NixOS-module option, so the profile names are declared in Nix here, materialized by a NixOS-managed oneshot, and then supervised by repo-managed systemd units.
 
 ttyd note:
 
@@ -153,10 +156,10 @@ The image is intentionally declarative-first:
 - Hermes managed config is written into `/home/hermes/.hermes`.
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`.
-- Hermes uses the local router through `model.base_url = http://127.0.0.1:8788/v1`.
-- The root Hermes default model is `coding`.
-- The declared profiles override that default as `operations = coding` and `coder = coding`.
-- If router auth is enabled, Hermes can reuse `OPENAI_API_KEY` against the local router while the router itself continues to use provider credentials such as `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` upstream.
+- The root Hermes config is intentionally minimal in the current scaffold.
+- The declared profiles are `assistant`, `operations`, and `supervisor`, with `assistant` set as the sticky default.
+- The current Nix scaffold gives each profile a direct `openai` provider placeholder with `gpt-5.4`, plus profile-specific terminal cwd metadata.
+- Shared skills still seed from `/workspace/skills/shared/<skill>` and profile-specific skills still seed from `/workspace/skills/profiles/<profile>/<skill>`, copying only missing skill directories into Hermes-owned state.
 
 Upstream Hermes docs still apply for CLI behavior:
 
