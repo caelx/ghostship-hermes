@@ -203,12 +203,13 @@ The image now includes a standalone local router service:
 - debug endpoints: `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{alias}`, `GET /debug/rankings/{alias}`, `GET /debug/models/{provider}/{model}`
 - persistent state: `/home/hermes/.local/state/ghostship-hermes/router/router.db`
 - inventory sources: OpenRouter and OpenCode Zen
+- Zen enrichment: when a Zen model confidently matches an OpenRouter model id after normalization, the router reuses OpenRouter description, created timestamp, and modality/tool metadata for Zen scoring
 - Zen request families: `/chat/completions`, `/responses`, `/messages`, and Google-style model endpoints are normalized back into the local `chat/completions` surface
 - routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, durable overrides, stored `responses`, and lightweight chat session continuity
 - startup behavior: the router serves the last persisted inventory and rankings immediately when they exist; otherwise it stays unready until the first background discovery pass completes
 - ranking worker: a healthy free OpenCode Zen text model is preferred for coarse ranking and selective reranking outside the request hot path, with OpenRouter fallback
 - routing filter: when provider metadata exposes modalities and supported parameters, `coding` and `auxiliary` require tool calling with text output, `vision` requires image or video input with text output, and `tts` requires speech-style audio output while excluding music-generation models such as Lyria
-- recency bias: newer models get a small score lift, but only after free-only, capability, and coding-family prior filters pass
+- recency bias: newer models get a meaningful score lift after free-only and capability filters, while coding-family priors still dominate coding selection
 - override controls: provider and model disablement, provider and model weight overrides, and alias pinning
 - optional auth: `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
 - optional browser CORS allowlist: `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`

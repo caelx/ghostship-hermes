@@ -12,6 +12,7 @@ from hermes_router.app import create_app
 from hermes_router.config import AliasConfig, RouterConfig
 from hermes_router.models import ChatCompletionRequest
 from hermes_router.providers.base import NormalizedProviderError, ProviderChatResult, ProviderChatStreamEvent, ProviderModel
+from hermes_router.providers.opencode_zen import OpencodeZenProvider
 from hermes_router.service import RouterService
 from hermes_router.state import SqliteStateStore
 
@@ -65,6 +66,48 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         ),
     )
     return RouterConfig(**{**base.__dict__, **overrides})
+
+
+def test_opencode_zen_enriches_models_from_openrouter_metadata(monkeypatch) -> None:
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/api")
+
+    def fake_request_json(method: str, path: str, timeout: float | None = None):
+        assert method == "GET"
+        assert path == "/models"
+        return {"data": [{"id": "minimax-m2.5-free"}]}
+
+    monkeypatch.setattr(provider.client, "request_json", fake_request_json)
+    monkeypatch.setattr(provider, "_fetch_public_metadata", lambda timeout=None: {
+        "minimax-m2.5-free": {"provider": {"npm": "@openrouter/openai"}, "cost": {"input": 0.0, "output": 0.0}}
+    })
+    monkeypatch.setattr(provider, "_fetch_openrouter_metadata", lambda timeout=None: {
+        "by_id": {},
+        "by_normalized": {
+            "minimaxm25": [{
+                "id": "minimax/minimax-m2.5:free",
+                "name": "MiniMax M2.5",
+                "description": "High-end coding model.",
+                "created": 1774907286,
+                "context_length": 200000,
+                "modality": "text->text",
+                "input_modalities": ["text"],
+                "output_modalities": ["text"],
+                "supported_parameters": ["tools", "tool_choice"],
+            }]
+        },
+    })
+
+    models = provider.list_models()
+
+    assert len(models) == 1
+    model = models[0]
+    assert model.metadata["name"] == "MiniMax M2.5"
+    assert model.metadata["description"] == "High-end coding model."
+    assert model.metadata["created"] == 1774907286
+    assert model.metadata["output_modalities"] == ["text"]
+    assert model.metadata["supported_parameters"] == ["tools", "tool_choice"]
+    assert model.metadata["openrouter_match_id"] == "minimax/minimax-m2.5:free"
+    assert model.metadata["endpoint_family"] == "responses"
 
 
 def test_config_reads_hermes_api_server_aliases(tmp_path: Path, monkeypatch) -> None:
@@ -542,6 +585,35 @@ def test_music_audio_models_are_not_routable_for_tts(tmp_path: Path) -> None:
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
     service.refresh_inventory(reason="manual")
     assert service.preview_routes("tts") == []
+
+
+def test_primary_alias_prefers_higher_coding_score_over_auxiliary_tag(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="minimax/minimax-m2.5:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("auxiliary",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        ranking_enabled=False,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    target = next(model for model in service._inventory_for_all() if model.id == "minimax/minimax-m2.5:free")
+    assert service._primary_alias_for_model(target) == "coding"
 
 
 def test_coding_family_bias_prefers_minimax_over_qwen_when_capabilities_are_close(tmp_path: Path) -> None:

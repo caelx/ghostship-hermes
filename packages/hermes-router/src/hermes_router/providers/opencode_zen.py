@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import defaultdict
 from typing import Any
 
 import httpx
@@ -23,6 +24,16 @@ _SUPPORTED_FAMILIES = (
     "messages",
     "google_generate_content",
 )
+
+
+def _normalize_model_key(model_id: str) -> str:
+    lowered = model_id.strip().lower()
+    tail = lowered.split("/", 1)[1] if "/" in lowered else lowered
+    if tail.endswith(":free"):
+        tail = tail[:-5]
+    if tail.endswith("-free"):
+        tail = tail[:-5]
+    return "".join(char for char in tail if char.isalnum())
 
 
 def _text_from_content(content: Any) -> str:
@@ -88,26 +99,26 @@ class OpencodeZenProvider:
     def list_models(self, *, timeout: float | None = None) -> list[ProviderModel]:
         payload = self.client.request_json("GET", "/models", timeout=timeout)
         public_metadata = self._fetch_public_metadata(timeout=timeout)
+        openrouter_metadata = self._fetch_openrouter_metadata(timeout=timeout)
         models: list[ProviderModel] = []
         for raw in payload.get("data", []):
             model_id = str(raw.get("id", "")).strip()
             if not model_id:
                 continue
             metadata = public_metadata.get(model_id, {})
-            endpoint_family = self._infer_endpoint_family(model_id, metadata)
+            openrouter_match = self._match_openrouter_metadata(model_id, metadata, openrouter_metadata)
+            flattened_metadata = self._flatten_model_metadata(model_id, metadata, openrouter_match)
+            endpoint_family = self._infer_endpoint_family(model_id, flattened_metadata)
+            flattened_metadata["endpoint_family"] = endpoint_family
             model = ProviderModel(
                 id=model_id,
                 provider=self.name,
-                is_free=self._is_free_model(model_id, metadata),
+                is_free=self._is_free_model(model_id, flattened_metadata),
                 tags=self._tags_for_model(model_id),
-                metadata={
-                    "name": model_id,
-                    "endpoint_family": endpoint_family,
-                    "provider_metadata": metadata,
-                },
+                metadata=flattened_metadata,
             )
             models.append(model)
-            self._metadata_cache[model_id] = metadata
+            self._metadata_cache[model_id] = flattened_metadata
             self._family_cache.setdefault(model_id, endpoint_family)
             self._model_cache[model_id] = model
         return models
@@ -404,6 +415,80 @@ class OpencodeZenProvider:
                     parts.append(text)
         return "\n".join(parts)
 
+    def _fetch_openrouter_metadata(self, *, timeout: float | None = None) -> dict[str, dict[str, Any]]:
+        request_timeout = timeout or self.client.default_timeout
+        try:
+            with httpx.Client(timeout=request_timeout, follow_redirects=True, headers={"User-Agent": "ghostship-hermes-router"}) as client:
+                response = client.get("https://openrouter.ai/api/v1/models")
+                response.raise_for_status()
+                payload = response.json()
+        except Exception:
+            return {"by_id": {}, "by_normalized": {}}
+        by_id: dict[str, dict[str, Any]] = {}
+        by_normalized: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for raw in payload.get("data", []):
+            model_id = str(raw.get("id", "")).strip()
+            if not model_id:
+                continue
+            architecture = raw.get("architecture") if isinstance(raw.get("architecture"), dict) else {}
+            item = {
+                "id": model_id,
+                "name": raw.get("name"),
+                "description": raw.get("description"),
+                "created": raw.get("created"),
+                "context_length": raw.get("context_length"),
+                "modality": architecture.get("modality"),
+                "input_modalities": architecture.get("input_modalities"),
+                "output_modalities": architecture.get("output_modalities"),
+                "supported_parameters": raw.get("supported_parameters"),
+            }
+            by_id[model_id] = item
+            by_normalized[_normalize_model_key(model_id)].append(item)
+        return {"by_id": by_id, "by_normalized": dict(by_normalized)}
+
+    def _match_openrouter_metadata(
+        self,
+        model_id: str,
+        metadata: dict[str, Any],
+        openrouter_metadata: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        by_id = openrouter_metadata.get("by_id", {})
+        by_normalized = openrouter_metadata.get("by_normalized", {})
+        if model_id in by_id:
+            return by_id[model_id]
+        normalized = _normalize_model_key(model_id)
+        matches = list(by_normalized.get(normalized, ()))
+        if not matches:
+            return None
+        if len(matches) == 1:
+            return matches[0]
+        preferred_free = [item for item in matches if str(item.get("id", "")).endswith(":free")]
+        candidates = preferred_free or matches
+        candidates.sort(key=lambda item: float(item.get("created") or 0), reverse=True)
+        return candidates[0]
+
+    def _flatten_model_metadata(
+        self,
+        model_id: str,
+        provider_metadata: dict[str, Any],
+        openrouter_match: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        flattened = {
+            "name": (openrouter_match or {}).get("name") or model_id,
+            "description": (openrouter_match or {}).get("description"),
+            "created": (openrouter_match or {}).get("created") or provider_metadata.get("created"),
+            "context_length": (openrouter_match or {}).get("context_length"),
+            "modality": (openrouter_match or {}).get("modality"),
+            "input_modalities": (openrouter_match or {}).get("input_modalities"),
+            "output_modalities": (openrouter_match or {}).get("output_modalities"),
+            "supported_parameters": (openrouter_match or {}).get("supported_parameters"),
+            "provider_metadata": provider_metadata,
+        }
+        if openrouter_match is not None:
+            flattened["openrouter_match_id"] = openrouter_match.get("id")
+            flattened["openrouter_metadata"] = openrouter_match
+        return flattened
+
     def _fetch_public_metadata(self, *, timeout: float | None = None) -> dict[str, dict[str, Any]]:
         request_timeout = timeout or self.client.default_timeout
         try:
@@ -425,7 +510,10 @@ class OpencodeZenProvider:
             return "google_generate_content"
         if lowered.startswith("gpt-"):
             return "responses"
-        provider_npm = ((metadata.get("provider") or {}).get("npm") or "").lower()
+        provider_payload = metadata
+        if not isinstance(provider_payload.get("provider"), dict) and isinstance(provider_payload.get("provider_metadata"), dict):
+            provider_payload = provider_payload.get("provider_metadata") or {}
+        provider_npm = ((provider_payload.get("provider") or {}).get("npm") or "").lower()
         if provider_npm.endswith("/anthropic"):
             return "messages"
         if provider_npm.endswith("/google"):
@@ -439,7 +527,7 @@ class OpencodeZenProvider:
         lowered = model_id.lower()
         if lowered.endswith("-free") or lowered == "big-pickle":
             return True
-        cost = metadata.get("cost") or {}
+        cost = metadata.get("cost") or ((metadata.get("provider_metadata") or {}).get("cost") if isinstance(metadata.get("provider_metadata"), dict) else {}) or {}
         numeric_values = [value for value in cost.values() if isinstance(value, (int, float))]
         return bool(numeric_values) and all(float(value) == 0.0 for value in numeric_values)
 

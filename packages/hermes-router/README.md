@@ -16,12 +16,13 @@ Current scope:
 - exposes Prometheus-style metrics at `GET /metrics`
 - reads local credentials from environment
 - refreshes inventory from OpenRouter and OpenCode Zen
+- enriches OpenCode Zen inventory with matched public OpenRouter metadata when normalized ids line up closely enough
 - routes and fails over between concrete backend models instead of alias-level buckets
 - keeps paid models in inventory and debug state, but only free models can become route candidates
 - if persisted inventory exists, startup reuses it immediately; otherwise the router stays unready until the first background discovery pass classifies free models into `auxiliary`, `coding`, `vision`, and `tts`
 - dynamic bucketing prefers an OpenCode Zen free text worker when available and falls back to OpenRouter when Zen cannot supply a usable worker
 - when provider metadata exposes capabilities, `coding` and `auxiliary` candidates must support tool calling with text-only outputs, `vision` candidates must accept image or video input with text output, and `tts` candidates must expose speech-style audio output while excluding music-generation models such as Lyria
-- coding candidates also get a family prior based on repo-maintained benchmark guidance, while newer models still get only a small recency bias after capability filtering
+- coding candidates also get a strong family prior based on repo-maintained benchmark guidance, and newer models get a meaningful recency lift after capability filtering
 - preferred-model pins may use `openrouter/` or `opencode/` prefixes in config, but backend dispatch must normalize them back to the provider's real model id before routing
 - supports OpenCode Zen mixed endpoint families and normalizes them back to local `chat/completions`
 - records total latency and best-effort first-text latency per backend model
