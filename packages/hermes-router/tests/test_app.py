@@ -544,6 +544,45 @@ def test_music_audio_models_are_not_routable_for_tts(tmp_path: Path) -> None:
     assert service.preview_routes("tts") == []
 
 
+def test_coding_family_bias_prefers_minimax_over_qwen_when_capabilities_are_close(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="minimax/minimax-m2.5:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("coding",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+            ProviderModel(
+                id="qwen/qwen3.6-plus:free",
+                provider="openrouter",
+                is_free=True,
+                tags=(),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        ranking_enabled=False,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("coding")
+    assert preview[0]["backend_model"] == "minimax/minimax-m2.5:free"
+    assert preview[0]["family_name"] == "minimax"
+    qwen = next(item for item in preview if item["backend_model"] == "qwen/qwen3.6-plus:free")
+    assert preview[0]["family_bias"] > qwen["family_bias"]
+
+
 def test_recency_bias_prefers_newer_models_when_other_scores_tie(tmp_path: Path) -> None:
     provider = DummyProvider(
         "openrouter",
@@ -986,6 +1025,7 @@ def test_responses_create_get_delete_and_chain_previous_response(tmp_path: Path)
 def test_non_v1_responses_aliases_work(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         create = client.post("/responses", json={"input": "What is 1+1?", "instructions": "Be terse."})
         assert create.status_code == 200

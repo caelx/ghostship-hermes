@@ -208,7 +208,7 @@ The image now includes a standalone local router service:
 - startup behavior: the router serves the last persisted inventory and rankings immediately when they exist; otherwise it stays unready until the first background discovery pass completes
 - ranking worker: a healthy free OpenCode Zen text model is preferred for coarse ranking and selective reranking outside the request hot path, with OpenRouter fallback
 - routing filter: when provider metadata exposes modalities and supported parameters, `coding` and `auxiliary` require tool calling with text output, `vision` requires image or video input with text output, and `tts` requires speech-style audio output while excluding music-generation models such as Lyria
-- recency bias: newer models get a small score lift, but only after free-only and capability filters pass
+- recency bias: newer models get a small score lift, but only after free-only, capability, and coding-family prior filters pass
 - override controls: provider and model disablement, provider and model weight overrides, and alias pinning
 - optional auth: `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
 - optional browser CORS allowlist: `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`

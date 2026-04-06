@@ -34,6 +34,30 @@ _ALIAS_PENALTIES: dict[str, tuple[str, ...]] = {
     "tts": ("vision", "image", "video", "music", "song", "lyrics", "lyria"),
 }
 
+_CODING_FAMILY_PRIORS: tuple[tuple[str, float, tuple[str, ...]], ...] = (
+    ("gemini", 36.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
+    ("minimax", 33.0, ("minimax", "m2.7", "m2.5")),
+    ("qwen", 29.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
+    ("mimo", 26.0, ("mimo-v2", "mimo")),
+    ("glm", 23.0, ("glm-5", "glm", "z.ai", "z-ai")),
+    ("deepseek", 20.0, ("deepseek", "speciale")),
+    ("stepfun", 17.0, ("step-3.5", "stepfun", "step-")),
+    ("devstral", 15.0, ("devstral", "mistral")),
+    ("grok", 13.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
+    ("nemotron", 11.0, ("nemotron")),
+    ("llama", 10.0, ("llama")),
+    ("chimera", 8.0, ("chimera", "tngtech")),
+    ("nous-hermes", 7.0, ("hermes-4", "nousresearch/hermes", "nous hermes")),
+    ("gpt-oss", 6.0, ("gpt-oss")),
+    ("trinity", 5.0, ("trinity")),
+    ("gemma", 4.0, ("gemma")),
+    ("olmo", 3.0, ("olmo")),
+    ("solar", 2.0, ("solar")),
+    ("venice", 1.5, ("venice", "dolphin-mistral", "dolphin mistral")),
+    ("molmo", 1.0, ("molmo")),
+    ("lfm", 0.5, ("lfm", "liquid/lfm", "lfm2")),
+)
+
 
 class RouterServiceError(Exception):
     def __init__(self, status_code: int, detail: Any):
@@ -1450,6 +1474,7 @@ class RouterService:
             - float(provider_state.get("recent_exhaustion", 0)) * 4.0
         )
         latency_penalty = -((float(model_state.get("first_text_latency_avg_ms") or model_state.get("latency_avg_ms") or 0.0)) / 1000.0)
+        family_name, family_bias = self._family_bias(alias, model)
         created_bias = self._recency_bias(model)
         alias_scores = ranking.get("alias_scores", {})
         rerank_scores = ranking.get("rerank_scores", {})
@@ -1466,6 +1491,7 @@ class RouterService:
             + model_health
             + provider_health
             + latency_penalty
+            + family_bias
             + created_bias
             + learned_score
             + provider_weight
@@ -1483,6 +1509,8 @@ class RouterService:
             "model_health_score": round(model_health, 3),
             "provider_health_score": round(provider_health, 3),
             "latency_penalty": round(latency_penalty, 3),
+            "family_bias": round(family_bias, 3),
+            "family_name": family_name,
             "recency_bias": round(created_bias, 3),
             "learned_ranking_score": round(learned_score, 3),
             "provider_weight": provider_weight,
@@ -1858,6 +1886,24 @@ class RouterService:
             if model.provider == provider_name and model.id == backend_model:
                 return model
         return None
+
+    def _family_bias(self, alias: str, model: ProviderModel) -> tuple[str | None, float]:
+        if alias != "coding":
+            return None, 0.0
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        haystack = " ".join(
+            str(value).lower()
+            for value in (
+                model.id,
+                metadata.get("name"),
+                metadata.get("description"),
+            )
+            if value
+        )
+        for family_name, bias, tokens in _CODING_FAMILY_PRIORS:
+            if any(token in haystack for token in tokens):
+                return family_name, bias
+        return None, 0.0
 
     def _recency_bias(self, model: ProviderModel) -> float:
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
