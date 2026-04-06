@@ -414,8 +414,8 @@ def test_chat_completion_fails_over_across_providers_at_model_level(tmp_path: Pa
     opencode = DummyProvider(
         "opencode-zen",
         models=[
-            ProviderModel(id="qwen3-coder", provider="opencode-zen", is_free=False, tags=("coding",)),
-            ProviderModel(id="gpt-5-nano", provider="opencode-zen", is_free=False, tags=("lightweight",)),
+            ProviderModel(id="qwen3-coder:free", provider="opencode-zen", is_free=True, tags=("coding",)),
+            ProviderModel(id="gpt-5-nano:free", provider="opencode-zen", is_free=True, tags=("lightweight",)),
         ],
         first_text_latency_ms=8.0,
     )
@@ -423,7 +423,7 @@ def test_chat_completion_fails_over_across_providers_at_model_level(tmp_path: Pa
         tmp_path,
         aliases=(
             AliasConfig(name="lightweight", description="light", preferred_models=()),
-            AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free", "opencode/qwen3-coder")),
+            AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free", "opencode/qwen3-coder:free")),
             AliasConfig(name="heavyweight", description="heavy", preferred_models=()),
         ),
     )
@@ -436,7 +436,28 @@ def test_chat_completion_fails_over_across_providers_at_model_level(tmp_path: Pa
         response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
         assert response.status_code == 200
         assert response.headers["x-ghostship-router-backend-provider"] == "opencode-zen"
-        assert response.headers["x-ghostship-router-backend-model"] == "qwen3-coder"
+        assert response.headers["x-ghostship-router-backend-model"] == "qwen3-coder:free"
+
+
+def test_paid_models_are_not_routable(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "opencode-zen",
+        models=[ProviderModel(id="qwen3-coder", provider="opencode-zen", is_free=False, tags=("coding",))],
+    )
+    config = make_config(
+        tmp_path,
+        openrouter_api_key=None,
+        aliases=(
+            AliasConfig(name="lightweight", description="light", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=("opencode/qwen3-coder",)),
+            AliasConfig(name="heavyweight", description="heavy", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"opencode-zen": provider}, state_store=SqliteStateStore(config.db_path))
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
+        assert response.status_code == 503
+        assert service.preview_routes("coding") == []
 
 
 def test_model_missing_triggers_refresh(tmp_path: Path) -> None:
@@ -477,7 +498,8 @@ def test_refresh_persists_inventory_across_service_restart(tmp_path: Path) -> No
     restarted = RouterService(config, providers={"openrouter": openrouter, "opencode-zen": opencode}, state_store=SqliteStateStore(config.db_path))
     preview = restarted.preview_routes("coding")
     assert any(candidate["backend_model"] == "openrouter/code-1:free" for candidate in preview)
-    assert any(candidate["backend_model"] == "qwen3-coder" for candidate in preview)
+    assert all(candidate["backend_model"] != "qwen3-coder" for candidate in preview)
+    assert restarted.debug_model("opencode-zen", "qwen3-coder")["inventory"]["is_free"] is False
 
 
 def test_ranking_uses_healthy_free_lightweight_worker_and_persists_rankings(tmp_path: Path) -> None:
@@ -568,14 +590,14 @@ def test_provider_cooldown_suppresses_provider_after_broad_failures(tmp_path: Pa
     openrouter = DummyProvider("openrouter", failures={"openrouter/code-1:free": ["rate_limited"]})
     opencode = DummyProvider(
         "opencode-zen",
-        models=[ProviderModel(id="qwen3-coder", provider="opencode-zen", is_free=False, tags=("coding",))],
+        models=[ProviderModel(id="qwen3-coder:free", provider="opencode-zen", is_free=True, tags=("coding",))],
     )
     config = make_config(
         tmp_path,
         provider_rate_limit_threshold=1.0,
         aliases=(
             AliasConfig(name="lightweight", description="light", preferred_models=()),
-            AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free", "opencode/qwen3-coder")),
+            AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free", "opencode/qwen3-coder:free")),
             AliasConfig(name="heavyweight", description="heavy", preferred_models=()),
         ),
     )
@@ -593,7 +615,7 @@ def test_overrides_survive_restart_and_affect_routing(tmp_path: Path) -> None:
     openrouter = DummyProvider("openrouter")
     opencode = DummyProvider(
         "opencode-zen",
-        models=[ProviderModel(id="qwen3-coder", provider="opencode-zen", is_free=False, tags=("coding",))],
+        models=[ProviderModel(id="qwen3-coder:free", provider="opencode-zen", is_free=True, tags=("coding",))],
     )
     config = make_config(
         tmp_path,
@@ -607,7 +629,7 @@ def test_overrides_survive_restart_and_affect_routing(tmp_path: Path) -> None:
     service = RouterService(config, providers={"openrouter": openrouter, "opencode-zen": opencode}, state_store=store)
     service.refresh_inventory(reason="manual")
     store.upsert_provider_override("openrouter", enabled=False)
-    store.upsert_alias_pin("coding", ("opencode/qwen3-coder",))
+    store.upsert_alias_pin("coding", ("opencode/qwen3-coder:free",))
     restarted = RouterService(config, providers={"openrouter": openrouter, "opencode-zen": opencode}, state_store=SqliteStateStore(config.db_path))
     preview = restarted.preview_routes("coding")
     assert preview[0]["provider_name"] == "opencode-zen"

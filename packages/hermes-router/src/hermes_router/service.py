@@ -1060,6 +1060,8 @@ class RouterService:
             raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
         candidates: list[dict[str, Any]] = []
         for model in self._inventory_for_all():
+            if not self._model_is_routable(model):
+                continue
             if not self._model_effectively_enabled(model.provider, model.id):
                 continue
             breakdown = self._score_breakdown(alias, model)
@@ -1209,6 +1211,8 @@ class RouterService:
         )
         for alias in self.config.alias_map():
             for model in self._inventory_for_all():
+                if not self._model_is_routable(model):
+                    continue
                 if not self._model_effectively_enabled(model.provider, model.id):
                     continue
                 breakdown = self._score_breakdown(alias, model)
@@ -1255,6 +1259,10 @@ class RouterService:
             for candidate in candidates
         ]
 
+
+    def _model_is_routable(self, model: ProviderModel) -> bool:
+        return model.is_free
+
     def _resolve_candidates(self, alias: str) -> list[RouteCandidate]:
         alias_config = self.config.alias_map().get(alias)
         if alias_config is None:
@@ -1292,6 +1300,8 @@ class RouterService:
             if not matched and normalized == model_id and "openrouter" in self.providers:
                 matched.append(ProviderModel(id=model_id, provider="openrouter", is_free=model_id.endswith(":free")))
             for model in matched:
+                if not self._model_is_routable(model):
+                    continue
                 if not self._model_effectively_enabled(model.provider, model.id):
                     continue
                 if self._provider_is_cooling_down(model.provider):
@@ -1313,7 +1323,8 @@ class RouterService:
         filtered = [
             model
             for model in self._inventory_for_all()
-            if self._model_effectively_enabled(model.provider, model.id)
+            if self._model_is_routable(model)
+            and self._model_effectively_enabled(model.provider, model.id)
             and not self._is_cooling_down(model.provider, model.id)
             and not self._provider_is_cooling_down(model.provider)
         ]

@@ -17,6 +17,7 @@ Current scope:
 - reads local credentials from environment
 - refreshes inventory from OpenRouter and OpenCode Zen
 - routes and fails over between concrete backend models instead of alias-level buckets
+- keeps paid models in inventory and debug state, but only free models can become route candidates
 - supports OpenCode Zen mixed endpoint families and normalizes them back to local `chat/completions`
 - records total latency and best-effort first-text latency per backend model
 - returns `X-Hermes-Session-Id` on chat completions and can reuse that session id on later requests
