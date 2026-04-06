@@ -17,7 +17,8 @@
 - Discord gateway is a later optional interface, not the v1 default.
 - Configure Hermes declaratively through the upstream Hermes NixOS module.
 - Do not seed Ghostship-managed default skills or develop-environment workstation content into the image runtime.
-- Do not preinstall Codex, Gemini CLI, Opencode, OpenSpec, `skills`, `gws`, `bws`, or `feed` in the default image.
+- Keep the pinned `gws` CLI in the default image, but do not vendor or seed Google Workspace skills.
+- Do not preinstall Codex, Gemini CLI, Opencode, OpenSpec, `skills`, `bws`, or `feed` in the default image.
 - Keep the browser surface minimal: one dashboard, on-demand ephemeral `ttyd`, no persistent per-profile terminal services.
 - Keep the declarative Hermes profile scaffold in the image aligned to `assistant`, `operations`, and `supervisor`, with `assistant` as the sticky default profile.
 - Keep one persistent gateway service per declared profile, managed by NixOS systemd units.
@@ -36,6 +37,7 @@
 - Keep repo identity and OSS maintenance files present: `README.md`, `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and `.github/` metadata.
 - Document how to build and test Python CLI utilities in this repo.
 - After Docker-based verification, aggressively prune stale images, dead test containers, temporary artifacts, and unused volumes. Leave at most one retained copy of each needed image plus any still-needed live validation container.
+- Keep Docker clean during local validation: remove old `ghostship-hermes*` containers once they are no longer needed instead of letting validation containers accumulate.
 
 ## Build And Test Commands
 
@@ -94,10 +96,12 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Scheduled GitHub release polling must authenticate with `GITHUB_TOKEN` or `GH_TOKEN`; anonymous `api.github.com` release queries can hit rate limits and break Actions.
 - Hermes is not packaged in the inspected `nixos-25.11` nixpkgs tree, while `ttyd`, `codex`, `gemini-cli`, and `opencode` are.
 - Local flake evaluation only sees git-tracked files. Stage new Nix files and vendored trees before relying on `nix flake check` or `nix build` in a worktree.
+- On this host, run only one Nix build or eval at a time; overlapping Nix client commands can wedge daemon responsiveness and create misleading validation failures.
 - Keep `.nix-local-store/` gitignored. It is repo-local build state for Docker and Nix validation, not source content.
 - On the current `x86_64` dev host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired correctly and rely on arm64 runners for full arm builds.
 - GitHub Actions image publication must run the `aarch64-linux` image leg on native arm64 infrastructure such as `ubuntu-24.04-arm`; Docker QEMU plus Nix `extra-platforms` on an x86 runner are not enough for the native arm64 Nix image build.
 - `python3.11-websockets-15.0.1` is currently flaky on native `aarch64-linux` in nixpkgs `nixos-25.11`; keep its checks disabled in the shared router/dashboard Python override scope until upstream or nixpkgs lands a fix.
+- `gws` is the one approved non-`ghostship-*` extra CLI in the default image; keep it pinned through the upstream flake package and do not revive vendored or seeded Google Workspace skills.
 - Keep `ghostship-hermes-image` as the explicit publishable image bundle contract for CI, GHCR pushes, and image-loading flows, and keep the lower-level `/init` workstation tarball on a separate `ghostship-hermes-rootfs` output so scripts do not guess artifact semantics from one overloaded path.
 - Git worktrees do not carry ignored local `.envrc` files by default. Live-test helpers should check the current worktree first, then another repo worktree with `.envrc`.
 - Cloudflare Access service-token headers are test-only. Use `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID` and `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET` in utilities, and derive them from local `.envrc` values in the live-test harness.
