@@ -103,6 +103,18 @@ _FAMILY_RANK_STEP_BY_ALIAS: dict[str, float] = {
     "tts": 0.0,
 }
 
+_SIZE_RANK_STEP_BY_ALIAS: dict[str, float] = {
+    "coding": 0.25,
+    "agentic": 0.2,
+    "vision": 0.5,
+}
+
+_SIZE_RANK_CAP_BY_ALIAS: dict[str, float] = {
+    "coding": 3.0,
+    "agentic": 2.5,
+    "vision": 6.0,
+}
+
 _SIZE_HINTS: tuple[tuple[str, float], ...] = (
     ("nano", -3.0),
     ("mini", -2.5),
@@ -1542,7 +1554,7 @@ class RouterService:
         )
         latency_penalty = -((float(model_state.get("first_text_latency_avg_ms") or model_state.get("latency_avg_ms") or 0.0)) / 1000.0)
         family_name, family_bias = self._family_bias(alias, model)
-        parameter_count_b, parameter_bias = self._parameter_bias(alias, model, family_name=family_name)
+        parameter_count_b, parameter_bias, size_penalty, size_rank_bonus = self._parameter_bias(alias, model, family_name=family_name)
         created_bias = self._recency_bias(model)
         alias_scores = ranking.get("alias_scores", {})
         rerank_scores = ranking.get("rerank_scores", {})
@@ -1582,6 +1594,8 @@ class RouterService:
             "family_name": family_name,
             "parameter_count_b": parameter_count_b,
             "parameter_bias": round(parameter_bias, 3),
+            "size_penalty": round(size_penalty, 3),
+            "size_rank_bonus": round(size_rank_bonus, 3),
             "recency_bias": round(created_bias, 3),
             "learned_ranking_score": round(learned_score, 3),
             "provider_weight": provider_weight,
@@ -2015,21 +2029,24 @@ class RouterService:
             for index, family_name in enumerate(present_families)
         }
 
-    def _parameter_bias(self, alias: str, model: ProviderModel, *, family_name: str | None) -> tuple[float | None, float]:
+    def _parameter_bias(self, alias: str, model: ProviderModel, *, family_name: str | None) -> tuple[float | None, float, float, float]:
         parameter_count = self._parameter_count_b(model)
         size_hint = self._size_hint(model)
         if alias == "auxiliary":
             if parameter_count is None:
-                return None, -min(max(size_hint, 0.0) * 2.0, 4.0)
-            return parameter_count, -min(parameter_count * 0.18, 8.0)
+                bias = -min(max(size_hint, 0.0) * 2.0, 4.0)
+                return None, bias, bias, 0.0
+            bias = -min(parameter_count * 0.18, 8.0)
+            return parameter_count, bias, bias, 0.0
         if alias == "tts":
-            return parameter_count, 0.0
+            return parameter_count, 0.0, 0.0, 0.0
+        size_rank_bonus = self._size_rank_bonus(alias, model, parameter_count=parameter_count)
         if family_name is None:
-            return parameter_count, 0.0
-        largest_signature = self._largest_family_size_signature(alias, family_name)
+            return parameter_count, size_rank_bonus, 0.0, size_rank_bonus
+        largest_signature = self._largest_family_size_signature(alias, family_name, model)
         current_signature = self._size_signature(model)
         if largest_signature is None or current_signature >= largest_signature:
-            return parameter_count, 0.0
+            return parameter_count, size_rank_bonus, 0.0, size_rank_bonus
         parameter_gap = max(largest_signature[1] - current_signature[1], 0.0)
         size_hint_gap = max(largest_signature[2] - current_signature[2], 0.0)
         if alias == "vision":
@@ -2040,10 +2057,13 @@ class RouterService:
             penalty = min((parameter_gap * 0.06) + (size_hint_gap * 5.0), 16.0)
         else:
             penalty = 0.0
-        return parameter_count, -round(penalty, 3)
+        total = round(size_rank_bonus - penalty, 3)
+        return parameter_count, total, -round(penalty, 3), size_rank_bonus
 
-    def _largest_family_size_signature(self, alias: str, family_name: str) -> tuple[int, float, float] | None:
-        best: tuple[int, float, float] | None = None
+    def _largest_family_size_signature(self, alias: str, family_name: str, model: ProviderModel) -> tuple[int, float, float] | None:
+        group_key = self._size_group_key(model, family_name)
+        grouped: list[ProviderModel] = []
+        family_wide: list[ProviderModel] = []
         for sibling in self._inventory_for_all():
             if not self._model_is_routable(sibling, alias=alias):
                 continue
@@ -2051,10 +2071,74 @@ class RouterService:
             matched_families = set(primary_matches)
             if family_name not in matched_families:
                 continue
+            family_wide.append(sibling)
+            sibling_group_key = self._size_group_key(sibling, family_name)
+            if group_key is not None and sibling_group_key == group_key:
+                grouped.append(sibling)
+        if group_key is not None and group_key != family_name:
+            candidates = grouped if len(grouped) > 1 else []
+        else:
+            candidates = grouped if group_key is not None and len(grouped) > 1 else family_wide
+        best: tuple[int, float, float] | None = None
+        for sibling in candidates:
             signature = self._size_signature(sibling)
             if best is None or signature > best:
                 best = signature
         return best
+
+    def _size_rank_bonus(self, alias: str, model: ProviderModel, *, parameter_count: float | None) -> float:
+        if parameter_count is None:
+            return 0.0
+        step = _SIZE_RANK_STEP_BY_ALIAS.get(alias, 0.0)
+        if step <= 0:
+            return 0.0
+        values = sorted(
+            {
+                count
+                for candidate in self._inventory_for_all()
+                if self._model_is_routable(candidate, alias=alias)
+                and self._model_effectively_enabled(candidate.provider, candidate.id)
+                and (count := self._parameter_count_b(candidate)) is not None
+            },
+            reverse=True,
+        )
+        if not values:
+            return 0.0
+        try:
+            rank = values.index(parameter_count)
+        except ValueError:
+            return 0.0
+        raw_bonus = (len(values) - rank) * step
+        return round(min(raw_bonus, _SIZE_RANK_CAP_BY_ALIAS.get(alias, raw_bonus)), 3)
+
+    def _size_group_key(self, model: ProviderModel, family_name: str) -> str | None:
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        haystack = " ".join(
+            str(value).lower()
+            for value in (
+                model.id,
+                metadata.get("name"),
+            )
+            if value
+        )
+        patterns: dict[str, tuple[str, ...]] = {
+            "minimax": (r"(m\d+(?:\.\d+)?)",),
+            "glm": (r"(glm-\d+(?:\.\d+)?)",),
+            "qwen": (r"(qwen\d+(?:\.\d+)?-coder-next)", r"(qwen\d+(?:\.\d+)?-coder)", r"(qwen\d+(?:\.\d+)?-next)", r"(qwen\d+(?:\.\d+)?)"),
+            "gemini": (r"(gemini-\d+(?:\.\d+)?)",),
+            "nemotron": (r"(nemotron-\d+)",),
+            "trinity": (r"(trinity)",),
+            "stepfun": (r"(step-\d+(?:\.\d+)?)",),
+            "mimo": (r"(mimo-v\d+(?:\.\d+)?)",),
+            "deepseek": (r"(deepseek(?:-v?\d+(?:\.\d+)?)?)",),
+            "grok": (r"(grok(?:\s|-)\d+(?:\.\d+)?)", r"(grok)",),
+            "devstral": (r"(devstral(?:\s|-)\d+(?:\.\d+)?)", r"(devstral)",),
+        }
+        for pattern in patterns.get(family_name, ()): 
+            match = re.search(pattern, haystack)
+            if match:
+                return match.group(1)
+        return family_name if family_name else None
 
     def _size_signature(self, model: ProviderModel) -> tuple[int, float, float]:
         parameter_count = self._parameter_count_b(model)

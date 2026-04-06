@@ -723,6 +723,53 @@ def test_coding_family_bias_prefers_minimax_over_qwen_when_capabilities_are_clos
     assert preview[0]["family_bias"] > qwen["family_bias"]
 
 
+def test_coding_subfamily_penalty_does_not_drag_qwen_below_glm(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="qwen/qwen3.6-plus:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("coding",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+            ProviderModel(
+                id="qwen/qwen3-next-80b-a3b-instruct:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("coding",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1770000000},
+            ),
+            ProviderModel(
+                id="z-ai/glm-4.5-air:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("coding",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1740000000},
+            ),
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        ranking_enabled=False,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("coding")
+    qwen = next(item for item in preview if item["backend_model"] == "qwen/qwen3.6-plus:free")
+    glm = next(item for item in preview if item["backend_model"] == "z-ai/glm-4.5-air:free")
+    assert qwen["parameter_bias"] >= 0.0
+    assert qwen["total_score"] > glm["total_score"]
+
+
 def test_coding_penalizes_smaller_family_variants_when_larger_peer_exists(tmp_path: Path) -> None:
     provider = DummyProvider(
         "openrouter",
@@ -912,6 +959,7 @@ def test_vision_parameter_bias_prefers_larger_gemma_model(tmp_path: Path) -> Non
     ]
     assert preview[0]["parameter_count_b"] == 27.0
     assert preview[0]["parameter_bias"] > preview[1]["parameter_bias"] > preview[2]["parameter_bias"]
+    assert preview[0]["size_rank_bonus"] > preview[1]["size_rank_bonus"] > preview[2]["size_rank_bonus"]
 
 
 def test_auxiliary_prefers_smaller_models_when_family_fit_is_close(tmp_path: Path) -> None:
