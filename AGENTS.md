@@ -119,6 +119,8 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - When Hermes talks to the local router through its generic OpenAI-compatible `model.base_url`, `OPENAI_API_KEY` is the compatibility auth input to reuse for the router bearer token.
 - Upstream Hermes only treats `model.base_url` as the active custom endpoint during runtime resolution when `model.provider` is explicitly `auto` or `custom`; in this repo's router-primary image configs, always write `model.provider = auto` alongside the local router `base_url`.
 - Router startup must not block the listener on fresh ranking generation; keep serving persisted inventory/rankings from SQLite while startup refresh and reranking continue in the background.
+- Router score preview paths such as `/v1/models` must not reread full SQLite state tables for every candidate score; cache `model_state`, `provider_state`, `rankings`, and override reads in-process and invalidate those caches on writes.
+- Root-side image validation shells only see the system profile PATH, so keep tools like `jq` in `environment.systemPackages` if the smoke or persistence scripts need them through `docker exec` as root.
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.
 - CloakBrowser Manager auth uses the server `AUTH_TOKEN` as `Authorization: Bearer <token>`; `/api/status` stays unauthenticated for health checks.

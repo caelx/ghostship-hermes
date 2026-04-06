@@ -226,6 +226,7 @@ in
   security.sudo.enable = false;
 
   environment.variables = serviceEnvironment;
+  environment.systemPackages = servicePath;
   environment.shellInit = ''
     if [ "$(id -u)" = "3000" ]; then
       export HOME=/home/hermes

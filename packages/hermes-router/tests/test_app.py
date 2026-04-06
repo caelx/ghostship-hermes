@@ -479,6 +479,7 @@ def test_chat_completion_fails_over_to_next_model(tmp_path: Path) -> None:
         ),
     )
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
         assert response.status_code == 200
@@ -1554,6 +1555,7 @@ def test_responses_stream_preserves_function_call_items(tmp_path: Path) -> None:
 
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": ToolProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         response = client.post(
             "/v1/responses",
