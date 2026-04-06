@@ -37,6 +37,7 @@
 - Keep repo identity and OSS maintenance files present: `README.md`, `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and `.github/` metadata.
 - Document how to build and test Python CLI utilities in this repo.
 - After Docker-based verification, aggressively prune stale images, dead test containers, temporary artifacts, and unused volumes. Leave at most one retained copy of each needed image plus any still-needed live validation container.
+- Keep Docker clean during local validation: remove old `ghostship-hermes*` containers once they are no longer needed instead of letting validation containers accumulate.
 
 ## Build And Test Commands
 
