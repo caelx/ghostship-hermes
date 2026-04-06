@@ -686,6 +686,54 @@ def test_coding_family_bias_prefers_minimax_over_qwen_when_capabilities_are_clos
     assert preview[0]["family_bias"] > qwen["family_bias"]
 
 
+def test_agentic_family_bias_prefers_gemini_over_trinity_and_minimax(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="google/gemini-3.1-pro:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("agentic",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+            ProviderModel(
+                id="arcee-ai/trinity-large-preview:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("agentic",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+            ProviderModel(
+                id="minimax/minimax-m2.5:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("agentic",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        ranking_enabled=False,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("agentic")
+    assert [item["backend_model"] for item in preview[:3]] == [
+        "google/gemini-3.1-pro:free",
+        "arcee-ai/trinity-large-preview:free",
+        "minimax/minimax-m2.5:free",
+    ]
+
+
 def test_vision_parameter_bias_prefers_larger_gemma_model(tmp_path: Path) -> None:
     provider = DummyProvider(
         "openrouter",
@@ -733,6 +781,47 @@ def test_vision_parameter_bias_prefers_larger_gemma_model(tmp_path: Path) -> Non
     ]
     assert preview[0]["parameter_count_b"] == 27.0
     assert preview[0]["parameter_bias"] > preview[1]["parameter_bias"] > preview[2]["parameter_bias"]
+
+
+def test_auxiliary_prefers_smaller_models_when_family_fit_is_close(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="google/gemma-3-4b-it:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("auxiliary",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+            ProviderModel(
+                id="google/gemma-3-27b-it:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("auxiliary",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        ranking_enabled=False,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("auxiliary")
+    assert [item["backend_model"] for item in preview[:2]] == [
+        "google/gemma-3-4b-it:free",
+        "google/gemma-3-27b-it:free",
+    ]
+    assert preview[0]["parameter_bias"] > preview[1]["parameter_bias"]
 
 
 def test_recency_bias_prefers_newer_models_when_other_scores_tie(tmp_path: Path) -> None:

@@ -37,29 +37,45 @@ _ALIAS_PENALTIES: dict[str, tuple[str, ...]] = {
     "tts": ("vision", "image", "video", "music", "song", "lyrics", "lyria"),
 }
 
-_CODING_FAMILY_PRIORS: tuple[tuple[str, float, tuple[str, ...]], ...] = (
-    ("gemini", 64.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
-    ("minimax", 60.0, ("minimax", "m2.7", "m2.5")),
-    ("qwen", 54.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
-    ("mimo", 48.0, ("mimo-v2", "mimo")),
-    ("glm", 42.0, ("glm-5", "glm", "z.ai", "z-ai")),
-    ("deepseek", 36.0, ("deepseek", "speciale")),
-    ("stepfun", 31.0, ("step-3.5", "stepfun", "step-")),
-    ("devstral", 27.0, ("devstral", "mistral")),
-    ("grok", 23.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
-    ("nemotron", 19.0, ("nemotron")),
-    ("llama", 16.0, ("llama")),
-    ("chimera", 13.0, ("chimera", "tngtech")),
-    ("nous-hermes", 11.0, ("hermes-4", "nousresearch/hermes", "nous hermes")),
-    ("gpt-oss", 9.0, ("gpt-oss")),
-    ("trinity", 7.0, ("trinity")),
-    ("gemma", 5.0, ("gemma")),
-    ("olmo", 4.0, ("olmo")),
-    ("solar", 3.0, ("solar")),
-    ("venice", 2.0, ("venice", "dolphin-mistral", "dolphin mistral")),
-    ("molmo", 1.0, ("molmo")),
-    ("lfm", 0.5, ("lfm", "liquid/lfm", "lfm2")),
-)
+_FAMILY_PRIORS_BY_ALIAS: dict[str, tuple[tuple[str, float, tuple[str, ...]], ...]] = {
+    "coding": (
+        ("minimax", 78.0, ("minimax", "m2.7", "m2.5")),
+        ("nemotron", 70.0, ("nemotron")),
+        ("glm", 62.0, ("glm-5", "glm", "z.ai", "z-ai")),
+        ("deepseek", 54.0, ("deepseek", "speciale")),
+        ("grok", 46.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
+        ("qwen", 38.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
+        ("gemini", 30.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
+        ("devstral", 22.0, ("devstral", "mistral")),
+        ("llama", 14.0, ("llama")),
+    ),
+    "agentic": (
+        ("gemini", 78.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
+        ("trinity", 70.0, ("trinity", "arcee", "arcee-ai")),
+        ("minimax", 62.0, ("minimax", "m2.7", "m2.5")),
+        ("qwen", 54.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
+        ("mimo", 46.0, ("mimo-v2", "mimo")),
+        ("nemotron", 38.0, ("nemotron")),
+        ("glm", 30.0, ("glm-5", "glm", "z.ai", "z-ai")),
+        ("stepfun", 24.0, ("step-3.5", "stepfun", "step-")),
+        ("deepseek", 18.0, ("deepseek", "speciale")),
+        ("grok", 14.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
+        ("devstral", 10.0, ("devstral", "mistral")),
+        ("gpt-oss", 6.0, ("gpt-oss")),
+    ),
+    "auxiliary": (
+        ("gemini", 34.0, ("gemini flash-lite", "gemini flash", "gemini-3.1-flash-lite", "gemini-3-flash", "gemini")),
+        ("gpt-oss", 30.0, ("gpt-oss")),
+        ("nemotron", 26.0, ("nemotron")),
+        ("mimo", 22.0, ("mimo-v2-flash", "mimo-v2", "mimo")),
+        ("grok", 18.0, ("grok code fast", "grok-code-fast", "grok fast", "grok")),
+        ("stepfun", 14.0, ("step-3.5", "stepfun", "step-")),
+        ("glm", 10.0, ("glm-5 turbo", "glm-5", "glm", "z.ai", "z-ai")),
+        ("minimax", 8.0, ("minimax", "m2.7-highspeed", "m2.7", "m2.5")),
+        ("lfm", 6.0, ("lfm", "liquid/lfm", "lfm2")),
+        ("gemma", 4.0, ("gemma")),
+    ),
+}
 
 
 class RouterServiceError(Exception):
@@ -1455,15 +1471,15 @@ class RouterService:
         penalty_score = 0.0
         for token in _ALIAS_HINTS.get(alias, ()):
             if token in lowered:
-                hint_score += 1.5
+                hint_score += 0.75
         for token in model.tags:
             if token == alias:
-                hint_score += 1.0
+                hint_score += 0.5
         for token in _ALIAS_PENALTIES.get(alias, ()):
             if token in lowered:
-                penalty_score -= 1.5
+                penalty_score -= 1.0
         free_score = 100.0 if model.is_free else 0.0
-        provider_bias = 2.0 if model.provider == "openrouter" else 0.0
+        provider_bias = 0.25 if model.provider == "openrouter" else 0.0
         model_health = (
             float(model_state.get("recent_success", 0)) * 2.0
             - float(model_state.get("recent_failure", 0)) * 3.0
@@ -1899,21 +1915,24 @@ class RouterService:
         return None
 
     def _family_bias(self, alias: str, model: ProviderModel) -> tuple[str | None, float]:
-        if alias != "coding":
+        priors = _FAMILY_PRIORS_BY_ALIAS.get(alias)
+        if not priors:
             return None, 0.0
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
-        haystack = " ".join(
+        primary_haystack = " ".join(
             str(value).lower()
             for value in (
                 model.id,
                 metadata.get("name"),
-                metadata.get("description"),
             )
             if value
         )
-        for family_name, bias, tokens in _CODING_FAMILY_PRIORS:
-            if any(token in haystack for token in tokens):
+        description_haystack = str(metadata.get("description", "")).lower()
+        for family_name, bias, tokens in priors:
+            if any(token in primary_haystack for token in tokens):
                 return family_name, bias
+            if description_haystack and any(token in description_haystack for token in tokens):
+                return family_name, round(bias * 0.2, 3)
         return None, 0.0
 
     def _parameter_bias(self, alias: str, model: ProviderModel) -> tuple[float | None, float]:
@@ -1924,8 +1943,10 @@ class RouterService:
             return parameter_count, min(parameter_count * 0.25, 12.0)
         if alias == "coding":
             return parameter_count, min(parameter_count * 0.08, 6.0)
+        if alias == "agentic":
+            return parameter_count, min(parameter_count * 0.05, 4.0)
         if alias == "auxiliary":
-            return parameter_count, 0.0
+            return parameter_count, -min(parameter_count * 0.18, 8.0)
         if alias == "tts":
             return parameter_count, min(parameter_count * 0.05, 3.0)
         return parameter_count, 0.0
@@ -1957,13 +1978,13 @@ class RouterService:
             return 0.0
         age_days = (now - created_value) / 86400.0
         if age_days <= 30:
-            return 12.0
+            return 18.0
         if age_days <= 90:
-            return 8.0
+            return 12.0
         if age_days <= 180:
-            return 5.0
+            return 8.0
         if age_days <= 365:
-            return 2.0
+            return 4.0
         return 0.0
 
     def _model_override_payload(self, provider_name: str, backend_model: str) -> dict[str, Any]:
