@@ -153,23 +153,28 @@ class RouterConfig:
             model_weight_overrides=_parse_assignment_env("GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES", cast=float),
             alias_pin_overrides={
                 alias: _parse_csv_env(f"GHOSTSHIP_ROUTER_ALIAS_PIN_{alias.upper()}")
-                for alias in ("lightweight", "coding", "heavyweight")
+                for alias in ("auxiliary", "coding", "vision", "tts")
             },
             aliases=(
                 AliasConfig(
-                    name="lightweight",
-                    description="Cheap, fast work such as summaries, extraction, and routing.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_LIGHTWEIGHT_MODELS"),
+                    name="auxiliary",
+                    description="Fast secondary work such as summaries, extraction, triage, and router assistance.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_AUXILIARY_MODELS"),
                 ),
                 AliasConfig(
                     name="coding",
-                    description="Code generation, editing, debugging, and technical reasoning.",
+                    description="Primary coding and heavier reasoning workloads.",
                     preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_CODING_MODELS"),
                 ),
                 AliasConfig(
-                    name="heavyweight",
-                    description="Harder reasoning workloads when lighter free models are not enough.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_HEAVYWEIGHT_MODELS"),
+                    name="vision",
+                    description="Image and multimodal understanding with text output.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_VISION_MODELS"),
+                ),
+                AliasConfig(
+                    name="tts",
+                    description="Speech-style audio generation backends when free options are available.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_TTS_MODELS"),
                 ),
             ),
         )

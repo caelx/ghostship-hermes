@@ -218,14 +218,14 @@ wait_for_hermes_condition() {
 
 assert_router_inventory() {
   local container_name="$1"
-  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"lightweight\") and index(\"coding\") and index(\"heavyweight\")' >/dev/null"
+  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"vision\") and index(\"tts\")' >/dev/null"
 }
 
 assert_free_router_buckets() {
   local container_name="$1"
   run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '
-    [.data[] | select(.id == "lightweight" or .id == "coding" or .id == "heavyweight")]
-    | length == 3
+    [.data[] | select(.id == "auxiliary" or .id == "coding" or .id == "vision" or .id == "tts")]
+    | length == 4
     and all(.[]; .metadata.candidate_count > 0)
     and all(.[]; all(.metadata.candidates[]; .is_free == true))
   ' >/dev/null"
@@ -322,8 +322,8 @@ run_as_hermes "$container_one" 'hermes profile list | grep -F "operations" >/dev
 run_as_hermes "$container_one" 'hermes profile list | grep -F "coder" >/dev/null'
 assert_router_inventory "$container_one"
 assert_free_router_buckets "$container_one"
-assert_model_config "$container_one" root lightweight
-assert_model_config "$container_one" operations heavyweight
+assert_model_config "$container_one" root coding
+assert_model_config "$container_one" operations coding
 assert_model_config "$container_one" coder coding
 run_as_hermes "$container_one" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
 run_as_hermes "$container_one" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/coder/.env >/dev/null'
@@ -458,8 +458,8 @@ run_as_hermes "$container_two" 'hermes profile list | grep -F "coder" >/dev/null
 run_in_container "$container_two" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
 assert_router_inventory "$container_two"
 assert_free_router_buckets "$container_two"
-assert_model_config "$container_two" root lightweight
-assert_model_config "$container_two" operations heavyweight
+assert_model_config "$container_two" root coding
+assert_model_config "$container_two" operations coding
 assert_model_config "$container_two" coder coding
 run_as_hermes "$container_two" 'hello >/tmp/hello.out && grep -F "Hello, world!" /tmp/hello.out >/dev/null'
 run_as_hermes "$container_two" 'command -v tirith >/dev/null'

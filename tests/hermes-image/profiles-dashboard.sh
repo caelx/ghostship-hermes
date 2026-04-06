@@ -135,14 +135,14 @@ wait_for_router_ready() {
 
 assert_router_inventory() {
   local container_name="$1"
-  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"lightweight\") and index(\"coding\") and index(\"heavyweight\")' >/dev/null"
+  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"vision\") and index(\"tts\")' >/dev/null"
 }
 
 assert_free_router_buckets() {
   local container_name="$1"
   run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '
-    [.data[] | select(.id == "lightweight" or .id == "coding" or .id == "heavyweight")]
-    | length == 3
+    [.data[] | select(.id == "auxiliary" or .id == "coding" or .id == "vision" or .id == "tts")]
+    | length == 4
     and all(.[]; .metadata.candidate_count > 0)
     and all(.[]; all(.metadata.candidates[]; .is_free == true))
   ' >/dev/null"
@@ -286,7 +286,7 @@ wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
 wait_for_json_value "${dashboard_base_url}/api/status" '.profiles[] | select(.name == "operations") | .name' "operations"
 wait_for_json_value "${dashboard_base_url}/api/status" '.profiles[] | select(.name == "coder") | .name' "coder"
 wait_for_json_value "${dashboard_base_url}/api/status" '.default_profile' "operations"
-wait_for_json_value "${dashboard_base_url}/api/status" '.environment.root_model' "lightweight"
+wait_for_json_value "${dashboard_base_url}/api/status" '.environment.root_model' "coding"
 wait_for_json_value "${dashboard_base_url}/api/status" '.environment.providers[] | select(.name == "ghostship-router") | .router.ready' "true"
 
 open_started_ms="$(date +%s%3N)"
@@ -335,8 +335,8 @@ run_as_hermes "$container_name" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.her
 run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'
 assert_router_inventory "$container_name"
 assert_free_router_buckets "$container_name"
-assert_model_config "$container_name" root lightweight
-assert_model_config "$container_name" operations heavyweight
+assert_model_config "$container_name" root coding
+assert_model_config "$container_name" operations coding
 assert_model_config "$container_name" coder coding
 run_in_container "$container_name" 'systemctl is-active ghostship-dashboard-controller.service >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'

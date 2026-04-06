@@ -18,18 +18,20 @@ from .state import RouteEvent, SqliteStateStore, StateStore
 
 logger = logging.getLogger("hermes_router")
 
-_ALIASES = ("lightweight", "coding", "heavyweight")
+_ALIASES = ("auxiliary", "coding", "vision", "tts")
 
 _ALIAS_HINTS: dict[str, tuple[str, ...]] = {
-    "lightweight": ("mini", "small", "flash", "flash-lite", "nano", "haiku", "free"),
-    "coding": ("coder", "code", "codex", "qwen", "deepseek", "devstral"),
-    "heavyweight": ("large", "70b", "72b", "opus", "pro", "reason", "thinking", "sonnet"),
+    "auxiliary": ("mini", "small", "flash", "flash-lite", "nano", "haiku"),
+    "coding": ("coder", "coding", "code", "codex", "qwen", "deepseek", "devstral", "reason", "thinking", "opus", "sonnet", "large", "70b", "72b", "swe"),
+    "vision": ("vision", "vl", "image", "video", "multimodal", "omni", "5v", "gemma-4"),
+    "tts": ("audio", "speech", "voice", "tts", "narration"),
 }
 
 _ALIAS_PENALTIES: dict[str, tuple[str, ...]] = {
-    "lightweight": ("large", "70b", "72b", "reason"),
-    "coding": ("vision", "image"),
-    "heavyweight": ("mini", "nano", "small"),
+    "auxiliary": ("large", "70b", "72b", "reason", "thinking", "vision", "video", "audio"),
+    "coding": ("audio", "speech", "tts", "music"),
+    "vision": ("audio", "speech", "tts", "music"),
+    "tts": ("vision", "image", "video", "music", "song", "lyrics", "lyria"),
 }
 
 
@@ -1059,7 +1061,7 @@ class RouterService:
             raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
         candidates: list[dict[str, Any]] = []
         for model in self._inventory_for_all():
-            if not self._model_is_routable(model):
+            if not self._model_is_routable(model, alias=alias):
                 continue
             if not self._model_effectively_enabled(model.provider, model.id):
                 continue
@@ -1210,7 +1212,7 @@ class RouterService:
         )
         for alias in self.config.alias_map():
             for model in self._inventory_for_all():
-                if not self._model_is_routable(model):
+                if not self._model_is_routable(model, alias=alias):
                     continue
                 if not self._model_effectively_enabled(model.provider, model.id):
                     continue
@@ -1259,8 +1261,61 @@ class RouterService:
         ]
 
 
-    def _model_is_routable(self, model: ProviderModel) -> bool:
-        return model.is_free
+    def _model_is_routable(self, model: ProviderModel, *, alias: str | None = None) -> bool:
+        if not model.is_free:
+            return False
+        output_modalities = self._output_modalities(model)
+        input_modalities = self._input_modalities(model)
+        if alias == "tts":
+            return "audio" in output_modalities and not self._model_is_music_audio(model)
+        if alias == "vision":
+            if not ({"image", "video"} & input_modalities):
+                return False
+            return not output_modalities or output_modalities == {"text"}
+        if not self._model_supports_tools(model):
+            return False
+        if output_modalities and output_modalities != {"text"}:
+            return False
+        return True
+
+    def _model_supports_tools(self, model: ProviderModel) -> bool:
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        supported_parameters = metadata.get("supported_parameters")
+        if not isinstance(supported_parameters, list):
+            return True
+        supported = {str(item).strip().lower() for item in supported_parameters if str(item).strip()}
+        if not supported:
+            return True
+        return "tools" in supported or "tool_choice" in supported
+
+    def _output_modalities(self, model: ProviderModel) -> set[str]:
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        output_modalities = metadata.get("output_modalities")
+        if not isinstance(output_modalities, list):
+            return set()
+        return {str(item).strip().lower() for item in output_modalities if str(item).strip()}
+
+    def _input_modalities(self, model: ProviderModel) -> set[str]:
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        input_modalities = metadata.get("input_modalities")
+        if not isinstance(input_modalities, list):
+            return set()
+        return {str(item).strip().lower() for item in input_modalities if str(item).strip()}
+
+    def _model_is_music_audio(self, model: ProviderModel) -> bool:
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        haystack = " ".join(
+            str(value).lower()
+            for value in (
+                model.id,
+                metadata.get("name"),
+                metadata.get("description"),
+                metadata.get("modality"),
+            )
+            if value
+        )
+        music_tokens = ("lyria", "music", "song", "songs", "lyrics", "stereo", "clip", "instrumental", "vocals")
+        return any(token in haystack for token in music_tokens)
 
     def _resolve_candidates(self, alias: str) -> list[RouteCandidate]:
         alias_config = self.config.alias_map().get(alias)
@@ -1271,7 +1326,7 @@ class RouterService:
             raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
 
         pinned_models = self._alias_pins(alias, alias_config)
-        candidates = self._preferred_candidates(pinned_models)
+        candidates = self._preferred_candidates(pinned_models, alias=alias)
         if not candidates:
             discovered = self._discover_alias_candidates(alias_config)
             candidates = [
@@ -1288,9 +1343,9 @@ class RouterService:
     def _resolve_direct_model(self, model_name: str) -> list[RouteCandidate]:
         if not self.config.allow_direct_models:
             return []
-        return self._preferred_candidates((model_name,))
+        return self._preferred_candidates((model_name,), alias=self._alias_for_model_id(model_name))
 
-    def _preferred_candidates(self, model_ids: tuple[str, ...], *, inventory: list[ProviderModel] | None = None) -> list[RouteCandidate]:
+    def _preferred_candidates(self, model_ids: tuple[str, ...], *, alias: str | None = None, inventory: list[ProviderModel] | None = None) -> list[RouteCandidate]:
         candidates: list[RouteCandidate] = []
         known_inventory = inventory if inventory is not None else self._inventory_for_all()
         for model_id in model_ids:
@@ -1304,8 +1359,9 @@ class RouterService:
                 matched.append(ProviderModel(id=model_id, provider="openrouter", is_free=model_id.endswith(":free")))
             elif known_inventory and not matched and normalized != model_id and "openrouter" in self.providers:
                 matched.append(ProviderModel(id=normalized, provider="openrouter", is_free=normalized.endswith(":free")))
+            alias_name = alias or self._alias_for_model_id(model_id) or "coding"
             for model in matched:
-                if not self._model_is_routable(model):
+                if not self._model_is_routable(model, alias=alias_name):
                     continue
                 if not self._model_effectively_enabled(model.provider, model.id):
                     continue
@@ -1313,7 +1369,7 @@ class RouterService:
                     continue
                 if self._is_cooling_down(model.provider, model.id):
                     continue
-                breakdown = self._score_breakdown(self._alias_for_model_id(model_id) or "coding", model)
+                breakdown = self._score_breakdown(alias_name, model)
                 candidate = RouteCandidate(
                     provider_name=model.provider,
                     backend_model=model.id,
@@ -1328,7 +1384,7 @@ class RouterService:
         filtered = [
             model
             for model in self._inventory_for_all()
-            if self._model_is_routable(model)
+            if self._model_is_routable(model, alias=alias.name)
             and self._model_effectively_enabled(model.provider, model.id)
             and not self._is_cooling_down(model.provider, model.id)
             and not self._provider_is_cooling_down(model.provider)
@@ -1394,9 +1450,10 @@ class RouterService:
             - float(provider_state.get("recent_exhaustion", 0)) * 4.0
         )
         latency_penalty = -((float(model_state.get("first_text_latency_avg_ms") or model_state.get("latency_avg_ms") or 0.0)) / 1000.0)
+        created_bias = self._recency_bias(model)
         alias_scores = ranking.get("alias_scores", {})
         rerank_scores = ranking.get("rerank_scores", {})
-        learned_score = float(alias_scores.get(alias, 0.0)) + float(rerank_scores.get(alias, 0.0))
+        learned_score = (float(alias_scores.get(alias, 0.0)) * 3.0) + (float(rerank_scores.get(alias, 0.0)) * 2.0)
         provider_weight = self._provider_weight(model.provider, overrides=overrides)
         model_weight = self._model_weight(model.provider, model.id, overrides=overrides)
         cooldown_penalty = -1000.0 if self._is_cooling_down(model.provider, model.id, state=model_state) else 0.0
@@ -1409,6 +1466,7 @@ class RouterService:
             + model_health
             + provider_health
             + latency_penalty
+            + created_bias
             + learned_score
             + provider_weight
             + model_weight
@@ -1425,6 +1483,7 @@ class RouterService:
             "model_health_score": round(model_health, 3),
             "provider_health_score": round(provider_health, 3),
             "latency_penalty": round(latency_penalty, 3),
+            "recency_bias": round(created_bias, 3),
             "learned_ranking_score": round(learned_score, 3),
             "provider_weight": provider_weight,
             "model_weight": model_weight,
@@ -1546,59 +1605,60 @@ class RouterService:
         return (time.time() - self._last_ranking_at) >= self.config.ranking_interval_seconds
 
     def _refresh_rankings(self, models: list[ProviderModel]) -> None:
-        worker = self._select_ranking_worker(models)
-        if worker is None:
-            self._last_ranking_error = {"message": "No healthy free lightweight ranking worker available."}
+        workers = self._select_ranking_workers(models)
+        if not workers:
+            self._last_ranking_error = {"message": "No healthy free auxiliary ranking worker available."}
             self._last_ranking_worker = None
             self._last_bucket_model = None
             return
-        provider = self.providers.get(worker.provider_name)
-        if provider is None:
-            return
-        try:
-            classifications, rankings = self._rank_inventory_with_worker(provider, worker.backend_model, models)
-        except NormalizedProviderError as exc:
-            self._last_ranking_error = {"category": exc.category, "details": exc.details}
+        last_error: dict[str, Any] | None = None
+        for worker in workers:
+            provider = self.providers.get(worker.provider_name)
+            if provider is None:
+                continue
+            try:
+                classifications, rankings = self._rank_inventory_with_worker(provider, worker.backend_model, models)
+            except NormalizedProviderError as exc:
+                last_error = {"category": exc.category, "details": exc.details}
+                self._last_ranking_worker = {"provider_name": worker.provider_name, "backend_model": worker.backend_model}
+                self._last_bucket_model = None
+                self._log_event("ranking_failed", provider=worker.provider_name, backend_model=worker.backend_model, category=exc.category)
+                continue
+            if classifications:
+                self.state_store.save_classifications(classifications, source=worker.backend_model)
+            if rankings:
+                self.state_store.save_rankings(
+                    rankings,
+                    source="auxiliary-free-worker",
+                    worker_provider_name=worker.provider_name,
+                    worker_backend_model=worker.backend_model,
+                )
+            self._last_ranking_at = time.time()
+            self._last_ranking_error = None
             self._last_ranking_worker = {"provider_name": worker.provider_name, "backend_model": worker.backend_model}
-            self._last_bucket_model = None
-            self._log_event("ranking_failed", provider=worker.provider_name, backend_model=worker.backend_model, category=exc.category)
+            self._last_bucket_model = worker.backend_model
+            self._inventory = []
+            for provider_name in self.providers:
+                self._inventory.extend(self.state_store.load_inventory(provider_name))
+            self._log_event("ranking_complete", worker_provider=worker.provider_name, worker_backend_model=worker.backend_model, ranked_models=len(rankings))
             return
-        if classifications:
-            self.state_store.save_classifications(classifications, source=worker.backend_model)
-        if rankings:
-            self.state_store.save_rankings(
-                rankings,
-                source="lightweight-free-worker",
-                worker_provider_name=worker.provider_name,
-                worker_backend_model=worker.backend_model,
-            )
-        self._last_ranking_at = time.time()
-        self._last_ranking_error = None
-        self._last_ranking_worker = {"provider_name": worker.provider_name, "backend_model": worker.backend_model}
-        self._last_bucket_model = worker.backend_model
-        self._inventory = []
-        for provider_name in self.providers:
-            self._inventory.extend(self.state_store.load_inventory(provider_name))
-        self._log_event("ranking_complete", worker_provider=worker.provider_name, worker_backend_model=worker.backend_model, ranked_models=len(rankings))
+        self._last_ranking_error = last_error
+        self._last_bucket_model = None
 
-    def _select_ranking_worker(self, models: list[ProviderModel]) -> RouteCandidate | None:
+    def _select_ranking_workers(self, models: list[ProviderModel]) -> list[RouteCandidate]:
         override_model = self.config.ranking_worker_model or self.config.assisted_bucket_model
         if override_model:
             forced = self._preferred_candidates((override_model,), inventory=models)
-            if forced:
-                first = forced[0]
-                if self._model_is_free(first.provider_name, first.backend_model, inventory=models):
-                    return first
-        lightweight = self.config.alias_map().get("lightweight")
-        if lightweight is None:
-            return None
+            return [item for item in forced if self._model_is_free(item.provider_name, item.backend_model, inventory=models)]
+        if self.config.alias_map().get("auxiliary") is None:
+            return []
 
         def sorted_candidates(preferred_provider: str | None = None) -> list[RouteCandidate]:
             candidates: list[RouteCandidate] = []
             for model in models:
                 if preferred_provider is not None and model.provider != preferred_provider:
                     continue
-                if not model.is_free:
+                if not self._model_is_routable(model, alias="auxiliary"):
                     continue
                 if not self._model_effectively_enabled(model.provider, model.id):
                     continue
@@ -1606,7 +1666,7 @@ class RouterService:
                     continue
                 if self._is_cooling_down(model.provider, model.id):
                     continue
-                breakdown = self._score_breakdown("lightweight", model)
+                breakdown = self._score_breakdown("auxiliary", model)
                 if breakdown["total_score"] <= 0:
                     continue
                 candidates.append(
@@ -1619,11 +1679,16 @@ class RouterService:
                 )
             return sorted(candidates, key=lambda item: item.total_score, reverse=True)
 
+        ordered: list[RouteCandidate] = []
+        seen: set[tuple[str, str]] = set()
         for provider_name in ("opencode-zen", "openrouter", None):
-            candidates = sorted_candidates(provider_name)
-            if candidates:
-                return candidates[0]
-        return None
+            for candidate in sorted_candidates(provider_name):
+                key = (candidate.provider_name, candidate.backend_model)
+                if key in seen:
+                    continue
+                ordered.append(candidate)
+                seen.add(key)
+        return ordered
 
     def _rank_inventory_with_worker(
         self,
@@ -1642,10 +1707,11 @@ class RouterService:
                         "content": (
                             "You classify router backend models. "
                             "Return strict JSON with the shape "
-                            "{\"models\": [{\"provider\": \"...\", \"id\": \"...\", \"tags\": [\"lightweight\"], "
-                            "\"alias_scores\": {\"lightweight\": 0-12, \"coding\": 0-12, \"heavyweight\": 0-12}, "
+                            "{\"models\": [{\"provider\": \"...\", \"id\": \"...\", \"tags\": [\"coding\"], "
+                            "\"alias_scores\": {\"auxiliary\": 0-12, \"coding\": 0-12, \"vision\": 0-12, \"tts\": 0-12}, "
                             "\"reason\": \"...\", \"confidence\": 0-1}]}. "
-                            "Use only the aliases lightweight, coding, heavyweight."
+                            "Use only the aliases auxiliary, coding, vision, tts. Favor explicit capability and modality fit over name heuristics. "
+                            "Only assign tts when the model can produce speech-style audio output; do not classify music generators such as Lyria into tts. Vision and tts do not require tool calling; auxiliary and coding do."
                         ),
                     },
                     {
@@ -1714,7 +1780,11 @@ class RouterService:
     def _rerank_shortlists(self, provider: ChatProvider, worker_backend_model: str, models: list[ProviderModel]) -> dict[str, dict[str, Any]]:
         rerankings: dict[str, dict[str, Any]] = {}
         for alias in _ALIASES:
-            shortlist = sorted(models, key=lambda model: self._score_breakdown(alias, model)["total_score"], reverse=True)[: self.config.ranking_shortlist_size]
+            shortlist = [
+                model
+                for model in sorted(models, key=lambda model: self._score_breakdown(alias, model)["total_score"], reverse=True)
+                if self._model_is_routable(model, alias=alias)
+            ][: self.config.ranking_shortlist_size]
             if not shortlist:
                 continue
             prompt = {
@@ -1789,6 +1859,25 @@ class RouterService:
                 return model
         return None
 
+    def _recency_bias(self, model: ProviderModel) -> float:
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        created = metadata.get("created")
+        try:
+            created_value = float(created)
+        except (TypeError, ValueError):
+            return 0.0
+        now = time.time()
+        if created_value <= 0 or created_value > now:
+            return 0.0
+        age_days = (now - created_value) / 86400.0
+        if age_days <= 30:
+            return 3.0
+        if age_days <= 90:
+            return 2.0
+        if age_days <= 180:
+            return 1.0
+        return 0.0
+
     def _model_override_payload(self, provider_name: str, backend_model: str) -> dict[str, Any]:
         overrides = self._effective_overrides()
         return {
@@ -1805,15 +1894,17 @@ class RouterService:
         best_alias: str | None = None
         best_key: tuple[float, float, float, float] | None = None
         for alias in _ALIASES:
+            if not self._model_is_routable(model, alias=alias):
+                continue
             breakdown = self._score_breakdown(alias, model)
             alias_score = breakdown["total_score"]
             if alias_score <= 0:
                 continue
             key = (
-                alias_score,
-                1.0 if alias in model.tags else 0.0,
-                1.0 if any(token in lowered for token in _ALIAS_HINTS.get(alias, ())) else 0.0,
                 breakdown["learned_ranking_score"],
+                1.0 if alias in model.tags else 0.0,
+                alias_score,
+                1.0 if any(token in lowered for token in _ALIAS_HINTS.get(alias, ())) else 0.0,
             )
             if best_key is None or key > best_key:
                 best_alias = alias

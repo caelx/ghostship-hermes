@@ -17,9 +17,9 @@ let
   ];
   defaultProfile = "operations";
   routerBaseUrl = "http://127.0.0.1:8788/v1";
-  rootModelDefault = "lightweight";
+  rootModelDefault = "coding";
   profileModelDefaults = {
-    operations = "heavyweight";
+    operations = "coding";
     coder = "coding";
   };
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
@@ -349,9 +349,10 @@ in
         "GHOSTSHIP_ROUTER_DISABLED_MODELS"
         "GHOSTSHIP_ROUTER_PROVIDER_WEIGHT_OVERRIDES"
         "GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES"
-        "GHOSTSHIP_ROUTER_ALIAS_PIN_LIGHTWEIGHT"
+        "GHOSTSHIP_ROUTER_ALIAS_PIN_AUXILIARY"
         "GHOSTSHIP_ROUTER_ALIAS_PIN_CODING"
-        "GHOSTSHIP_ROUTER_ALIAS_PIN_HEAVYWEIGHT"
+        "GHOSTSHIP_ROUTER_ALIAS_PIN_VISION"
+        "GHOSTSHIP_ROUTER_ALIAS_PIN_TTS"
       ];
       ExecStart = "${ghostshipHermesRouter}/bin/ghostship-hermes-router";
       Restart = "always";

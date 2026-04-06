@@ -447,12 +447,14 @@ class OpencodeZenProvider:
     def _tags_for_model(model_id: str) -> tuple[str, ...]:
         lowered = model_id.lower()
         tags: list[str] = []
-        if any(token in lowered for token in ("code", "coder", "codex", "deepseek", "devstral", "qwen")):
+        if any(token in lowered for token in ("code", "coder", "coding", "codex", "deepseek", "devstral", "qwen", "thinking", "reason", "large", "opus", "sonnet", "pro")):
             tags.append("coding")
-        if any(token in lowered for token in ("mini", "nano", "flash", "haiku", "free")):
-            tags.append("lightweight")
-        if any(token in lowered for token in ("opus", "pro", "thinking", "reason", "large", "sonnet")):
-            tags.append("heavyweight")
+        if any(token in lowered for token in ("mini", "nano", "flash", "haiku", "free", "small")):
+            tags.append("auxiliary")
+        if any(token in lowered for token in ("vision", "vl", "image", "video", "multimodal", "omni")):
+            tags.append("vision")
+        if any(token in lowered for token in ("audio", "speech", "voice", "tts")):
+            tags.append("tts")
         return tuple(dict.fromkeys(tags))
 
     def _normalize_http_error(self, exc: HttpStatusError, *, backend_model: str) -> NormalizedProviderError:

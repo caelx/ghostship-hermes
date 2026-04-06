@@ -49,13 +49,23 @@ class OpenRouterProvider:
                 continue
             pricing = raw.get("pricing") or {}
             is_free = model_id.endswith(":free") or (_is_zeroish(pricing.get("prompt")) and _is_zeroish(pricing.get("completion")))
+            architecture = raw.get("architecture") if isinstance(raw.get("architecture"), dict) else {}
             models.append(
                 ProviderModel(
                     id=model_id,
                     provider=self.name,
                     is_free=is_free,
                     tags=self._tags_for_model(model_id),
-                    metadata={"name": raw.get("name"), "context_length": raw.get("context_length")},
+                    metadata={
+                        "name": raw.get("name"),
+                        "description": raw.get("description"),
+                        "created": raw.get("created"),
+                        "context_length": raw.get("context_length"),
+                        "modality": architecture.get("modality"),
+                        "input_modalities": architecture.get("input_modalities"),
+                        "output_modalities": architecture.get("output_modalities"),
+                        "supported_parameters": raw.get("supported_parameters"),
+                    },
                 )
             )
         return models
@@ -221,13 +231,15 @@ class OpenRouterProvider:
     def _tags_for_model(model_id: str) -> tuple[str, ...]:
         lowered = model_id.lower()
         tags: list[str] = []
-        if any(token in lowered for token in ("code", "coder", "devstral", "qwen", "deepseek")):
+        if any(token in lowered for token in ("code", "coder", "coding", "codex", "devstral", "qwen", "deepseek", "r1", "reason", "thinking", "opus", "sonnet", "large", "70b", "72b")):
             tags.append("coding")
-        if any(token in lowered for token in ("mini", "small", "flash-lite", "nano")):
-            tags.append("lightweight")
-        if any(token in lowered for token in ("large", "70b", "72b", "r1", "reason", "sonnet", "opus")):
-            tags.append("heavyweight")
-        return tuple(tags)
+        if any(token in lowered for token in ("mini", "small", "flash", "flash-lite", "nano", "haiku")):
+            tags.append("auxiliary")
+        if any(token in lowered for token in ("vision", "vl", "image", "video", "multimodal", "omni", "5v")):
+            tags.append("vision")
+        if any(token in lowered for token in ("audio", "speech", "voice", "tts")):
+            tags.append("tts")
+        return tuple(dict.fromkeys(tags))
 
     def _normalize_http_error(self, exc: HttpStatusError, *, backend_model: str) -> NormalizedProviderError:
         status = exc.status_code

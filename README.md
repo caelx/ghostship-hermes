@@ -21,8 +21,8 @@ Canonical image references:
 - Switching between open tabs keeps each live `ttyd` session attached instead of dropping back to ttyd's reconnect prompt.
 - Browser terminals start in `/home/hermes`.
 - The image uses `ghostship-hermes-router` at `http://127.0.0.1:8788/v1` as the primary OpenAI-compatible model endpoint for Hermes.
-- The root Hermes default model is `lightweight`.
-- The image bootstraps two Hermes profiles, `operations` and `coder`, at `~/.hermes/profiles/...`, keeps a persistent gateway service running for each one, and assigns `operations -> heavyweight` and `coder -> coding`.
+- The root Hermes default model is `coding`.
+- The image bootstraps two Hermes profiles, `operations` and `coder`, at `~/.hermes/profiles/...`, keeps a persistent gateway service running for each one, and assigns `operations -> coding` and `coder -> coding`.
 
 Upstream note:
 
@@ -153,8 +153,8 @@ The image is intentionally declarative-first:
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`.
 - Hermes uses the local router through `model.base_url = http://127.0.0.1:8788/v1`.
-- The root Hermes default model is `lightweight`.
-- The declared profiles override that default as `operations = heavyweight` and `coder = coding`.
+- The root Hermes default model is `coding`.
+- The declared profiles override that default as `operations = coding` and `coder = coding`.
 - If router auth is enabled, Hermes can reuse `OPENAI_API_KEY` against the local router while the router itself continues to use provider credentials such as `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` upstream.
 
 Upstream Hermes docs still apply for CLI behavior:
@@ -194,7 +194,7 @@ The image now includes a standalone local router service:
 
 - listen address: `127.0.0.1:8788`
 - systemd unit: `ghostship-hermes-router.service`
-- model aliases: `lightweight`, `coding`, `heavyweight`
+- model aliases: `auxiliary`, `coding`, `vision`, `tts`
 - Hermes-compatible health endpoints: `GET /health`, `GET /v1/health`
 - router health endpoints: `GET /healthz`, `GET /readyz`
 - primary OpenAI-style endpoints: `GET /v1/models`, `POST /v1/chat/completions`, `POST /v1/responses`, `GET /v1/responses/{id}`, `DELETE /v1/responses/{id}`
@@ -206,7 +206,9 @@ The image now includes a standalone local router service:
 - Zen request families: `/chat/completions`, `/responses`, `/messages`, and Google-style model endpoints are normalized back into the local `chat/completions` surface
 - routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, durable overrides, stored `responses`, and lightweight chat session continuity
 - startup behavior: the router serves the last persisted inventory and rankings immediately when they exist; otherwise it stays unready until the first background discovery pass completes
-- ranking worker: a healthy free OpenCode Zen model from the `lightweight` pool is preferred for coarse ranking and selective reranking outside the request hot path, with OpenRouter fallback
+- ranking worker: a healthy free OpenCode Zen text model is preferred for coarse ranking and selective reranking outside the request hot path, with OpenRouter fallback
+- routing filter: when provider metadata exposes modalities and supported parameters, `coding` and `auxiliary` require tool calling with text output, `vision` requires image or video input with text output, and `tts` requires speech-style audio output while excluding music-generation models such as Lyria
+- recency bias: newer models get a small score lift, but only after free-only and capability filters pass
 - override controls: provider and model disablement, provider and model weight overrides, and alias pinning
 - optional auth: `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
 - optional browser CORS allowlist: `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`
@@ -240,7 +242,7 @@ If `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` or `GHOSTSHIP_ROUTER_RANKING_WORKER_
 Hermes OpenAI-compatible endpoint compatibility:
 
 - use `base_url: http://127.0.0.1:8788/v1`, or bare `http://127.0.0.1:8788` if you prefer
-- use a router alias like `lightweight`, `coding`, or `heavyweight` as the model id
+- use a router alias like `coding`, `vision`, `tts`, or `auxiliary` as the model id
 - if router auth is enabled, Hermes can send the same bearer token through `OPENAI_API_KEY`
 
 ## Local Validation
@@ -297,9 +299,9 @@ The persistence suite validates:
 - `HERMES_HOME=/home/hermes/.hermes`
 - `HOME=/home/hermes`
 - `hermes` runs as `3000:3000`
-- the root Hermes config uses `http://127.0.0.1:8788/v1` with `lightweight`
+- the root Hermes config uses `http://127.0.0.1:8788/v1` with `coding`
 - `operations` and `coder` are present under `~/.hermes/profiles/...`
-- `operations` uses `heavyweight` and `coder` uses `coding` through the local router
+- `operations` and `coder` both use `coding` through the local router
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the router, the two profile gateways, and the dashboard
 - no custom default skills are seeded
@@ -313,7 +315,7 @@ The persistence suite validates:
 - the dashboard can manage multiple independent terminal tabs
 - switching between open tabs keeps the live terminal session attached
 - the bootstrap `operations` and `coder` profiles are available under `~/.hermes/profiles/...`
-- the router alias inventory exposes `lightweight`, `coding`, and `heavyweight`
+- the router alias inventory exposes `auxiliary`, `coding`, `vision`, and `tts`
 
 Router package validation:
 

@@ -18,14 +18,16 @@ Current scope:
 - refreshes inventory from OpenRouter and OpenCode Zen
 - routes and fails over between concrete backend models instead of alias-level buckets
 - keeps paid models in inventory and debug state, but only free models can become route candidates
-- if persisted inventory exists, startup reuses it immediately; otherwise the router stays unready until the first background discovery pass classifies free models into `lightweight`, `coding`, and `heavyweight`
-- dynamic bucketing prefers an OpenCode Zen lightweight worker when available and falls back to OpenRouter when Zen cannot supply a usable worker
+- if persisted inventory exists, startup reuses it immediately; otherwise the router stays unready until the first background discovery pass classifies free models into `auxiliary`, `coding`, `vision`, and `tts`
+- dynamic bucketing prefers an OpenCode Zen free text worker when available and falls back to OpenRouter when Zen cannot supply a usable worker
+- when provider metadata exposes capabilities, `coding` and `auxiliary` candidates must support tool calling with text-only outputs, `vision` candidates must accept image or video input with text output, and `tts` candidates must expose speech-style audio output while excluding music-generation models such as Lyria
+- newer models get a small recency bias after capability filtering so fresh compatible models float upward without dominating the buckets
 - preferred-model pins may use `openrouter/` or `opencode/` prefixes in config, but backend dispatch must normalize them back to the provider's real model id before routing
 - supports OpenCode Zen mixed endpoint families and normalizes them back to local `chat/completions`
 - records total latency and best-effort first-text latency per backend model
 - returns `X-Hermes-Session-Id` on chat completions and can reuse that session id on later requests
 - tracks rolling model and provider health so broad provider failures can temporarily suppress a provider without losing model-level failover
-- uses a healthy free model from the `lightweight` pool for background ranking and selective reranking outside the request hot path
+- uses a healthy free text model for background ranking and selective reranking outside the request hot path
 - supports durable provider and model overrides plus alias pinning
 - supports optional bearer auth through `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
 - supports optional browser CORS allowlists through `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`
@@ -64,12 +66,14 @@ Optional router-specific inputs:
 - `GHOSTSHIP_ROUTER_DISABLED_MODELS`
 - `GHOSTSHIP_ROUTER_PROVIDER_WEIGHT_OVERRIDES`
 - `GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES`
-- `GHOSTSHIP_ROUTER_ALIAS_PIN_LIGHTWEIGHT`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_AUXILIARY`
 - `GHOSTSHIP_ROUTER_ALIAS_PIN_CODING`
-- `GHOSTSHIP_ROUTER_ALIAS_PIN_HEAVYWEIGHT`
-- `GHOSTSHIP_ROUTER_LIGHTWEIGHT_MODELS`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_VISION`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_TTS`
+- `GHOSTSHIP_ROUTER_AUXILIARY_MODELS`
 - `GHOSTSHIP_ROUTER_CODING_MODELS`
-- `GHOSTSHIP_ROUTER_HEAVYWEIGHT_MODELS`
+- `GHOSTSHIP_ROUTER_VISION_MODELS`
+- `GHOSTSHIP_ROUTER_TTS_MODELS`
 
 Hermes-compatible aliases and client auth inputs:
 
