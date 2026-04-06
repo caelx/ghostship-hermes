@@ -35,25 +35,25 @@ _ALIAS_PENALTIES: dict[str, tuple[str, ...]] = {
 }
 
 _CODING_FAMILY_PRIORS: tuple[tuple[str, float, tuple[str, ...]], ...] = (
-    ("gemini", 36.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
-    ("minimax", 33.0, ("minimax", "m2.7", "m2.5")),
-    ("qwen", 29.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
-    ("mimo", 26.0, ("mimo-v2", "mimo")),
-    ("glm", 23.0, ("glm-5", "glm", "z.ai", "z-ai")),
-    ("deepseek", 20.0, ("deepseek", "speciale")),
-    ("stepfun", 17.0, ("step-3.5", "stepfun", "step-")),
-    ("devstral", 15.0, ("devstral", "mistral")),
-    ("grok", 13.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
-    ("nemotron", 11.0, ("nemotron")),
-    ("llama", 10.0, ("llama")),
-    ("chimera", 8.0, ("chimera", "tngtech")),
-    ("nous-hermes", 7.0, ("hermes-4", "nousresearch/hermes", "nous hermes")),
-    ("gpt-oss", 6.0, ("gpt-oss")),
-    ("trinity", 5.0, ("trinity")),
-    ("gemma", 4.0, ("gemma")),
-    ("olmo", 3.0, ("olmo")),
-    ("solar", 2.0, ("solar")),
-    ("venice", 1.5, ("venice", "dolphin-mistral", "dolphin mistral")),
+    ("gemini", 64.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
+    ("minimax", 60.0, ("minimax", "m2.7", "m2.5")),
+    ("qwen", 54.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
+    ("mimo", 48.0, ("mimo-v2", "mimo")),
+    ("glm", 42.0, ("glm-5", "glm", "z.ai", "z-ai")),
+    ("deepseek", 36.0, ("deepseek", "speciale")),
+    ("stepfun", 31.0, ("step-3.5", "stepfun", "step-")),
+    ("devstral", 27.0, ("devstral", "mistral")),
+    ("grok", 23.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
+    ("nemotron", 19.0, ("nemotron")),
+    ("llama", 16.0, ("llama")),
+    ("chimera", 13.0, ("chimera", "tngtech")),
+    ("nous-hermes", 11.0, ("hermes-4", "nousresearch/hermes", "nous hermes")),
+    ("gpt-oss", 9.0, ("gpt-oss")),
+    ("trinity", 7.0, ("trinity")),
+    ("gemma", 5.0, ("gemma")),
+    ("olmo", 4.0, ("olmo")),
+    ("solar", 3.0, ("solar")),
+    ("venice", 2.0, ("venice", "dolphin-mistral", "dolphin mistral")),
     ("molmo", 1.0, ("molmo")),
     ("lfm", 0.5, ("lfm", "liquid/lfm", "lfm2")),
 )
@@ -1448,13 +1448,13 @@ class RouterService:
         penalty_score = 0.0
         for token in _ALIAS_HINTS.get(alias, ()):
             if token in lowered:
-                hint_score += 4.0
+                hint_score += 1.5
         for token in model.tags:
             if token == alias:
-                hint_score += 3.0
+                hint_score += 1.0
         for token in _ALIAS_PENALTIES.get(alias, ()):
             if token in lowered:
-                penalty_score -= 3.0
+                penalty_score -= 1.5
         free_score = 100.0 if model.is_free else 0.0
         provider_bias = 2.0 if model.provider == "openrouter" else 0.0
         model_health = (
@@ -1917,11 +1917,13 @@ class RouterService:
             return 0.0
         age_days = (now - created_value) / 86400.0
         if age_days <= 30:
-            return 3.0
+            return 12.0
         if age_days <= 90:
-            return 2.0
+            return 8.0
         if age_days <= 180:
-            return 1.0
+            return 5.0
+        if age_days <= 365:
+            return 2.0
         return 0.0
 
     def _model_override_payload(self, provider_name: str, backend_model: str) -> dict[str, Any]:
@@ -1947,9 +1949,10 @@ class RouterService:
             if alias_score <= 0:
                 continue
             key = (
-                breakdown["learned_ranking_score"],
-                1.0 if alias in model.tags else 0.0,
                 alias_score,
+                breakdown["learned_ranking_score"],
+                breakdown.get("family_bias", 0.0),
+                1.0 if alias in model.tags else 0.0,
                 1.0 if any(token in lowered for token in _ALIAS_HINTS.get(alias, ())) else 0.0,
             )
             if best_key is None or key > best_key:
