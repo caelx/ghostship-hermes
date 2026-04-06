@@ -19,11 +19,12 @@ from .state import RouteEvent, SqliteStateStore, StateStore
 
 logger = logging.getLogger("hermes_router")
 
-_ALIASES = ("auxiliary", "coding", "vision", "tts")
+_ALIASES = ("auxiliary", "coding", "agentic", "vision", "tts")
 
 _ALIAS_HINTS: dict[str, tuple[str, ...]] = {
     "auxiliary": ("mini", "small", "flash", "flash-lite", "nano", "haiku"),
     "coding": ("coder", "coding", "code", "codex", "qwen", "deepseek", "devstral", "reason", "thinking", "opus", "sonnet", "large", "70b", "72b", "swe"),
+    "agentic": ("agent", "tool", "operator", "orchestr", "swe", "reason", "thinking", "sonnet", "opus", "grok", "glm", "minimax"),
     "vision": ("vision", "vl", "image", "video", "multimodal", "omni", "5v", "gemma-4"),
     "tts": ("audio", "speech", "voice", "tts", "narration"),
 }
@@ -31,6 +32,7 @@ _ALIAS_HINTS: dict[str, tuple[str, ...]] = {
 _ALIAS_PENALTIES: dict[str, tuple[str, ...]] = {
     "auxiliary": ("large", "70b", "72b", "reason", "thinking", "vision", "video", "audio"),
     "coding": ("audio", "speech", "tts", "music"),
+    "agentic": ("audio", "speech", "tts", "music"),
     "vision": ("audio", "speech", "tts", "music"),
     "tts": ("vision", "image", "video", "music", "song", "lyrics", "lyria"),
 }
@@ -1297,6 +1299,10 @@ class RouterService:
             if not ({"image", "video"} & input_modalities):
                 return False
             return not output_modalities or output_modalities == {"text"}
+        if alias == "agentic":
+            if not self._model_supports_tools(model):
+                return False
+            return not output_modalities or output_modalities == {"text"}
         if not self._model_supports_tools(model):
             return False
         if output_modalities and output_modalities != {"text"}:
@@ -1741,10 +1747,10 @@ class RouterService:
                             "You classify router backend models. "
                             "Return strict JSON with the shape "
                             "{\"models\": [{\"provider\": \"...\", \"id\": \"...\", \"tags\": [\"coding\"], "
-                            "\"alias_scores\": {\"auxiliary\": 0-12, \"coding\": 0-12, \"vision\": 0-12, \"tts\": 0-12}, "
+                            "\"alias_scores\": {\"auxiliary\": 0-12, \"coding\": 0-12, \"agentic\": 0-12, \"vision\": 0-12, \"tts\": 0-12}, "
                             "\"reason\": \"...\", \"confidence\": 0-1}]}. "
-                            "Use only the aliases auxiliary, coding, vision, tts. Favor explicit capability and modality fit over name heuristics. "
-                            "Only assign tts when the model can produce speech-style audio output; do not classify music generators such as Lyria into tts. Vision and tts do not require tool calling; auxiliary and coding do."
+                            "Use only the aliases auxiliary, coding, agentic, vision, tts. Favor explicit capability and modality fit over name heuristics. "
+                            "Only assign tts when the model can produce speech-style audio output; do not classify music generators such as Lyria into tts. Vision and tts do not require tool calling; auxiliary, coding, and agentic do."
                         ),
                     },
                     {

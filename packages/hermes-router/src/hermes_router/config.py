@@ -153,7 +153,7 @@ class RouterConfig:
             model_weight_overrides=_parse_assignment_env("GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES", cast=float),
             alias_pin_overrides={
                 alias: _parse_csv_env(f"GHOSTSHIP_ROUTER_ALIAS_PIN_{alias.upper()}")
-                for alias in ("auxiliary", "coding", "vision", "tts")
+                for alias in ("auxiliary", "coding", "agentic", "vision", "tts")
             },
             aliases=(
                 AliasConfig(
@@ -163,8 +163,13 @@ class RouterConfig:
                 ),
                 AliasConfig(
                     name="coding",
-                    description="Primary coding and heavier reasoning workloads.",
+                    description="Primary coding workloads.",
                     preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_CODING_MODELS"),
+                ),
+                AliasConfig(
+                    name="agentic",
+                    description="Tool-using agent workflows and orchestration tasks.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_AGENTIC_MODELS"),
                 ),
                 AliasConfig(
                     name="vision",

@@ -224,7 +224,7 @@ assert_router_inventory() {
 assert_free_router_buckets() {
   local container_name="$1"
   run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '
-    [.data[] | select(.id == "auxiliary" or .id == "coding" or .id == "vision" or .id == "tts")]
+    [.data[] | select(.id == "auxiliary" or .id == "coding" or .id == "agentic" or .id == "vision" or .id == "tts")]
     | length == 4
     and all(.[]; .metadata.candidate_count > 0)
     and all(.[]; all(.metadata.candidates[]; .is_free == true))

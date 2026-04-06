@@ -194,7 +194,7 @@ The image now includes a standalone local router service:
 
 - listen address: `127.0.0.1:8788`
 - systemd unit: `ghostship-hermes-router.service`
-- model aliases: `auxiliary`, `coding`, `vision`, `tts`
+- model aliases: `auxiliary`, `coding`, `agentic`, `vision`, `tts`
 - Hermes-compatible health endpoints: `GET /health`, `GET /v1/health`
 - router health endpoints: `GET /healthz`, `GET /readyz`
 - primary OpenAI-style endpoints: `GET /v1/models`, `POST /v1/chat/completions`, `POST /v1/responses`, `GET /v1/responses/{id}`, `DELETE /v1/responses/{id}`
@@ -208,7 +208,7 @@ The image now includes a standalone local router service:
 - routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, durable overrides, stored `responses`, and lightweight chat session continuity
 - startup behavior: the router serves the last persisted inventory and rankings immediately when they exist; otherwise it stays unready until the first background discovery pass completes
 - ranking worker: a healthy free OpenCode Zen text model is preferred for coarse ranking and selective reranking outside the request hot path, with OpenRouter fallback
-- routing filter: when provider metadata exposes modalities and supported parameters, `coding` and `auxiliary` require tool calling with text output, `vision` requires image or video input with text output, and `tts` requires speech-style audio output while excluding music-generation models such as Lyria
+- routing filter: when provider metadata exposes modalities and supported parameters, `coding`, `agentic`, and `auxiliary` require tool calling with text output, `vision` requires image or video input with text output, and `tts` requires speech-style audio output while excluding music-generation models such as Lyria
 - recency bias: newer models get a meaningful score lift after free-only and capability filters, while coding-family priors still dominate coding selection
 - parameter bias: larger parameter-count models get an extra size bonus, with a heavier weight on `vision` so larger Gemma-class multimodal models rise above smaller ones
 - override controls: provider and model disablement, provider and model weight overrides, and alias pinning
@@ -317,7 +317,7 @@ The persistence suite validates:
 - the dashboard can manage multiple independent terminal tabs
 - switching between open tabs keeps the live terminal session attached
 - the bootstrap `operations` and `coder` profiles are available under `~/.hermes/profiles/...`
-- the router alias inventory exposes `auxiliary`, `coding`, `vision`, and `tts`
+- the router alias inventory exposes `auxiliary`, `coding`, `agentic`, `vision`, and `tts`
 
 Router package validation:
 

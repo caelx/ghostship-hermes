@@ -57,10 +57,11 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         disabled_models=(),
         provider_weight_overrides={},
         model_weight_overrides={},
-        alias_pin_overrides={"auxiliary": (), "coding": (), "vision": (), "tts": ()},
+        alias_pin_overrides={"auxiliary": (), "coding": (), "agentic": (), "vision": (), "tts": ()},
         aliases=(
             AliasConfig(name="auxiliary", description="aux", preferred_models=("openrouter/light-1:free",)),
             AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free",)),
+            AliasConfig(name="agentic", description="agent", preferred_models=("openrouter/agent-1:free",)),
             AliasConfig(name="vision", description="vision", preferred_models=("openrouter/vision-1:free",)),
             AliasConfig(name="tts", description="tts", preferred_models=("openrouter/audio-1:free",)),
         ),
@@ -186,7 +187,8 @@ class DummyProvider:
         self.first_text_latency_ms = first_text_latency_ms
         self.models = models or [
             ProviderModel(id=f"{name}/light-1:free", provider=self.name, is_free=True, tags=("auxiliary",)),
-            ProviderModel(id=f"{name}/code-1:free", provider=self.name, is_free=True, tags=("coding",)),
+            ProviderModel(id=f"{name}/code-1:free", provider=self.name, is_free=True, tags=("coding",), metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"]}),
+            ProviderModel(id=f"{name}/agent-1:free", provider=self.name, is_free=True, tags=("agentic",), metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"]}),
             ProviderModel(id=f"{name}/vision-1:free", provider=self.name, is_free=True, tags=("vision",), metadata={"input_modalities": ["image"], "output_modalities": ["text"]}),
             ProviderModel(id=f"{name}/audio-1:free", provider=self.name, is_free=True, tags=("tts",), metadata={"output_modalities": ["audio"]}),
         ]
@@ -200,6 +202,7 @@ class DummyProvider:
                     "alias_scores": {
                         "auxiliary": 10 if "auxiliary" in model.tags else 1,
                         "coding": 10 if "coding" in model.tags else 1,
+                        "agentic": 10 if "agentic" in model.tags else 1,
                         "vision": 10 if "vision" in model.tags else 1,
                         "tts": 10 if "tts" in model.tags else 1,
                     },
@@ -349,7 +352,7 @@ def test_models_endpoint_lists_aliases(tmp_path: Path) -> None:
         response = client.get("/v1/models")
         assert response.status_code == 200
         payload = response.json()
-        assert [item["id"] for item in payload["data"]] == ["auxiliary", "coding", "vision", "tts"]
+        assert [item["id"] for item in payload["data"]] == ["auxiliary", "coding", "agentic", "vision", "tts"]
 
 
 def test_non_v1_models_alias_lists_aliases(tmp_path: Path) -> None:
@@ -359,7 +362,7 @@ def test_non_v1_models_alias_lists_aliases(tmp_path: Path) -> None:
         response = client.get("/models")
         assert response.status_code == 200
         payload = response.json()
-        assert [item["id"] for item in payload["data"]] == ["auxiliary", "coding", "vision", "tts"]
+        assert [item["id"] for item in payload["data"]] == ["auxiliary", "coding", "agentic", "vision", "tts"]
 
 
 def test_health_endpoints_match_hermes_shape(tmp_path: Path) -> None:
@@ -402,7 +405,7 @@ def test_app_serves_with_persisted_routes_while_startup_refresh_runs(tmp_path: P
         assert startup_elapsed < 0.4
         response = client.get("/v1/models")
         assert response.status_code == 200
-        assert [item["id"] for item in response.json()["data"]] == ["auxiliary", "coding", "vision", "tts"]
+        assert [item["id"] for item in response.json()["data"]] == ["auxiliary", "coding", "agentic", "vision", "tts"]
 
 
 def test_readyz_waits_for_background_inventory_load_when_no_state_exists(tmp_path: Path) -> None:
@@ -561,6 +564,34 @@ def test_models_without_tool_support_are_not_routable(tmp_path: Path) -> None:
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
     service.refresh_inventory(reason="manual")
     assert service.preview_routes("vision") == []
+
+
+def test_agentic_requires_tool_support(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="agent-plain:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("agentic",),
+                metadata={"output_modalities": ["text"], "supported_parameters": ["max_tokens"]},
+            )
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    assert service.preview_routes("agentic") == []
 
 
 def test_music_audio_models_are_not_routable_for_tts(tmp_path: Path) -> None:
