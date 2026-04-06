@@ -285,7 +285,7 @@ Run the dashboard smoke test:
 ```fish
 # Run this from a shell where ../../.envrc has already exported
 # OPENROUTER_API_KEY and OPENCODE_API_KEY for the local router.
-bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:ops-coder
+bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:assistant-ops-supervisor
 ```
 
 The dashboard smoke test no longer bind-mounts `/nix` by default. If you need
@@ -306,8 +306,8 @@ The persistence suite validates:
 - `HOME=/home/hermes`
 - `hermes` runs as `3000:3000`
 - the root Hermes config uses `http://127.0.0.1:8788/v1` with `coding`
-- `operations` and `coder` are present under `~/.hermes/profiles/...`
-- `operations` and `coder` both use `coding` through the local router
+- `assistant`, `operations`, and `supervisor` are present under `~/.hermes/profiles/...`
+- the current scaffold gives each profile a direct `openai` provider placeholder with `gpt-5.4`
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the router, the two profile gateways, and the dashboard
 - no repo-managed default skills are seeded by default
@@ -321,7 +321,7 @@ The persistence suite validates:
 - the dashboard can open and close an ephemeral terminal before and after replacement
 - the dashboard can manage multiple independent terminal tabs
 - switching between open tabs keeps the live terminal session attached
-- the bootstrap `operations` and `coder` profiles are available under `~/.hermes/profiles/...`
+- the bootstrap `assistant`, `operations`, and `supervisor` profiles are available under `~/.hermes/profiles/...`
 - the router alias inventory exposes `auxiliary`, `coding`, `agentic`, `vision`, and `tts`
 
 Router package validation:
