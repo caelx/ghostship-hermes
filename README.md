@@ -30,7 +30,7 @@ Upstream note:
 - Upstream normally keeps managed state under `${stateDir}/.hermes` with a separate home directory.
 - Here, the repo sets `stateDir = "/home/hermes"`, so managed Hermes state and the CLI profile tree both live under `/home/hermes/.hermes` on the persisted home volume.
 
-This image intentionally does not ship the old Ghostship workstation layer.
+This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support is CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills.
 
 Removed from the default image:
 
@@ -39,7 +39,6 @@ Removed from the default image:
 - Opencode
 - OpenSpec
 - `skills`
-- `gws`
 - `bws`
 - `feed`
 - repo-managed default skill seeding
@@ -51,6 +50,7 @@ Retained in the default image:
 
 - upstream Hermes
 - Nix runtime support
+- pinned `gws` Google Workspace CLI
 - `tirith`
 - `ttyd`
 - `ghostship-hermes-router`
@@ -307,9 +307,9 @@ The persistence suite validates:
 - `operations` and `coder` both use `coding` through the local router
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the router, the two profile gateways, and the dashboard
-- no repo-managed default skills are seeded by default
+ - no repo-managed default skills are seeded by default
 - optional shared and profile skill trees staged under `/workspace/skills/...` are copied once without overwriting existing Hermes-managed skill directories
-- removed workstation tools are absent by default
+- removed workstation tools other than `gws` are absent by default
 - `ghostship-*` utilities remain available
 - HOME-backed state survives container replacement
 - `nix profile install` survives container replacement with reused `/nix`

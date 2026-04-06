@@ -17,7 +17,8 @@
 - Discord gateway is a later optional interface, not the v1 default.
 - Configure Hermes declaratively through the upstream Hermes NixOS module.
 - Do not seed Ghostship-managed default skills or develop-environment workstation content into the image runtime.
-- Do not preinstall Codex, Gemini CLI, Opencode, OpenSpec, `skills`, `gws`, `bws`, or `feed` in the default image.
+- Keep the pinned `gws` CLI in the default image, but do not vendor or seed Google Workspace skills.
+- Do not preinstall Codex, Gemini CLI, Opencode, OpenSpec, `skills`, `bws`, or `feed` in the default image.
 - Keep the browser surface minimal: one dashboard, on-demand ephemeral `ttyd`, no persistent per-profile terminal services.
 - Keep only two declarative Hermes profiles in the image: `operations` and `coder`.
 - Keep one persistent gateway service per declared profile, managed by NixOS systemd units.
@@ -99,6 +100,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - On the current `x86_64` dev host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired correctly and rely on arm64 runners for full arm builds.
 - GitHub Actions image publication must run the `aarch64-linux` image leg on native arm64 infrastructure such as `ubuntu-24.04-arm`; Docker QEMU plus Nix `extra-platforms` on an x86 runner are not enough for the native arm64 Nix image build.
 - `python3.11-websockets-15.0.1` is currently flaky on native `aarch64-linux` in nixpkgs `nixos-25.11`; keep its checks disabled in the shared router/dashboard Python override scope until upstream or nixpkgs lands a fix.
+- `gws` is the one approved non-`ghostship-*` extra CLI in the default image; keep it pinned through the upstream flake package and do not revive vendored or seeded Google Workspace skills.
 - Keep `ghostship-hermes-image` as the explicit publishable image bundle contract for CI, GHCR pushes, and image-loading flows, and keep the lower-level `/init` workstation tarball on a separate `ghostship-hermes-rootfs` output so scripts do not guess artifact semantics from one overloaded path.
 - Git worktrees do not carry ignored local `.envrc` files by default. Live-test helpers should check the current worktree first, then another repo worktree with `.envrc`.
 - Cloudflare Access service-token headers are test-only. Use `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID` and `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET` in utilities, and derive them from local `.envrc` values in the live-test harness.
