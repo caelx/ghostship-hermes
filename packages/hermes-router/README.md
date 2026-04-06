@@ -37,10 +37,10 @@ The package is intentionally standalone first so it can be built and tested befo
 
 ## Environment
 
-Primary local validation inputs:
+Primary router validation inputs (not required for the current Hermes scaffold unless you are using the router):
 
 - `OPENROUTER_API_KEY`
-- `OPENCODE_API_KEY`
+- `OPENCODE_API_KEY` or `OPENCODE_GO_API_KEY`
 
 Optional router-specific inputs:
 
@@ -69,10 +69,12 @@ Optional router-specific inputs:
 - `GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES`
 - `GHOSTSHIP_ROUTER_ALIAS_PIN_AUXILIARY`
 - `GHOSTSHIP_ROUTER_ALIAS_PIN_CODING`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_AGENTIC`
 - `GHOSTSHIP_ROUTER_ALIAS_PIN_VISION`
 - `GHOSTSHIP_ROUTER_ALIAS_PIN_TTS`
 - `GHOSTSHIP_ROUTER_AUXILIARY_MODELS`
 - `GHOSTSHIP_ROUTER_CODING_MODELS`
+- `GHOSTSHIP_ROUTER_AGENTIC_MODELS`
 - `GHOSTSHIP_ROUTER_VISION_MODELS`
 - `GHOSTSHIP_ROUTER_TTS_MODELS`
 
@@ -94,6 +96,8 @@ Compatibility note:
 - Hermes can use `base_url` `http://127.0.0.1:8788/v1` directly as a generic OpenAI-compatible endpoint
 - Hermes also works with bare `http://127.0.0.1:8788`; the router exposes both `/v1/...` and bare OpenAI endpoint aliases
 - Hermes can reuse `OPENAI_API_KEY` as the router bearer token when router auth is enabled
+- The router also accepts `OPENCODE_GO_API_KEY` as an alias for `OPENCODE_API_KEY` so the Hermes Minimax fallback credential name can be shared without a second env var
+- `GOOGLE_AI_STUDIO_API_KEY` remains Hermes-direct only for now; the router does not consume it until a native Google provider exists
 
 Standalone local runs default router state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router`. The Hermes image overrides that to `/home/hermes/.local/state/ghostship-hermes/router`.
 

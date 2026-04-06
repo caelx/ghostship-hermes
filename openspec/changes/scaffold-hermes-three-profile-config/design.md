@@ -1,8 +1,8 @@
 ## Context
 
-The current Hermes image is built around two managed profiles, `operations` and `coder`, with `operations` as the sticky default. Bootstrap creates those profiles from Nix-managed shell logic, stages optional shared and per-profile skills from `/workspace/skills/...`, and keeps one gateway service per managed profile. The next configuration phase needs to move to three long-running profiles: `assistant`, `operations`, and `supervisor`.
+The current Hermes image is built around two managed profiles, `operations` and `coder`, with `operations` as the sticky default. Bootstrap creates those profiles from Nix-managed shell logic, stages optional shared and per-profile skills from `/home/hermes/seeds/...`, and keeps one gateway service per managed profile. The next configuration phase needs to move to three long-running profiles: `assistant`, `operations`, and `supervisor`.
 
-This design is intentionally Nix-first. The image should define stable structure, generated profile config skeletons, service topology, and the copy-once skill seeding contract. Personal skills, ops runbooks, and profile secrets should continue to come from the runtime environment and become Hermes-owned after first seed. The first implementation step should only generate the scaffold so later tweaks can fill in the full Hermes settings matrix deliberately.
+This design is intentionally Nix-first. The image should define stable structure, generated profile config skeletons, service topology, and the copy-once skill seeding contract. Personal skills, ops runbooks, and profile secrets should continue to come from the runtime environment and become Hermes-owned after first seed. The current scaffold already carries the first shared settings pass: GPT-5.4 primary model routing with Minimax fallback, Gemini auxiliary tasks, Holographic memory, Discord gateway defaults, Tirith, and browser defaults anchored on local `agent-browser`. The first implementation step should only generate the scaffold so later tweaks can fill in the full Hermes settings matrix deliberately.
 
 ## Goals / Non-Goals
 
@@ -33,7 +33,7 @@ The root Hermes config should only provide the minimal runtime baseline required
 Alternative considered: use root config as the main default and override it per profile. Rejected because the user explicitly does not want the root config to be the real working surface.
 
 ### Keep skills runtime-seeded, not image-baked
-Shared skills and profile-specific skills should continue to seed from `/workspace/skills/shared/<skill>` and `/workspace/skills/profiles/<profile>/<skill>`, copying into `~/.hermes/...` only when the destination skill does not already exist. This keeps the image structural while allowing Hermes to own skills after first seed.
+Shared skills and profile-specific skills should continue to seed from `/home/hermes/seeds/shared/skills/<skill>` and `/home/hermes/seeds/profiles/<profile>/skills/<skill>`, with optional per-profile `SOUL.md` files at `/home/hermes/seeds/profiles/<profile>/SOUL.md`. Bootstrap should copy them into `~/.hermes/...` only when the destination file or skill does not already exist. This keeps the image structural while allowing Hermes to own profile state after first seed.
 
 Alternative considered: bake default skills into Nix. Rejected because the desired skills are expected to evolve quickly and are closer to runtime state than platform state.
 
@@ -53,7 +53,7 @@ Alternative considered: bake settings opportunistically during implementation. R
 - [Profile metadata drifts between bootstrap, services, and dashboard] → Generate all profile-facing outputs from one Nix data structure.
 - [Upstream Hermes `profile create` seeds unexpected default content] → Accept that behavior for the initial scaffold, document it, and only add cleanup if it causes real friction.
 - [Too many settings get deferred and the scaffold stalls] → Add a dedicated settings-audit task group with explicit categories so the proposal keeps momentum.
-- [Runtime-provided skills and secrets are mistaken for image defaults] → Document clearly that the image bakes only structure while `/workspace/skills/...` and env files remain runtime-owned inputs.
+- [Runtime-provided skills and secrets are mistaken for image defaults] → Document clearly that the image bakes only structure while `/home/hermes/seeds/...` and env files remain runtime-owned inputs.
 
 ## Migration Plan
 
@@ -69,3 +69,4 @@ Alternative considered: bake settings opportunistically during implementation. R
 - Should `operations` and `supervisor` share `/workspace` as their default terminal cwd, or should they get separate workspace roots?
 - Which upstream Hermes-created profile defaults, if any, should be tolerated versus cleaned up during bootstrap?
 - Which settings should remain shared across all three profiles versus intentionally diverge by profile?
+- Whether any future browser-provider defaults beyond local `agent-browser` should be declared in Nix, given that Hermes only documents one active `BROWSER_CDP_URL` target and manual `/browser connect` attachment.

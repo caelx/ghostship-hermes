@@ -73,6 +73,7 @@
           ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipChangedetection = pkgs.callPackage ./packages/changedetection-cli/package.nix { inherit ghostshipCliContract; };
+          agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
           ghostshipHermesRouter = pkgs.callPackage ./packages/hermes-router/package.nix {
             python311Packages = routerPython311Packages;
             ghostshipCliContract = routerGhostshipCliContract;
@@ -84,6 +85,8 @@
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.gws;
 
           allUtilities = [
+            pkgs.bws
+            agentBrowser
             googleWorkspaceCli
             ghostshipSearxng
             ghostshipSonarr
@@ -134,6 +137,8 @@
           };
         in
         {
+          bws = pkgs.bws;
+          agent-browser = agentBrowser;
           gws = googleWorkspaceCli;
           hermes-dashboard = hermesDashboard;
           ghostship-cli-contract = ghostshipCliContract;
@@ -173,6 +178,8 @@
         in
         {
           inherit (self.packages.${system})
+            bws
+            agent-browser
             gws
             hermes-dashboard
             ghostship-cli-contract

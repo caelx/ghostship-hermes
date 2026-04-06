@@ -146,6 +146,29 @@ def test_config_reads_hermes_api_server_aliases(tmp_path: Path, monkeypatch) -> 
                 monkeypatch.setenv(key, value)
 
 
+def test_config_reads_opencode_go_api_key_alias(tmp_path: Path, monkeypatch) -> None:
+    env_keys = (
+        "OPENCODE_API_KEY",
+        "OPENCODE_GO_API_KEY",
+        "GHOSTSHIP_ROUTER_STATE_DIR",
+        "GHOSTSHIP_ROUTER_DB_PATH",
+    )
+    saved = {key: os.environ.get(key) for key in env_keys}
+    try:
+        for key in env_keys:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("OPENCODE_GO_API_KEY", "opencode-go-secret")
+        monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
+        config = RouterConfig.from_env()
+        assert config.opencode_api_key == "opencode-go-secret"
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                monkeypatch.delenv(key, raising=False)
+            else:
+                monkeypatch.setenv(key, value)
+
+
 def test_config_reads_openai_api_key_for_custom_provider_compatibility(tmp_path: Path, monkeypatch) -> None:
     env_keys = (
         "GHOSTSHIP_ROUTER_API_KEY",

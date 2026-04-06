@@ -19,31 +19,57 @@ let
   defaultProfile = "assistant";
   rootTerminalCwd = "/home/hermes";
   managedProfileRoot = "/home/hermes/.hermes/profiles";
-  sharedSkillSourceDir = "/workspace/skills/shared";
-  profileSkillSourceRoot = "/workspace/skills/profiles";
+  sharedSkillSourceDir = "/home/hermes/seeds/shared/skills";
+  profileSkillSourceRoot = "/home/hermes/seeds/profiles";
   profileScaffold = {
     assistant = {
       personality = "assistant";
-      modelProvider = "openai";
+      modelProvider = "openai-codex";
       modelDefault = "gpt-5.4";
-      terminalCwd = "/home/hermes";
+      terminalCwd = "/workspace";
+      discordBotTokenEnv = "DISCORD_ASSISTANT_BOT_TOKEN";
+      discordAllowedUsersEnv = "DISCORD_ASSISTANT_ALLOWED_USERS";
+      discordChannelEnv = "DISCORD_ASSISTANT_CHANNEL_ID";
     };
     operations = {
       personality = "operations";
-      modelProvider = "openai";
+      modelProvider = "openai-codex";
       modelDefault = "gpt-5.4";
       terminalCwd = "/workspace";
+      discordBotTokenEnv = "DISCORD_OPERATIONS_BOT_TOKEN";
+      discordAllowedUsersEnv = "DISCORD_OPERATIONS_ALLOWED_USERS";
+      discordChannelEnv = "DISCORD_OPERATIONS_CHANNEL_ID";
     };
     supervisor = {
       personality = "supervisor";
-      modelProvider = "openai";
+      modelProvider = "openai-codex";
       modelDefault = "gpt-5.4";
       terminalCwd = "/workspace";
+      discordBotTokenEnv = "DISCORD_SUPERVISOR_BOT_TOKEN";
+      discordAllowedUsersEnv = "DISCORD_SUPERVISOR_ALLOWED_USERS";
+      discordChannelEnv = "DISCORD_SUPERVISOR_CHANNEL_ID";
     };
   };
+  auxiliaryModelDefault = "gemini-3.1-flash-lite-preview";
+  auxiliaryBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
+  auxiliaryApiKeyRef = "\${GOOGLE_AI_STUDIO_API_KEY}";
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   runtimeBin = "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime";
   yamlFormat = pkgs.formats.yaml { };
+  sharedHermesEnvKeys = [
+    "GOOGLE_AI_STUDIO_API_KEY"
+    "OPENCODE_GO_API_KEY"
+    "BROWSERBASE_API_KEY"
+    "BROWSERBASE_PROJECT_ID"
+    "BROWSER_USE_API_KEY"
+    "BROWSERBASE_PROXIES"
+    "BROWSERBASE_ADVANCED_STEALTH"
+    "BROWSERBASE_KEEP_ALIVE"
+    "BROWSERBASE_SESSION_TIMEOUT"
+    "BROWSER_INACTIVITY_TIMEOUT"
+    "CAMOFOX_URL"
+    "BROWSER_CDP_URL"
+  ];
   rootConfig = {
     terminal = {
       backend = "local";
@@ -52,13 +78,110 @@ let
     };
   };
   mkProfileConfig =
-    profileName: profileDef:
+    _profileName: profileDef:
     {
       display.personality = profileDef.personality;
       model = {
         provider = profileDef.modelProvider;
         default = profileDef.modelDefault;
       };
+      memory = {
+        provider = "holographic";
+        memory_enabled = true;
+        user_profile_enabled = true;
+        nudge_interval = 10;
+        flush_min_turns = 6;
+      };
+      plugins.hermes-memory-store = {
+        db_path = "$HERMES_HOME/memory_store.db";
+        auto_extract = false;
+        default_trust = 0.5;
+      };
+      fallback_model = {
+        provider = "opencode-go";
+        model = "minimax-m2.7";
+      };
+      timezone = "Pacific/Honolulu";
+      agent = {
+        max_turns = 110;
+        reasoning_effort = "high";
+        verbose = false;
+      };
+      compression = {
+        enabled = true;
+        threshold = 0.50;
+        target_ratio = 0.25;
+        protect_last_n = 20;
+      };
+      session_reset = {
+        mode = "none";
+        idle_minutes = 1440;
+        at_hour = 4;
+      };
+      browser = {
+        cloud_provider = "local";
+        inactivity_timeout = 120;
+        command_timeout = 30;
+        record_sessions = false;
+      };
+      approvals = {
+        mode = "off";
+      };
+      security = {
+        redact_secrets = true;
+        tirith_enabled = true;
+        tirith_path = "tirith";
+        tirith_timeout = 5;
+        tirith_fail_open = true;
+        website_blocklist = {
+          enabled = false;
+          domains = [ ];
+          shared_files = [ ];
+        };
+      };
+      checkpoints = {
+        enabled = true;
+        max_snapshots = 50;
+      };
+      streaming = {
+        enabled = true;
+        transport = "edit";
+        edit_interval = 0.3;
+        buffer_threshold = 40;
+      };
+      stt = {
+        enabled = false;
+      };
+      human_delay = {
+        mode = "off";
+      };
+      auxiliary = let
+        directGemini = {
+          model = auxiliaryModelDefault;
+          base_url = auxiliaryBaseUrl;
+          api_key = auxiliaryApiKeyRef;
+        };
+      in {
+        vision = directGemini;
+        web_extract = directGemini;
+        approval = directGemini;
+        compression = directGemini;
+        session_search = directGemini;
+        skills_hub = directGemini;
+        mcp = directGemini;
+        flush_memories = directGemini;
+      };
+      discord = {
+        require_mention = true;
+        auto_thread = true;
+        reactions = true;
+      };
+      display = {
+        compact = false;
+        tool_progress = "new";
+        background_process_notifications = "result";
+      };
+      group_sessions_per_user = true;
       terminal = {
         backend = "local";
         cwd = profileDef.terminalCwd;
@@ -103,11 +226,34 @@ let
       name = profile;
       profileRoot = profileRoot;
       configPath = "${profileRoot}/config.yaml";
-      envPath = "${profileRoot}/.env";
+      soulPath = "${profileRoot}/SOUL.md";
       skillPath = "${profileRoot}/skills";
       serviceName = "ghostship-hermes-profile-${profile}";
       serviceDescription = "ghostship-hermes ${profile} gateway";
       serviceWorkingDirectory = profileDef.terminalCwd;
+      gatewayScript = pkgs.writeShellScript "ghostship-hermes-profile-${profile}-gateway.sh" ''
+        set -euo pipefail
+
+        bot_token="''${${profileDef.discordBotTokenEnv}:-}"
+        allowed_users="''${${profileDef.discordAllowedUsersEnv}:-}"
+        role_channel="''${${profileDef.discordChannelEnv}:-}"
+        general_channel="''${DISCORD_GENERAL_CHANNEL_ID:-}"
+
+        if [ -n "$bot_token" ]; then
+          export DISCORD_BOT_TOKEN="$bot_token"
+        fi
+        if [ -n "$allowed_users" ]; then
+          export DISCORD_ALLOWED_USERS="$allowed_users"
+        fi
+        if [ -n "$role_channel" ]; then
+          export DISCORD_FREE_RESPONSE_CHANNELS="$role_channel"
+        fi
+        if [ -n "$general_channel" ]; then
+          export DISCORD_HOME_CHANNEL="$general_channel"
+        fi
+
+        exec ${config.services.hermes-agent.package}/bin/hermes -p ${profile} gateway run --replace
+      '';
       configFile = yamlFormat.generate "ghostship-hermes-profile-${profile}-config.yaml" (mkProfileConfig profile profileDef);
     }
   );
@@ -139,11 +285,13 @@ let
         Group = "hermes";
         WorkingDirectory = profileDef.serviceWorkingDirectory;
         PassEnvironment = [
-          "OPENAI_API_KEY"
-          "GHOSTSHIP_ROUTER_API_KEY"
-          "API_SERVER_KEY"
-        ];
-        ExecStart = "${config.services.hermes-agent.package}/bin/hermes -p ${profile} gateway run --replace";
+          "BWS_ACCESS_TOKEN"
+          "DISCORD_GENERAL_CHANNEL_ID"
+          profileDef.discordBotTokenEnv
+          profileDef.discordAllowedUsersEnv
+          profileDef.discordChannelEnv
+        ] ++ sharedHermesEnvKeys;
+        ExecStart = profileDef.gatewayScript;
         Restart = "always";
         RestartSec = "2s";
       };
@@ -194,49 +342,48 @@ let
       done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
     }
 
+    copy_file_if_missing() {
+      source_path="$1"
+      target_path="$2"
+
+      [ -f "$source_path" ] || return 0
+      [ -e "$target_path" ] && return 0
+      install -D -m 0600 "$source_path" "$target_path"
+    }
+
     reconcile_seed_skills() {
       shared_source="''${GHOSTSHIP_HERMES_SHARED_SKILLS_DIR:-${sharedSkillSourceDir}}"
       profile_root="''${GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT:-${profileSkillSourceRoot}}"
 
       copy_skill_tree_if_missing "$shared_source" "/home/hermes/.hermes/skills"
 
-      profile_source="''${profile_root}/assistant"
+      profile_source="''${profile_root}/assistant/skills"
       copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.assistant.skillPath}"
-      profile_source="''${profile_root}/operations"
+      copy_file_if_missing "''${profile_root}/assistant/SOUL.md" "${profileDefinitions.assistant.soulPath}"
+      profile_source="''${profile_root}/operations/skills"
       copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.operations.skillPath}"
-      profile_source="''${profile_root}/supervisor"
+      copy_file_if_missing "''${profile_root}/operations/SOUL.md" "${profileDefinitions.operations.soulPath}"
+      profile_source="''${profile_root}/supervisor/skills"
       copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.supervisor.skillPath}"
+      copy_file_if_missing "''${profile_root}/supervisor/SOUL.md" "${profileDefinitions.supervisor.soulPath}"
     }
 
     write_profile_env() {
       target="$1"
       terminal_cwd="$2"
-      router_api_key="''${OPENAI_API_KEY:-}"
-      if [ -z "$router_api_key" ] && [ -n "''${API_SERVER_KEY:-}" ]; then
-        router_api_key="$API_SERVER_KEY"
-      fi
-      if [ -z "$router_api_key" ] && [ -n "''${GHOSTSHIP_ROUTER_API_KEY:-}" ]; then
-        router_api_key="$GHOSTSHIP_ROUTER_API_KEY"
-      fi
       umask 077
       {
         printf 'TERMINAL_CWD=%s\n' "$terminal_cwd"
-        for key in OPENROUTER_API_KEY OPENROUTER_BASE_URL OPENROUTER_HTTP_REFERER OPENROUTER_TITLE; do
+        for key in ${lib.escapeShellArgs sharedHermesEnvKeys}; do
           value="''${!key:-}"
           if [ -n "$value" ]; then
             printf '%s=%s\n' "$key" "$value"
           fi
         done
-        if [ -n "$router_api_key" ]; then
-          printf 'OPENAI_API_KEY=%s\n' "$router_api_key"
-        fi
       } >"$target"
     }
 
     write_profile_env "/home/hermes/.hermes/.env" "${rootTerminalCwd}"
-    write_profile_env "${profileDefinitions.assistant.envPath}" "${profileDefinitions.assistant.terminalCwd}"
-    write_profile_env "${profileDefinitions.operations.envPath}" "${profileDefinitions.operations.terminalCwd}"
-    write_profile_env "${profileDefinitions.supervisor.envPath}" "${profileDefinitions.supervisor.terminalCwd}"
     reconcile_seed_skills
 
     hermes profile use ${lib.escapeShellArg defaultProfile} >/dev/null 2>&1 || true
@@ -274,10 +421,10 @@ in
   ];
 
   documentation = {
-    doc.enable = false;
-    info.enable = false;
-    man.enable = false;
-    nixos.enable = false;
+    doc.enable = true;
+    info.enable = true;
+    man.enable = true;
+    nixos.enable = true;
   };
 
   networking.hostName = "ghostship-hermes";
@@ -397,15 +544,8 @@ in
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
       PassEnvironment = [
-        "OPENROUTER_API_KEY"
-        "OPENAI_API_KEY"
-        "GHOSTSHIP_ROUTER_API_KEY"
-        "API_SERVER_KEY"
-        "OPENROUTER_BASE_URL"
-        "OPENROUTER_HTTP_REFERER"
-        "OPENROUTER_TITLE"
-        "OPENCODE_API_KEY"
-        "OPENCODE_BASE_URL"
+        "GOOGLE_AI_STUDIO_API_KEY"
+        "OPENCODE_GO_API_KEY"
         "GHOSTSHIP_HERMES_SHARED_SKILLS_DIR"
         "GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT"
       ];
@@ -439,6 +579,7 @@ in
         "OPENROUTER_HTTP_REFERER"
         "OPENROUTER_TITLE"
         "OPENCODE_API_KEY"
+        "OPENCODE_GO_API_KEY"
         "OPENCODE_BASE_URL"
         "GHOSTSHIP_ROUTER_API_KEY"
         "GHOSTSHIP_ROUTER_CORS_ORIGINS"
@@ -493,11 +634,7 @@ in
       User = "hermes";
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
-      PassEnvironment = [
-        "OPENAI_API_KEY"
-        "GHOSTSHIP_ROUTER_API_KEY"
-        "API_SERVER_KEY"
-      ];
+      PassEnvironment = [ ];
       ExecStart = "${runtimeBin} dashboard-controller";
       Restart = "always";
       RestartSec = "2s";

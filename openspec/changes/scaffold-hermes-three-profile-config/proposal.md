@@ -7,8 +7,9 @@ The image currently hardcodes a two-profile Hermes layout centered on `operation
 - Add a Nix-first Hermes profile scaffold for `assistant`, `operations`, and `supervisor`, with `assistant` as the sticky default profile.
 - Introduce a single declarative profile matrix in the image module that drives generated profile config skeletons, env file paths, skill roots, and long-running gateway services.
 - Keep the root Hermes config minimal and non-authoritative so the named profiles become the real baked-in operating surface.
-- Preserve shared skills and profile-specific skills as runtime-seeded content under `/workspace/skills/...`, copied once into Hermes-owned skill trees without overwriting existing destinations.
+- Preserve shared skills and profile-specific skills as runtime-seeded content under `/home/hermes/seeds/...`, copied once into Hermes-owned profile state without overwriting existing skills or `SOUL.md` files.
 - Add an explicit audit pass for the Hermes setting surface so we can decide, setting by setting, whether each option belongs in Nix, runtime env, or later Hermes-owned mutable state.
+- Carry the current shared scaffold defaults for GPT-5.4 primary model routing, Minimax fallback, Gemini auxiliary tasks, Holographic memory, Discord bot channels, Tirith, and browser defaults led by local `agent-browser`.
 - Make the first implementation step only generate the basic scaffold so later tasks can tune model, auth, terminal, and persona settings from a stable base.
 
 ## Capabilities

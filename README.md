@@ -23,7 +23,7 @@ Canonical image references:
 - The image currently scaffolds three long-running Hermes profiles, `assistant`, `operations`, and `supervisor`, at `~/.hermes/profiles/...`.
 - `assistant` is the sticky default profile.
 - The root Hermes config stays minimal; the scaffolded profiles carry the current Nix-managed defaults.
-- Each scaffolded profile currently uses a direct `openai` provider placeholder with `gpt-5.4`, pending the later settings-audit pass for final provider/auth tuning.
+- Each scaffolded profile currently uses `openai-codex/gpt-5.4`, with a Hermes-native `fallback_model` of `opencode-go/minimax-m2.7` and direct Gemini 3.1 Flash-Lite Preview overrides for the configured auxiliary tasks.
 
 Upstream note:
 
@@ -40,7 +40,6 @@ Removed from the default image:
 - Opencode
 - OpenSpec
 - `skills`
-- `bws`
 - `feed`
 - repo-managed default skill seeding
 - honcho compatibility wiring
@@ -52,7 +51,9 @@ Retained in the default image:
 - upstream Hermes
 - Nix runtime support
 - pinned `gws` Google Workspace CLI
+- `bws` Bitwarden Secrets Manager CLI
 - `tirith`
+- `agent-browser`
 - `ttyd`
 - `ghostship-hermes-router`
 - packaged MMX dashboard controller
@@ -67,7 +68,7 @@ Canonical persistent roots:
 - `/workspace`
 - `/nix`
 
-Persisting the whole home mount keeps later-installed coding agents and browser tooling persistent without preinstalling them in the base image. That includes XDG state, `~/.agents`, `~/.agent-browser`, `~/.codex`, `~/.gemini`, `~/.copilot`, `~/.npm`, `~/.bun`, `~/.ssh`, `~/.gnupg`, and any other future tool state created under `/home/hermes`.
+Persisting the whole home mount keeps browser and agent tooling state persistent across container replacement. That includes XDG state, `~/.agents`, `~/.agent-browser`, `~/.codex`, `~/.gemini`, `~/.copilot`, `~/.npm`, `~/.bun`, `~/.ssh`, `~/.gnupg`, and any other future tool state created under `/home/hermes`.
 
 ## `/home/hermes` Layout
 
@@ -77,7 +78,7 @@ Inside the running container:
 - `/home/hermes/.hermes` is the managed Hermes service state written by the upstream NixOS module
 - named profiles live under `/home/hermes/.hermes/profiles/assistant`, `/home/hermes/.hermes/profiles/operations`, and `/home/hermes/.hermes/profiles/supervisor`
 - `/workspace` remains a separate persisted work directory and is not folded into the home facade
-- optional shared skills can be staged under `/workspace/skills/shared/<skill>/...` and optional profile skills under `/workspace/skills/profiles/<profile>/<skill>/...`
+- optional shared skills can be staged under `/home/hermes/seeds/shared/skills/<skill>/...` and optional profile skills under `/home/hermes/seeds/profiles/<profile>/skills/<skill>/...` plus an optional profile `SOUL.md` at `/home/hermes/seeds/profiles/<profile>/SOUL.md`
 
 This layout is important:
 
@@ -96,7 +97,7 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-bootstrap.service`
-  is a repo-specific NixOS oneshot that reconciles the approved `assistant`, `operations`, and `supervisor` profiles after the managed Hermes config exists, writes the root and profile `.env` files from the runtime provider env, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, and sets the sticky default profile to `assistant`
+  is a repo-specific NixOS oneshot that reconciles the approved `assistant`, `operations`, and `supervisor` profiles after the managed Hermes config exists, writes only the shared Hermes `.env` from the small set of runtime provider env vars the scaffold currently needs, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, and sets the sticky default profile to `assistant`
 - `ghostship-hermes-profile-assistant.service`
   keeps the `assistant` gateway running with `hermes -p assistant gateway run --replace`
 - `ghostship-hermes-profile-operations.service`
@@ -137,7 +138,8 @@ Notes:
 - Fix the per-user Nix ownership on the persisted volume before expecting mutable Nix workflows to work for `hermes`. In practice, `hermes` needs usable paths under `/nix/var/nix/profiles/per-user/hermes` and `/nix/var/nix/gcroots/per-user/hermes`.
 - Persisting `/home/hermes` directly is the intended way to keep Hermes managed state, Hermes CLI profiles, XDG state, and later-installed agent tooling across container replacement.
 - The dashboard is the intended browser entrypoint.
-- For local validation, source the repo `.envrc` before `docker run` so the router can use `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` for live inference against OpenRouter and OpenCode Zen.
+- For the current Hermes scaffold, the model-related runtime inputs are `OPENCODE_GO_API_KEY` for the main fallback model and `GOOGLE_AI_STUDIO_API_KEY` for all direct auxiliary tasks. The primary `openai-codex/gpt-5.4` path is expected to use Codex OAuth runtime state instead of an env var.
+- If you are also validating the local router, source the repo `.envrc` before `docker run` so the router can use `OPENROUTER_API_KEY` plus either `OPENCODE_API_KEY` or the Hermes-aligned `OPENCODE_GO_API_KEY` for live inference against OpenRouter and OpenCode Zen.
 - The shipped Hermes defaults do not depend on a separate `OPENROUTER_TEST_MODEL` override; validation should check the router aliases directly.
 
 After startup:
@@ -156,10 +158,48 @@ The image is intentionally declarative-first:
 - Hermes managed config is written into `/home/hermes/.hermes`.
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`.
+- The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The root Hermes config is intentionally minimal in the current scaffold.
 - The declared profiles are `assistant`, `operations`, and `supervisor`, with `assistant` set as the sticky default.
-- The current Nix scaffold gives each profile a direct `openai` provider placeholder with `gpt-5.4`, plus profile-specific terminal cwd metadata.
-- Shared skills still seed from `/workspace/skills/shared/<skill>` and profile-specific skills still seed from `/workspace/skills/profiles/<profile>/<skill>`, copying only missing skill directories into Hermes-owned state.
+- The current Nix scaffold gives each profile `provider = openai-codex` with `model.default = gpt-5.4`, plus a Hermes-native `fallback_model` of `opencode-go/minimax-m2.7`.
+- The current Nix scaffold also sets the shared Hermes timezone to `Pacific/Honolulu`.
+- The shared scaffold now also sets `agent.max_turns = 110`, `agent.reasoning_effort = "high"`, and `agent.verbose = false` for all three profiles.
+- Each profile now also enables Hermes external memory with `memory.provider = holographic`, keeps built-in memory and user-profile memory enabled, sets `nudge_interval = 10` and `flush_min_turns = 6`, and uses the local `hermes-memory-store` plugin at `$HERMES_HOME/memory_store.db` with `auto_extract = false` and `default_trust = 0.5`.
+- The shared scaffold also enables transcript compression with `threshold = 0.50`, `target_ratio = 0.25`, and `protect_last_n = 20` for long-running sessions.
+- The shared scaffold explicitly keeps `session_reset.mode = "none"`, while still recording placeholder idle/daily values (`idle_minutes = 1440`, `at_hour = 4`) for future policy changes.
+- The shared scaffold also configures Hermes browser defaults with `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.
+- `agent-browser` is preinstalled in the image and is the documented local-browser default when Browserbase, Browser Use, Camofox, and manual `/browser connect` CDP attachment are not in use. The image does not preinstall Chrome or Chromium. Hermes does not expose a declarative multi-CDP config item; the documented CDP path is a single interactive `/browser connect [ws://host:port]` connection.
+- The shared scaffold now also sets `approvals.mode = "off"` for a trusted, non-interactive runtime posture.
+- The shared scaffold also enables Hermes secret redaction and Tirith integration (`tirith_enabled = true`, `tirith_fail_open = true`) while leaving the website blocklist scaffold disabled by default.
+- The shared scaffold also enables Hermes checkpoints with `max_snapshots = 50` so file mutations retain rollback history.
+- The shared scaffold also enables streaming updates with `transport = "edit"`, `edit_interval = 0.3`, and `buffer_threshold = 40`.
+- The shared scaffold also sets display defaults with `compact = false`, `tool_progress = "new"`, and `background_process_notifications = "result"`.
+- The shared scaffold explicitly disables STT with `stt.enabled = false`.
+- The shared scaffold also disables artificial response delay with `human_delay.mode = "off"`.
+- Each profile config now also scaffolds Hermes `discord` defaults with `require_mention = true`, `auto_thread = true`, `reactions = true`, and `group_sessions_per_user = true`. The gateway service then maps profile-specific env vars into Hermes' standard Discord env names so a shared `DISCORD_GENERAL_CHANNEL_ID` stays mention-only while each profile's `DISCORD_<PROFILE>_CHANNEL_ID` becomes that bot's free-response role channel.
+- Hermes does not have a native per-profile Discord icon field. If you want distinct icons, each profile needs its own Discord application/bot, and you set the avatar/banner in the Discord Developer Portal for that bot.
+- All Hermes auxiliary tasks are pinned to Gemini 3.1 Flash-Lite Preview through the Google Gemini OpenAI-compatible endpoint using `${GOOGLE_AI_STUDIO_API_KEY}`. TTS is still intentionally left unconfigured for now.
+- The bootstrap now writes only the shared Hermes `.env`, and only for the small set of provider and browser env vars the current scaffold actually needs. Long-running services inherit runtime container env directly for shared runtime auth such as `BWS_ACCESS_TOKEN`.
+- Shared skills still seed from `/home/hermes/seeds/shared/skills/<skill>` and profile-specific skills still seed from `/home/hermes/seeds/profiles/<profile>/skills/<skill>`, and per-profile `SOUL.md` files seed from `/home/hermes/seeds/profiles/<profile>/SOUL.md`, copying only missing skill directories into Hermes-owned state.
+
+Current scaffold env vars:
+
+Discord per-profile env vars:
+
+- Shared mention-only channel: `DISCORD_GENERAL_CHANNEL_ID`
+- Assistant bot: `DISCORD_ASSISTANT_BOT_TOKEN`, `DISCORD_ASSISTANT_ALLOWED_USERS`, `DISCORD_ASSISTANT_CHANNEL_ID`
+- Operations bot: `DISCORD_OPERATIONS_BOT_TOKEN`, `DISCORD_OPERATIONS_ALLOWED_USERS`, `DISCORD_OPERATIONS_CHANNEL_ID`
+- Supervisor bot: `DISCORD_SUPERVISOR_BOT_TOKEN`, `DISCORD_SUPERVISOR_ALLOWED_USERS`, `DISCORD_SUPERVISOR_CHANNEL_ID`
+
+- Required for the planned Hermes model setup: `OPENCODE_GO_API_KEY` and `GOOGLE_AI_STUDIO_API_KEY`
+- Optional browser-provider env vars passed through to Hermes and written into the shared Hermes `.env`: `CAMOFOX_URL`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `BROWSER_USE_API_KEY`, `BROWSERBASE_PROXIES`, `BROWSERBASE_ADVANCED_STEALTH`, `BROWSERBASE_KEEP_ALIVE`, `BROWSERBASE_SESSION_TIMEOUT`, `BROWSER_INACTIVITY_TIMEOUT`
+- Optional remote CDP env passthrough: `BROWSER_CDP_URL`. Hermes can use this as the persistent default CDP target for browser tools when you want remote Chrome instead of local `agent-browser`.
+- No extra secret is required for Holographic memory; it is local SQLite state under `$HERMES_HOME`
+- `OPENCODE_GO_API_KEY` backs the Hermes-native `fallback_model = opencode-go/minimax-m2.7`
+- `GOOGLE_AI_STUDIO_API_KEY` backs the direct Google Gemini OpenAI-compatible endpoint used for all configured auxiliary tasks
+- Optional secrets bootstrap: `BWS_ACCESS_TOKEN` for Bitwarden Secrets Manager workflows inside the running profiles
+- Not required for the primary model path: `OPENAI_API_KEY`; the scaffold assumes `openai-codex/gpt-5.4` uses persisted Codex OAuth runtime state rather than a static env key
+- Router provider vars such as `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` remain router-only, but the router now also accepts the Hermes-facing `OPENCODE_GO_API_KEY` alias so the Minimax fallback credential name can be shared between Hermes and the router
 
 Upstream Hermes docs still apply for CLI behavior:
 
@@ -221,7 +261,7 @@ The image now includes a standalone local router service:
 
 Outside the container, standalone router runs default state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router` unless `GHOSTSHIP_ROUTER_STATE_DIR` or `GHOSTSHIP_ROUTER_DB_PATH` is set.
 
-Optional runtime env for the router:
+Router-only runtime env (separate from the current Hermes scaffold):
 
 - `GHOSTSHIP_ROUTER_RANKING_ENABLED`
 - `GHOSTSHIP_ROUTER_RANKING_INTERVAL`
@@ -239,9 +279,11 @@ Optional runtime env for the router:
 - `GHOSTSHIP_ROUTER_DISABLED_MODELS`
 - `GHOSTSHIP_ROUTER_PROVIDER_WEIGHT_OVERRIDES`
 - `GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES`
-- `GHOSTSHIP_ROUTER_ALIAS_PIN_LIGHTWEIGHT`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_AUXILIARY`
 - `GHOSTSHIP_ROUTER_ALIAS_PIN_CODING`
-- `GHOSTSHIP_ROUTER_ALIAS_PIN_HEAVYWEIGHT`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_AGENTIC`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_VISION`
+- `GHOSTSHIP_ROUTER_ALIAS_PIN_TTS`
 
 If `GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL` or `GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL` is set, it must resolve to a healthy free model ID from the current router inventory.
 
@@ -311,7 +353,7 @@ The persistence suite validates:
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the router, the two profile gateways, and the dashboard
  - no repo-managed default skills are seeded by default
-- optional shared and profile skill trees staged under `/workspace/skills/...` are copied once without overwriting existing Hermes-managed skill directories
+- optional shared and profile skill trees staged under `/home/hermes/seeds/...` are copied once without overwriting existing Hermes-managed skill directories
 - removed workstation tools other than `gws` are absent by default
 - `ghostship-*` utilities remain available
 - HOME-backed state survives container replacement

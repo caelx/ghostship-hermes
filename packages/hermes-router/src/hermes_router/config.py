@@ -143,7 +143,7 @@ class RouterConfig:
             openrouter_base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             openrouter_http_referer=os.environ.get("OPENROUTER_HTTP_REFERER"),
             openrouter_title=os.environ.get("OPENROUTER_TITLE"),
-            opencode_api_key=os.environ.get("OPENCODE_API_KEY"),
+            opencode_api_key=_first_env("OPENCODE_API_KEY", "OPENCODE_GO_API_KEY"),
             opencode_base_url=os.environ.get("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1"),
             assisted_bucket_model=os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"),
             assisted_bucket_batch_size=int(os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE", "20")),
