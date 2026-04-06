@@ -69,7 +69,8 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - The dashboard proxies ttyd from its own origin on `:7681`; do not turn ttyd `--check-origin` back on for proxied sessions or tab switches will fall into ttyd's reconnect overlay.
 - The ttyd proxy must stream decoded HTTP bytes and preserve websocket subprotocol negotiation; stripping `content-encoding` while forwarding raw gzip bytes or accepting the browser websocket before upstream subprotocol negotiation will break the embedded terminal.
 - The image should bootstrap `operations` and `coder` profiles so operators can inspect the upstream `~/.hermes/profiles/...` layout immediately after boot, with `operations` set as the sticky default profile.
-- The bootstrap oneshot should source `OPENROUTER_API_KEY` and `OPENROUTER_TEST_MODEL` from the runtime environment, write the profile `.env` files, and set both declared profiles to the requested test model without depending on extra Python packages like PyYAML.
+- The bootstrap oneshot should source runtime provider env for the root and profile `.env` files, materialize the approved `operations` and `coder` profiles, and leave config generation shell-only without depending on extra Python packages like PyYAML.
+- Optional runtime skill staging lives under `/workspace/skills/shared/<skill>` for shared skills and `/workspace/skills/profiles/<profile>/<skill>` for profile-specific skills; bootstrap may copy a missing skill directory into Hermes, but it must never overwrite an existing destination skill because Hermes owns it after first seed.
 
 ### Container And Supervisor Behavior
 

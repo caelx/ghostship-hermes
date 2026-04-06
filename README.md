@@ -42,7 +42,7 @@ Removed from the default image:
 - `gws`
 - `bws`
 - `feed`
-- repo-managed skill seeding
+- repo-managed default skill seeding
 - honcho compatibility wiring
 - profile reconciler and persistent per-profile terminals
 - app/update timers for mutable workstation tooling
@@ -76,6 +76,7 @@ Inside the running container:
 - `/home/hermes/.hermes` is the managed Hermes service state written by the upstream NixOS module
 - named profiles live under `/home/hermes/.hermes/profiles/operations` and `/home/hermes/.hermes/profiles/coder`
 - `/workspace` remains a separate persisted work directory and is not folded into the home facade
+- optional shared skills can be staged under `/workspace/skills/shared/<skill>/...` and optional profile skills under `/workspace/skills/profiles/<profile>/<skill>/...`
 
 This layout is important:
 
@@ -94,7 +95,7 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-bootstrap.service`
-  is a repo-specific NixOS oneshot that reconciles the approved `operations` and `coder` profiles after the managed Hermes config exists, writes their `.env` files from the runtime provider env, assigns the approved router aliases, and sets the sticky default profile to `operations`
+  is a repo-specific NixOS oneshot that reconciles the approved `operations` and `coder` profiles after the managed Hermes config exists, writes their `.env` files from the runtime provider env, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, assigns the approved router aliases, and sets the sticky default profile to `operations`
 - `ghostship-hermes-profile-operations.service`
   keeps the `operations` gateway running with `hermes -p operations gateway run --replace`
 - `ghostship-hermes-profile-coder.service`
@@ -306,7 +307,8 @@ The persistence suite validates:
 - `operations` and `coder` both use `coding` through the local router
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the router, the two profile gateways, and the dashboard
-- no custom default skills are seeded
+- no repo-managed default skills are seeded by default
+- optional shared and profile skill trees staged under `/workspace/skills/...` are copied once without overwriting existing Hermes-managed skill directories
 - removed workstation tools are absent by default
 - `ghostship-*` utilities remain available
 - HOME-backed state survives container replacement
