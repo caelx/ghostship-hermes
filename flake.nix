@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     hermes-agent.url = "github:NousResearch/hermes-agent/v2026.4.3";
+    googleworkspace-cli.url = "github:googleworkspace/cli";
   };
 
   outputs =
@@ -11,6 +12,7 @@
       self,
       nixpkgs,
       hermes-agent,
+      googleworkspace-cli,
     }:
     let
       lib = nixpkgs.lib;
@@ -79,8 +81,10 @@
             builtins.readFile ./packages/hermes-image/hermes-release.txt
           );
           ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix { inherit hermesDashboard; };
+          googleWorkspaceCli = googleworkspace-cli.packages.${system}.gws;
 
           allUtilities = [
+            googleWorkspaceCli
             ghostshipSearxng
             ghostshipSonarr
             ghostshipRadarr
@@ -130,6 +134,7 @@
           };
         in
         {
+          gws = googleWorkspaceCli;
           hermes-dashboard = hermesDashboard;
           ghostship-cli-contract = ghostshipCliContract;
           ghostship-searxng = ghostshipSearxng;
@@ -168,6 +173,7 @@
         in
         {
           inherit (self.packages.${system})
+            gws
             hermes-dashboard
             ghostship-cli-contract
             ghostship-searxng

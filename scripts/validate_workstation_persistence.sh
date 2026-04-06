@@ -291,7 +291,7 @@ run_as_hermes "$container_one" 'test "$(id -u)" = "3000" && test "$(id -g)" = "3
 run_in_container "$container_one" 'test -d /home/hermes/.hermes && test -d /workspace'
 
 run_in_container "$container_one" '
-  for cmd in codex gemini opencode openspec skills gws bws feed; do
+  for cmd in codex gemini opencode openspec skills bws feed; do
     if command -v "$cmd" >/dev/null 2>&1; then
       echo "unexpected preinstalled command: $cmd" >&2
       exit 1
@@ -301,6 +301,7 @@ run_in_container "$container_one" '
 
 run_in_container "$container_one" "for cmd in $ghostship_cmds_joined; do command -v \"\$cmd\" >/dev/null; done"
 run_in_container "$container_one" 'command -v tirith >/dev/null'
+run_as_hermes "$container_one" 'command -v gws >/dev/null'
 
 run_in_container "$container_one" '
   for skill in bitwarden changedetection current-environment feed hermes-nix; do
@@ -309,6 +310,11 @@ run_in_container "$container_one" '
       exit 1
     fi
   done
+
+  if [ -d "/home/hermes/.hermes/skills" ] && find "/home/hermes/.hermes/skills" -mindepth 1 -maxdepth 1 -type d \( -name "gws*" -o -name "google-workspace*" \) | grep -q .; then
+    echo "unexpected Google Workspace skill seeded" >&2
+    exit 1
+  fi
 '
 
 run_as_hermes "$container_one" 'hermes profile show operations >/dev/null'
