@@ -138,6 +138,11 @@ assert_router_inventory() {
   run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"lightweight\") and index(\"coding\") and index(\"heavyweight\")' >/dev/null"
 }
 
+assert_distinct_router_buckets() {
+  local container_name="$1"
+  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '\n    def models(alias): (.data[] | select(.id == alias) | .metadata.candidates | map(.provider_name + \":\" + .backend_model));\n    (models(\"lightweight\") | length) > 0 and\n    (models(\"coding\") | length) > 0 and\n    (models(\"heavyweight\") | length) > 0 and\n    (models(\"lightweight\") != models(\"coding\")) and\n    (models(\"lightweight\") != models(\"heavyweight\")) and\n    (models(\"coding\") != models(\"heavyweight\"))\n  ' >/dev/null"
+}
+
 assert_model_config() {
   local container_name="$1"
   local scope="$2"
@@ -324,6 +329,7 @@ run_as_hermes "$container_name" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.her
 run_as_hermes "$container_name" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/coder/.env >/dev/null'
 run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'
 assert_router_inventory "$container_name"
+assert_distinct_router_buckets "$container_name"
 assert_model_config "$container_name" root lightweight
 assert_model_config "$container_name" operations heavyweight
 assert_model_config "$container_name" coder coding

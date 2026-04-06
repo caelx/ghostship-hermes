@@ -460,6 +460,32 @@ def test_paid_models_are_not_routable(tmp_path: Path) -> None:
         assert service.preview_routes("coding") == []
 
 
+def test_openrouter_prefixed_pins_normalize_to_backend_model_ids(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[ProviderModel(id="qwen/qwen3-coder:free", provider="openrouter", is_free=True, tags=("coding",))],
+    )
+    config = make_config(
+        tmp_path,
+        aliases=(
+            AliasConfig(name="lightweight", description="light", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=("openrouter/qwen/qwen3-coder:free",)),
+            AliasConfig(name="heavyweight", description="heavy", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    preview = service.preview_routes("coding")
+    assert [candidate["backend_model"] for candidate in preview] == ["qwen/qwen3-coder:free"]
+
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
+        assert response.status_code == 200
+        assert response.headers["x-ghostship-router-backend-provider"] == "openrouter"
+        assert response.headers["x-ghostship-router-backend-model"] == "qwen/qwen3-coder:free"
+        assert provider.calls
+        assert all(call == "qwen/qwen3-coder:free" for call in provider.calls)
+
+
 def test_model_missing_triggers_refresh(tmp_path: Path) -> None:
     provider = DummyProvider("openrouter", failures={"openrouter/code-1:free": ["model_missing"]})
     config = make_config(

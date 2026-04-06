@@ -1295,10 +1295,16 @@ class RouterService:
         candidates: list[RouteCandidate] = []
         known_inventory = inventory if inventory is not None else self._inventory_for_all()
         for model_id in model_ids:
-            normalized = model_id.removeprefix("opencode/")
+            normalized = model_id
+            if normalized.startswith("opencode/"):
+                normalized = normalized.removeprefix("opencode/")
+            elif normalized.startswith("openrouter/"):
+                normalized = normalized.removeprefix("openrouter/")
             matched = [model for model in known_inventory if model.id == normalized or model.id == model_id]
             if not matched and normalized == model_id and "openrouter" in self.providers:
                 matched.append(ProviderModel(id=model_id, provider="openrouter", is_free=model_id.endswith(":free")))
+            elif not matched and normalized != model_id and "openrouter" in self.providers:
+                matched.append(ProviderModel(id=normalized, provider="openrouter", is_free=normalized.endswith(":free")))
             for model in matched:
                 if not self._model_is_routable(model):
                     continue
