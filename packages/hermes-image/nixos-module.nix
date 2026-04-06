@@ -139,21 +139,6 @@ let
 
   serviceEnvironment = {
     HERMES_HOME = "/home/hermes/.hermes";
-    GHOSTSHIP_ROUTER_LIGHTWEIGHT_MODELS = lib.concatStringsSep "," [
-      "openrouter/nvidia/nemotron-nano-9b-v2:free"
-      "openrouter/minimax/minimax-m2.5:free"
-      "opencode/nemotron-3-super-free"
-    ];
-    GHOSTSHIP_ROUTER_CODING_MODELS = lib.concatStringsSep "," [
-      "openrouter/qwen/qwen3-coder:free"
-      "openrouter/qwen/qwen3.6-plus:free"
-      "opencode/qwen3.6-plus-free"
-    ];
-    GHOSTSHIP_ROUTER_HEAVYWEIGHT_MODELS = lib.concatStringsSep "," [
-      "openrouter/arcee-ai/trinity-large-preview:free"
-      "openrouter/meta-llama/llama-3.3-70b-instruct:free"
-      "opencode/trinity-large-preview-free"
-    ];
     TERMINAL_CWD = "/home/hermes";
     GHOSTSHIP_TERMINAL_CWD = "/home/hermes";
     GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
@@ -367,9 +352,6 @@ in
         "GHOSTSHIP_ROUTER_ALIAS_PIN_LIGHTWEIGHT"
         "GHOSTSHIP_ROUTER_ALIAS_PIN_CODING"
         "GHOSTSHIP_ROUTER_ALIAS_PIN_HEAVYWEIGHT"
-        "GHOSTSHIP_ROUTER_LIGHTWEIGHT_MODELS"
-        "GHOSTSHIP_ROUTER_CODING_MODELS"
-        "GHOSTSHIP_ROUTER_HEAVYWEIGHT_MODELS"
       ];
       ExecStart = "${ghostshipHermesRouter}/bin/ghostship-hermes-router";
       Restart = "always";

@@ -205,7 +205,8 @@ The image now includes a standalone local router service:
 - inventory sources: OpenRouter and OpenCode Zen
 - Zen request families: `/chat/completions`, `/responses`, `/messages`, and Google-style model endpoints are normalized back into the local `chat/completions` surface
 - routing state: model-level health, provider-level health, cooldown, ranking, failover, total latency, best-effort first-text latency, durable overrides, stored `responses`, and lightweight chat session continuity
-- ranking worker: a healthy free model from the `lightweight` pool performs coarse ranking and selective reranking outside the request hot path
+- startup behavior: the router serves the last persisted inventory and rankings immediately when they exist; otherwise it stays unready until the first background discovery pass completes
+- ranking worker: a healthy free OpenCode Zen model from the `lightweight` pool is preferred for coarse ranking and selective reranking outside the request hot path, with OpenRouter fallback
 - override controls: provider and model disablement, provider and model weight overrides, and alias pinning
 - optional auth: `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
 - optional browser CORS allowlist: `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`

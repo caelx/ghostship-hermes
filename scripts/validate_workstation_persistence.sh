@@ -221,9 +221,14 @@ assert_router_inventory() {
   run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"lightweight\") and index(\"coding\") and index(\"heavyweight\")' >/dev/null"
 }
 
-assert_distinct_router_buckets() {
+assert_free_router_buckets() {
   local container_name="$1"
-  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '\n    def models(alias): (.data[] | select(.id == alias) | .metadata.candidates | map(.provider_name + \":\" + .backend_model));\n    (models(\"lightweight\") | length) > 0 and\n    (models(\"coding\") | length) > 0 and\n    (models(\"heavyweight\") | length) > 0 and\n    (models(\"lightweight\") != models(\"coding\")) and\n    (models(\"lightweight\") != models(\"heavyweight\")) and\n    (models(\"coding\") != models(\"heavyweight\"))\n  ' >/dev/null"
+  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '
+    [.data[] | select(.id == "lightweight" or .id == "coding" or .id == "heavyweight")]
+    | length == 3
+    and all(.[]; .metadata.candidate_count > 0)
+    and all(.[]; all(.metadata.candidates[]; .is_free == true))
+  ' >/dev/null"
 }
 
 assert_model_config() {
@@ -316,7 +321,7 @@ run_as_hermes "$container_one" 'hermes config show | grep -F "/home/hermes" >/de
 run_as_hermes "$container_one" 'hermes profile list | grep -F "operations" >/dev/null'
 run_as_hermes "$container_one" 'hermes profile list | grep -F "coder" >/dev/null'
 assert_router_inventory "$container_one"
-assert_distinct_router_buckets "$container_one"
+assert_free_router_buckets "$container_one"
 assert_model_config "$container_one" root lightweight
 assert_model_config "$container_one" operations heavyweight
 assert_model_config "$container_one" coder coding
@@ -452,7 +457,7 @@ run_as_hermes "$container_two" 'hermes profile list | grep -F "operations" >/dev
 run_as_hermes "$container_two" 'hermes profile list | grep -F "coder" >/dev/null'
 run_in_container "$container_two" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
 assert_router_inventory "$container_two"
-assert_distinct_router_buckets "$container_two"
+assert_free_router_buckets "$container_two"
 assert_model_config "$container_two" root lightweight
 assert_model_config "$container_two" operations heavyweight
 assert_model_config "$container_two" coder coding

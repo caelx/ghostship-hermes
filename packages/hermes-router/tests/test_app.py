@@ -359,6 +359,31 @@ def test_app_serves_with_persisted_routes_while_startup_refresh_runs(tmp_path: P
         assert [item["id"] for item in response.json()["data"]] == ["lightweight", "coding", "heavyweight"]
 
 
+def test_readyz_waits_for_background_inventory_load_when_no_state_exists(tmp_path: Path) -> None:
+    config = make_config(tmp_path, refresh_interval_seconds=3600)
+    service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    original_refresh_inventory = service.refresh_inventory
+
+    def slow_refresh_inventory(*, reason: str) -> list[ProviderModel]:
+        time.sleep(0.35)
+        return original_refresh_inventory(reason=reason)
+
+    service.refresh_inventory = slow_refresh_inventory  # type: ignore[method-assign]
+
+    with TestClient(create_app(config=config, service=service)) as client:
+        response = client.get("/readyz")
+        assert response.status_code == 503
+        assert response.json()["ok"] is False
+        models = client.get("/v1/models")
+        assert models.status_code == 200
+        time.sleep(0.5)
+        ready = client.get("/readyz")
+        assert ready.status_code == 200
+        assert ready.json()["ok"] is True
+        models = client.get("/v1/models")
+        assert any(item["metadata"]["candidate_count"] > 0 for item in models.json()["data"])
+
+
 def test_api_key_protects_router_api_endpoints(tmp_path: Path) -> None:
     config = make_config(tmp_path, api_key="router-key")
     service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
@@ -386,6 +411,7 @@ def test_non_v1_chat_completion_alias_routes_alias(tmp_path: Path) -> None:
     provider = DummyProvider("openrouter")
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         response = client.post("/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
         assert response.status_code == 200
@@ -474,6 +500,7 @@ def test_openrouter_prefixed_pins_normalize_to_backend_model_ids(tmp_path: Path)
         ),
     )
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     preview = service.preview_routes("coding")
     assert [candidate["backend_model"] for candidate in preview] == ["qwen/qwen3-coder:free"]
 
@@ -528,24 +555,22 @@ def test_refresh_persists_inventory_across_service_restart(tmp_path: Path) -> No
     assert restarted.debug_model("opencode-zen", "qwen3-coder")["inventory"]["is_free"] is False
 
 
-def test_ranking_uses_healthy_free_lightweight_worker_and_persists_rankings(tmp_path: Path) -> None:
-    provider = DummyProvider(
+def test_ranking_prefers_opencode_worker_and_persists_rankings(tmp_path: Path) -> None:
+    openrouter = DummyProvider(
         "openrouter",
         models=[
             ProviderModel(id="assistant-free:free", provider="openrouter", is_free=True, tags=("lightweight",)),
-            ProviderModel(id="demo/light-1:free", provider="openrouter", is_free=True, tags=()),
-            ProviderModel(id="demo/code-1:free", provider="openrouter", is_free=True, tags=()),
+            ProviderModel(id="demo/code-1:free", provider="openrouter", is_free=True, tags=("coding",)),
+        ],
+    )
+    opencode = DummyProvider(
+        "opencode-zen",
+        models=[
+            ProviderModel(id="gpt-5-nano", provider="opencode-zen", is_free=True, tags=("lightweight",)),
+            ProviderModel(id="qwen3-coder:free", provider="opencode-zen", is_free=True, tags=("coding",)),
         ],
         classification_payload={
             "models": [
-                {
-                    "provider": "openrouter",
-                    "id": "demo/light-1:free",
-                    "tags": ["lightweight"],
-                    "alias_scores": {"lightweight": 11, "coding": 1, "heavyweight": 0},
-                    "reason": "best lightweight model",
-                    "confidence": 0.95,
-                },
                 {
                     "provider": "openrouter",
                     "id": "demo/code-1:free",
@@ -553,6 +578,14 @@ def test_ranking_uses_healthy_free_lightweight_worker_and_persists_rankings(tmp_
                     "alias_scores": {"lightweight": 1, "coding": 11, "heavyweight": 0},
                     "reason": "best coding model",
                     "confidence": 0.94,
+                },
+                {
+                    "provider": "opencode-zen",
+                    "id": "qwen3-coder:free",
+                    "tags": ["coding"],
+                    "alias_scores": {"lightweight": 1, "coding": 12, "heavyweight": 0},
+                    "reason": "best opencode coding model",
+                    "confidence": 0.97,
                 },
             ]
         },
@@ -565,14 +598,15 @@ def test_ranking_uses_healthy_free_lightweight_worker_and_persists_rankings(tmp_
             AliasConfig(name="heavyweight", description="heavy", preferred_models=()),
         ),
     )
-    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service = RouterService(config, providers={"openrouter": openrouter, "opencode-zen": opencode}, state_store=SqliteStateStore(config.db_path))
     service.refresh_inventory(reason="manual")
-    assert "assistant-free:free" in provider.calls
     state = service.debug_state()
-    assert state["last_ranking_worker"]["backend_model"] == "assistant-free:free"
+    assert state["last_ranking_worker"]["provider_name"] == "opencode-zen"
+    assert state["last_ranking_worker"]["backend_model"] == "gpt-5-nano"
+    assert "gpt-5-nano" in opencode.calls
     assert state["state"]["ranking_count"] >= 2
     ranking = service.debug_rankings("coding")
-    assert any(candidate["backend_model"] == "demo/code-1:free" and candidate["learned_ranking_score"] > 0 for candidate in ranking["candidates"])
+    assert any(candidate["backend_model"] == "qwen3-coder:free" and candidate["learned_ranking_score"] > 0 for candidate in ranking["candidates"])
 
 
 def test_debug_endpoints_return_state_and_events(tmp_path: Path) -> None:
@@ -601,6 +635,7 @@ def test_metrics_endpoint_exposes_request_failover_and_candidate_metrics(tmp_pat
         ),
     )
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
         assert response.status_code == 200
@@ -628,6 +663,7 @@ def test_provider_cooldown_suppresses_provider_after_broad_failures(tmp_path: Pa
         ),
     )
     service = RouterService(config, providers={"openrouter": openrouter, "opencode-zen": opencode}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     _, headers = service.chat_completions(ChatCompletionRequest.model_validate({"model": "coding", "messages": [{"role": "user", "content": "hello"}]}))
     assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
     providers = service.debug_providers()
@@ -679,6 +715,22 @@ def test_heuristic_ordering_still_works_without_ranking_data(tmp_path: Path) -> 
     preview = service.preview_routes("coding")
     assert preview
     assert preview[0]["backend_model"] == "openrouter/code-1:free"
+
+
+def test_empty_inventory_does_not_trigger_lazy_refresh(tmp_path: Path) -> None:
+    provider = DummyProvider("openrouter")
+    config = make_config(
+        tmp_path,
+        aliases=(
+            AliasConfig(name="lightweight", description="light", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="heavyweight", description="heavy", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    assert service.preview_routes("coding") == []
+    assert provider.list_calls == 0
+    assert service.readiness().ok is False
 
 
 def test_config_defaults_state_dir_to_user_state_home(monkeypatch) -> None:

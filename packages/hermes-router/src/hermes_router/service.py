@@ -107,10 +107,9 @@ class RouterService:
     def readiness(self) -> ReadinessResponse:
         if not self.providers:
             return ReadinessResponse(ok=False, providers=[], detail="No providers configured.")
-        detail = "Router is ready."
         if not self._inventory:
-            detail = "Router is ready but inventory is not loaded yet."
-        return ReadinessResponse(ok=True, providers=sorted(self.providers.keys()), detail=detail)
+            return ReadinessResponse(ok=False, providers=sorted(self.providers.keys()), detail="Router inventory is still loading.")
+        return ReadinessResponse(ok=True, providers=sorted(self.providers.keys()), detail="Router is ready.")
 
     def list_models(self) -> ModelsResponse:
         alias_cards: list[ModelCard] = []
@@ -1301,9 +1300,9 @@ class RouterService:
             elif normalized.startswith("openrouter/"):
                 normalized = normalized.removeprefix("openrouter/")
             matched = [model for model in known_inventory if model.id == normalized or model.id == model_id]
-            if not matched and normalized == model_id and "openrouter" in self.providers:
+            if known_inventory and not matched and normalized == model_id and "openrouter" in self.providers:
                 matched.append(ProviderModel(id=model_id, provider="openrouter", is_free=model_id.endswith(":free")))
-            elif not matched and normalized != model_id and "openrouter" in self.providers:
+            elif known_inventory and not matched and normalized != model_id and "openrouter" in self.providers:
                 matched.append(ProviderModel(id=normalized, provider="openrouter", is_free=normalized.endswith(":free")))
             for model in matched:
                 if not self._model_is_routable(model):
@@ -1335,11 +1334,28 @@ class RouterService:
             and not self._provider_is_cooling_down(model.provider)
         ]
         scored = sorted(filtered, key=lambda model: self._score_breakdown(alias.name, model)["total_score"], reverse=True)
-        return [model for model in scored if self._score_breakdown(alias.name, model)["total_score"] > 0][: self.config.alias_model_limit]
+        selected: list[ProviderModel] = []
+        selected_keys: set[tuple[str, str]] = set()
+
+        def append_candidates(models: list[ProviderModel]) -> None:
+            for model in models:
+                if self._score_breakdown(alias.name, model)["total_score"] <= 0:
+                    continue
+                key = (model.provider, model.id)
+                if key in selected_keys:
+                    continue
+                selected.append(model)
+                selected_keys.add(key)
+                if len(selected) >= self.config.alias_model_limit:
+                    return
+
+        primary = [model for model in scored if self._primary_alias_for_model(model) == alias.name]
+        append_candidates(primary)
+        if len(selected) < self.config.alias_model_limit:
+            append_candidates(scored)
+        return selected
 
     def _inventory_for_all(self) -> list[ProviderModel]:
-        if not self._inventory:
-            self.refresh_inventory(reason="lazy")
         return list(self._inventory)
 
     def _score_breakdown(self, alias: str, model: ProviderModel) -> dict[str, Any]:
@@ -1576,30 +1592,38 @@ class RouterService:
         lightweight = self.config.alias_map().get("lightweight")
         if lightweight is None:
             return None
-        candidates = []
-        for model in models:
-            if not model.is_free:
-                continue
-            if not self._model_effectively_enabled(model.provider, model.id):
-                continue
-            if self._provider_is_cooling_down(model.provider):
-                continue
-            if self._is_cooling_down(model.provider, model.id):
-                continue
-            breakdown = self._score_breakdown("lightweight", model)
-            if breakdown["total_score"] <= 0:
-                continue
-            candidates.append(
-                RouteCandidate(
-                    provider_name=model.provider,
-                    backend_model=model.id,
-                    total_score=breakdown["total_score"],
-                    score_breakdown=breakdown,
+
+        def sorted_candidates(preferred_provider: str | None = None) -> list[RouteCandidate]:
+            candidates: list[RouteCandidate] = []
+            for model in models:
+                if preferred_provider is not None and model.provider != preferred_provider:
+                    continue
+                if not model.is_free:
+                    continue
+                if not self._model_effectively_enabled(model.provider, model.id):
+                    continue
+                if self._provider_is_cooling_down(model.provider):
+                    continue
+                if self._is_cooling_down(model.provider, model.id):
+                    continue
+                breakdown = self._score_breakdown("lightweight", model)
+                if breakdown["total_score"] <= 0:
+                    continue
+                candidates.append(
+                    RouteCandidate(
+                        provider_name=model.provider,
+                        backend_model=model.id,
+                        total_score=breakdown["total_score"],
+                        score_breakdown=breakdown,
+                    )
                 )
-            )
-        if not candidates:
-            return None
-        return sorted(candidates, key=lambda item: item.total_score, reverse=True)[0]
+            return sorted(candidates, key=lambda item: item.total_score, reverse=True)
+
+        for provider_name in ("opencode-zen", "openrouter", None):
+            candidates = sorted_candidates(provider_name)
+            if candidates:
+                return candidates[0]
+        return None
 
     def _rank_inventory_with_worker(
         self,
@@ -1775,6 +1799,26 @@ class RouterService:
     @staticmethod
     def _model_key(provider_name: str, backend_model: str) -> str:
         return f"{provider_name}::{backend_model}"
+
+    def _primary_alias_for_model(self, model: ProviderModel) -> str | None:
+        lowered = model.id.lower()
+        best_alias: str | None = None
+        best_key: tuple[float, float, float, float] | None = None
+        for alias in _ALIASES:
+            breakdown = self._score_breakdown(alias, model)
+            alias_score = breakdown["total_score"]
+            if alias_score <= 0:
+                continue
+            key = (
+                alias_score,
+                1.0 if alias in model.tags else 0.0,
+                1.0 if any(token in lowered for token in _ALIAS_HINTS.get(alias, ())) else 0.0,
+                breakdown["learned_ranking_score"],
+            )
+            if best_key is None or key > best_key:
+                best_alias = alias
+                best_key = key
+        return best_alias
 
     def _alias_for_model_id(self, model_id: str) -> str | None:
         for alias, tokens in _ALIAS_HINTS.items():

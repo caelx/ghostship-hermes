@@ -18,7 +18,8 @@ Current scope:
 - refreshes inventory from OpenRouter and OpenCode Zen
 - routes and fails over between concrete backend models instead of alias-level buckets
 - keeps paid models in inventory and debug state, but only free models can become route candidates
-- the image runtime pins distinct free shortlists for `lightweight`, `coding`, and `heavyweight` so the aliases do not collapse onto the same candidate set
+- if persisted inventory exists, startup reuses it immediately; otherwise the router stays unready until the first background discovery pass classifies free models into `lightweight`, `coding`, and `heavyweight`
+- dynamic bucketing prefers an OpenCode Zen lightweight worker when available and falls back to OpenRouter when Zen cannot supply a usable worker
 - preferred-model pins may use `openrouter/` or `opencode/` prefixes in config, but backend dispatch must normalize them back to the provider's real model id before routing
 - supports OpenCode Zen mixed endpoint families and normalizes them back to local `chat/completions`
 - records total latency and best-effort first-text latency per backend model
