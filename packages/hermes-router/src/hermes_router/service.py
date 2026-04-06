@@ -37,51 +37,70 @@ _ALIAS_PENALTIES: dict[str, tuple[str, ...]] = {
     "tts": ("vision", "image", "video", "music", "song", "lyrics", "lyria"),
 }
 
-_FAMILY_PRIORS_BY_ALIAS: dict[str, tuple[tuple[str, float, tuple[str, ...]], ...]] = {
+_FAMILY_PRIORS_BY_ALIAS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
     "coding": (
-        ("minimax", 78.0, ("minimax", "m2.7", "m2.5")),
-        ("nemotron", 70.0, ("nemotron",)),
-        ("glm", 62.0, ("glm-5", "glm", "z.ai", "z-ai")),
-        ("deepseek", 54.0, ("deepseek", "speciale")),
-        ("grok", 46.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
-        ("qwen", 38.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
-        ("gemini", 30.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
-        ("devstral", 22.0, ("devstral", "mistral")),
-        ("llama", 14.0, ("llama",)),
+        ("minimax", ("minimax", "m2.7", "m2.5")),
+        ("glm", ("glm-5", "glm", "z.ai", "z-ai")),
+        ("qwen", ("qwen3-coder-next", "qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
+        ("deepseek", ("deepseek", "speciale")),
+        ("grok", ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
+        ("gemini", ("gemini-3-flash", "gemini-3.1-pro", "gemini-3-pro", "gemini")),
+        ("stepfun", ("step-3.5", "stepfun", "step-")),
+        ("devstral", ("devstral", "mistral")),
+        ("nemotron", ("nemotron",)),
+        ("mimo", ("mimo-v2", "mimo")),
+        ("trinity", ("trinity", "arcee", "arcee-ai")),
+        ("gpt-oss", ("gpt-oss",)),
+        ("olmo", ("olmo",)),
+        ("gemma", ("gemma",)),
+        ("hermes", ("hermes",)),
+        ("solar", ("solar",)),
+        ("llama", ("llama",)),
+        ("venice", ("venice",)),
+        ("lfm", ("lfm", "liquid/lfm", "lfm2")),
+        ("molmo", ("molmo",)),
     ),
     "agentic": (
-        ("gemini", 78.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
-        ("trinity", 70.0, ("trinity", "arcee", "arcee-ai")),
-        ("minimax", 62.0, ("minimax", "m2.7", "m2.5")),
-        ("qwen", 54.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
-        ("mimo", 46.0, ("mimo-v2", "mimo")),
-        ("nemotron", 38.0, ("nemotron",)),
-        ("glm", 30.0, ("glm-5", "glm", "z.ai", "z-ai")),
-        ("stepfun", 24.0, ("step-3.5", "stepfun", "step-")),
-        ("deepseek", 18.0, ("deepseek", "speciale")),
-        ("grok", 14.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
-        ("devstral", 10.0, ("devstral", "mistral")),
-        ("gpt-oss", 6.0, ("gpt-oss",)),
+        ("gemini", ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
+        ("trinity", ("trinity", "arcee", "arcee-ai")),
+        ("minimax", ("minimax", "m2.7", "m2.5")),
+        ("qwen", ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
+        ("mimo", ("mimo-v2", "mimo")),
+        ("nemotron", ("nemotron",)),
+        ("glm", ("glm-5", "glm", "z.ai", "z-ai")),
+        ("stepfun", ("step-3.5", "stepfun", "step-")),
+        ("deepseek", ("deepseek", "speciale")),
+        ("grok", ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
+        ("devstral", ("devstral", "mistral")),
+        ("gpt-oss", ("gpt-oss",)),
     ),
     "vision": (
-        ("gemma", 0.0, ("gemma",)),
-        ("qwen", 0.0, ("qwen",)),
-        ("nemotron", 0.0, ("nemotron",)),
-        ("molmo", 0.0, ("molmo",)),
-        ("llama", 0.0, ("llama",)),
+        ("gemma", ("gemma",)),
+        ("qwen", ("qwen",)),
+        ("nemotron", ("nemotron",)),
+        ("molmo", ("molmo",)),
+        ("llama", ("llama",)),
     ),
     "auxiliary": (
-        ("gemini", 34.0, ("gemini flash-lite", "gemini flash", "gemini-3.1-flash-lite", "gemini-3-flash", "gemini")),
-        ("gpt-oss", 30.0, ("gpt-oss",)),
-        ("nemotron", 26.0, ("nemotron",)),
-        ("mimo", 22.0, ("mimo-v2-flash", "mimo-v2", "mimo")),
-        ("grok", 18.0, ("grok code fast", "grok-code-fast", "grok fast", "grok")),
-        ("stepfun", 14.0, ("step-3.5", "stepfun", "step-")),
-        ("glm", 10.0, ("glm-5 turbo", "glm-5", "glm", "z.ai", "z-ai")),
-        ("minimax", 8.0, ("minimax", "m2.7-highspeed", "m2.7", "m2.5")),
-        ("lfm", 6.0, ("lfm", "liquid/lfm", "lfm2")),
-        ("gemma", 4.0, ("gemma",)),
+        ("gemini", ("gemini flash-lite", "gemini flash", "gemini-3.1-flash-lite", "gemini-3-flash", "gemini")),
+        ("gpt-oss", ("gpt-oss",)),
+        ("nemotron", ("nemotron",)),
+        ("mimo", ("mimo-v2-flash", "mimo-v2", "mimo")),
+        ("grok", ("grok code fast", "grok-code-fast", "grok fast", "grok")),
+        ("stepfun", ("step-3.5", "stepfun", "step-")),
+        ("glm", ("glm-5 turbo", "glm-5", "glm", "z.ai", "z-ai")),
+        ("minimax", ("minimax", "m2.7-highspeed", "m2.7", "m2.5")),
+        ("lfm", ("lfm", "liquid/lfm", "lfm2")),
+        ("gemma", ("gemma",)),
     ),
+}
+
+_FAMILY_RANK_STEP_BY_ALIAS: dict[str, float] = {
+    "coding": 7.0,
+    "agentic": 6.0,
+    "auxiliary": 3.0,
+    "vision": 0.0,
+    "tts": 0.0,
 }
 
 _SIZE_HINTS: tuple[tuple[str, float], ...] = (
@@ -1941,13 +1960,16 @@ class RouterService:
 
     def _family_bias(self, alias: str, model: ProviderModel) -> tuple[str | None, float]:
         primary_matches, description_matches = self._family_matches(alias, model)
+        family_bonus_map = self._family_bonus_map(alias)
         if primary_matches:
-            return max(primary_matches, key=lambda item: item[1])
+            family_name = next((family for family in family_bonus_map if family in primary_matches), primary_matches[0])
+            return family_name, family_bonus_map.get(family_name, 0.0)
         if description_matches:
-            return max(description_matches, key=lambda item: item[1])
+            family_name = next((family for family in family_bonus_map if family in description_matches), description_matches[0])
+            return family_name, round(family_bonus_map.get(family_name, 0.0) * 0.2, 3)
         return None, 0.0
 
-    def _family_matches(self, alias: str, model: ProviderModel) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
+    def _family_matches(self, alias: str, model: ProviderModel) -> tuple[list[str], list[str]]:
         priors = _FAMILY_PRIORS_BY_ALIAS.get(alias)
         if not priors:
             return [], []
@@ -1961,15 +1983,37 @@ class RouterService:
             if value
         )
         description_haystack = str(metadata.get("description", "")).lower()
-        primary_matches: list[tuple[str, float]] = []
-        description_matches: list[tuple[str, float]] = []
-        for family_name, bias, tokens in priors:
+        primary_matches: list[str] = []
+        description_matches: list[str] = []
+        for family_name, tokens in priors:
             if any(token in primary_haystack for token in tokens):
-                primary_matches.append((family_name, bias))
+                primary_matches.append(family_name)
                 continue
             if description_haystack and any(token in description_haystack for token in tokens):
-                description_matches.append((family_name, round(bias * 0.2, 3)))
+                description_matches.append(family_name)
         return primary_matches, description_matches
+
+    def _family_bonus_map(self, alias: str) -> dict[str, float]:
+        priors = _FAMILY_PRIORS_BY_ALIAS.get(alias)
+        if not priors:
+            return {}
+        present_families: list[str] = []
+        for family_name, _tokens in priors:
+            for candidate in self._inventory_for_all():
+                if not self._model_is_routable(candidate, alias=alias):
+                    continue
+                if not self._model_effectively_enabled(candidate.provider, candidate.id):
+                    continue
+                primary_matches, _ = self._family_matches(alias, candidate)
+                if family_name in primary_matches:
+                    present_families.append(family_name)
+                    break
+        step = _FAMILY_RANK_STEP_BY_ALIAS.get(alias, 1.0)
+        family_count = len(present_families)
+        return {
+            family_name: round((family_count - index) * step, 3)
+            for index, family_name in enumerate(present_families)
+        }
 
     def _parameter_bias(self, alias: str, model: ProviderModel, *, family_name: str | None) -> tuple[float | None, float]:
         parameter_count = self._parameter_count_b(model)
@@ -1993,7 +2037,7 @@ class RouterService:
         elif alias == "coding":
             penalty = min((parameter_gap * 0.08) + (size_hint_gap * 4.0), 10.0)
         elif alias == "agentic":
-            penalty = min((parameter_gap * 0.06) + (size_hint_gap * 4.0), 8.0)
+            penalty = min((parameter_gap * 0.06) + (size_hint_gap * 5.0), 16.0)
         else:
             penalty = 0.0
         return parameter_count, -round(penalty, 3)
@@ -2004,7 +2048,7 @@ class RouterService:
             if not self._model_is_routable(sibling, alias=alias):
                 continue
             primary_matches, _ = self._family_matches(alias, sibling)
-            matched_families = {name for name, _ in primary_matches}
+            matched_families = set(primary_matches)
             if family_name not in matched_families:
                 continue
             signature = self._size_signature(sibling)

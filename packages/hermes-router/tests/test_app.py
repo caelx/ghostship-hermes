@@ -449,6 +449,7 @@ def test_chat_completion_routes_alias(tmp_path: Path) -> None:
     provider = DummyProvider("openrouter")
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
         assert response.status_code == 200
@@ -762,6 +763,58 @@ def test_coding_penalizes_smaller_family_variants_when_larger_peer_exists(tmp_pa
     ]
     assert preview[0]["parameter_bias"] == 0.0
     assert preview[1]["parameter_bias"] < 0.0
+
+
+def test_agentic_penalizes_trinity_mini_below_qwen(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="arcee-ai/trinity-large-preview:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("agentic",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1770000000},
+            ),
+            ProviderModel(
+                id="arcee-ai/trinity-mini:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("agentic",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1770000000},
+            ),
+            ProviderModel(
+                id="qwen/qwen3.6-plus:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("agentic",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        ranking_enabled=False,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("agentic")
+    ordered = [item["backend_model"] for item in preview[:3]]
+    assert ordered == [
+        "arcee-ai/trinity-large-preview:free",
+        "qwen/qwen3.6-plus:free",
+        "arcee-ai/trinity-mini:free",
+    ]
+    trinity_mini = next(item for item in preview if item["backend_model"] == "arcee-ai/trinity-mini:free")
+    qwen = next(item for item in preview if item["backend_model"] == "qwen/qwen3.6-plus:free")
+    assert trinity_mini["parameter_bias"] < qwen["parameter_bias"]
 
 
 def test_agentic_family_bias_prefers_gemini_over_trinity_and_minimax(tmp_path: Path) -> None:
@@ -1255,6 +1308,7 @@ def test_health_endpoints_match_hermes_shape(tmp_path: Path) -> None:
 def test_chat_completion_stream_returns_sse_and_session_header(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         response = client.post(
             "/v1/chat/completions",
