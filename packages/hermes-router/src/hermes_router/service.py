@@ -40,14 +40,14 @@ _ALIAS_PENALTIES: dict[str, tuple[str, ...]] = {
 _FAMILY_PRIORS_BY_ALIAS: dict[str, tuple[tuple[str, float, tuple[str, ...]], ...]] = {
     "coding": (
         ("minimax", 78.0, ("minimax", "m2.7", "m2.5")),
-        ("nemotron", 70.0, ("nemotron")),
+        ("nemotron", 70.0, ("nemotron",)),
         ("glm", 62.0, ("glm-5", "glm", "z.ai", "z-ai")),
         ("deepseek", 54.0, ("deepseek", "speciale")),
         ("grok", 46.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
         ("qwen", 38.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
         ("gemini", 30.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
         ("devstral", 22.0, ("devstral", "mistral")),
-        ("llama", 14.0, ("llama")),
+        ("llama", 14.0, ("llama",)),
     ),
     "agentic": (
         ("gemini", 78.0, ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
@@ -55,27 +55,52 @@ _FAMILY_PRIORS_BY_ALIAS: dict[str, tuple[tuple[str, float, tuple[str, ...]], ...
         ("minimax", 62.0, ("minimax", "m2.7", "m2.5")),
         ("qwen", 54.0, ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
         ("mimo", 46.0, ("mimo-v2", "mimo")),
-        ("nemotron", 38.0, ("nemotron")),
+        ("nemotron", 38.0, ("nemotron",)),
         ("glm", 30.0, ("glm-5", "glm", "z.ai", "z-ai")),
         ("stepfun", 24.0, ("step-3.5", "stepfun", "step-")),
         ("deepseek", 18.0, ("deepseek", "speciale")),
         ("grok", 14.0, ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
         ("devstral", 10.0, ("devstral", "mistral")),
-        ("gpt-oss", 6.0, ("gpt-oss")),
+        ("gpt-oss", 6.0, ("gpt-oss",)),
+    ),
+    "vision": (
+        ("gemma", 0.0, ("gemma",)),
+        ("qwen", 0.0, ("qwen",)),
+        ("nemotron", 0.0, ("nemotron",)),
+        ("molmo", 0.0, ("molmo",)),
+        ("llama", 0.0, ("llama",)),
     ),
     "auxiliary": (
         ("gemini", 34.0, ("gemini flash-lite", "gemini flash", "gemini-3.1-flash-lite", "gemini-3-flash", "gemini")),
-        ("gpt-oss", 30.0, ("gpt-oss")),
-        ("nemotron", 26.0, ("nemotron")),
+        ("gpt-oss", 30.0, ("gpt-oss",)),
+        ("nemotron", 26.0, ("nemotron",)),
         ("mimo", 22.0, ("mimo-v2-flash", "mimo-v2", "mimo")),
         ("grok", 18.0, ("grok code fast", "grok-code-fast", "grok fast", "grok")),
         ("stepfun", 14.0, ("step-3.5", "stepfun", "step-")),
         ("glm", 10.0, ("glm-5 turbo", "glm-5", "glm", "z.ai", "z-ai")),
         ("minimax", 8.0, ("minimax", "m2.7-highspeed", "m2.7", "m2.5")),
         ("lfm", 6.0, ("lfm", "liquid/lfm", "lfm2")),
-        ("gemma", 4.0, ("gemma")),
+        ("gemma", 4.0, ("gemma",)),
     ),
 }
+
+_SIZE_HINTS: tuple[tuple[str, float], ...] = (
+    ("nano", -3.0),
+    ("mini", -2.5),
+    ("small", -2.0),
+    ("lite", -1.5),
+    ("flash", -1.0),
+    ("air", -0.75),
+    ("turbo", -0.5),
+    ("plus", 0.25),
+    ("pro", 1.0),
+    ("large", 1.5),
+    ("super", 1.5),
+    ("max", 2.0),
+    ("ultra", 2.0),
+    ("reason", 0.75),
+    ("thinking", 0.75),
+)
 
 
 class RouterServiceError(Exception):
@@ -1498,7 +1523,7 @@ class RouterService:
         )
         latency_penalty = -((float(model_state.get("first_text_latency_avg_ms") or model_state.get("latency_avg_ms") or 0.0)) / 1000.0)
         family_name, family_bias = self._family_bias(alias, model)
-        parameter_count_b, parameter_bias = self._parameter_bias(alias, model)
+        parameter_count_b, parameter_bias = self._parameter_bias(alias, model, family_name=family_name)
         created_bias = self._recency_bias(model)
         alias_scores = ranking.get("alias_scores", {})
         rerank_scores = ranking.get("rerank_scores", {})
@@ -1915,9 +1940,17 @@ class RouterService:
         return None
 
     def _family_bias(self, alias: str, model: ProviderModel) -> tuple[str | None, float]:
+        primary_matches, description_matches = self._family_matches(alias, model)
+        if primary_matches:
+            return max(primary_matches, key=lambda item: item[1])
+        if description_matches:
+            return max(description_matches, key=lambda item: item[1])
+        return None, 0.0
+
+    def _family_matches(self, alias: str, model: ProviderModel) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
         priors = _FAMILY_PRIORS_BY_ALIAS.get(alias)
         if not priors:
-            return None, 0.0
+            return [], []
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
         primary_haystack = " ".join(
             str(value).lower()
@@ -1928,28 +1961,72 @@ class RouterService:
             if value
         )
         description_haystack = str(metadata.get("description", "")).lower()
+        primary_matches: list[tuple[str, float]] = []
+        description_matches: list[tuple[str, float]] = []
         for family_name, bias, tokens in priors:
             if any(token in primary_haystack for token in tokens):
-                return family_name, bias
+                primary_matches.append((family_name, bias))
+                continue
             if description_haystack and any(token in description_haystack for token in tokens):
-                return family_name, round(bias * 0.2, 3)
-        return None, 0.0
+                description_matches.append((family_name, round(bias * 0.2, 3)))
+        return primary_matches, description_matches
 
-    def _parameter_bias(self, alias: str, model: ProviderModel) -> tuple[float | None, float]:
+    def _parameter_bias(self, alias: str, model: ProviderModel, *, family_name: str | None) -> tuple[float | None, float]:
         parameter_count = self._parameter_count_b(model)
-        if parameter_count is None:
-            return None, 0.0
-        if alias == "vision":
-            return parameter_count, min(parameter_count * 0.25, 12.0)
-        if alias == "coding":
-            return parameter_count, min(parameter_count * 0.08, 6.0)
-        if alias == "agentic":
-            return parameter_count, min(parameter_count * 0.05, 4.0)
+        size_hint = self._size_hint(model)
         if alias == "auxiliary":
+            if parameter_count is None:
+                return None, -min(max(size_hint, 0.0) * 2.0, 4.0)
             return parameter_count, -min(parameter_count * 0.18, 8.0)
         if alias == "tts":
-            return parameter_count, min(parameter_count * 0.05, 3.0)
-        return parameter_count, 0.0
+            return parameter_count, 0.0
+        if family_name is None:
+            return parameter_count, 0.0
+        largest_signature = self._largest_family_size_signature(alias, family_name)
+        current_signature = self._size_signature(model)
+        if largest_signature is None or current_signature >= largest_signature:
+            return parameter_count, 0.0
+        parameter_gap = max(largest_signature[1] - current_signature[1], 0.0)
+        size_hint_gap = max(largest_signature[2] - current_signature[2], 0.0)
+        if alias == "vision":
+            penalty = min((parameter_gap * 0.32) + (size_hint_gap * 2.0), 12.0)
+        elif alias == "coding":
+            penalty = min((parameter_gap * 0.08) + (size_hint_gap * 4.0), 10.0)
+        elif alias == "agentic":
+            penalty = min((parameter_gap * 0.06) + (size_hint_gap * 4.0), 8.0)
+        else:
+            penalty = 0.0
+        return parameter_count, -round(penalty, 3)
+
+    def _largest_family_size_signature(self, alias: str, family_name: str) -> tuple[int, float, float] | None:
+        best: tuple[int, float, float] | None = None
+        for sibling in self._inventory_for_all():
+            if not self._model_is_routable(sibling, alias=alias):
+                continue
+            primary_matches, _ = self._family_matches(alias, sibling)
+            matched_families = {name for name, _ in primary_matches}
+            if family_name not in matched_families:
+                continue
+            signature = self._size_signature(sibling)
+            if best is None or signature > best:
+                best = signature
+        return best
+
+    def _size_signature(self, model: ProviderModel) -> tuple[int, float, float]:
+        parameter_count = self._parameter_count_b(model)
+        return (1 if parameter_count is not None else 0, parameter_count or 0.0, self._size_hint(model))
+
+    def _size_hint(self, model: ProviderModel) -> float:
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        haystack = " ".join(
+            str(value).lower()
+            for value in (
+                model.id,
+                metadata.get("name"),
+            )
+            if value
+        )
+        return round(sum(weight for token, weight in _SIZE_HINTS if token in haystack), 3)
 
     def _parameter_count_b(self, model: ProviderModel) -> float | None:
         metadata = model.metadata if isinstance(model.metadata, dict) else {}

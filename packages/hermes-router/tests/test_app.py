@@ -647,6 +647,42 @@ def test_primary_alias_prefers_higher_coding_score_over_auxiliary_tag(tmp_path: 
     assert service._primary_alias_for_model(target) == "coding"
 
 
+def test_family_match_prefers_primary_id_over_description_fallback(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="qwen/qwen3.6-plus:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("coding",),
+                metadata={
+                    "name": "Qwen 3.6 Plus",
+                    "description": "Benchmarked against Nemotron and GPT-OSS families for coding.",
+                    "supported_parameters": ["tools", "tool_choice"],
+                    "output_modalities": ["text"],
+                    "created": 1774907286,
+                },
+            ),
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        ranking_enabled=False,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("coding")
+    assert preview[0]["family_name"] == "qwen"
+
+
 def test_coding_family_bias_prefers_minimax_over_qwen_when_capabilities_are_close(tmp_path: Path) -> None:
     provider = DummyProvider(
         "openrouter",
@@ -684,6 +720,48 @@ def test_coding_family_bias_prefers_minimax_over_qwen_when_capabilities_are_clos
     assert preview[0]["family_name"] == "minimax"
     qwen = next(item for item in preview if item["backend_model"] == "qwen/qwen3.6-plus:free")
     assert preview[0]["family_bias"] > qwen["family_bias"]
+
+
+def test_coding_penalizes_smaller_family_variants_when_larger_peer_exists(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="google/gemini-3.1-flash-lite:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("coding",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+            ProviderModel(
+                id="google/gemini-3.1-pro:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("coding",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        ranking_enabled=False,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("coding")
+    assert [item["backend_model"] for item in preview[:2]] == [
+        "google/gemini-3.1-pro:free",
+        "google/gemini-3.1-flash-lite:free",
+    ]
+    assert preview[0]["parameter_bias"] == 0.0
+    assert preview[1]["parameter_bias"] < 0.0
 
 
 def test_agentic_family_bias_prefers_gemini_over_trinity_and_minimax(tmp_path: Path) -> None:
@@ -822,6 +900,36 @@ def test_auxiliary_prefers_smaller_models_when_family_fit_is_close(tmp_path: Pat
         "google/gemma-3-27b-it:free",
     ]
     assert preview[0]["parameter_bias"] > preview[1]["parameter_bias"]
+
+
+def test_size_penalty_requires_a_larger_family_peer(tmp_path: Path) -> None:
+    provider = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(
+                id="google/gemini-3.1-flash-lite:free",
+                provider="openrouter",
+                is_free=True,
+                tags=("coding",),
+                metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"], "created": 1774907286},
+            ),
+        ],
+    )
+    config = make_config(
+        tmp_path,
+        ranking_enabled=False,
+        aliases=(
+            AliasConfig(name="auxiliary", description="aux", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("coding")
+    assert preview[0]["parameter_bias"] == 0.0
 
 
 def test_recency_bias_prefers_newer_models_when_other_scores_tie(tmp_path: Path) -> None:
@@ -1196,6 +1304,7 @@ def test_chat_completion_stream_preserves_tool_calls_and_reasoning(tmp_path: Pat
 
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": ToolProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         response = client.post(
             "/v1/chat/completions",
@@ -1236,6 +1345,7 @@ def test_chat_completion_session_header_reuses_stored_history(tmp_path: Path) ->
 def test_responses_create_get_delete_and_chain_previous_response(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         create = client.post("/v1/responses", json={"input": "What is 1+1?", "instructions": "Be terse."})
         assert create.status_code == 200
@@ -1363,6 +1473,7 @@ def test_responses_stream_preserves_function_call_items(tmp_path: Path) -> None:
 def test_responses_conversation_name_tracks_latest_response(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     service = RouterService(config, providers={"openrouter": DummyProvider("openrouter")}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
     with TestClient(create_app(config=config, service=service)) as client:
         first = client.post("/v1/responses", json={"input": "hello", "conversation": "demo"})
         second = client.post("/v1/responses", json={"input": "again", "conversation": "demo"})
