@@ -65,28 +65,280 @@ function makePill(label, accent = false) {
 
 function renderHome() {
   const environment = state.environment || {};
-  const profiles = (environment.profiles || []);
-  renderProviderPills(environment, environment.endpoints || environment.providers || [], environment.sections || []);
+  const providers = environment.providers || [];
+  const profiles = environment.profiles || [];
+  const defaultProfile = profiles.find((profile) => profile.is_default) || null;
 
-  const homeRenderKey = JSON.stringify({
-    environment,
-    visibleSessionCount: visibleSessions().length,
-  });
-  if (state.homeRenderKey === homeRenderKey) {
-    return;
+  providerPillsRoot.innerHTML = "";
+  if (providers.length) {
+    providers.forEach((provider) => {
+      const routerReady = provider.router ? provider.router.ready : provider.configured;
+      providerPillsRoot.appendChild(makePill(provider.name, routerReady));
+    });
+  } else {
+    providerPillsRoot.appendChild(makePill("no endpoint"));
   }
-  state.homeRenderKey = homeRenderKey;
-  homeCardsRoot.innerHTML = "";
 
-  const layout = document.createElement("div");
-  layout.className = "dashboard-layout";
-  layout.append(
-    renderOverviewPanel(environment, profiles, environment.endpoints || environment.providers || [], environment.sections || []),
-    renderProfilesPanel(profiles),
-  );
+  runtimeFactsRoot.innerHTML = "";
+  const facts = [
+    ["Host", environment.host],
+    ["Dashboard", environment.dashboard_bind],
+    ["Home", environment.home],
+    ["Hermes", environment.managed_hermes_home],
+    ["Shell root", environment.terminal_cwd],
+    ["Default profile", environment.default_profile],
+    ["Root endpoint", environment.root_base_url],
+    ["Root model", environment.root_model || environment.model],
+    ["Default profile model", environment.default_profile_model || defaultProfile?.model],
+    ["Live sessions", String(state.sessions.length)],
+  ];
 
-  homeCardsRoot.appendChild(layout);
+  facts.forEach(([label, value]) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "fact-item";
+
+    const term = document.createElement("dt");
+    term.textContent = label;
+
+    const detail = document.createElement("dd");
+    detail.textContent = formatValue(value);
+
+    wrapper.append(term, detail);
+    runtimeFactsRoot.appendChild(wrapper);
+  });
+
+  providerListRoot.innerHTML = "";
+  if (!providers.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-line";
+    empty.textContent = "No endpoint metadata detected.";
+    providerListRoot.appendChild(empty);
+  } else {
+    providers.forEach((provider) => {
+      const card = document.createElement("article");
+      card.className = "provider-card";
+
+      const top = document.createElement("div");
+      top.className = "card-topline";
+
+      const name = document.createElement("strong");
+      name.className = "card-title";
+      name.textContent = provider.name;
+
+      const statusLabel = provider.router
+        ? (provider.router.ready ? "router ready" : "router degraded")
+        : (provider.configured ? "configured" : "incomplete");
+      const status = makePill(statusLabel, provider.router ? provider.router.ready : provider.configured);
+      top.append(name, status);
+
+      const grid = document.createElement("div");
+      grid.className = "detail-grid";
+      [
+        ["Kind", provider.kind],
+        ["Base URL", provider.base_url],
+        ["Auth", provider.auth_source ? `present via ${provider.auth_source}` : "not detected"],
+        ["Profiles", (provider.profiles || []).join(", ")],
+      ].forEach(([label, value]) => {
+        const item = document.createElement("div");
+        item.className = "detail-item";
+
+        const key = document.createElement("span");
+        key.className = "detail-key";
+        key.textContent = label;
+
+        const detail = document.createElement("span");
+        detail.className = "detail-value";
+        detail.textContent = formatValue(value);
+
+        item.append(key, detail);
+        grid.appendChild(item);
+      });
+
+      card.append(top, grid);
+
+      if (provider.router) {
+        const routerWrap = document.createElement("section");
+        routerWrap.className = "provider-models";
+
+        const routerLabel = document.createElement("span");
+        routerLabel.className = "subsection-label";
+        routerLabel.textContent = "Router aliases";
+        routerWrap.appendChild(routerLabel);
+
+        const routerMeta = document.createElement("div");
+        routerMeta.className = "meta-row";
+        routerMeta.appendChild(makePill(provider.router.ready ? "ready" : "degraded", provider.router.ready));
+        if (provider.router.detail) {
+          routerMeta.appendChild(makePill(provider.router.detail));
+        }
+        routerWrap.appendChild(routerMeta);
+
+        const aliasCards = document.createElement("div");
+        aliasCards.className = "model-subcards";
+        (provider.router.aliases || []).forEach((alias) => {
+          const aliasCard = document.createElement("article");
+          aliasCard.className = "model-subcard";
+
+          const aliasTop = document.createElement("div");
+          aliasTop.className = "card-topline";
+
+          const aliasName = document.createElement("strong");
+          aliasName.className = "card-title model-title";
+          aliasName.textContent = alias.name;
+
+          const aliasFlags = document.createElement("div");
+          aliasFlags.className = "meta-row";
+          aliasFlags.appendChild(makePill(`${alias.candidate_count || 0} candidates`, (alias.candidate_count || 0) > 0));
+          aliasTop.append(aliasName, aliasFlags);
+          aliasCard.appendChild(aliasTop);
+
+          if (alias.description) {
+            const aliasDescription = document.createElement("p");
+            aliasDescription.className = "empty-line";
+            aliasDescription.textContent = alias.description;
+            aliasCard.appendChild(aliasDescription);
+          }
+
+          const candidateRow = document.createElement("div");
+          candidateRow.className = "meta-row";
+          const candidates = alias.candidates || [];
+          if (candidates.length) {
+            candidates.slice(0, 4).forEach((candidate) => {
+              candidateRow.appendChild(makePill(`${candidate.provider_name}:${candidate.backend_model}`));
+            });
+          } else {
+            candidateRow.appendChild(makePill("no candidates"));
+          }
+          aliasCard.appendChild(candidateRow);
+          aliasCards.appendChild(aliasCard);
+        });
+        routerWrap.appendChild(aliasCards);
+        card.appendChild(routerWrap);
+
+        const providerHealth = document.createElement("section");
+        providerHealth.className = "provider-models";
+
+        const healthLabel = document.createElement("span");
+        healthLabel.className = "subsection-label";
+        healthLabel.textContent = "Provider health";
+        providerHealth.appendChild(healthLabel);
+
+        const healthRow = document.createElement("div");
+        healthRow.className = "meta-row";
+        (provider.router.providers || []).forEach((item) => {
+          healthRow.appendChild(makePill(item.enabled ? item.provider_name : `${item.provider_name} disabled`, item.enabled));
+        });
+        providerHealth.appendChild(healthRow);
+        card.appendChild(providerHealth);
+      }
+
+      const models = provider.models || [];
+      if (models.length) {
+        const modelsWrap = document.createElement("section");
+        modelsWrap.className = "provider-models";
+
+        const label = document.createElement("span");
+        label.className = "subsection-label";
+        label.textContent = "Configured models";
+        modelsWrap.appendChild(label);
+
+        const subcards = document.createElement("div");
+        subcards.className = "model-subcards";
+
+        models.forEach((model) => {
+          const modelCard = document.createElement("article");
+          modelCard.className = "model-subcard";
+
+          const modelTop = document.createElement("div");
+          modelTop.className = "card-topline";
+
+          const modelName = document.createElement("strong");
+          modelName.className = "card-title model-title";
+          modelName.textContent = model.name;
+
+          const modelFlags = document.createElement("div");
+          modelFlags.className = "meta-row";
+          if (model.vendor) {
+            modelFlags.appendChild(makePill(model.vendor));
+          }
+          if ((model.scopes || []).includes("root")) {
+            modelFlags.appendChild(makePill("root", true));
+          }
+          modelTop.append(modelName, modelFlags);
+
+          modelCard.appendChild(modelTop);
+
+          const profileRow = document.createElement("div");
+          profileRow.className = "meta-row";
+          const linkedProfiles = model.profiles || [];
+          if (linkedProfiles.length) {
+            linkedProfiles.forEach((profileName) => {
+              profileRow.appendChild(makePill(profileName));
+            });
+          } else {
+            profileRow.appendChild(makePill("global"));
+          }
+
+          modelCard.appendChild(profileRow);
+          subcards.appendChild(modelCard);
+        });
+
+        modelsWrap.appendChild(subcards);
+        card.appendChild(modelsWrap);
+      }
+
+      providerListRoot.appendChild(card);
+    });
+  }
+
+  profileListRoot.innerHTML = "";
+  profiles.forEach((profile) => {
+    const card = document.createElement("article");
+    card.className = "profile-card";
+
+    const top = document.createElement("div");
+    top.className = "card-topline";
+
+    const name = document.createElement("strong");
+    name.className = "card-title";
+    name.textContent = profile.name;
+
+    const flags = document.createElement("div");
+    flags.className = "meta-row";
+    flags.appendChild(makePill(profile.is_default ? "default" : "profile", profile.is_default));
+    flags.appendChild(makePill(formatValue(profile.endpoint_name, "endpoint unknown")));
+    flags.appendChild(makePill(formatValue(profile.model, "model unset")));
+    top.append(name, flags);
+
+    const grid = document.createElement("div");
+    grid.className = "detail-grid";
+    [
+      ["Service", profile.service],
+      ["Path", profile.path],
+      ["Base URL", profile.base_url],
+      ["Config", profile.has_config ? "present" : "missing"],
+      ["Env", profile.has_env ? "present" : "missing"],
+    ].forEach(([label, value]) => {
+      const item = document.createElement("div");
+      item.className = "detail-item";
+
+      const key = document.createElement("span");
+      key.className = "detail-key";
+      key.textContent = label;
+
+      const detail = document.createElement("span");
+      detail.className = "detail-value";
+      detail.textContent = formatValue(value);
+
+      item.append(key, detail);
+      grid.appendChild(item);
+    });
+
+    card.append(top, grid);
+    profileListRoot.append(card);
+  });
 }
+
 function renderTabs() {
   homeButton.classList.toggle("is-active", state.showHome);
   tabsRoot.innerHTML = "";
