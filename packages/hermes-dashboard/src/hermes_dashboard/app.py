@@ -17,7 +17,7 @@ import httpx
 import uvicorn
 import websockets
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 
@@ -789,12 +789,24 @@ async def proxy_terminal_websocket(websocket: WebSocket, session_id: str, path: 
             pass
 
 
+def asset_url(name: str) -> str:
+    asset = DASHBOARD_ROOT / name
+    if not asset.exists():
+        return f"/{name}"
+    return f"/{name}?v={asset.stat().st_mtime_ns}"
+
+
 @app.get("/")
 def serve_index():
     index_file = DASHBOARD_ROOT / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
-    return HTMLResponse("<html><body>Frontend not found</body></html>", status_code=404)
+    if not index_file.exists():
+        return HTMLResponse("<html><body>Frontend not found</body></html>", status_code=404)
+
+    html = index_file.read_text(encoding="utf-8")
+    html = html.replace('href="/styles.css"', f'href="{asset_url("styles.css")}"')
+    html = html.replace('src="/logo.png"', f'src="{asset_url("logo.png")}"')
+    html = html.replace('src="/app.js"', f'src="{asset_url("app.js")}"')
+    return HTMLResponse(html)
 
 
 app.mount("/", StaticFiles(directory=str(DASHBOARD_ROOT)), name="static")
