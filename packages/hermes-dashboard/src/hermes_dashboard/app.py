@@ -626,6 +626,23 @@ async def get_status():
     return await current_status_logic()
 
 
+@app.get("/api/profiles.json")
+async def get_profiles_legacy():
+    payload = await current_status_logic()
+    return {
+        "profiles": [
+            {
+                "slug": profile["name"],
+                "name": profile["name"].replace("-", " ").title(),
+                "terminal_path": f"/profiles/{profile['name']}/",
+                "gateway_expected": True,
+                "is_default": profile["is_default"],
+            }
+            for profile in payload["profiles"]
+        ]
+    }
+
+
 @app.post("/api/terminal/open")
 async def open_terminal():
     try:

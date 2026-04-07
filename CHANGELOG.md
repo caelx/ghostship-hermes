@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Restored dashboard compatibility for older clients by serving the legacy `/api/profiles.json` payload alongside the current `/api/status` API so stale edge/browser bundles stop hard-failing during Hermes dashboard rollouts.
+
 - Added `ghostship-n8n`, a JSON-first CLI for the full official n8n Public API, mirrored the bundled upstream OpenAPI contract into `docs/api/n8n-openapi.json`, and documented the new utility in `docs/api/n8n.md`.
 
 - Added a vendored `agent-browser` package to the image, widened the shared Hermes browser env passthrough for Browserbase, Browser Use, Camofox, and one optional `BROWSER_CDP_URL` passthrough, kept Chrome/Chromium out of the image, and documented that Hermes local browser mode defaults to `agent-browser` while CDP attachment remains a single interactive `/browser connect` target rather than a declarative multi-CDP config.
