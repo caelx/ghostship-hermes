@@ -198,7 +198,32 @@ Discord per-profile env vars:
 - `OPENCODE_GO_API_KEY` backs the Hermes-native `fallback_model = opencode-go/minimax-m2.7`
 - `GOOGLE_AI_STUDIO_API_KEY` backs the direct Google Gemini OpenAI-compatible endpoint used for all configured auxiliary tasks
 - Optional secrets bootstrap: `BWS_ACCESS_TOKEN` for Bitwarden Secrets Manager workflows inside the running profiles
-- Not required for the primary model path: `OPENAI_API_KEY`; the scaffold assumes `openai-codex/gpt-5.4` uses persisted Codex OAuth runtime state rather than a static env key
+- Not required for the primary model path: `OPENAI_API_KEY`; the scaffold assumes `openai-codex/gpt-5.4` uses persisted Codex OAuth runtime state rather than a static env key. Run `hermes auth add openai-codex` under the Hermes runtime user (or inside the container) to surface the device-code URL/code pair and persist the tokens under `$HERMES_HOME/oauth.json` and `$HERMES_HOME/oauth-client.json` for future restarts.
+
+### Codex OAuth tokens
+
+The `openai-codex` provider relies on Codex OAuth (device-code flow) instead of a static API key. Run `hermes auth add openai-codex`, paste the printed URL/code into your browser, and the CLI stores both the user token and client metadata in `$HERMES_HOME`. Use `hermes auth list` to inspect active credentials and `hermes auth refresh openai-codex` anytime you rotate or refresh the OAuth session. Because Hermes keeps the tokens on disk, no `OPENAI_API_KEY` env var is required for the primary profile unless you later add a custom provider that explicitly expects it.
+
+## Manual provider configuration per profile
+
+Every named profile (`assistant`, `operations`, `supervisor`) is rendered from the declarative scaffold in `packages/hermes-image/nixos-module.nix`. To change the provider backends manually after the server/container is running:
+
+1. Edit `packages/hermes-image/nixos-module.nix` inside the repo checkout.
+2. Locate the `profileScaffold` map near the top and update `modelProvider` + `modelDefault` for the profile you want to customize. For example, to point `supervisor` at OpenRouter:
+
+   ```nix
+   profileScaffold.supervisor = profileScaffold.supervisor // {
+     modelProvider = "openrouter";
+     modelDefault = "openrouter/anthropic/claude-4o-mini";
+   };
+   ```
+
+3. If a profile needs a different auxiliary base URL, API key, or fallback model, adjust the surrounding helper values (`auxiliaryBaseUrl`, `auxiliaryApiKeyRef`, `mkProfileConfig`’s `fallback_model` block) so the generated config reflects the desired provider (e.g., point `fallback_model` at `openrouter` or add a new `auxiliary` entry).
+4. Add any new secret names (for example `OPENROUTER_API_KEY` or `CUSTOM_PROVIDER_KEY`) to the `sharedHermesEnvKeys` list so the bootstrap service knows to copy them into `/home/hermes/.hermes/.env`. Supply the actual values via the container’s `environment`/`environmentFiles` or by exporting them before starting the container.
+5. Rebuild the image (e.g., `nix build .#packages.x86_64-linux.ghostship-hermes-image`) and restart the container from the new build, or run `sudo nixos-rebuild switch` if you are on a full NixOS host. Because the bootstrap rewrites `/home/hermes/.hermes/profiles/<profile>/config.yaml`, manual edits to those files do not persist.
+
+This keeps the provider wiring in Nix so every redeploy regenerates the same config and the services stay in sync.
+
 - Router provider vars such as `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` remain router-only, but the router now also accepts the Hermes-facing `OPENCODE_GO_API_KEY` alias so the Minimax fallback credential name can be shared between Hermes and the router
 
 Upstream Hermes docs still apply for CLI behavior:
