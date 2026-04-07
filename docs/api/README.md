@@ -17,6 +17,7 @@ The repo uses a hybrid model:
 | `ghostship-changedetection` | `docs/api/changedetection.md` | `docs/api/changedetection-openapi.json` | Official OpenAPI + repo summary |
 | `ghostship-flaresolverr` | `docs/api/flaresolverr.md` | None | Official README |
 | `ghostship-grimmory` | `docs/api/grimmory.md` | None | Official Grimmory repository source code |
+| `ghostship-n8n` | `docs/api/n8n.md` | `docs/api/n8n-openapi.json` | Official OpenAPI + repo summary |
 | `ghostship-nzbget` | `docs/api/nzbget.md` | None | Official RPC reference |
 | `ghostship-plex` | `docs/api/plex.md` | None | Official URL command docs plus repo summary |
 | `ghostship-pricebuddy` | `docs/api/pricebuddy.md` | None | Official docs plus upstream tests/source code |

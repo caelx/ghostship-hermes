@@ -73,6 +73,7 @@
           ghostshipPricebuddy = pkgs.callPackage ./packages/pricebuddy-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipRssBridge = pkgs.callPackage ./packages/rss-bridge-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipChangedetection = pkgs.callPackage ./packages/changedetection-cli/package.nix { inherit ghostshipCliContract; };
+          ghostshipN8n = pkgs.callPackage ./packages/n8n-cli/package.nix { inherit ghostshipCliContract; };
           agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
           ghostshipHermesRouter = pkgs.callPackage ./packages/hermes-router/package.nix {
             python311Packages = routerPython311Packages;
@@ -106,6 +107,7 @@
             ghostshipPricebuddy
             ghostshipRssBridge
             ghostshipChangedetection
+            ghostshipN8n
           ];
 
           ghostshipHermesSystem = nixpkgs.lib.nixosSystem {
@@ -160,6 +162,7 @@
           ghostship-pricebuddy = ghostshipPricebuddy;
           ghostship-rss-bridge = ghostshipRssBridge;
           ghostship-changedetection = ghostshipChangedetection;
+          ghostship-n8n = ghostshipN8n;
           ghostship-hermes-router = ghostshipHermesRouter;
           ghostship-hermes-runtime = ghostshipHermesRuntime;
           ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;
@@ -201,6 +204,7 @@
             ghostship-pricebuddy
             ghostship-rss-bridge
             ghostship-changedetection
+            ghostship-n8n
             ghostship-hermes-router
             ghostship-hermes-runtime
             ghostship-hermes-system

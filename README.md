@@ -216,6 +216,7 @@ The image still bundles the repo-managed service CLIs:
 - `ghostship-cloakbrowser`
 - `ghostship-flaresolverr`
 - `ghostship-grimmory`
+- `ghostship-n8n`
 - `ghostship-nzbget`
 - `ghostship-plex`
 - `ghostship-pricebuddy`
@@ -230,7 +231,7 @@ The image still bundles the repo-managed service CLIs:
 - `ghostship-synology`
 - `ghostship-tautulli`
 
-All `ghostship-*` utilities emit native JSON by default.
+All `ghostship-*` utilities emit native JSON by default. Canonical API docs and raw upstream mirrors live under `docs/api/`.
 
 ## Hermes Router
 
