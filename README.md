@@ -357,6 +357,11 @@ nix eval .#packages.aarch64-linux.ghostship-hermes-image.drvPath --raw
 Full `aarch64-linux` publishable image builds require an arm64-capable runner or
 builder. The GitHub `publish-image` workflow uses `ubuntu-24.04-arm` for the
 arm64 release leg and keeps x86-host validation paths at `nix eval`.
+The scheduled `update-hermes-release` workflow tracks the upstream
+`NousResearch/hermes-agent` release feed, updates the pinned flake input and
+lockfile when a new tag lands, and then explicitly dispatches
+`publish-image.yml` so the new Hermes build is published even though the pin
+bump commit itself is created by GitHub Actions.
 
 Image output contract:
 

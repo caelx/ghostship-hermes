@@ -107,6 +107,8 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 ### Platform And CI
 
 - Scheduled GitHub release polling must authenticate with `GITHUB_TOKEN` or `GH_TOKEN`; anonymous `api.github.com` release queries can hit rate limits and break Actions.
+- The Hermes release updater must change both `packages/hermes-image/hermes-release.txt` and the `hermes-agent` flake input/lock; updating only the label file does not change the packaged Hermes build.
+- GitHub Actions pushes made with `GITHUB_TOKEN` do not trigger the repo's `push` workflows. If the Hermes release updater commits directly to `main`, it must explicitly dispatch `publish-image.yml` or use a different credential model.
 - Hermes is not packaged in the inspected `nixos-25.11` nixpkgs tree, while `ttyd`, `codex`, `gemini-cli`, and `opencode` are.
 - Local flake evaluation only sees git-tracked files. Stage new Nix files and vendored trees before relying on `nix flake check` or `nix build` in a worktree.
 - On this host, run only one Nix build or eval at a time; overlapping Nix client commands can wedge daemon responsiveness and create misleading validation failures.

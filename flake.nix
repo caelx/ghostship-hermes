@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
-    hermes-agent.url = "github:NousResearch/hermes-agent/v2026.4.3";
+    hermes-agent.url = "github:NousResearch/hermes-agent/v2026.4.8";
     googleworkspace-cli.url = "github:googleworkspace/cli";
   };
 

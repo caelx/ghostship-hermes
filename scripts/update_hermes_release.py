@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from urllib.request import Request, urlopen
 
 
 RELEASE_FILE = Path("packages/hermes-image/hermes-release.txt")
 CHANGELOG_FILE = Path("CHANGELOG.md")
+FLAKE_FILE = Path("flake.nix")
 LATEST_RELEASE_URL = "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest"
 
 
@@ -39,12 +41,26 @@ def update_changelog(tag_name: str) -> None:
     CHANGELOG_FILE.write_text(content.replace(marker, f"{marker}\n{note}", 1))
 
 
+def update_flake_input(tag_name: str) -> None:
+    content = FLAKE_FILE.read_text()
+    updated = re.sub(
+        r'github:NousResearch/hermes-agent/v[^"]+',
+        f"github:NousResearch/hermes-agent/{tag_name}",
+        content,
+        count=1,
+    )
+    if updated == content:
+        raise RuntimeError("failed to locate hermes-agent flake input in flake.nix")
+    FLAKE_FILE.write_text(updated)
+
+
 def main() -> None:
     latest = fetch_latest_tag()
     current = RELEASE_FILE.read_text().strip()
     if latest == current:
         return
     RELEASE_FILE.write_text(f"{latest}\n")
+    update_flake_input(latest)
     update_changelog(latest)
 
 
