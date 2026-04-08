@@ -85,7 +85,7 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-user-tooling.service`
-  converges the mutable user toolchain on boot, ensures the in-container Nix daemon is available first, installs or upgrades the `hermes` user Nix profile tool set, refreshes the managed npm CLIs, and runs before the bootstrap, dashboard, router, and profile gateways
+  converges the mutable user toolchain on boot, ensures the in-container Nix daemon is available first, installs or upgrades the image-managed Nix toolchain in a dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile, refreshes the managed npm CLIs, and does not own the main gateway startup dependency chain
 - `ghostship-hermes-user-tooling-refresh.timer`
   runs the same mutable toolchain refresh flow daily and also once shortly after boot
 - `ghostship-hermes-bootstrap.service`
@@ -97,7 +97,7 @@ The container uses a small NixOS-managed unit graph:
 - `ghostship-hermes-profile-supervisor.service`
   keeps the `supervisor` gateway running with `hermes -p supervisor gateway run --replace`
 - `ghostship-hermes-startup.service`
-  starts the dashboard, router, and the three profile gateways automatically after storage preparation, mutable tooling convergence, and profile bootstrap have all completed
+  starts the dashboard, router, and the three profile gateways automatically after storage preparation and profile bootstrap; a failed mutable tooling refresh should not block the main runtime boot
 - `ghostship-hermes-profile-*-restart.path`
   watches each profile's `config.yaml`, `.env`, `auth.json`, and `SOUL.md`, then triggers a matching oneshot restart helper so profile-facing changes roll the affected gateway without a manual `systemctl restart`
 - `ghostship-dashboard-controller.service`
@@ -153,7 +153,7 @@ The image is intentionally declarative-first:
 
 - Hermes managed config is written into `/home/hermes/.hermes`.
 - The default runtime does not let Hermes self-apply the system flake.
-- User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image now uses that same mechanism to keep the `hermes` user toolchain updateable on boot and during daily refreshes.
+- User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image uses a dedicated managed profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed` to keep the baked `hermes` toolchain updateable on boot and during daily refreshes without colliding with the operator's default `~/.nix-profile`.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The root Hermes config is intentionally minimal in the current scaffold.
 - The declared profiles are `assistant`, `operations`, and `supervisor`, with `assistant` set as the sticky default.
@@ -366,8 +366,11 @@ Inside a running container, the `hermes` user tooling refresh path keeps an
 offline bootstrap package for first boot, but refreshes Hermes itself from
 `github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already
 built image can move forward to the latest wrapped Hermes package without
-replacing the whole container image. Override that source with
-`GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF` if you need to point at a fork or branch.
+replacing the whole container image. That managed Nix toolchain now lives in
+`/home/hermes/.local/state/nix/profiles/ghostship-managed`, which avoids
+collisions with older or operator-owned entries in `~/.nix-profile`. Override
+that source with `GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF` if you need to point at a
+fork or branch.
 
 Image output contract:
 

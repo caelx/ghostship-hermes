@@ -80,6 +80,7 @@ let
     "BROWSER_CDP_URL"
   ];
   toolingProjectRoot = "/home/hermes/.hermes/hermes-agent";
+  managedUserProfile = "/home/hermes/.local/state/nix/profiles/ghostship-managed";
   managedUserPackages = [
     {
       name = "hermes-agent-wrapped";
@@ -288,7 +289,7 @@ let
       gatewayScript = pkgs.writeShellScript "ghostship-hermes-profile-${profile}-gateway.sh" ''
         set -euo pipefail
 
-        export PATH="/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:$PATH"
+        export PATH="/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin:$PATH"
 
         exec hermes -p ${profile} gateway run --replace
       '';
@@ -331,7 +332,7 @@ let
   bootstrapHermesScript = pkgs.writeShellScript "ghostship-hermes-bootstrap.sh" ''
     set -euo pipefail
 
-    export PATH="/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:$PATH"
+    export PATH="/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin:$PATH"
 
     profiles_root="${managedProfileRoot}"
     mkdir -p "$profiles_root"
@@ -464,13 +465,14 @@ let
     export HERMES_HOME=/home/hermes/.hermes
     export GHOSTSHIP_HERMES_PROJECT_ROOT="''${GHOSTSHIP_HERMES_PROJECT_ROOT:-${toolingProjectRoot}}"
     export GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF="''${GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF:-${runtimeFlakeRefDefault}}"
-    export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:${lib.makeBinPath servicePath}:$PATH"
+    export GHOSTSHIP_HERMES_MANAGED_PROFILE="''${GHOSTSHIP_HERMES_MANAGED_PROFILE:-${managedUserProfile}}"
+    export PATH="$HOME/.local/bin:$GHOSTSHIP_HERMES_MANAGED_PROFILE/bin:$HOME/.nix-profile/bin:${lib.makeBinPath servicePath}:$PATH"
     export npm_config_update_notifier=false
     export npm_config_fund=false
     export npm_config_cache="$HOME/.cache/npm"
     export GHOSTSHIP_TOOLING_MODE="$mode"
 
-    mkdir -p "$GHOSTSHIP_HERMES_PROJECT_ROOT" "$HOME/.local/bin" "$npm_config_cache"
+    mkdir -p "$GHOSTSHIP_HERMES_PROJECT_ROOT" "$HOME/.local/bin" "$npm_config_cache" "$(dirname "$GHOSTSHIP_HERMES_MANAGED_PROFILE")"
 
     python3 - <<'PY2'
 import json
@@ -479,24 +481,33 @@ import subprocess
 
 mode = os.environ.get("GHOSTSHIP_TOOLING_MODE", "bootstrap")
 runtime_flake_ref = os.environ.get("GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF", "github:caelx/ghostship-hermes")
+managed_profile = os.environ["GHOSTSHIP_HERMES_MANAGED_PROFILE"]
 specs = json.loads(r"""${builtins.toJSON managedUserPackages}""")
-result = subprocess.run(["nix", "profile", "list", "--json"], check=True, capture_output=True, text=True)
-elements = json.loads(result.stdout).get("elements", {})
+result = subprocess.run(
+    ["nix", "profile", "list", "--profile", managed_profile, "--json"],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+if result.returncode == 0:
+    elements = json.loads(result.stdout).get("elements", {})
+else:
+    elements = {}
 installed = set(elements.keys())
 missing = [
     (item.get("bootstrapRef") or item["ref"])
     for item in specs
     if item["name"] not in installed
 ]
-if missing:
-    subprocess.run(["nix", "profile", "add", *missing], check=True)
+for ref in missing:
+    subprocess.run(["nix", "profile", "add", "--profile", managed_profile, ref], check=True)
 if mode == "refresh":
     hermes_name = "hermes-agent-wrapped"
     hermes_refresh_ref = f"{runtime_flake_ref}#hermes-agent-wrapped"
     if hermes_name in installed:
-        subprocess.run(["nix", "profile", "remove", hermes_name], check=True)
-    subprocess.run(["nix", "profile", "add", hermes_refresh_ref], check=True)
-    subprocess.run(["nix", "profile", "upgrade", "--all"], check=True)
+        subprocess.run(["nix", "profile", "remove", "--profile", managed_profile, hermes_name], check=True)
+    subprocess.run(["nix", "profile", "add", "--profile", managed_profile, hermes_refresh_ref], check=True)
+    subprocess.run(["nix", "profile", "upgrade", "--profile", managed_profile, "--all"], check=True)
 PY2
 
     cd "$GHOSTSHIP_HERMES_PROJECT_ROOT"
@@ -540,6 +551,7 @@ JSON
 
   userServiceEnvironment = serviceEnvironment // {
     HOME = "/home/hermes";
+    GHOSTSHIP_HERMES_MANAGED_PROFILE = managedUserProfile;
   };
 
 in
@@ -590,7 +602,7 @@ in
     if [ "$(id -u)" = "3000" ]; then
       export HOME=/home/hermes
     fi
-    export PATH="/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:${fallbackCommandEnv}/bin:$PATH"
+    export PATH="/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin:${fallbackCommandEnv}/bin:$PATH"
     export HERMES_HOME=/home/hermes/.hermes
     export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}
     export TERMINAL_CWD=/workspace
@@ -701,11 +713,9 @@ in
     wantedBy = [ "multi-user.target" ];
     after = [
       "ghostship-storage.service"
-      "ghostship-hermes-user-tooling.service"
     ];
     requires = [
       "ghostship-storage.service"
-      "ghostship-hermes-user-tooling.service"
     ];
     environment = userServiceEnvironment;
     path = servicePath;
@@ -729,13 +739,11 @@ in
     wants = [ "network-online.target" ];
     after = [
       "ghostship-storage.service"
-      "ghostship-hermes-user-tooling.service"
       "ghostship-hermes-bootstrap.service"
       "network-online.target"
     ];
     requires = [
       "ghostship-storage.service"
-      "ghostship-hermes-user-tooling.service"
       "ghostship-hermes-bootstrap.service"
     ];
     serviceConfig = {
@@ -755,13 +763,11 @@ in
     after = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-user-tooling.service"
       "network-online.target"
     ];
     requires = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-user-tooling.service"
     ];
     environment = userServiceEnvironment;
     path = servicePath;
@@ -818,13 +824,11 @@ in
     after = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-user-tooling.service"
       "network-online.target"
     ];
     requires = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-user-tooling.service"
     ];
     environment = userServiceEnvironment;
     path = servicePath;
