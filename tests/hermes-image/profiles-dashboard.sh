@@ -111,7 +111,7 @@ run_as_hermes() {
     -e HOME=/home/hermes \
     -e HERMES_HOME=/home/hermes/.hermes \
     -e TERMINAL_CWD=/home/hermes \
-    -e PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin \
+    -e PATH=/home/hermes/.local/bin:/home/hermes/.local/state/nix/profiles/ghostship-managed/bin:/home/hermes/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin \
     "$container_name" \
     "$container_shell" -lc "$*"
 }
@@ -245,7 +245,12 @@ if [ "${SKIP_IMAGE_IMPORT:-0}" != "1" ]; then
   "$repo_root/scripts/export_publishable_image.sh" "$image_bundle" "$image_tag" >/dev/null
 fi
 
-mkdir -p "$home_dir" "$workspace_dir"
+mkdir -p "$home_dir/.nix-profile/bin" "$workspace_dir"
+cat > "$home_dir/.nix-profile/bin/hermes" <<'EOF'
+#!/bin/sh
+echo legacy-default-hermes
+EOF
+chmod +x "$home_dir/.nix-profile/bin/hermes"
 docker rm -f "$container_name" >/dev/null 2>&1 || true
 
 nix_mount_args=()
@@ -331,6 +336,10 @@ wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
 run_in_container "$container_name" 'id hermes | grep -F "uid=3000" >/dev/null'
 run_in_container "$container_name" '! systemctl is-active hermes-agent.service >/dev/null'
 run_in_container "$container_name" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
+run_in_container "$container_name" 'test "$(systemctl show -P Result ghostship-hermes-user-tooling.service)" = "success"'
+run_in_container "$container_name" 'systemctl cat ghostship-hermes-startup.service | grep -F "ghostship-hermes-bootstrap.service" >/dev/null'
+run_in_container "$container_name" '! systemctl cat ghostship-hermes-startup.service | grep -F "ghostship-hermes-user-tooling.service" >/dev/null'
+run_in_container "$container_name" '! systemctl cat ghostship-hermes-bootstrap.service | grep -F "ghostship-hermes-user-tooling.service" >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-assistant.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-operations.service >/dev/null'
@@ -342,6 +351,8 @@ run_as_hermes "$container_name" 'test -d /home/hermes/.hermes/profiles/assistant
 run_as_hermes "$container_name" '! test -d /home/hermes/.hermes/profiles/coder'
 run_as_hermes "$container_name" 'test "$(cat /home/hermes/.hermes/active_profile)" = "assistant"'
 run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'
+run_as_hermes "$container_name" 'test "$(command -v hermes)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/hermes"'
+run_as_hermes "$container_name" '! hermes --version 2>/dev/null | grep -F "legacy-default-hermes" >/dev/null'
 run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Model:" | grep -F "gpt-5.4" >/dev/null'
 run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Model:" | grep -F "openai-codex" >/dev/null'
 run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Working dir:" | grep -F "/workspace" >/dev/null'
