@@ -67,6 +67,15 @@ PERSISTED NPM LAYER
 
 This model keeps the base image small and makes the actual agent toolchain updateable in place.
 
+## Nix Daemon Availability
+
+Because the runtime contract depends on `nix profile install` and `nix profile upgrade` inside the container, the Nix daemon path cannot be treated as optional. The live-image phase and the repo backport must ensure `nix-daemon.socket` is available in-container and started before any user-profile convergence runs.
+
+That requirement applies to both:
+
+- boot-time convergence of the `hermes` user profile
+- the daily refresh flow for the user-profile package layer
+
 ## ttyd Visual Integration
 
 The terminal surface should feel like part of the Hermes dashboard rather than a visually separate embedded app. As part of the live-image validation and repo backport, ttyd should use the same blue theme tokens as the dashboard for its background/accent/chrome treatment so switching between the home view and active terminals feels visually continuous.
@@ -80,14 +89,15 @@ After the live-image phase proves the approach, the repo image should gain manag
 ### Responsibilities
 
 1. Ensure the persisted user-profile and npm-prefix directories exist.
-2. Ensure Hermes and the stable user-facing CLI set are installed in the `hermes` user Nix profile.
-3. Run `nix profile upgrade` for those user-installed packages, including Hermes itself.
-4. Refresh the managed npm CLI set to the latest published versions:
+2. Ensure the Nix daemon socket is available before invoking any user-profile operations.
+3. Ensure Hermes and the stable user-facing CLI set are installed in the `hermes` user Nix profile.
+4. Run `nix profile upgrade` for those user-installed packages, including Hermes itself.
+5. Refresh the managed npm CLI set to the latest published versions:
    - `@openai/codex`
    - `@google/gemini-cli`
    - `opencode-ai`
    - `agent-browser`
-5. Record success/failure so the last working local tools remain in place if a refresh fails.
+6. Record success/failure so the last working local tools remain in place if a refresh fails.
 
 ## Hermes Updateability
 
@@ -96,7 +106,7 @@ Hermes itself should be treated as part of the user-facing toolchain, not as a p
 That implies:
 
 - long-running services should execute Hermes from a stable user-facing path rather than assuming only the image closure copy exists
-- the boot updater must ensure Hermes is present before profile services start
+- the boot updater must ensure `nix-daemon.socket` is active and Hermes is present before profile services start
 - daily refresh may upgrade Hermes in the user profile, with restart policy handled deliberately rather than implicitly during active conversations
 
 This is the most important architectural shift in the proposal.
@@ -143,7 +153,7 @@ The proposal does not change the per-profile auth layout Hermes is actually usin
 
 ### Boot becomes more dependent on user-state convergence
 
-If Hermes itself lives in the user profile, the updater/bootstrap ordering becomes critical. The proposal must guarantee that the user profile is ready before any Hermes-dependent service starts.
+If Hermes itself lives in the user profile, the updater/bootstrap ordering becomes critical. The proposal must guarantee that `nix-daemon.socket` is available and that the user profile is ready before any Hermes-dependent service starts.
 
 ### Daily Hermes upgrades can be disruptive
 
