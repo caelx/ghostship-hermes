@@ -97,6 +97,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Persisted `/nix` must include a writable `/nix/var/nix/daemon-socket` path and the image must start `nix-daemon.socket` after storage preparation, or user-level `nix profile install` will fail even though `nix` is installed.
 - Persisting `/home/hermes` directly is the supported durability model for this image; it keeps Hermes CLI profiles, managed state, XDG state, and later-installed agent-tool config together in one mount.
 - This repo should not accumulate Docker artifacts. After validation, aggressively prune unused images, stopped containers, and unused volumes so Docker keeps only the current needed image set.
+- After archiving a change, clean up the Docker artifacts generated for that change's validation work. Default to removing only the containers, images, and volumes created during the task; do a full Docker reset only when the user explicitly asks for it.
 
 ### Skill Authoring
 
