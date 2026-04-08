@@ -362,6 +362,12 @@ The scheduled `update-hermes-release` workflow tracks the upstream
 lockfile when a new tag lands, and then explicitly dispatches
 `publish-image.yml` so the new Hermes build is published even though the pin
 bump commit itself is created by GitHub Actions.
+Inside a running container, the `hermes` user tooling refresh path keeps an
+offline bootstrap package for first boot, but refreshes Hermes itself from
+`github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already
+built image can move forward to the latest wrapped Hermes package without
+replacing the whole container image. Override that source with
+`GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF` if you need to point at a fork or branch.
 
 Image output contract:
 

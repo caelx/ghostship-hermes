@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 - Pinned Hermes release updated to `v2026.4.8`.
 - Fixed Hermes release automation so scheduled pin bumps also update the `hermes-agent` flake input and lockfile, then explicitly dispatch the image publish workflow instead of relying on an Actions-authored `push` event.
+- Fixed the image build against Hermes `v2026.4.8` by providing the missing `setupSecrets` activation hook expected by the upstream Hermes NixOS module, and changed the `hermes` user tooling refresh path to replace the baked Hermes package from `github:caelx/ghostship-hermes#hermes-agent-wrapped` so an already-built image can live-upgrade Hermes in place.
 
 - Reworked the Hermes image toward a minimum-system runtime contract by converging the mutable `hermes` user toolchain on boot and daily refresh (`hermes`, `git`, `curl`, `jq`, `nix`, `ripgrep`, `node`, `npm`), managing `codex`, `gemini`, and `opencode` in a persisted npm layer, wrapping Hermes so the Nix-packaged `agent-browser` satisfies both runtime and `hermes doctor`, wiring per-profile `.env` files as the operator-facing source of truth, auto-starting the dashboard/router/profile gateways after bootstrap, auto-restarting gateways when profile `.env`/`config.yaml`/`auth.json`/`SOUL.md` change, switching dashboard/browser terminals to `/workspace`, and aligning ttyd to the dashboard's blue theme tokens.
 

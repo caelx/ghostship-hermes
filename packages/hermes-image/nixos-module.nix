@@ -18,6 +18,7 @@ let
     "supervisor"
   ];
   defaultProfile = "assistant";
+  runtimeFlakeRefDefault = "github:caelx/ghostship-hermes";
   rootTerminalCwd = "/workspace";
   managedProfileRoot = "/home/hermes/.hermes/profiles";
   sharedSkillSourceDir = "/home/hermes/seeds/shared/skills";
@@ -82,7 +83,7 @@ let
   managedUserPackages = [
     {
       name = "hermes-agent-wrapped";
-      ref = "${wrappedHermesAgent}";
+      bootstrapRef = "${wrappedHermesAgent}";
     }
     {
       name = "git";
@@ -462,6 +463,7 @@ let
     export HOME=/home/hermes
     export HERMES_HOME=/home/hermes/.hermes
     export GHOSTSHIP_HERMES_PROJECT_ROOT="''${GHOSTSHIP_HERMES_PROJECT_ROOT:-${toolingProjectRoot}}"
+    export GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF="''${GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF:-${runtimeFlakeRefDefault}}"
     export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:${lib.makeBinPath servicePath}:$PATH"
     export npm_config_update_notifier=false
     export npm_config_fund=false
@@ -476,13 +478,24 @@ import os
 import subprocess
 
 mode = os.environ.get("GHOSTSHIP_TOOLING_MODE", "bootstrap")
+runtime_flake_ref = os.environ.get("GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF", "github:caelx/ghostship-hermes")
 specs = json.loads(r"""${builtins.toJSON managedUserPackages}""")
 result = subprocess.run(["nix", "profile", "list", "--json"], check=True, capture_output=True, text=True)
-installed = set(json.loads(result.stdout).get("elements", {}).keys())
-missing = [item["ref"] for item in specs if item["name"] not in installed]
+elements = json.loads(result.stdout).get("elements", {})
+installed = set(elements.keys())
+missing = [
+    (item.get("bootstrapRef") or item["ref"])
+    for item in specs
+    if item["name"] not in installed
+]
 if missing:
     subprocess.run(["nix", "profile", "add", *missing], check=True)
 if mode == "refresh":
+    hermes_name = "hermes-agent-wrapped"
+    hermes_refresh_ref = f"{runtime_flake_ref}#hermes-agent-wrapped"
+    if hermes_name in installed:
+        subprocess.run(["nix", "profile", "remove", hermes_name], check=True)
+    subprocess.run(["nix", "profile", "add", hermes_refresh_ref], check=True)
     subprocess.run(["nix", "profile", "upgrade", "--all"], check=True)
 PY2
 
@@ -508,6 +521,7 @@ JSON
   serviceEnvironment = {
     HERMES_HOME = "/home/hermes/.hermes";
     GHOSTSHIP_HERMES_PROJECT_ROOT = toolingProjectRoot;
+    GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF = runtimeFlakeRefDefault;
     TERMINAL_CWD = "/workspace";
     GHOSTSHIP_TERMINAL_CWD = "/workspace";
     GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
@@ -530,6 +544,12 @@ JSON
 
 in
 {
+  # Hermes v2026.4.8 orders its setup activation after a `setupSecrets` phase
+  # that is not defined in this image module stack. Provide a no-op compatibility
+  # hook so the upstream module can evaluate without requiring an external secret
+  # management module.
+  system.activationScripts.setupSecrets = lib.mkDefault (lib.stringAfter [ "users" ] "");
+
   imports = [
     "${modulesPath}/profiles/docker-container.nix"
   ];
