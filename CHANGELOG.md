@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Pinned Hermes release updated to `v2026.4.8`.
+
 - Reworked the Hermes image toward a minimum-system runtime contract by converging the mutable `hermes` user toolchain on boot and daily refresh (`hermes`, `git`, `curl`, `jq`, `nix`, `ripgrep`, `node`, `npm`), managing `codex`, `gemini`, and `opencode` in a persisted npm layer, wrapping Hermes so the Nix-packaged `agent-browser` satisfies both runtime and `hermes doctor`, wiring per-profile `.env` files as the operator-facing source of truth, auto-starting the dashboard/router/profile gateways after bootstrap, auto-restarting gateways when profile `.env`/`config.yaml`/`auth.json`/`SOUL.md` change, switching dashboard/browser terminals to `/workspace`, and aligning ttyd to the dashboard's blue theme tokens.
 
 - Disabled in-container `resolvconf` in the Hermes image so the NixOS container preserves Podman-provided `/etc/resolv.conf` and external DNS resolution works for router upstreams such as OpenRouter and OpenCode.
