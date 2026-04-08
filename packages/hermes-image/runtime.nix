@@ -41,11 +41,12 @@ writeShellApplication {
     export GHOSTSHIP_TTYD_HOST="''${GHOSTSHIP_TTYD_HOST:-127.0.0.1}"
     export GHOSTSHIP_TTYD_TITLE="''${GHOSTSHIP_TTYD_TITLE:-ghostship-hermes}"
     export GHOSTSHIP_TERMINAL_CWD="''${GHOSTSHIP_TERMINAL_CWD:-/home/hermes}"
+    export GHOSTSHIP_AGENT_TOOLS_PREFIX="''${GHOSTSHIP_AGENT_TOOLS_PREFIX:-$HOME/.local/share/ghostship-agent-tools/npm}"
     export XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-$HOME/.config}"
     export XDG_DATA_HOME="''${XDG_DATA_HOME:-$HOME/.local/share}"
     export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
     export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}"
-    export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
+    export PATH="$GHOSTSHIP_AGENT_TOOLS_PREFIX/bin:$HOME/.local/bin:$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
 
     ensure_dir() {
       local path="$1"
@@ -84,6 +85,8 @@ writeShellApplication {
       ensure_dir "$XDG_STATE_HOME" 0750
       ensure_dir "$XDG_CACHE_HOME" 0750
       ensure_dir "$HOME/.local/bin" 0750
+      ensure_dir "$GHOSTSHIP_AGENT_TOOLS_PREFIX" 0750
+      ensure_dir "$XDG_CACHE_HOME/npm" 0750
       ensure_dir "$HOME/.config/systemd/user" 0750
       ensure_dir "$HOME/.ssh" 0700
       ensure_dir "$HOME/.gnupg" 0700

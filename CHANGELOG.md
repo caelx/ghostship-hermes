@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Reworked the Hermes image toward a minimum-system runtime contract by converging the mutable `hermes` user toolchain on boot and daily refresh (`hermes`, `git`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, `node`, `npm`), managing `codex`, `gemini`, `opencode`, and `agent-browser` in a persisted npm layer, wiring shared doctor-facing env passthrough for OpenRouter/GitHub/Home Assistant, switching dashboard/browser terminals to `/workspace`, and aligning ttyd to the dashboard's blue theme tokens.
+
 - Disabled in-container `resolvconf` in the Hermes image so the NixOS container preserves Podman-provided `/etc/resolv.conf` and external DNS resolution works for router upstreams such as OpenRouter and OpenCode.
 
 - Restored dashboard compatibility for older clients by serving the legacy `/api/profiles.json` payload alongside the current `/api/status` API so stale edge/browser bundles stop hard-failing during Hermes dashboard rollouts.

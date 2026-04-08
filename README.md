@@ -19,7 +19,7 @@ Canonical image references:
 - The public browser surface is the packaged MMX dashboard on port `7681`.
 - The dashboard can launch as many ephemeral `ttyd` sessions as needed, tracks them as left-rail tabs, opens new tabs immediately with a loading state while `ttyd` starts, labels tabs from the shell cwd or current command, and returns to a blank home state when the active terminal is closed and no sessions remain.
 - Switching between open tabs keeps each live `ttyd` session attached instead of dropping back to ttyd's reconnect prompt.
-- Browser terminals start in `/home/hermes`.
+- Browser terminals start in `/workspace`.
 - The image currently scaffolds three long-running Hermes profiles, `assistant`, `operations`, and `supervisor`, at `~/.hermes/profiles/...`.
 - `assistant` is the sticky default profile.
 - The root Hermes config stays minimal; the scaffolded profiles carry the current Nix-managed defaults.
@@ -33,28 +33,16 @@ Upstream note:
 
 This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support is CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills.
 
-Removed from the default image:
+The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence installs and updates the mutable toolchain under `/home/hermes`:
 
-- Codex
-- Gemini CLI
-- Opencode
-- OpenSpec
-- `skills`
-- `feed`
-- repo-managed default skill seeding
-- honcho compatibility wiring
-- profile reconciler and persistent per-profile terminals
-- app/update timers for mutable workstation tooling
+- user Nix profile tools: `hermes`, `git`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, `node`, `npm`
+- npm-managed agent CLIs: `codex`, `gemini`, `opencode`, `agent-browser`
 
-Retained in the default image:
+The immutable layer stays focused on boot/supervision plus the repo-owned runtime surface:
 
-- upstream Hermes
-- Nix runtime support
-- pinned `gws` Google Workspace CLI
-- `bws` Bitwarden Secrets Manager CLI
-- `tirith`
-- `agent-browser`
+- NixOS/container runtime
 - `ttyd`
+- `tirith`
 - `ghostship-hermes-router`
 - packaged MMX dashboard controller
 - all `ghostship-*` utilities
@@ -96,6 +84,10 @@ The container uses a small NixOS-managed unit graph:
   prepares `/home/hermes`, `/home/hermes/.hermes`, `/workspace`, and `/nix` before user-facing services start
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
+- `ghostship-hermes-user-tooling.service`
+  converges the mutable user toolchain on boot, ensures the in-container Nix daemon is available first, installs or upgrades the `hermes` user Nix profile tool set, refreshes the managed npm CLIs, and runs before the bootstrap, dashboard, router, and profile gateways
+- `ghostship-hermes-user-tooling-refresh.timer`
+  runs the same mutable toolchain refresh flow daily and also once shortly after boot
 - `ghostship-hermes-bootstrap.service`
   is a repo-specific NixOS oneshot that reconciles the approved `assistant`, `operations`, and `supervisor` profiles after the managed Hermes config exists, writes only the shared Hermes `.env` from the small set of runtime provider env vars the scaffold currently needs, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, and sets the sticky default profile to `assistant`
 - `ghostship-hermes-profile-assistant.service`
@@ -157,7 +149,7 @@ The image is intentionally declarative-first:
 
 - Hermes managed config is written into `/home/hermes/.hermes`.
 - The default runtime does not let Hermes self-apply the system flake.
-- User-level Nix remains available for mutable runtime installs such as `nix profile install`.
+- User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image now uses that same mechanism to keep the `hermes` user toolchain updateable on boot and during daily refreshes.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The root Hermes config is intentionally minimal in the current scaffold.
 - The declared profiles are `assistant`, `operations`, and `supervisor`, with `assistant` set as the sticky default.
@@ -168,7 +160,7 @@ The image is intentionally declarative-first:
 - The shared scaffold also enables transcript compression with `threshold = 0.50`, `target_ratio = 0.25`, and `protect_last_n = 20` for long-running sessions.
 - The shared scaffold explicitly keeps `session_reset.mode = "none"`, while still recording placeholder idle/daily values (`idle_minutes = 1440`, `at_hour = 4`) for future policy changes.
 - The shared scaffold also configures Hermes browser defaults with `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.
-- `agent-browser` is preinstalled in the image and is the documented local-browser default when Browserbase, Browser Use, Camofox, and manual `/browser connect` CDP attachment are not in use. The image does not preinstall Chrome or Chromium. Hermes does not expose a declarative multi-CDP config item; the documented CDP path is a single interactive `/browser connect [ws://host:port]` connection.
+- `agent-browser` is managed in the mutable npm layer and is the documented local-browser default when Browserbase, Browser Use, Camofox, and manual `/browser connect` CDP attachment are not in use. The image does not preinstall Chrome or Chromium. Hermes does not expose a declarative multi-CDP config item; the documented CDP path is a single interactive `/browser connect [ws://host:port]` connection.
 - The shared scaffold now also sets `approvals.mode = "off"` for a trusted, non-interactive runtime posture.
 - The shared scaffold also enables Hermes secret redaction and Tirith integration (`tirith_enabled = true`, `tirith_fail_open = true`) while leaving the website blocklist scaffold disabled by default.
 - The shared scaffold also enables Hermes checkpoints with `max_snapshots = 50` so file mutations retain rollback history.
@@ -192,6 +184,7 @@ Discord per-profile env vars:
 - Supervisor bot: `DISCORD_SUPERVISOR_BOT_TOKEN`, `DISCORD_SUPERVISOR_ALLOWED_USERS`, `DISCORD_SUPERVISOR_CHANNEL_ID`
 
 - Required for the planned Hermes model setup: `OPENCODE_GO_API_KEY` and `GOOGLE_AI_STUDIO_API_KEY`
+- Recommended shared runtime env for doctor-clean supported features: `OPENROUTER_API_KEY`, `GITHUB_TOKEN` or `GH_TOKEN`, `HASS_URL`, `HASS_TOKEN`
 - Optional browser-provider env vars passed through to Hermes and written into the shared Hermes `.env`: `CAMOFOX_URL`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `BROWSER_USE_API_KEY`, `BROWSERBASE_PROXIES`, `BROWSERBASE_ADVANCED_STEALTH`, `BROWSERBASE_KEEP_ALIVE`, `BROWSERBASE_SESSION_TIMEOUT`, `BROWSER_INACTIVITY_TIMEOUT`
 - Optional remote CDP env passthrough: `BROWSER_CDP_URL`. Hermes can use this as the persistent default CDP target for browser tools when you want remote Chrome instead of local `agent-browser`.
 - No extra secret is required for Holographic memory; it is local SQLite state under `$HERMES_HOME`
@@ -200,9 +193,13 @@ Discord per-profile env vars:
 - Optional secrets bootstrap: `BWS_ACCESS_TOKEN` for Bitwarden Secrets Manager workflows inside the running profiles
 - Not required for the primary model path: `OPENAI_API_KEY`; the scaffold assumes `openai-codex/gpt-5.4` uses persisted Codex OAuth runtime state rather than a static env key. Run `hermes auth add openai-codex` under the Hermes runtime user (or inside the container) to surface the device-code URL/code pair and persist the tokens under `$HERMES_HOME/oauth.json` and `$HERMES_HOME/oauth-client.json` for future restarts.
 
+### Expected doctor warnings
+
+The image only tries to clear `hermes doctor` warnings for the supported runtime surface. Optional integrations such as generic web-search providers, RL, image generation, and other unused third-party features remain intentionally out of scope. Hermes may also still report an `agent-browser` install warning when it checks for a repo-local `node_modules` tree rather than the managed runtime PATH; the supported contract here is that `agent-browser` is installed in the mutable npm layer and invokable from the Hermes runtime environment.
+
 ### Codex OAuth tokens
 
-The `openai-codex` provider relies on Codex OAuth (device-code flow) instead of a static API key. Run `hermes auth add openai-codex`, paste the printed URL/code into your browser, and the CLI stores both the user token and client metadata in `$HERMES_HOME`. Use `hermes auth list` to inspect active credentials and `hermes auth refresh openai-codex` anytime you rotate or refresh the OAuth session. Because Hermes keeps the tokens on disk, no `OPENAI_API_KEY` env var is required for the primary profile unless you later add a custom provider that explicitly expects it.
+The `openai-codex` provider relies on Codex OAuth (device-code flow) instead of a static API key. Use `hermes -p assistant model`, `hermes -p operations model`, or `hermes -p supervisor model`, choose `OpenAI Codex`, and complete the printed device-code login flow. Hermes stores that auth state in the selected profile at `~/.hermes/profiles/<profile>/auth.json`. Use `hermes -p <profile> auth list` to inspect active credentials. Because Hermes keeps the tokens on disk, no `OPENAI_API_KEY` env var is required for the primary profile unless you later add a custom provider that explicitly expects it.
 
 ## Manual provider configuration per profile
 

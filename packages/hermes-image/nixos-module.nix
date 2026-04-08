@@ -17,7 +17,7 @@ let
     "supervisor"
   ];
   defaultProfile = "assistant";
-  rootTerminalCwd = "/home/hermes";
+  rootTerminalCwd = "/workspace";
   managedProfileRoot = "/home/hermes/.hermes/profiles";
   sharedSkillSourceDir = "/home/hermes/seeds/shared/skills";
   profileSkillSourceRoot = "/home/hermes/seeds/profiles";
@@ -58,7 +58,13 @@ let
   yamlFormat = pkgs.formats.yaml { };
   sharedHermesEnvKeys = [
     "GOOGLE_AI_STUDIO_API_KEY"
+    "OPENROUTER_API_KEY"
+    "OPENCODE_API_KEY"
     "OPENCODE_GO_API_KEY"
+    "GITHUB_TOKEN"
+    "GH_TOKEN"
+    "HASS_TOKEN"
+    "HASS_URL"
     "BROWSERBASE_API_KEY"
     "BROWSERBASE_PROJECT_ID"
     "BROWSER_USE_API_KEY"
@@ -69,6 +75,53 @@ let
     "BROWSER_INACTIVITY_TIMEOUT"
     "CAMOFOX_URL"
     "BROWSER_CDP_URL"
+  ];
+  toolingProjectRoot = "/home/hermes/.hermes/hermes-agent";
+  managedUserPackages = [
+    {
+      name = "hermes-agent";
+      ref = "github:NousResearch/hermes-agent/${hermesRelease}#default";
+    }
+    {
+      name = "git";
+      ref = "nixpkgs#git";
+    }
+    {
+      name = "curl";
+      ref = "nixpkgs#curl";
+    }
+    {
+      name = "jq";
+      ref = "nixpkgs#jq";
+    }
+    {
+      name = "python3";
+      ref = "nixpkgs#python3";
+    }
+    {
+      name = "nix";
+      ref = "nixpkgs#nix";
+    }
+    {
+      name = "ripgrep";
+      ref = "nixpkgs#ripgrep";
+    }
+    {
+      name = "nodejs_22";
+      ref = "nixpkgs#nodejs_22";
+    }
+  ];
+  managedNpmPackages = [
+    "@openai/codex"
+    "@google/gemini-cli"
+    "opencode-ai"
+    "agent-browser"
+  ];
+  managedNpmBins = [
+    "codex"
+    "gemini"
+    "opencode"
+    "agent-browser"
   ];
   rootConfig = {
     terminal = {
@@ -189,19 +242,14 @@ let
       };
     };
   managedProfileNames = lib.concatStringsSep "," managedProfiles;
-  runtimePackages = with pkgs; [
+  systemPackages = with pkgs; [
     bashInteractive
     cacert
     coreutils
-    curl
     findutils
-    git
     gnugrep
     gnused
-    jq
-    nix
     procps
-    python3
     tirith
     ttyd
     util-linux
@@ -210,9 +258,19 @@ let
     hermesDashboard
   ];
 
-  servicePath = runtimePackages ++ ghostshipUtilities ++ [ config.services.hermes-agent.package ];
-  userCommandEnv = pkgs.buildEnv {
-    name = "ghostship-hermes-user-env";
+  toolingFallbackPackages = with pkgs; [
+    curl
+    git
+    jq
+    nix
+    nodejs_22
+    python3
+    ripgrep
+  ];
+
+  servicePath = systemPackages ++ toolingFallbackPackages ++ ghostshipUtilities ++ [ config.services.hermes-agent.package ];
+  fallbackCommandEnv = pkgs.buildEnv {
+    name = "ghostship-hermes-fallback-env";
     paths = servicePath;
   };
   profileDefinitions = lib.genAttrs managedProfiles (
@@ -234,6 +292,8 @@ let
       gatewayScript = pkgs.writeShellScript "ghostship-hermes-profile-${profile}-gateway.sh" ''
         set -euo pipefail
 
+        export PATH="/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:$PATH"
+
         bot_token="''${${profileDef.discordBotTokenEnv}:-}"
         allowed_users="''${${profileDef.discordAllowedUsersEnv}:-}"
         role_channel="''${${profileDef.discordChannelEnv}:-}"
@@ -252,7 +312,7 @@ let
           export DISCORD_HOME_CHANNEL="$general_channel"
         fi
 
-        exec ${config.services.hermes-agent.package}/bin/hermes -p ${profile} gateway run --replace
+        exec hermes -p ${profile} gateway run --replace
       '';
       configFile = yamlFormat.generate "ghostship-hermes-profile-${profile}-config.yaml" (mkProfileConfig profile profileDef);
     }
@@ -298,6 +358,8 @@ let
     };
   bootstrapHermesScript = pkgs.writeShellScript "ghostship-hermes-bootstrap.sh" ''
     set -euo pipefail
+
+    export PATH="/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:$PATH"
 
     profiles_root="${managedProfileRoot}"
     mkdir -p "$profiles_root"
@@ -380,6 +442,9 @@ let
             printf '%s=%s\n' "$key" "$value"
           fi
         done
+        if [ -z "''${OPENCODE_API_KEY:-}" ] && [ -n "''${OPENCODE_GO_API_KEY:-}" ]; then
+          printf 'OPENCODE_API_KEY=%s\n' "''${OPENCODE_GO_API_KEY}"
+        fi
       } >"$target"
     }
 
@@ -392,10 +457,61 @@ let
     hermes config env-path >/dev/null 2>&1 || true
   '';
 
+  managedUserToolingScript = pkgs.writeShellScript "ghostship-hermes-user-tooling.sh" ''
+    set -euo pipefail
+
+    mode="''${1:-bootstrap}"
+    export HOME=/home/hermes
+    export HERMES_HOME=/home/hermes/.hermes
+    export GHOSTSHIP_HERMES_PROJECT_ROOT="''${GHOSTSHIP_HERMES_PROJECT_ROOT:-${toolingProjectRoot}}"
+    export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:${lib.makeBinPath servicePath}:$PATH"
+    export npm_config_update_notifier=false
+    export npm_config_fund=false
+    export npm_config_cache="$HOME/.cache/npm"
+    export GHOSTSHIP_TOOLING_MODE="$mode"
+
+    mkdir -p "$GHOSTSHIP_HERMES_PROJECT_ROOT" "$HOME/.local/bin" "$npm_config_cache"
+
+    python3 - <<'PY2'
+import json
+import os
+import subprocess
+
+mode = os.environ.get("GHOSTSHIP_TOOLING_MODE", "bootstrap")
+specs = json.loads(r"""${builtins.toJSON managedUserPackages}""")
+result = subprocess.run(["nix", "profile", "list", "--json"], check=True, capture_output=True, text=True)
+installed = set(json.loads(result.stdout).get("elements", {}).keys())
+missing = [item["ref"] for item in specs if item["name"] not in installed]
+if missing:
+    subprocess.run(["nix", "profile", "add", *missing], check=True)
+if mode == "refresh":
+    subprocess.run(["nix", "profile", "upgrade", "--all"], check=True)
+PY2
+
+    cd "$GHOSTSHIP_HERMES_PROJECT_ROOT"
+    if [ ! -f package.json ]; then
+      cat > package.json <<'JSON'
+{
+  "name": "ghostship-hermes-runtime-tools",
+  "private": true
+}
+JSON
+    fi
+
+    npm install --silent --save-dev ${lib.escapeShellArgs (map (pkg: "${pkg}@latest") managedNpmPackages)}
+
+    for bin in ${lib.escapeShellArgs managedNpmBins}; do
+      if [ -x "$GHOSTSHIP_HERMES_PROJECT_ROOT/node_modules/.bin/$bin" ]; then
+        ln -sfn "$GHOSTSHIP_HERMES_PROJECT_ROOT/node_modules/.bin/$bin" "$HOME/.local/bin/$bin"
+      fi
+    done
+  '';
+
   serviceEnvironment = {
     HERMES_HOME = "/home/hermes/.hermes";
-    TERMINAL_CWD = "/home/hermes";
-    GHOSTSHIP_TERMINAL_CWD = "/home/hermes";
+    GHOSTSHIP_HERMES_PROJECT_ROOT = toolingProjectRoot;
+    TERMINAL_CWD = "/workspace";
+    GHOSTSHIP_TERMINAL_CWD = "/workspace";
     GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
     GHOSTSHIP_HERMES_PROFILES = managedProfileNames;
     GHOSTSHIP_HERMES_DEFAULT_PROFILE = defaultProfile;
@@ -451,14 +567,15 @@ in
   security.sudo.enable = false;
 
   environment.variables = serviceEnvironment;
-  environment.systemPackages = servicePath;
+  environment.systemPackages = systemPackages;
   environment.shellInit = ''
     if [ "$(id -u)" = "3000" ]; then
       export HOME=/home/hermes
     fi
-    export PATH="${userCommandEnv}/bin:$HOME/.local/bin:$HOME/.nix-profile/bin:$PATH"
+    export PATH="/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:${fallbackCommandEnv}/bin:$PATH"
     export HERMES_HOME=/home/hermes/.hermes
-    export TERMINAL_CWD=/home/hermes
+    export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}
+    export TERMINAL_CWD=/workspace
     export SSL_CERT_FILE=${certificateFile}
     export NIX_SSL_CERT_FILE=${certificateFile}
   '';
@@ -487,14 +604,13 @@ in
       "--replace"
     ];
     environment = {
-      TERMINAL_CWD = "/home/hermes";
+      TERMINAL_CWD = "/workspace";
     };
     settings = {
     } // rootConfig;
     extraPackages = [ pkgs.nix ] ++ ghostshipUtilities;
   };
 
-  users.users.hermes.packages = [ userCommandEnv ];
 
   systemd.services.ghostship-storage = {
     description = "Prepare ghostship-hermes persisted storage";
@@ -528,14 +644,49 @@ in
     };
   };
 
+  systemd.services.ghostship-hermes-user-tooling = {
+    description = "Converge ghostship-hermes user tooling";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [
+      "ghostship-storage.service"
+      "nix-daemon.service"
+      "network-online.target"
+    ];
+    requires = [
+      "ghostship-storage.service"
+      "nix-daemon.service"
+    ];
+    before = [
+      "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-router.service"
+      "ghostship-dashboard-controller.service"
+      "ghostship-hermes-profile-assistant.service"
+      "ghostship-hermes-profile-operations.service"
+      "ghostship-hermes-profile-supervisor.service"
+    ];
+    environment = userServiceEnvironment;
+    path = servicePath;
+    serviceConfig = {
+      Type = "oneshot";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = "/home/hermes";
+      PassEnvironment = sharedHermesEnvKeys;
+      ExecStart = "${managedUserToolingScript} bootstrap";
+    };
+  };
+
   systemd.services.ghostship-hermes-bootstrap = {
     description = "Bootstrap ghostship-hermes Hermes profiles";
     wantedBy = [ "multi-user.target" ];
     after = [
       "ghostship-storage.service"
+      "ghostship-hermes-user-tooling.service"
     ];
     requires = [
       "ghostship-storage.service"
+      "ghostship-hermes-user-tooling.service"
     ];
     environment = userServiceEnvironment;
     path = servicePath;
@@ -545,11 +696,9 @@ in
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
       PassEnvironment = [
-        "GOOGLE_AI_STUDIO_API_KEY"
-        "OPENCODE_GO_API_KEY"
         "GHOSTSHIP_HERMES_SHARED_SKILLS_DIR"
         "GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT"
-      ];
+      ] ++ sharedHermesEnvKeys;
       ExecStart = bootstrapHermesScript;
     };
   };
@@ -561,11 +710,13 @@ in
     after = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-user-tooling.service"
       "network-online.target"
     ];
     requires = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-user-tooling.service"
     ];
     environment = userServiceEnvironment;
     path = servicePath;
@@ -622,11 +773,13 @@ in
     after = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-user-tooling.service"
       "network-online.target"
     ];
     requires = [
       "ghostship-storage.service"
       "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-user-tooling.service"
     ];
     environment = userServiceEnvironment;
     path = servicePath;
@@ -648,13 +801,46 @@ in
 
   systemd.services.ghostship-hermes-profile-supervisor = mkProfileGatewayService "supervisor";
 
+  systemd.services.nix-daemon = {
+    wantedBy = lib.mkForce [ "multi-user.target" ];
+    after = [ "ghostship-storage.service" ];
+    requires = [ "ghostship-storage.service" ];
+  };
+
   systemd.sockets.nix-daemon = {
     wantedBy = lib.mkForce [ "multi-user.target" ];
     after = [ "ghostship-storage.service" ];
     requires = [ "ghostship-storage.service" ];
   };
 
-  system.extraDependencies = servicePath ++ [ userCommandEnv ];
+  systemd.services.ghostship-hermes-user-tooling-refresh = {
+    description = "Refresh ghostship-hermes user tooling";
+    after = [ "network-online.target" "nix-daemon.service" ];
+    requires = [ "nix-daemon.service" ];
+    wants = [ "network-online.target" ];
+    environment = userServiceEnvironment;
+    path = servicePath;
+    serviceConfig = {
+      Type = "oneshot";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = "/home/hermes";
+      PassEnvironment = sharedHermesEnvKeys;
+      ExecStart = "${managedUserToolingScript} refresh";
+    };
+  };
+
+  systemd.timers.ghostship-hermes-user-tooling-refresh = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "15min";
+      OnUnitActiveSec = "1d";
+      Persistent = true;
+      Unit = "ghostship-hermes-user-tooling-refresh.service";
+    };
+  };
+
+  system.extraDependencies = servicePath ++ [ fallbackCommandEnv ];
 
   environment.etc."ghostship-hermes-release".text = hermesRelease + "\n";
 }
