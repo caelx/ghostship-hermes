@@ -15,7 +15,7 @@ We want a minimum-system-viable image. The system layer should keep only what is
 - Shrink the image-owned system layer to the minimum viable set needed for boot, supervision, dashboard, router, and terminal hosting.
 - Move updateable user-facing tools into managed user state, including Hermes itself, `git`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, and `node`/`npm`.
 - Keep the in-container Nix daemon/socket available so `nix profile install` and `nix profile upgrade` work for the `hermes` user at boot and during daily refreshes.
-- Add a persisted npm tool prefix and a managed updater model for the fast-moving agent CLIs: `@openai/codex`, `@google/gemini-cli`, `opencode-ai`, and `agent-browser`.
+- Add a persisted npm tool prefix and a managed updater model for the fast-moving agent CLIs: `@openai/codex`, `@google/gemini-cli`, `opencode-ai`, and `agent-browser`, with `codex`, `gemini`, `opencode`, and `agent-browser` installed where Hermes expects them, configured for normal runtime use, and kept available on the runtime PATH.
 - Make Hermes itself updateable through the managed user Nix profile rather than treating the image-owned Hermes package as authoritative forever.
 - Include Home Assistant support by packaging or installing the dependency set Hermes expects for the `homeassistant` tool.
 - Reduce Hermes doctor noise only for the features we actually intend to use, then confirm the resulting behavior with the operator before backporting the contract into this repo and pushing a new image.
