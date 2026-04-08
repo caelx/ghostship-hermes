@@ -202,12 +202,14 @@ class DummyProvider:
         models: list[ProviderModel] | None = None,
         classification_payload: dict[str, Any] | None = None,
         first_text_latency_ms: float | None = 12.5,
+        rerank_bare_ids: bool = False,
     ):
         self.name = name
         self.failures = {key: list(values) for key, values in (failures or {}).items()}
         self.calls: list[str] = []
         self.list_calls = 0
         self.first_text_latency_ms = first_text_latency_ms
+        self.rerank_bare_ids = rerank_bare_ids
         self.models = models or [
             ProviderModel(id=f"{name}/light-1:free", provider=self.name, is_free=True, tags=("auxiliary",)),
             ProviderModel(id=f"{name}/code-1:free", provider=self.name, is_free=True, tags=("coding",), metadata={"supported_parameters": ["tools", "tool_choice"], "output_modalities": ["text"]}),
@@ -269,10 +271,13 @@ class DummyProvider:
                 request = {}
             alias = str(request.get("alias", "coding"))
             ordered = [
-                f"{model.provider}::{model.id}"
+                (model.id if self.rerank_bare_ids else f"{model.provider}::{model.id}")
                 for model in self.models
                 if alias in model.tags or alias.split("-", 1)[0] in model.id
-            ] or [f"{model.provider}::{model.id}" for model in self.models]
+            ] or [
+                (model.id if self.rerank_bare_ids else f"{model.provider}::{model.id}")
+                for model in self.models
+            ]
             return ProviderChatResult(
                 payload={
                     "id": "chatcmpl-rerank",
@@ -1282,6 +1287,23 @@ def test_provider_cooldown_suppresses_provider_after_broad_failures(tmp_path: Pa
     assert openrouter_state["cooldown_until"] > 0
     preview = service.preview_routes("coding")
     assert preview[0]["provider_name"] == "opencode-zen"
+
+
+def test_ranking_tolerates_bare_model_ids_from_worker(tmp_path: Path) -> None:
+    provider = DummyProvider("openrouter", rerank_bare_ids=True)
+    config = make_config(
+        tmp_path,
+        aliases=(
+            AliasConfig(name="auxiliary", description="light", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="vision", description="heavy", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"openrouter": provider}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("auxiliary")
+    assert preview
+    assert service.debug_state()["last_ranking_error"] is None
 
 
 def test_overrides_survive_restart_and_affect_routing(tmp_path: Path) -> None:

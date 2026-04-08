@@ -1872,11 +1872,17 @@ class RouterService:
                 }
         shortlist_scores = self._rerank_shortlists(provider, worker_backend_model, models)
         for key, rerank_payload in shortlist_scores.items():
+            normalized = self._resolve_ranking_key(key, models)
+            if normalized is None:
+                self._log_event("rerank_key_ignored", key=key)
+                continue
+            provider_name, backend_model = normalized
+            model_key = self._model_key(provider_name, backend_model)
             current = rankings.setdefault(
-                key,
+                model_key,
                 {
-                    "provider_name": key.split("::", 1)[0],
-                    "backend_model": key.split("::", 1)[1],
+                    "provider_name": provider_name,
+                    "backend_model": backend_model,
                     "alias_scores": {alias: 0.0 for alias in _ALIASES},
                     "rerank_scores": {},
                     "reason": None,
@@ -1945,6 +1951,17 @@ class RouterService:
                 rerankings.setdefault(key, {"rerank_scores": {}, "reason": payload.get("reason")})
                 rerankings[key]["rerank_scores"][alias] = bonus
         return rerankings
+
+    def _resolve_ranking_key(self, key: str, models: list[ProviderModel]) -> tuple[str, str] | None:
+        if "::" in key:
+            provider_name, backend_model = key.split("::", 1)
+            if provider_name and backend_model:
+                return provider_name, backend_model
+            return None
+        matches = [(model.provider, model.id) for model in models if model.id == key]
+        if len(matches) == 1:
+            return matches[0]
+        return None
 
     def _parse_json_completion(self, payload: dict[str, Any]) -> dict[str, Any]:
         content = payload.get("choices", [{}])[0].get("message", {}).get("content", "")
