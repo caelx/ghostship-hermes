@@ -8,6 +8,7 @@
   ghostshipUtilities,
   hermesDashboard,
   hermesRelease,
+  wrappedHermesAgent,
   ...
 }:
 let
@@ -80,8 +81,8 @@ let
   toolingProjectRoot = "/home/hermes/.hermes/hermes-agent";
   managedUserPackages = [
     {
-      name = "hermes-agent";
-      ref = "github:NousResearch/hermes-agent/${hermesRelease}#default";
+      name = "hermes-agent-wrapped";
+      ref = "${wrappedHermesAgent}";
     }
     {
       name = "git";
@@ -94,10 +95,6 @@ let
     {
       name = "jq";
       ref = "nixpkgs#jq";
-    }
-    {
-      name = "python3";
-      ref = "nixpkgs#python3";
     }
     {
       name = "nix";
@@ -116,13 +113,11 @@ let
     "@openai/codex"
     "@google/gemini-cli"
     "opencode-ai"
-    "agent-browser"
   ];
   managedNpmBins = [
     "codex"
     "gemini"
     "opencode"
-    "agent-browser"
   ];
   rootConfig = {
     terminal = {
@@ -265,7 +260,6 @@ let
     jq
     nix
     nodejs_22
-    python3
     ripgrep
   ];
 
@@ -307,7 +301,7 @@ let
     in
     {
       description = profileDef.serviceDescription;
-      wantedBy = [ "multi-user.target" ];
+      wantedBy = [ ];
       wants = [ "network-online.target" ];
       after = [
         "ghostship-storage.service"
@@ -596,6 +590,7 @@ in
   };
 
   services.hermes-agent = {
+    package = wrappedHermesAgent;
     enable = true;
     addToSystemPackages = false;
     createUser = false;
@@ -707,9 +702,35 @@ in
     };
   };
 
+
+  systemd.services.ghostship-hermes-startup = {
+    description = "Start ghostship-hermes runtime services";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [
+      "ghostship-storage.service"
+      "ghostship-hermes-user-tooling.service"
+      "ghostship-hermes-bootstrap.service"
+      "network-online.target"
+    ];
+    requires = [
+      "ghostship-storage.service"
+      "ghostship-hermes-user-tooling.service"
+      "ghostship-hermes-bootstrap.service"
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "ghostship-hermes-startup.sh" ''
+        set -euo pipefail
+        ${pkgs.systemd}/bin/systemctl start           ghostship-dashboard-controller.service           ghostship-hermes-router.service           ghostship-hermes-profile-assistant.service           ghostship-hermes-profile-operations.service           ghostship-hermes-profile-supervisor.service
+      '';
+    };
+  };
+
   systemd.services.ghostship-hermes-router = {
     description = "ghostship-hermes model router";
-    wantedBy = [ "multi-user.target" ];
+    wantedBy = [ ];
     wants = [ "network-online.target" ];
     after = [
       "ghostship-storage.service"
@@ -772,7 +793,7 @@ in
 
   systemd.services.ghostship-dashboard-controller = {
     description = "ghostship-hermes dashboard controller";
-    wantedBy = [ "multi-user.target" ];
+    wantedBy = [ ];
     wants = [ "network-online.target" ];
     after = [
       "ghostship-storage.service"
@@ -804,6 +825,76 @@ in
   systemd.services.ghostship-hermes-profile-operations = mkProfileGatewayService "operations";
 
   systemd.services.ghostship-hermes-profile-supervisor = mkProfileGatewayService "supervisor";
+
+
+  systemd.services.ghostship-hermes-profile-assistant-restart = {
+    description = "Restart ghostship-hermes assistant gateway after profile changes";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "ghostship-hermes-profile-assistant-restart.sh" ''
+        exec ${pkgs.systemd}/bin/systemctl try-restart ghostship-hermes-profile-assistant.service
+      '';
+    };
+  };
+
+  systemd.services.ghostship-hermes-profile-operations-restart = {
+    description = "Restart ghostship-hermes operations gateway after profile changes";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "ghostship-hermes-profile-operations-restart.sh" ''
+        exec ${pkgs.systemd}/bin/systemctl try-restart ghostship-hermes-profile-operations.service
+      '';
+    };
+  };
+
+  systemd.services.ghostship-hermes-profile-supervisor-restart = {
+    description = "Restart ghostship-hermes supervisor gateway after profile changes";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "ghostship-hermes-profile-supervisor-restart.sh" ''
+        exec ${pkgs.systemd}/bin/systemctl try-restart ghostship-hermes-profile-supervisor.service
+      '';
+    };
+  };
+
+  systemd.paths.ghostship-hermes-profile-assistant-restart = {
+    wantedBy = [ "multi-user.target" ];
+    pathConfig = {
+      PathChanged = [
+        "${profileDefinitions.assistant.configPath}"
+        "${profileDefinitions.assistant.profileRoot}/.env"
+        "${profileDefinitions.assistant.profileRoot}/auth.json"
+        "${profileDefinitions.assistant.soulPath}"
+      ];
+      Unit = "ghostship-hermes-profile-assistant-restart.service";
+    };
+  };
+
+  systemd.paths.ghostship-hermes-profile-operations-restart = {
+    wantedBy = [ "multi-user.target" ];
+    pathConfig = {
+      PathChanged = [
+        "${profileDefinitions.operations.configPath}"
+        "${profileDefinitions.operations.profileRoot}/.env"
+        "${profileDefinitions.operations.profileRoot}/auth.json"
+        "${profileDefinitions.operations.soulPath}"
+      ];
+      Unit = "ghostship-hermes-profile-operations-restart.service";
+    };
+  };
+
+  systemd.paths.ghostship-hermes-profile-supervisor-restart = {
+    wantedBy = [ "multi-user.target" ];
+    pathConfig = {
+      PathChanged = [
+        "${profileDefinitions.supervisor.configPath}"
+        "${profileDefinitions.supervisor.profileRoot}/.env"
+        "${profileDefinitions.supervisor.profileRoot}/auth.json"
+        "${profileDefinitions.supervisor.soulPath}"
+      ];
+      Unit = "ghostship-hermes-profile-supervisor-restart.service";
+    };
+  };
 
   systemd.services.nix-daemon = {
     wantedBy = lib.mkForce [ "multi-user.target" ];

@@ -89,13 +89,17 @@ The container uses a small NixOS-managed unit graph:
 - `ghostship-hermes-user-tooling-refresh.timer`
   runs the same mutable toolchain refresh flow daily and also once shortly after boot
 - `ghostship-hermes-bootstrap.service`
-  is a repo-specific NixOS oneshot that reconciles the approved `assistant`, `operations`, and `supervisor` profiles after the managed Hermes config exists, writes only the shared Hermes `.env` from the small set of runtime provider env vars the scaffold currently needs, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, and sets the sticky default profile to `assistant`
+  is a repo-specific NixOS oneshot that reconciles the approved `assistant`, `operations`, and `supervisor` profiles after the managed Hermes config exists, writes the managed runtime env into each profile `.env`, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, and sets the sticky default profile to `assistant`
 - `ghostship-hermes-profile-assistant.service`
   keeps the `assistant` gateway running with `hermes -p assistant gateway run --replace`
 - `ghostship-hermes-profile-operations.service`
   keeps the `operations` gateway running with `hermes -p operations gateway run --replace`
 - `ghostship-hermes-profile-supervisor.service`
   keeps the `supervisor` gateway running with `hermes -p supervisor gateway run --replace`
+- `ghostship-hermes-startup.service`
+  starts the dashboard, router, and the three profile gateways automatically after storage preparation, mutable tooling convergence, and profile bootstrap have all completed
+- `ghostship-hermes-profile-*-restart.path`
+  watches each profile's `config.yaml`, `.env`, `auth.json`, and `SOUL.md`, then triggers a matching oneshot restart helper so profile-facing changes roll the affected gateway without a manual `systemctl restart`
 - `ghostship-dashboard-controller.service`
   serves the packaged MMX dashboard and proxies on-demand ephemeral `ttyd` sessions on port `7681`
 - `ghostship-hermes-router.service`
@@ -195,7 +199,7 @@ Discord per-profile env vars:
 
 ### Expected doctor warnings
 
-The image only tries to clear `hermes doctor` warnings for the supported runtime surface. Optional integrations such as generic web-search providers, RL, image generation, and other unused third-party features remain intentionally out of scope. Hermes may also still report an `agent-browser` install warning when it checks for a repo-local `node_modules` tree rather than the managed runtime PATH; the supported contract here is that `agent-browser` is installed in the mutable npm layer and invokable from the Hermes runtime environment.
+The image only tries to clear `hermes doctor` warnings for the supported runtime surface. Optional integrations such as generic web-search providers, RL, image generation, and other unused third-party features remain intentionally out of scope. Remaining preview warnings should only come from intentionally unconfigured features or missing real runtime credentials, not from the packaged `agent-browser` path.
 
 The local preview container is intentionally bare unless you pass the same deployment env vars into it. `hermes doctor` on that preview will still report missing `OPENROUTER_API_KEY`, `GITHUB_TOKEN`/`GH_TOKEN`, `HASS_URL`, and `HASS_TOKEN` until you provide them; that is expected and does not mean the managed tooling layer failed.
 
@@ -205,7 +209,7 @@ The `openai-codex` provider relies on Codex OAuth (device-code flow) instead of 
 
 ### Skills initialization
 
-Hermes does not fully materialize its skills hub state until you exercise it once. Run `hermes skills list` under the Hermes runtime user after first boot to create the skills hub directories and lockfile under `~/.hermes`. That is expected and should be part of first-time runtime initialization.
+Hermes does not fully materialize its skills hub state until you exercise it once. Run `hermes -p <profile> skills list` under the Hermes runtime user after first boot to create the profile skills directories and lockfile. That is expected and should be part of first-time runtime initialization for each declared profile you plan to use.
 
 ### Managed env files
 

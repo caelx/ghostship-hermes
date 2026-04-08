@@ -116,6 +116,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - `gws` and `bws` are the approved non-`ghostship-*` extra CLIs in the default image; keep `gws` pinned through the upstream flake package, keep `bws` sourced from nixpkgs, and do not revive vendored or seeded Google Workspace skills.
 - Keep `ghostship-hermes-image` as the explicit publishable image bundle contract for CI, GHCR pushes, and image-loading flows, and keep the lower-level `/init` workstation tarball on a separate `ghostship-hermes-rootfs` output so scripts do not guess artifact semantics from one overloaded path.
 - Git worktrees do not carry ignored local `.envrc` files by default. Live-test helpers should check the current worktree first, then another repo worktree with `.envrc`.
+- `apply_patch` is currently unreliable for files inside git worktrees in this repo. When editing worktree files, prefer direct non-interactive scripted edits (for example Python or `perl -0pi`) and verify the result immediately.
 - Cloudflare Access service-token headers are test-only. Use `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_ID` and `GHOSTSHIP_TEST_CF_ACCESS_CLIENT_SECRET` in utilities, and derive them from local `.envrc` values in the live-test harness.
 
 ### Service And API Integration

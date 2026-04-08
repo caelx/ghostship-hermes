@@ -76,6 +76,10 @@
           ghostshipN8n = pkgs.callPackage ./packages/n8n-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipChaptarr = pkgs.callPackage ./packages/chaptarr-cli/package.nix { inherit ghostshipCliContract; };
           agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
+          wrappedHermesAgent = pkgs.callPackage ./packages/hermes-agent-wrapped/package.nix {
+            hermesAgentPackage = hermes-agent.packages.${system}.default;
+            agentBrowserPackage = agentBrowser;
+          };
           ghostshipHermesRouter = pkgs.callPackage ./packages/hermes-router/package.nix {
             python311Packages = routerPython311Packages;
             ghostshipCliContract = routerGhostshipCliContract;
@@ -120,6 +124,7 @@
                 ghostshipHermesRuntime
                 hermesRelease
                 hermesDashboard
+                wrappedHermesAgent
                 ;
               ghostshipUtilities = allUtilities;
             };
@@ -168,6 +173,7 @@
           ghostship-n8n = ghostshipN8n;
           ghostship-hermes-router = ghostshipHermesRouter;
           ghostship-hermes-runtime = ghostshipHermesRuntime;
+          hermes-agent-wrapped = wrappedHermesAgent;
           ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;
           ghostship-hermes-rootfs = ghostshipHermesRootfs;
           ghostship-hermes-image = ghostshipHermesImage;
@@ -211,6 +217,7 @@
             ghostship-n8n
             ghostship-hermes-router
             ghostship-hermes-runtime
+            hermes-agent-wrapped
             ghostship-hermes-system
             ghostship-hermes-rootfs
             ghostship-hermes-image;

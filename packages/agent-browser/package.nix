@@ -4,6 +4,7 @@
   fetchurl,
   autoPatchelfHook,
   glibc,
+  makeWrapper,
 }:
 let
   pname = "agent-browser";
@@ -21,7 +22,7 @@ in
 stdenvNoCC.mkDerivation {
   inherit pname version src;
 
-  nativeBuildInputs = [ autoPatchelfHook ];
+  nativeBuildInputs = [ autoPatchelfHook makeWrapper ];
   buildInputs = [ glibc ];
 
   sourceRoot = "package";
@@ -29,9 +30,11 @@ stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
 
-    mkdir -p $out/bin $out/share/${pname}
-    cp -R skills README.md LICENSE $out/share/${pname}/
-    install -m0755 bin/${platformBinary} $out/bin/${pname}
+    mkdir -p $out/bin $out/share/${pname}/package
+    cp -R . $out/share/${pname}/package/
+    chmod -R u+w $out/share/${pname}/package
+    install -m0755 bin/${platformBinary} $out/share/${pname}/package/bin/${platformBinary}
+    makeWrapper $out/share/${pname}/package/bin/${platformBinary} $out/bin/${pname}
 
     runHook postInstall
   '';
