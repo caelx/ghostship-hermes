@@ -23,6 +23,7 @@ The repo uses a hybrid model:
 | `ghostship-pricebuddy` | `docs/api/pricebuddy.md` | None | Official docs plus upstream tests/source code |
 | `ghostship-prowlarr` | `docs/api/prowlarr.md` | `docs/api/prowlarr-openapi.json` | Official OpenAPI + repo summary |
 | `ghostship-pyload-ng` | `docs/api/pyload-ng.md` | `docs/api/pyload-openapi.json` | Official OpenAPI + repo summary |
+| `ghostship-chaptarr` | `docs/api/chaptarr.md` | `docs/api/chaptarr-openapi.json` | Official OpenAPI + repo summary |
 | `ghostship-rss-bridge` | `docs/api/rss-bridge.md` | None | Official docs and source code |
 | `ghostship-qbittorrent` | `docs/api/qbittorrent.md` | None | Official WebUI wiki |
 | `ghostship-radarr` | `docs/api/radarr.md` | `docs/api/radarr-openapi.json` | Official OpenAPI + repo summary |

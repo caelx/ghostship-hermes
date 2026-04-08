@@ -134,6 +134,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Router score preview paths such as `/v1/models` must not reread full SQLite state tables for every candidate score; cache `model_state`, `provider_state`, `rankings`, and override reads in-process and invalidate those caches on writes.
 - Root-side image validation shells only see the system profile PATH, so keep tools like `jq` in `environment.systemPackages` if the smoke or persistence scripts need them through `docker exec` as root.
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
+- `ghostship-chaptarr` requires `CHAPTARR_URL`, `CHAPTARR_API_KEY`, and optional `CHAPTARR_API_PATH`/`CHAPTARR_API_VERSION`; document those env vars alongside the OpenAPI mirror so operators know how to configure the runtime.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.
 - CloakBrowser Manager auth uses the server `AUTH_TOKEN` as `Authorization: Bearer <token>`; `/api/status` stays unauthenticated for health checks.
 - `ghostship-cloakbrowser` previously built URLs without the slash before `api`; valid credentials still failed until that was fixed.

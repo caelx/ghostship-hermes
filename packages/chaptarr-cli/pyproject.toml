@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ghostship-chaptarr"
+version = "0.1.0"
+description = "Chaptarr CLI wrapper for ghostship-hermes"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "ghostship-cli-contract>=0.1.0",
+  "httpx>=0.28.1",
+  "typer>=0.16.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.18.2",
+  "pytest>=8.4.2",
+]
+
+[project.scripts]
+ghostship-chaptarr = "ghostship_chaptarr.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ghostship_chaptarr"]
+package_data = {"ghostship_chaptarr" = ["chaptarr-openapi.json"]}
+
+[tool.uv.sources]
+ghostship-cli-contract = { path = "../ghostship-cli-contract" }
+
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = [
+  "integration: exercises a configured Chaptarr deployment",
+]

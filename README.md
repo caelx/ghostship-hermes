@@ -238,6 +238,7 @@ The image still bundles the repo-managed service CLIs:
 
 - `ghostship-bazarr`
 - `ghostship-changedetection`
+- `ghostship-chaptarr`
 - `ghostship-cloakbrowser`
 - `ghostship-flaresolverr`
 - `ghostship-grimmory`
@@ -255,6 +256,8 @@ The image still bundles the repo-managed service CLIs:
 - `ghostship-sonarr`
 - `ghostship-synology`
 - `ghostship-tautulli`
+
+`ghostship-chaptarr` integrates with a Chaptarr instance over `/api/<version>` and requires `CHAPTARR_URL`/`CHAPTARR_API_KEY` in the runtime environment; optional `CHAPTARR_API_PATH` and `CHAPTARR_API_VERSION` allow non-standard base paths.
 
 All `ghostship-*` utilities emit native JSON by default. Canonical API docs and raw upstream mirrors live under `docs/api/`.
 
