@@ -2,7 +2,7 @@
 
 - [ ] 1.1 Move Hermes and the stable user-facing CLI set into updateable user-managed state on the live image
 - [ ] 1.1a Verify `nix-daemon.socket` is active in the live container before attempting any user-profile installs or upgrades
-- [ ] 1.2 Install the in-scope npm CLIs on the live image where Hermes expects them
+- [ ] 1.2 Install the in-scope npm CLIs on the live image where Hermes expects them, including `codex` and `opencode`, and verify they are discoverable, configured, and invokable from Hermes runtime paths
 - [ ] 1.3 Add the Home Assistant dependency support on the live image
 - [ ] 1.4 Reduce Hermes doctor warnings on the live image for supported features only
 - [ ] 1.5 Confirm with the user that the resulting live-image behavior is correct
@@ -12,7 +12,7 @@
 
 - [ ] 2.1 Shrink the image-owned system package set to the minimum viable boot/supervision surface
 - [ ] 2.2 Add a user-profile bootstrap/update contract for Hermes, `git`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, and `node`/`npm`
-- [ ] 2.3 Add a persisted npm prefix/cache contract for the fast-moving agent CLIs under `/home/hermes`
+- [ ] 2.3 Add a persisted npm prefix/cache contract for the fast-moving agent CLIs under `/home/hermes`, including the PATH/discovery/runtime contract for `codex`, `gemini`, `opencode`, and `agent-browser`
 - [ ] 2.4 Add boot-time update ordering so the user profile and npm layer are ready before profile gateways start
 - [ ] 2.4a Make the in-container Nix daemon/socket part of that boot-time ordering contract
 - [ ] 2.5 Add a persistent daily updater for user-profile packages and npm-managed CLIs

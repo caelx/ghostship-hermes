@@ -6,7 +6,7 @@ This proposal shifts the image toward a minimum-system-viable contract:
 
 - the system layer boots the container and supervises services
 - the `hermes` user profile owns updateable user-facing tooling
-- a persisted npm prefix owns the fastest-moving agent CLIs
+- a persisted npm prefix owns the fastest-moving agent CLIs and keeps them configured where Hermes can actually invoke them
 
 ## Rollout Strategy
 
@@ -17,7 +17,7 @@ Use the running image/container as the proving ground.
 Goals for the live image:
 
 1. Move Hermes and the user-facing CLI toolchain to updateable user-managed state.
-2. Install the fast-moving npm CLIs where Hermes expects them.
+2. Install the fast-moving npm CLIs where Hermes expects them, with `opencode` treated as a first-class supported tool alongside `codex`.
 3. Add the Home Assistant dependency support Hermes expects.
 4. Get `hermes -p <profile> doctor` mostly clean for the supported features.
 5. Confirm with the operator that the resulting runtime behavior is correct.
@@ -65,7 +65,7 @@ PERSISTED NPM LAYER
   - agent-browser
 ```
 
-This model keeps the base image small and makes the actual agent toolchain updateable in place.
+This model keeps the base image small and makes the actual agent toolchain updateable in place. In particular, `codex`, `gemini`, `opencode`, and `agent-browser` must not merely exist somewhere on disk; they must be discoverable from the Hermes runtime environment, configured so Hermes can invoke them normally, and available in the locations Hermes checks at startup and during `doctor`.
 
 ## Nix Daemon Availability
 
@@ -123,6 +123,7 @@ We should only clear doctor warnings for features we actually intend to use.
 
 - Hermes itself being installed and updateable where the runtime expects it
 - `openai-codex` CLI/provider path
+- `opencode` CLI path and runtime availability
 - `agent-browser`
 - GitHub API rate limits via `GITHUB_TOKEN`
 - Home Assistant optional dependency support
