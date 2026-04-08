@@ -5,8 +5,8 @@
 - [x] 1.2 Install the in-scope npm CLIs on the live image where Hermes expects them, including `codex` and `opencode`, and verify they are discoverable, configured, and invokable from Hermes runtime paths
 - [x] 1.3 Add the Home Assistant dependency support on the live image
 - [x] 1.4 Reduce Hermes doctor warnings on the live image for supported features only
-- [ ] 1.5 Confirm with the user that the resulting live-image behavior is correct
-- [ ] 1.6 Align ttyd to the dashboard's blue theme tokens on the live image and validate the result with the user
+- [x] 1.5 Confirm with the user that the resulting live-image behavior is correct
+- [x] 1.6 Align ttyd to the dashboard's blue theme tokens on the live image and validate the result with the user
 
 ## 2. Backport the minimum-system-viable runtime contract
 
@@ -32,4 +32,4 @@
 
 - [x] 5.1 Update runtime documentation to describe the minimum-system-viable layered contract
 - [x] 5.2 Update changelog and any affected repo guidance that still assumes user-facing tools belong in the immutable image layer
-- [ ] 5.3 Build and push the new image after the backported contract matches the validated live image
+- [x] 5.3 Build and push the new image after the backported contract matches the validated live image
