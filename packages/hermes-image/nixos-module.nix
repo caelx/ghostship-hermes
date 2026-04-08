@@ -429,6 +429,7 @@ in
 
   networking.hostName = "ghostship-hermes";
   networking.useDHCP = lib.mkDefault true;
+  networking.resolvconf.enable = false;
   networking.firewall.allowedTCPPorts = [ 7681 ];
   system.stateVersion = "25.11";
 

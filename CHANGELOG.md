@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Disabled in-container `resolvconf` in the Hermes image so the NixOS container preserves Podman-provided `/etc/resolv.conf` and external DNS resolution works for router upstreams such as OpenRouter and OpenCode.
+
 - Restored dashboard compatibility for older clients by serving the legacy `/api/profiles.json` payload alongside the current `/api/status` API so stale edge/browser bundles stop hard-failing during Hermes dashboard rollouts.
 
 - Added `ghostship-n8n`, a JSON-first CLI for the full official n8n Public API, mirrored the bundled upstream OpenAPI contract into `docs/api/n8n-openapi.json`, and documented the new utility in `docs/api/n8n.md`.
