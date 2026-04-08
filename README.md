@@ -171,7 +171,7 @@ The image is intentionally declarative-first:
 - Each profile config now also scaffolds Hermes `discord` defaults with `require_mention = true`, `auto_thread = true`, `reactions = true`, and `group_sessions_per_user = true`. The gateway service then maps profile-specific env vars into Hermes' standard Discord env names so a shared `DISCORD_GENERAL_CHANNEL_ID` stays mention-only while each profile's `DISCORD_<PROFILE>_CHANNEL_ID` becomes that bot's free-response role channel.
 - Hermes does not have a native per-profile Discord icon field. If you want distinct icons, each profile needs its own Discord application/bot, and you set the avatar/banner in the Discord Developer Portal for that bot.
 - All Hermes auxiliary tasks are pinned to Gemini 3.1 Flash-Lite Preview through the Google Gemini OpenAI-compatible endpoint using `${GOOGLE_AI_STUDIO_API_KEY}`. TTS is still intentionally left unconfigured for now.
-- The bootstrap now writes only the shared Hermes `.env`, and only for the small set of provider and browser env vars the current scaffold actually needs. Long-running services inherit runtime container env directly for shared runtime auth such as `BWS_ACCESS_TOKEN`.
+- The bootstrap writes the managed runtime env into each profile `.env` at `~/.hermes/profiles/<profile>/.env`. Each profile `.env` is the single operator-facing source of truth for that profile, and any managed env contract change must update the bootstrap writer so the regenerated `.env` files stay in sync.
 - Shared skills still seed from `/home/hermes/seeds/shared/skills/<skill>` and profile-specific skills still seed from `/home/hermes/seeds/profiles/<profile>/skills/<skill>`, and per-profile `SOUL.md` files seed from `/home/hermes/seeds/profiles/<profile>/SOUL.md`, copying only missing skill directories into Hermes-owned state.
 
 Current scaffold env vars:
@@ -185,21 +185,33 @@ Discord per-profile env vars:
 
 - Required for the planned Hermes model setup: `OPENCODE_GO_API_KEY` and `GOOGLE_AI_STUDIO_API_KEY`
 - Recommended shared runtime env for doctor-clean supported features: `OPENROUTER_API_KEY`, `GITHUB_TOKEN` or `GH_TOKEN`, `HASS_URL`, `HASS_TOKEN`
-- Optional browser-provider env vars passed through to Hermes and written into the shared Hermes `.env`: `CAMOFOX_URL`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `BROWSER_USE_API_KEY`, `BROWSERBASE_PROXIES`, `BROWSERBASE_ADVANCED_STEALTH`, `BROWSERBASE_KEEP_ALIVE`, `BROWSERBASE_SESSION_TIMEOUT`, `BROWSER_INACTIVITY_TIMEOUT`
+- Optional browser-provider env vars passed through to Hermes and written into each profile `.env`: `CAMOFOX_URL`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `BROWSER_USE_API_KEY`, `BROWSERBASE_PROXIES`, `BROWSERBASE_ADVANCED_STEALTH`, `BROWSERBASE_KEEP_ALIVE`, `BROWSERBASE_SESSION_TIMEOUT`, `BROWSER_INACTIVITY_TIMEOUT`
 - Optional remote CDP env passthrough: `BROWSER_CDP_URL`. Hermes can use this as the persistent default CDP target for browser tools when you want remote Chrome instead of local `agent-browser`.
 - No extra secret is required for Holographic memory; it is local SQLite state under `$HERMES_HOME`
 - `OPENCODE_GO_API_KEY` backs the Hermes-native `fallback_model = opencode-go/minimax-m2.7`
 - `GOOGLE_AI_STUDIO_API_KEY` backs the direct Google Gemini OpenAI-compatible endpoint used for all configured auxiliary tasks
 - Optional secrets bootstrap: `BWS_ACCESS_TOKEN` for Bitwarden Secrets Manager workflows inside the running profiles
-- Not required for the primary model path: `OPENAI_API_KEY`; the scaffold assumes `openai-codex/gpt-5.4` uses persisted Codex OAuth runtime state rather than a static env key. Run `hermes auth add openai-codex` under the Hermes runtime user (or inside the container) to surface the device-code URL/code pair and persist the tokens under `$HERMES_HOME/oauth.json` and `$HERMES_HOME/oauth-client.json` for future restarts.
+- Not required for the primary model path: `OPENAI_API_KEY`; the scaffold assumes `openai-codex/gpt-5.4` uses Hermes-managed Codex OAuth runtime state rather than a static env key. Run `hermes -p assistant model`, `hermes -p operations model`, or `hermes -p supervisor model`, choose `OpenAI Codex`, and complete the device-code flow. Hermes stores that auth state in `~/.hermes/profiles/<profile>/auth.json`.
 
 ### Expected doctor warnings
 
 The image only tries to clear `hermes doctor` warnings for the supported runtime surface. Optional integrations such as generic web-search providers, RL, image generation, and other unused third-party features remain intentionally out of scope. Hermes may also still report an `agent-browser` install warning when it checks for a repo-local `node_modules` tree rather than the managed runtime PATH; the supported contract here is that `agent-browser` is installed in the mutable npm layer and invokable from the Hermes runtime environment.
 
+The local preview container is intentionally bare unless you pass the same deployment env vars into it. `hermes doctor` on that preview will still report missing `OPENROUTER_API_KEY`, `GITHUB_TOKEN`/`GH_TOKEN`, `HASS_URL`, and `HASS_TOKEN` until you provide them; that is expected and does not mean the managed tooling layer failed.
+
 ### Codex OAuth tokens
 
 The `openai-codex` provider relies on Codex OAuth (device-code flow) instead of a static API key. Use `hermes -p assistant model`, `hermes -p operations model`, or `hermes -p supervisor model`, choose `OpenAI Codex`, and complete the printed device-code login flow. Hermes stores that auth state in the selected profile at `~/.hermes/profiles/<profile>/auth.json`. Use `hermes -p <profile> auth list` to inspect active credentials. Because Hermes keeps the tokens on disk, no `OPENAI_API_KEY` env var is required for the primary profile unless you later add a custom provider that explicitly expects it.
+
+### Skills initialization
+
+Hermes does not fully materialize its skills hub state until you exercise it once. Run `hermes skills list` under the Hermes runtime user after first boot to create the skills hub directories and lockfile under `~/.hermes`. That is expected and should be part of first-time runtime initialization.
+
+### Managed env files
+
+Each profile has one operator-facing source of truth for managed runtime env: `~/.hermes/profiles/<profile>/.env`. The managed gateway services load that file with `EnvironmentFile`, and bootstrap rewrites it on every reconcile. If you change the managed runtime env contract, update the bootstrap writer in `packages/hermes-image/nixos-module.nix` so the regenerated profile `.env` files match the new contract. The root `~/.hermes/.env` is not used by the managed profile gateways in this image.
+
+Treat the profile `.env` as the canonical place for profile-facing runtime configuration: Hermes provider credentials, browser configuration, Discord settings, Bitwarden access, and operator-facing CLI/service env for tools the profile is expected to use. Keep only image infrastructure, router-daemon internals, and container boot plumbing outside the profile `.env` files.
 
 ## Manual provider configuration per profile
 
@@ -216,7 +228,7 @@ Every named profile (`assistant`, `operations`, `supervisor`) is rendered from t
    ```
 
 3. If a profile needs a different auxiliary base URL, API key, or fallback model, adjust the surrounding helper values (`auxiliaryBaseUrl`, `auxiliaryApiKeyRef`, `mkProfileConfig`’s `fallback_model` block) so the generated config reflects the desired provider (e.g., point `fallback_model` at `openrouter` or add a new `auxiliary` entry).
-4. Add any new secret names (for example `OPENROUTER_API_KEY` or `CUSTOM_PROVIDER_KEY`) to the `sharedHermesEnvKeys` list so the bootstrap service knows to copy them into `/home/hermes/.hermes/.env`. Supply the actual values via the container’s `environment`/`environmentFiles` or by exporting them before starting the container.
+4. Add any new secret names (for example `OPENROUTER_API_KEY` or `CUSTOM_PROVIDER_KEY`) to the managed env-key lists in `packages/hermes-image/nixos-module.nix` so the bootstrap service knows to copy them into each profile `~/.hermes/profiles/<profile>/.env`. Supply the actual values via the container `environment`/`environmentFiles` or by exporting them before starting the container.
 5. Rebuild the image (e.g., `nix build .#packages.x86_64-linux.ghostship-hermes-image`) and restart the container from the new build, or run `sudo nixos-rebuild switch` if you are on a full NixOS host. Because the bootstrap rewrites `/home/hermes/.hermes/profiles/<profile>/config.yaml`, manual edits to those files do not persist.
 
 This keeps the provider wiring in Nix so every redeploy regenerates the same config and the services stay in sync.

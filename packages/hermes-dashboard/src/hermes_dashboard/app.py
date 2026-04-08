@@ -525,7 +525,7 @@ def ttyd_command(session: dict[str, Any]) -> list[str]:
         "-t",
         "fontFamily=IBM Plex Mono, monospace",
         "-t",
-        "theme={\"background\":\"#070b14\",\"foreground\":\"#f4f7ff\",\"cursor\":\"#9fb0ff\",\"selectionBackground\":\"rgba(122,140,255,0.28)\",\"black\":\"#070b14\",\"red\":\"#ff6b8f\",\"green\":\"#6fe29b\",\"yellow\":\"#ffd479\",\"blue\":\"#7a8cff\",\"magenta\":\"#b99cff\",\"cyan\":\"#7fd6ff\",\"white\":\"#cfd8ff\",\"brightBlack\":\"#2f3956\",\"brightRed\":\"#ff90ad\",\"brightGreen\":\"#99f0bb\",\"brightYellow\":\"#ffe29d\",\"brightBlue\":\"#9fb0ff\",\"brightMagenta\":\"#d1b8ff\",\"brightCyan\":\"#a5e5ff\",\"brightWhite\":\"#ffffff\"}",
+        "theme={\"background\":\"#070b14\",\"foreground\":\"#f4f7ff\",\"cursor\":\"#9fb0ff\",\"selectionBackground\":\"rgba(122,140,255,0.28)\",\"black\":\"#070b14\",\"red\":\"#ff6b8f\",\"green\":\"#7a8cff\",\"yellow\":\"#ffd479\",\"blue\":\"#7a8cff\",\"magenta\":\"#b99cff\",\"cyan\":\"#7fd6ff\",\"white\":\"#cfd8ff\",\"brightBlack\":\"#2f3956\",\"brightRed\":\"#ff90ad\",\"brightGreen\":\"#9fb0ff\",\"brightYellow\":\"#ffe29d\",\"brightBlue\":\"#9fb0ff\",\"brightMagenta\":\"#d1b8ff\",\"brightCyan\":\"#a5e5ff\",\"brightWhite\":\"#ffffff\"}",
         "--base-path",
         session["terminal_url"].rstrip("/"),
         BASH_PATH,

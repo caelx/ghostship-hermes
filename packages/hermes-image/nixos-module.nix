@@ -65,6 +65,7 @@ let
     "GH_TOKEN"
     "HASS_TOKEN"
     "HASS_URL"
+    "BWS_ACCESS_TOKEN"
     "BROWSERBASE_API_KEY"
     "BROWSERBASE_PROJECT_ID"
     "BROWSER_USE_API_KEY"
@@ -294,24 +295,6 @@ let
 
         export PATH="/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:$PATH"
 
-        bot_token="''${${profileDef.discordBotTokenEnv}:-}"
-        allowed_users="''${${profileDef.discordAllowedUsersEnv}:-}"
-        role_channel="''${${profileDef.discordChannelEnv}:-}"
-        general_channel="''${DISCORD_GENERAL_CHANNEL_ID:-}"
-
-        if [ -n "$bot_token" ]; then
-          export DISCORD_BOT_TOKEN="$bot_token"
-        fi
-        if [ -n "$allowed_users" ]; then
-          export DISCORD_ALLOWED_USERS="$allowed_users"
-        fi
-        if [ -n "$role_channel" ]; then
-          export DISCORD_FREE_RESPONSE_CHANNELS="$role_channel"
-        fi
-        if [ -n "$general_channel" ]; then
-          export DISCORD_HOME_CHANNEL="$general_channel"
-        fi
-
         exec hermes -p ${profile} gateway run --replace
       '';
       configFile = yamlFormat.generate "ghostship-hermes-profile-${profile}-config.yaml" (mkProfileConfig profile profileDef);
@@ -344,13 +327,7 @@ let
         User = "hermes";
         Group = "hermes";
         WorkingDirectory = profileDef.serviceWorkingDirectory;
-        PassEnvironment = [
-          "BWS_ACCESS_TOKEN"
-          "DISCORD_GENERAL_CHANNEL_ID"
-          profileDef.discordBotTokenEnv
-          profileDef.discordAllowedUsersEnv
-          profileDef.discordChannelEnv
-        ] ++ sharedHermesEnvKeys;
+        EnvironmentFile = [ "-${profileDef.profileRoot}/.env" ];
         ExecStart = profileDef.gatewayScript;
         Restart = "always";
         RestartSec = "2s";
@@ -433,6 +410,10 @@ let
     write_profile_env() {
       target="$1"
       terminal_cwd="$2"
+      bot_token_env="''${3:-}"
+      allowed_users_env="''${4:-}"
+      role_channel_env="''${5:-}"
+      general_channel="''${DISCORD_GENERAL_CHANNEL_ID:-}"
       umask 077
       {
         printf 'TERMINAL_CWD=%s\n' "$terminal_cwd"
@@ -445,10 +426,33 @@ let
         if [ -z "''${OPENCODE_API_KEY:-}" ] && [ -n "''${OPENCODE_GO_API_KEY:-}" ]; then
           printf 'OPENCODE_API_KEY=%s\n' "''${OPENCODE_GO_API_KEY}"
         fi
+        if [ -n "$bot_token_env" ]; then
+          bot_token="''${!bot_token_env:-}"
+          if [ -n "$bot_token" ]; then
+            printf 'DISCORD_BOT_TOKEN=%s\n' "$bot_token"
+          fi
+        fi
+        if [ -n "$allowed_users_env" ]; then
+          allowed_users="''${!allowed_users_env:-}"
+          if [ -n "$allowed_users" ]; then
+            printf 'DISCORD_ALLOWED_USERS=%s\n' "$allowed_users"
+          fi
+        fi
+        if [ -n "$role_channel_env" ]; then
+          role_channel="''${!role_channel_env:-}"
+          if [ -n "$role_channel" ]; then
+            printf 'DISCORD_FREE_RESPONSE_CHANNELS=%s\n' "$role_channel"
+          fi
+        fi
+        if [ -n "$general_channel" ]; then
+          printf 'DISCORD_HOME_CHANNEL=%s\n' "$general_channel"
+        fi
       } >"$target"
     }
 
-    write_profile_env "/home/hermes/.hermes/.env" "${rootTerminalCwd}"
+    write_profile_env "${profileDefinitions.assistant.profileRoot}/.env" "${profileDefinitions.assistant.serviceWorkingDirectory}" "${profileDefinitions.assistant.discordBotTokenEnv}" "${profileDefinitions.assistant.discordAllowedUsersEnv}" "${profileDefinitions.assistant.discordChannelEnv}"
+    write_profile_env "${profileDefinitions.operations.profileRoot}/.env" "${profileDefinitions.operations.serviceWorkingDirectory}" "${profileDefinitions.operations.discordBotTokenEnv}" "${profileDefinitions.operations.discordAllowedUsersEnv}" "${profileDefinitions.operations.discordChannelEnv}"
+    write_profile_env "${profileDefinitions.supervisor.profileRoot}/.env" "${profileDefinitions.supervisor.serviceWorkingDirectory}" "${profileDefinitions.supervisor.discordBotTokenEnv}" "${profileDefinitions.supervisor.discordAllowedUsersEnv}" "${profileDefinitions.supervisor.discordChannelEnv}"
     reconcile_seed_skills
 
     hermes profile use ${lib.escapeShellArg defaultProfile} >/dev/null 2>&1 || true
