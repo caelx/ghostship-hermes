@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Changed the Hermes image to stop relying on a sticky `active_profile` file for the managed assistant flow: repo-owned assistant runtime checks now use `hermes -p assistant` explicitly, bootstrap clears `~/.hermes/active_profile`, and the managed gateway wrapper now writes the full profile-local JSON `gateway.pid` record itself so `assistant`, `operations`, and `supervisor` keep stable liveness markers.
 - Fixed the Hermes image bootstrap/runtime state contract so managed bootstrap now mirrors `/etc/ghostship-hermes-release` into the persisted `/home/hermes/.ghostship-hermes-release` file on every boot, rewrites managed profile `.env` files atomically from the current container env, and keeps repo-managed `gateway.pid` files aligned with the live `assistant`, `operations`, and `supervisor` gateway services.
 - Fixed the Hermes image bootstrap/runtime contract so the `hermes` user's default PATH now includes `/home/hermes/.local/bin` alongside the managed Nix profile bins, and the documented shared and per-profile Discord env vars are now passed through bootstrap and written into each managed profile `.env` so profile `.env` remains the single operator-facing source of truth for supported messaging configuration.
 - Pinned Hermes release updated to `v2026.4.8`.

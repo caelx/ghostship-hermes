@@ -305,7 +305,12 @@ let
         set -euo pipefail
 
         export PATH="${hermesUserPathPrefix}:$PATH"
-        printf '%s\n' "$$" > ${lib.escapeShellArg "${profileRoot}/gateway.pid"}
+        read -r _gateway_stat < "/proc/$$/stat"
+        set -- $_gateway_stat
+        _gateway_start_time="$22"
+        cat > ${lib.escapeShellArg "${profileRoot}/gateway.pid"} <<EOF
+{"pid": $$, "kind": "hermes-gateway", "argv": ["hermes", "gateway", "run", "--replace", "--profile", "${profile}"], "start_time": ''${_gateway_start_time}}
+EOF
 
         exec hermes -p ${profile} gateway run --replace
       '';
@@ -490,10 +495,10 @@ let
     write_profile_env "${profileDefinitions.supervisor.profileRoot}/.env" "${profileDefinitions.supervisor.serviceWorkingDirectory}" "${profileDefinitions.supervisor.discordBotTokenEnv}" "${profileDefinitions.supervisor.discordAllowedUsersEnv}" "${profileDefinitions.supervisor.discordChannelEnv}"
     reconcile_seed_skills
 
-    hermes profile use ${lib.escapeShellArg defaultProfile} >/dev/null 2>&1 || true
+    rm -f /home/hermes/.hermes/active_profile
 
-    hermes config path >/dev/null 2>&1 || true
-    hermes config env-path >/dev/null 2>&1 || true
+    hermes -p ${lib.escapeShellArg defaultProfile} config path >/dev/null 2>&1 || true
+    hermes -p ${lib.escapeShellArg defaultProfile} config env-path >/dev/null 2>&1 || true
   '';
 
   managedUserToolingScript = pkgs.writeShellScript "ghostship-hermes-user-tooling.sh" ''

@@ -181,8 +181,8 @@ assert_gateway_pid_contract() {
   local container_name="$1"
   local profile="$2"
 
-  run_as_hermes "$container_name" "pid=\$(cat /home/hermes/.hermes/profiles/$profile/gateway.pid); test -n \"\$pid\"; kill -0 \"\$pid\""
-  run_as_hermes "$container_name" "pid=\$(cat /home/hermes/.hermes/profiles/$profile/gateway.pid); ps -p \"\$pid\" -o args= | grep -F \" -p $profile gateway run --replace\" >/dev/null"
+  run_as_hermes "$container_name" "pid=\$(jq -r '.pid' /home/hermes/.hermes/profiles/$profile/gateway.pid); kind=\$(jq -r '.kind' /home/hermes/.hermes/profiles/$profile/gateway.pid); argv=\$(jq -r '.argv | join(\" \")' /home/hermes/.hermes/profiles/$profile/gateway.pid); test -n \"\$pid\"; test \"\$kind\" = \"hermes-gateway\"; printf '%s' \"\$argv\" | grep -F 'hermes gateway run --replace --profile $profile' >/dev/null; kill -0 \"\$pid\""
+  run_as_hermes "$container_name" "pid=\$(jq -r '.pid' /home/hermes/.hermes/profiles/$profile/gateway.pid); ps -p \"\$pid\" -o args= | grep -F \" -p $profile gateway run --replace\" >/dev/null"
   run_as_hermes "$container_name" "hermes -p $profile gateway status | grep -F 'Gateway is running' >/dev/null"
 }
 
@@ -371,7 +371,7 @@ run_as_hermes "$container_name" 'hermes profile show operations >/dev/null'
 run_as_hermes "$container_name" 'hermes profile show supervisor >/dev/null'
 run_as_hermes "$container_name" 'test -d /home/hermes/.hermes/profiles/assistant && test -d /home/hermes/.hermes/profiles/operations && test -d /home/hermes/.hermes/profiles/supervisor'
 run_as_hermes "$container_name" '! test -d /home/hermes/.hermes/profiles/coder'
-run_as_hermes "$container_name" 'test "$(cat /home/hermes/.hermes/active_profile)" = "assistant"'
+run_as_hermes "$container_name" '! test -f /home/hermes/.hermes/active_profile'
 run_as_hermes_default_path "$container_name" 'test "$(command -v codex)" = "/home/hermes/.local/bin/codex"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v gemini)" = "/home/hermes/.local/bin/gemini"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v opencode)" = "/home/hermes/.local/bin/opencode"'

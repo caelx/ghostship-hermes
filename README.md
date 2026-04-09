@@ -21,7 +21,7 @@ Canonical image references:
 - Switching between open tabs keeps each live `ttyd` session attached instead of dropping back to ttyd's reconnect prompt.
 - Browser terminals start in `/workspace`.
 - The image currently scaffolds three long-running Hermes profiles, `assistant`, `operations`, and `supervisor`, at `~/.hermes/profiles/...`.
-- `assistant` is the sticky default profile.
+- `assistant` is the primary managed profile, and repo-owned runtime commands address it explicitly with `-p assistant` instead of relying on `~/.hermes/active_profile`.
 - The root Hermes config stays minimal; the scaffolded profiles carry the current Nix-managed defaults.
 - Each scaffolded profile currently uses `openai-codex/gpt-5.4`, with a Hermes-native `fallback_model` of `opencode-go/minimax-m2.7` and direct Gemini 3.1 Flash-Lite Preview overrides for the configured auxiliary tasks.
 
@@ -89,7 +89,7 @@ The container uses a small NixOS-managed unit graph:
 - `ghostship-hermes-user-tooling-refresh.timer`
   runs the same mutable toolchain refresh flow daily and also once shortly after boot
 - `ghostship-hermes-bootstrap.service`
-  is a repo-specific NixOS oneshot that reconciles the approved `assistant`, `operations`, and `supervisor` profiles after the managed Hermes config exists, writes the managed runtime env into each profile `.env`, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, and sets the sticky default profile to `assistant`
+  is a repo-specific NixOS oneshot that reconciles the approved `assistant`, `operations`, and `supervisor` profiles after the managed Hermes config exists, writes the managed runtime env into each profile `.env`, copies any staged shared/profile skill directories into the matching Hermes skill trees only when the destination skill does not already exist, and uses explicit `-p assistant` calls for assistant-facing bootstrap work instead of relying on `~/.hermes/active_profile`
 - `ghostship-hermes-profile-assistant.service`
   keeps the `assistant` gateway running with `hermes -p assistant gateway run --replace`
 - `ghostship-hermes-profile-operations.service`
@@ -157,7 +157,7 @@ The image is intentionally declarative-first:
 - The default Hermes-user PATH includes `/home/hermes/.local/bin`, `/home/hermes/.local/state/nix/profiles/ghostship-managed/bin`, and `/home/hermes/.nix-profile/bin` ahead of the fallback system toolchain so login shells and Hermes runtime commands discover the persisted mutable tool layers by default.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The root Hermes config is intentionally minimal in the current scaffold.
-- The declared profiles are `assistant`, `operations`, and `supervisor`, with `assistant` set as the sticky default.
+- The declared profiles are `assistant`, `operations`, and `supervisor`, and repo-owned assistant runtime calls use `hermes -p assistant` explicitly instead of a sticky active-profile file.
 - The current Nix scaffold gives each profile `provider = openai-codex` with `model.default = gpt-5.4`, plus a Hermes-native `fallback_model` of `opencode-go/minimax-m2.7`.
 - The current Nix scaffold also sets the shared Hermes timezone to `Pacific/Honolulu`.
 - The shared scaffold now also sets `agent.max_turns = 110`, `agent.reasoning_effort = "high"`, and `agent.verbose = false` for all three profiles.
@@ -179,7 +179,7 @@ The image is intentionally declarative-first:
 - The bootstrap writes the managed runtime env into each profile `.env` at `~/.hermes/profiles/<profile>/.env`. Each profile `.env` is the single operator-facing source of truth for that profile, and any managed env contract change must update the bootstrap writer so the regenerated `.env` files stay in sync.
 - Supported shared and profile-specific Discord runtime inputs are projected into the matching profile `.env` files during bootstrap when those values are present on the container, and bootstrap rewrites those files atomically from the current container env so managed gateway restarts do not race a partial `.env`.
 - The image publishes `/etc/ghostship-hermes-release` as the authoritative booted image release marker, and managed bootstrap mirrors that value into the persisted `/home/hermes/.ghostship-hermes-release` file on every boot so reused home state reflects the live image version.
-- Each managed profile gateway now owns `~/.hermes/profiles/<profile>/gateway.pid` through the repo-managed service wrapper and lifecycle hooks. Hermes doctor/status uses that pidfile as the live gateway health signal.
+- Each managed profile gateway now owns `~/.hermes/profiles/<profile>/gateway.pid` through the repo-managed service wrapper and lifecycle hooks, and the wrapper writes the final JSON pid record itself before `exec` so all three managed profiles keep a stable profile-local liveness marker even when Hermes' default-profile helpers disagree. Hermes doctor/status uses that pidfile as the live gateway health signal.
 - Shared skills still seed from `/home/hermes/seeds/shared/skills/<skill>` and profile-specific skills still seed from `/home/hermes/seeds/profiles/<profile>/skills/<skill>`, and per-profile `SOUL.md` files seed from `/home/hermes/seeds/profiles/<profile>/SOUL.md`, copying only missing skill directories into Hermes-owned state.
 
 Current scaffold env vars:
