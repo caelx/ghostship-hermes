@@ -109,8 +109,12 @@ After completing all artifacts, summarize:
 - If a change with that name already exists, ask if user wants to continue it or create a new one
 - Verify each artifact file exists after writing before proceeding to next
 
+
 <!-- ghostship:.codex-openspec-propose:begin -->
 ## Ghostship Override
 
 - Create and refine the proposal, design, and tasks on `main`.
+- When propose finishes, give the user a full summary of the proposed plan for review before moving on.
+- When working in a worktree, use Python-based file edits instead of `apply_patch`.
+- Verify the diff after each worktree file edit.
 <!-- ghostship:.codex-openspec-propose:end -->
