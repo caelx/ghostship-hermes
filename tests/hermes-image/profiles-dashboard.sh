@@ -116,6 +116,18 @@ run_as_hermes() {
     "$container_shell" -lc "$*"
 }
 
+run_as_hermes_default_path() {
+  local container_name="$1"
+  shift
+  docker exec \
+    -u 3000:3000 \
+    -e HOME=/home/hermes \
+    -e HERMES_HOME=/home/hermes/.hermes \
+    -e TERMINAL_CWD=/home/hermes \
+    "$container_name" \
+    "$container_shell" -lc "$*"
+}
+
 wait_for_router_ready() {
   local container_name="$1"
   local attempts="${2:-60}"
@@ -350,6 +362,10 @@ run_as_hermes "$container_name" 'hermes profile show supervisor >/dev/null'
 run_as_hermes "$container_name" 'test -d /home/hermes/.hermes/profiles/assistant && test -d /home/hermes/.hermes/profiles/operations && test -d /home/hermes/.hermes/profiles/supervisor'
 run_as_hermes "$container_name" '! test -d /home/hermes/.hermes/profiles/coder'
 run_as_hermes "$container_name" 'test "$(cat /home/hermes/.hermes/active_profile)" = "assistant"'
+run_as_hermes_default_path "$container_name" 'test "$(command -v codex)" = "/home/hermes/.local/bin/codex"'
+run_as_hermes_default_path "$container_name" 'test "$(command -v gemini)" = "/home/hermes/.local/bin/gemini"'
+run_as_hermes_default_path "$container_name" 'test "$(command -v opencode)" = "/home/hermes/.local/bin/opencode"'
+run_as_hermes_default_path "$container_name" 'test "$(command -v agent-browser)" = "/home/hermes/.local/bin/agent-browser"'
 run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'
 run_as_hermes "$container_name" 'test "$(command -v hermes)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/hermes"'
 run_as_hermes "$container_name" '! hermes --version 2>/dev/null | grep -F "legacy-default-hermes" >/dev/null'
@@ -359,6 +375,18 @@ run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Work
 run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Vision" | grep -F "gemini-3.1-flash-lite-preview" >/dev/null'
 run_as_hermes "$container_name" 'grep -F "provider: holographic" /home/hermes/.hermes/profiles/assistant/config.yaml >/dev/null'
 run_as_hermes "$container_name" 'grep -F "cloud_provider: local" /home/hermes/.hermes/profiles/assistant/config.yaml >/dev/null'
+run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERAL_CHANNEL_ID}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_ASSISTANT_BOT_TOKEN}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_ASSISTANT_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_ASSISTANT_CHANNEL_ID}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERAL_CHANNEL_ID}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_OPERATIONS_BOT_TOKEN}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_OPERATIONS_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_OPERATIONS_CHANNEL_ID}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERAL_CHANNEL_ID}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_SUPERVISOR_BOT_TOKEN}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_SUPERVISOR_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_SUPERVISOR_CHANNEL_ID}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 run_in_container "$container_name" 'systemctl is-active ghostship-dashboard-controller.service >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-assistant.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/workspace" >/dev/null'

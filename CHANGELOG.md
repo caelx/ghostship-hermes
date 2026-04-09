@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed the Hermes image bootstrap/runtime contract so the `hermes` user's default PATH now includes `/home/hermes/.local/bin` alongside the managed Nix profile bins, and the documented shared and per-profile Discord env vars are now passed through bootstrap and written into each managed profile `.env` so profile `.env` remains the single operator-facing source of truth for supported messaging configuration.
 - Pinned Hermes release updated to `v2026.4.8`.
 - Fixed Hermes release automation so scheduled pin bumps also update the `hermes-agent` flake input and lockfile, then explicitly dispatch the image publish workflow instead of relying on an Actions-authored `push` event.
 - Fixed the image build against Hermes `v2026.4.8` by providing the missing `setupSecrets` activation hook expected by the upstream Hermes NixOS module, and changed the `hermes` user tooling refresh path to replace the baked Hermes package from `github:caelx/ghostship-hermes#hermes-agent-wrapped` so an already-built image can live-upgrade Hermes in place.

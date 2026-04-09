@@ -154,6 +154,7 @@ The image is intentionally declarative-first:
 - Hermes managed config is written into `/home/hermes/.hermes`.
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image uses a dedicated managed profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed` to keep the baked `hermes` toolchain updateable on boot and during daily refreshes without colliding with the operator's default `~/.nix-profile`.
+- The default Hermes-user PATH includes `/home/hermes/.local/bin`, `/home/hermes/.local/state/nix/profiles/ghostship-managed/bin`, and `/home/hermes/.nix-profile/bin` ahead of the fallback system toolchain so login shells and Hermes runtime commands discover the persisted mutable tool layers by default.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The root Hermes config is intentionally minimal in the current scaffold.
 - The declared profiles are `assistant`, `operations`, and `supervisor`, with `assistant` set as the sticky default.
@@ -176,6 +177,7 @@ The image is intentionally declarative-first:
 - Hermes does not have a native per-profile Discord icon field. If you want distinct icons, each profile needs its own Discord application/bot, and you set the avatar/banner in the Discord Developer Portal for that bot.
 - All Hermes auxiliary tasks are pinned to Gemini 3.1 Flash-Lite Preview through the Google Gemini OpenAI-compatible endpoint using `${GOOGLE_AI_STUDIO_API_KEY}`. TTS is still intentionally left unconfigured for now.
 - The bootstrap writes the managed runtime env into each profile `.env` at `~/.hermes/profiles/<profile>/.env`. Each profile `.env` is the single operator-facing source of truth for that profile, and any managed env contract change must update the bootstrap writer so the regenerated `.env` files stay in sync.
+- Supported shared and profile-specific Discord runtime inputs are projected into the matching profile `.env` files during bootstrap when those values are present on the container, so the profile `.env` remains the visible operator-facing record for messaging configuration too.
 - Shared skills still seed from `/home/hermes/seeds/shared/skills/<skill>` and profile-specific skills still seed from `/home/hermes/seeds/profiles/<profile>/skills/<skill>`, and per-profile `SOUL.md` files seed from `/home/hermes/seeds/profiles/<profile>/SOUL.md`, copying only missing skill directories into Hermes-owned state.
 
 Current scaffold env vars:
@@ -199,7 +201,9 @@ Discord per-profile env vars:
 
 ### Expected doctor warnings
 
-The image only tries to clear `hermes doctor` warnings for the supported runtime surface. Optional integrations such as generic web-search providers, RL, image generation, and other unused third-party features remain intentionally out of scope. Remaining preview warnings should only come from intentionally unconfigured features or missing real runtime credentials, not from the packaged `agent-browser` path.
+The image only tries to clear `hermes doctor` warnings for the supported runtime surface. Optional integrations such as generic web-search providers, RL, image generation, and other unused third-party features remain intentionally out of scope. Remaining preview warnings should only come from intentionally unconfigured features or missing real runtime credentials, not from the packaged `agent-browser` path, the persisted CLI discovery path, or supported profile `.env` projection.
+
+For messaging specifically, `hermes doctor` only reports the toolset as available when the profile gateway is actually running. Projecting the supported Discord env into the managed profile `.env` removes the config gap that keeps the gateway unconfigured, but a gateway that is stopped or failed will still leave the messaging warning in place.
 
 The local preview container is intentionally bare unless you pass the same deployment env vars into it. `hermes doctor` on that preview will still report missing `OPENROUTER_API_KEY`, `GITHUB_TOKEN`/`GH_TOKEN`, `HASS_URL`, and `HASS_TOKEN` until you provide them; that is expected and does not mean the managed tooling layer failed.
 

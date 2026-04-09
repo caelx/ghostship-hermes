@@ -79,6 +79,18 @@ let
     "CAMOFOX_URL"
     "BROWSER_CDP_URL"
   ];
+  discordEnvKeys = [
+    "DISCORD_GENERAL_CHANNEL_ID"
+    "DISCORD_ASSISTANT_BOT_TOKEN"
+    "DISCORD_ASSISTANT_ALLOWED_USERS"
+    "DISCORD_ASSISTANT_CHANNEL_ID"
+    "DISCORD_OPERATIONS_BOT_TOKEN"
+    "DISCORD_OPERATIONS_ALLOWED_USERS"
+    "DISCORD_OPERATIONS_CHANNEL_ID"
+    "DISCORD_SUPERVISOR_BOT_TOKEN"
+    "DISCORD_SUPERVISOR_ALLOWED_USERS"
+    "DISCORD_SUPERVISOR_CHANNEL_ID"
+  ];
   toolingProjectRoot = "/home/hermes/.hermes/hermes-agent";
   managedUserProfile = "/home/hermes/.local/state/nix/profiles/ghostship-managed";
   managedUserPackages = [
@@ -270,6 +282,8 @@ let
     name = "ghostship-hermes-fallback-env";
     paths = servicePath;
   };
+  hermesUserPathPrefix = "/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin";
+  hermesUserDefaultPath = "${hermesUserPathPrefix}:${fallbackCommandEnv}/bin";
   profileDefinitions = lib.genAttrs managedProfiles (
     profile:
     let
@@ -289,7 +303,7 @@ let
       gatewayScript = pkgs.writeShellScript "ghostship-hermes-profile-${profile}-gateway.sh" ''
         set -euo pipefail
 
-        export PATH="/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin:$PATH"
+        export PATH="${hermesUserPathPrefix}:$PATH"
 
         exec hermes -p ${profile} gateway run --replace
       '';
@@ -332,7 +346,7 @@ let
   bootstrapHermesScript = pkgs.writeShellScript "ghostship-hermes-bootstrap.sh" ''
     set -euo pipefail
 
-    export PATH="/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin:$PATH"
+    export PATH="${hermesUserPathPrefix}:$PATH"
 
     profiles_root="${managedProfileRoot}"
     mkdir -p "$profiles_root"
@@ -466,7 +480,7 @@ let
     export GHOSTSHIP_HERMES_PROJECT_ROOT="''${GHOSTSHIP_HERMES_PROJECT_ROOT:-${toolingProjectRoot}}"
     export GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF="''${GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF:-${runtimeFlakeRefDefault}}"
     export GHOSTSHIP_HERMES_MANAGED_PROFILE="''${GHOSTSHIP_HERMES_MANAGED_PROFILE:-${managedUserProfile}}"
-    export PATH="$HOME/.local/bin:$GHOSTSHIP_HERMES_MANAGED_PROFILE/bin:$HOME/.nix-profile/bin:${lib.makeBinPath servicePath}:$PATH"
+    export PATH="${hermesUserPathPrefix}:${lib.makeBinPath servicePath}:$PATH"
     export npm_config_update_notifier=false
     export npm_config_fund=false
     export npm_config_cache="$HOME/.cache/npm"
@@ -598,11 +612,22 @@ in
 
   environment.variables = serviceEnvironment;
   environment.systemPackages = systemPackages;
+  environment.etc."profile.d/ghostship-hermes-user-path.sh".text = ''
+    if [ "$(id -u)" = "3000" ]; then
+      export HOME=/home/hermes
+      export PATH="${hermesUserDefaultPath}:$PATH"
+      export HERMES_HOME=/home/hermes/.hermes
+      export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}
+      export TERMINAL_CWD=/workspace
+      export SSL_CERT_FILE=${certificateFile}
+      export NIX_SSL_CERT_FILE=${certificateFile}
+    fi
+  '';
   environment.shellInit = ''
     if [ "$(id -u)" = "3000" ]; then
       export HOME=/home/hermes
     fi
-    export PATH="/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin:${fallbackCommandEnv}/bin:$PATH"
+    export PATH="${hermesUserDefaultPath}:$PATH"
     export HERMES_HOME=/home/hermes/.hermes
     export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}
     export TERMINAL_CWD=/workspace
@@ -727,7 +752,7 @@ in
       PassEnvironment = [
         "GHOSTSHIP_HERMES_SHARED_SKILLS_DIR"
         "GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT"
-      ] ++ sharedHermesEnvKeys;
+      ] ++ sharedHermesEnvKeys ++ discordEnvKeys;
       ExecStart = bootstrapHermesScript;
     };
   };
