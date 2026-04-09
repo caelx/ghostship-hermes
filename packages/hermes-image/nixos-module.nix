@@ -295,6 +295,7 @@ let
       name = profile;
       profileRoot = profileRoot;
       configPath = "${profileRoot}/config.yaml";
+      gatewayPidPath = "${profileRoot}/gateway.pid";
       soulPath = "${profileRoot}/SOUL.md";
       skillPath = "${profileRoot}/skills";
       serviceName = "ghostship-hermes-profile-${profile}";
@@ -304,8 +305,17 @@ let
         set -euo pipefail
 
         export PATH="${hermesUserPathPrefix}:$PATH"
+        printf '%s\n' "$$" > ${lib.escapeShellArg "${profileRoot}/gateway.pid"}
 
         exec hermes -p ${profile} gateway run --replace
+      '';
+      gatewayPreStartScript = pkgs.writeShellScript "ghostship-hermes-profile-${profile}-pre-start.sh" ''
+        set -euo pipefail
+        rm -f ${lib.escapeShellArg "${profileRoot}/gateway.pid"}
+      '';
+      gatewayPostStopScript = pkgs.writeShellScript "ghostship-hermes-profile-${profile}-post-stop.sh" ''
+        set -euo pipefail
+        rm -f ${lib.escapeShellArg "${profileRoot}/gateway.pid"}
       '';
       configFile = yamlFormat.generate "ghostship-hermes-profile-${profile}-config.yaml" (mkProfileConfig profile profileDef);
     }
@@ -338,7 +348,9 @@ let
         Group = "hermes";
         WorkingDirectory = profileDef.serviceWorkingDirectory;
         EnvironmentFile = [ "-${profileDef.profileRoot}/.env" ];
+        ExecStartPre = profileDef.gatewayPreStartScript;
         ExecStart = profileDef.gatewayScript;
+        ExecStopPost = profileDef.gatewayPostStopScript;
         Restart = "always";
         RestartSec = "2s";
       };
@@ -350,6 +362,10 @@ let
 
     profiles_root="${managedProfileRoot}"
     mkdir -p "$profiles_root"
+
+    if [ -f /etc/ghostship-hermes-release ]; then
+      install -D -m 0644 /etc/ghostship-hermes-release /home/hermes/.ghostship-hermes-release
+    fi
 
     for existing in "$profiles_root"/*; do
       [ -d "$existing" ] || continue
@@ -423,7 +439,13 @@ let
       bot_token_env="''${3:-}"
       allowed_users_env="''${4:-}"
       role_channel_env="''${5:-}"
+      target_dir="$(dirname "$target")"
+      tmp_target="$(mktemp "$target_dir/.env.tmp.XXXXXX")"
       general_channel="''${DISCORD_GENERAL_CHANNEL_ID:-}"
+      cleanup_tmp() {
+        rm -f "$tmp_target"
+      }
+      trap cleanup_tmp EXIT
       umask 077
       {
         printf 'TERMINAL_CWD=%s\n' "$terminal_cwd"
@@ -457,7 +479,10 @@ let
         if [ -n "$general_channel" ]; then
           printf 'DISCORD_HOME_CHANNEL=%s\n' "$general_channel"
         fi
-      } >"$target"
+      } >"$tmp_target"
+      chmod 0600 "$tmp_target"
+      mv -f "$tmp_target" "$target"
+      trap - EXIT
     }
 
     write_profile_env "${profileDefinitions.assistant.profileRoot}/.env" "${profileDefinitions.assistant.serviceWorkingDirectory}" "${profileDefinitions.assistant.discordBotTokenEnv}" "${profileDefinitions.assistant.discordAllowedUsersEnv}" "${profileDefinitions.assistant.discordChannelEnv}"

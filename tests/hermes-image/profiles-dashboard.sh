@@ -177,6 +177,15 @@ assert_model_config() {
   run_as_hermes "$container_name" "$command | grep -F 'default: $expected_model' >/dev/null"
 }
 
+assert_gateway_pid_contract() {
+  local container_name="$1"
+  local profile="$2"
+
+  run_as_hermes "$container_name" "pid=\$(cat /home/hermes/.hermes/profiles/$profile/gateway.pid); test -n \"\$pid\"; kill -0 \"\$pid\""
+  run_as_hermes "$container_name" "pid=\$(cat /home/hermes/.hermes/profiles/$profile/gateway.pid); ps -p \"\$pid\" -o args= | grep -F \" -p $profile gateway run --replace\" >/dev/null"
+  run_as_hermes "$container_name" "hermes -p $profile gateway status | grep -F 'Gateway is running' >/dev/null"
+}
+
 assert_websocket_proxy() {
   local terminal_url="$1"
   python3 - "$terminal_url" "$dashboard_port" <<'PY'
@@ -356,6 +365,7 @@ run_in_container "$container_name" 'systemctl is-active ghostship-hermes-router.
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-assistant.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-operations.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-profile-supervisor.service >/dev/null'
+run_in_container "$container_name" 'test "$(cat /etc/ghostship-hermes-release)" = "$(cat /home/hermes/.ghostship-hermes-release)"'
 run_as_hermes "$container_name" 'hermes profile show assistant >/dev/null'
 run_as_hermes "$container_name" 'hermes profile show operations >/dev/null'
 run_as_hermes "$container_name" 'hermes profile show supervisor >/dev/null'
@@ -387,7 +397,17 @@ run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERA
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_SUPERVISOR_BOT_TOKEN}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_SUPERVISOR_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_SUPERVISOR_CHANNEL_ID}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+assert_gateway_pid_contract "$container_name" assistant
+assert_gateway_pid_contract "$container_name" operations
+assert_gateway_pid_contract "$container_name" supervisor
 run_in_container "$container_name" 'systemctl is-active ghostship-dashboard-controller.service >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-assistant.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-supervisor.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
+run_as_hermes "$container_name" 'printf "DISCORD_FREE_RESPONSE_CHANNELS=stale\n" >> /home/hermes/.hermes/profiles/assistant/.env'
+run_as_hermes "$container_name" 'bootstrap_script="$(systemctl cat ghostship-hermes-bootstrap.service | sed -n '\''s/^ExecStart=//p'\'' | head -n1)"; test -n "$bootstrap_script"; env -u DISCORD_ASSISTANT_CHANNEL_ID "$bootstrap_script"'
+run_as_hermes "$container_name" '! grep -F "DISCORD_FREE_RESPONSE_CHANNELS=stale" /home/hermes/.hermes/profiles/assistant/.env >/dev/null'
+run_as_hermes "$container_name" '! grep -F "DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_ASSISTANT_CHANNEL_ID}" /home/hermes/.hermes/profiles/assistant/.env >/dev/null'
+run_as_hermes "$container_name" 'bootstrap_script="$(systemctl cat ghostship-hermes-bootstrap.service | sed -n '\''s/^ExecStart=//p'\'' | head -n1)"; test -n "$bootstrap_script"; "$bootstrap_script"'
+run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_ASSISTANT_CHANNEL_ID}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+assert_gateway_pid_contract "$container_name" assistant
