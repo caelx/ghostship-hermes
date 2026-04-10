@@ -16,7 +16,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/nix-installer-action@main
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes

@@ -404,9 +404,7 @@ Image output contract:
 
 Optional GitHub Actions cache acceleration:
 
-- Without any repo secrets, the workflows now fall back to `DeterminateSystems/magic-nix-cache-action` so GitHub Actions can still reuse Nix store paths across runs.
-- Set repository variable `CACHIX_CACHE_NAME` to enable a Cachix substituter for CI and image publication when you want an explicit shared binary cache.
-- Set repository secret `CACHIX_AUTH_TOKEN` if GitHub Actions should push newly built store paths back into that Cachix cache.
+- The workflows use `DeterminateSystems/nix-installer-action` plus `DeterminateSystems/magic-nix-cache-action`, so GitHub Actions can reuse Nix store paths across runs without any paid cache service.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.

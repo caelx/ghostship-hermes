@@ -35,21 +35,13 @@ jobs:
             scripts/python_utility.py
           cache-suffix: searxng-ci
 
-      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/nix-installer-action@main
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Enable GitHub Actions Nix cache fallback
-        if: vars.CACHIX_CACHE_NAME == ''
+      - name: Enable GitHub Actions Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@main
-
-      - name: Enable Cachix substituter
-        if: vars.CACHIX_CACHE_NAME != ''
-        uses: cachix/cachix-action@v15
-        with:
-          name: ${{ vars.CACHIX_CACHE_NAME }}
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Validate flake evaluation
         # Keep this step at evaluation-only scope so it catches broken flake

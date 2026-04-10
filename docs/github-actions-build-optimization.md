@@ -33,8 +33,7 @@ Optimization rounds are implemented in this order:
 
 1. Conservative publish gating so docs-only and OpenSpec-only `main` pushes do not publish images.
 2. Cache-backed reuse:
-   - default GitHub Actions Nix-store reuse through `DeterminateSystems/magic-nix-cache-action` when no explicit Cachix cache is configured
-   - optional Cachix-backed Nix substitution via `vars.CACHIX_CACHE_NAME` and `secrets.CACHIX_AUTH_TOKEN`
+   - GitHub Actions Nix-store reuse through `DeterminateSystems/magic-nix-cache-action`
    - native `uv` caching for the Python utility steps in `ci`
 3. Architectural publish optimization by pushing architecture-specific images directly from the build jobs and reserving the final manifest job for manifest creation only.
 
@@ -54,9 +53,5 @@ python3 scripts/github_actions_timings.py --workflow publish-image.yml --include
 
 ## Cache Notes
 
-Cachix is optional so the workflows still function in forks or repos without cache credentials. When Cachix is not configured, the workflows fall back to the GitHub Actions-backed Magic Nix Cache.
-
-- Set repository variable `CACHIX_CACHE_NAME` to enable pull access to a named Cachix cache.
-- Set repository secret `CACHIX_AUTH_TOKEN` to allow GitHub Actions to push newly built store paths into Cachix.
-- When Cachix is absent or cold, Magic Nix Cache can still reuse store paths across Actions runs without extra secrets.
+The workflows use GitHub-hosted Nix caching only. `DeterminateSystems/nix-installer-action` installs Nix, and `DeterminateSystems/magic-nix-cache-action` provides the reusable store-path cache without extra secrets or a paid cache service.
 - `uv` cache keys are derived from the tracked Python utility inputs and lockfiles, so dependency changes create a new cache key automatically.
