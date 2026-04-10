@@ -18,6 +18,11 @@ The Hermes image SHALL project the documented shared and per-profile Discord run
 - **AND** the shared mention-only channel is written as the shared home-channel setting
 - **AND** each profile-specific bot token, allowed-user list, and free-response channel mapping is written only to that profile's `.env`
 
+#### Scenario: Managed Discord scaffold disables automatic thread creation
+- **WHEN** bootstrap materializes or refreshes the managed `assistant`, `operations`, and `supervisor` profile config
+- **THEN** each managed profile sets Hermes Discord `auto_thread` to `false`
+- **AND** the managed runtime does not create Discord threads automatically for any managed profile channel by default
+
 #### Scenario: Missing Discord values are removed from the rewritten managed `.env`
 - **WHEN** a previously projected profile-specific Discord value is no longer present on the container during a later managed bootstrap run
 - **THEN** bootstrap omits that value from the rewritten profile `.env`

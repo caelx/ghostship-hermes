@@ -11,8 +11,6 @@ The workstation SHALL wire the runtime dependencies, managed-state markers, and 
 - **AND** healthy managed profile gateways do not appear stopped because the active interactive Hermes wrapper comes from an older persisted managed-profile revision than the currently booted image
 - **AND** intentionally unsupported optional integrations may still report warnings
 
-## ADDED Requirements
-
 ### Requirement: Managed gateway health reporting matches runtime truth
 The workstation SHALL keep operator-facing gateway health output aligned with the actual managed profile runtime.
 
@@ -20,8 +18,3 @@ The workstation SHALL keep operator-facing gateway health output aligned with th
 - **WHEN** the managed profile gateway services are active after an image replacement with persisted `/home/hermes`
 - **THEN** operator-facing health output reports those profile gateways as running
 - **AND** status output does not regress to a false stopped state because the managed profile still resolves an older Hermes wrapper generation
-
-#### Scenario: Managed runtime guidance replaces upstream recovery instructions
-- **WHEN** the operator asks Hermes for managed gateway status or recovery guidance inside the image
-- **THEN** the guidance references the repo-managed runtime contract
-- **AND** it does not recommend upstream user-service recovery steps that are incompatible with the image's managed systemd topology
