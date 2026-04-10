@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Changed the managed Hermes display defaults so scaffolded profiles now use `display.streaming = true`, `display.tool_preview_length = 0`, and `display.tool_progress = "verbose"` while keeping top-level gateway streaming enabled separately.
 - Fixed persisted user-layer convergence in the Hermes image so boot-time managed tooling removes stale repo-owned Nix-profile entries, rewrites the managed npm CLI project and `.local/bin` links to the declared set, keeps the resolved `hermes` binary aligned with the current image generation after replacement, and disables Discord `auto_thread` in the managed `assistant`, `operations`, and `supervisor` profile scaffold.
 - Changed the Hermes image to stop relying on a sticky `active_profile` file for the managed assistant flow: repo-owned assistant runtime checks now use `hermes -p assistant` explicitly, bootstrap clears `~/.hermes/active_profile`, and the managed gateway wrapper now writes the full profile-local JSON `gateway.pid` record itself so `assistant`, `operations`, and `supervisor` keep stable liveness markers.
 - Fixed the Hermes image bootstrap/runtime state contract so managed bootstrap now mirrors `/etc/ghostship-hermes-release` into the persisted `/home/hermes/.ghostship-hermes-release` file on every boot, rewrites managed profile `.env` files atomically from the current container env, and keeps repo-managed `gateway.pid` files aligned with the live `assistant`, `operations`, and `supervisor` gateway services.

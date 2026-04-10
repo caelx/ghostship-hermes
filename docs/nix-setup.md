@@ -184,12 +184,20 @@ services.hermes-agent.settings = {
 
 # personality.nix
 services.hermes-agent.settings = {
-  display = { compact = false; personality = "kawaii"; };
+  display = {
+    compact = false;
+    streaming = true;
+    tool_preview_length = 0;
+    tool_progress = "verbose";
+    personality = "kawaii";
+  };
   memory = { memory_enabled = true; user_profile_enabled = true; };
 };
 ```
 
 Both are deep-merged at evaluation time. Nix-declared keys always win over keys in an existing `config.yaml` on disk, but **user-added keys that Nix doesn't touch are preserved**. This means if the agent or a manual edit adds keys like `skills.disabled` or `streaming.enabled`, they survive `nixos-rebuild switch`.
+
+For this repo's managed Hermes image, the shared scaffold uses verbose CLI display defaults: `display.streaming = true`, `display.tool_preview_length = 0`, and `display.tool_progress = "verbose"`. Those `display.*` keys affect the interactive CLI view, while the separate top-level `streaming.*` block controls gateway-side progressive message editing.
 
 :::note Model naming
 `settings.model.default` uses the model identifier your provider expects. With [OpenRouter](https://openrouter.ai) (the default), these look like `"anthropic/claude-sonnet-4"` or `"google/gemini-3-flash"`. If you're using a provider directly (Anthropic, OpenAI), set `settings.model.base_url` to point at their API and use their native model IDs (e.g., `"claude-sonnet-4-20250514"`). When no `base_url` is set, Hermes defaults to OpenRouter.
@@ -223,7 +231,13 @@ Run `nix build .#configKeys && cat result` to see every leaf config key extracte
         summary_model = "google/gemini-3-flash-preview";
       };
       memory = { memory_enabled = true; user_profile_enabled = true; };
-      display = { compact = false; personality = "kawaii"; };
+      display = {
+        compact = false;
+        streaming = true;
+        tool_preview_length = 0;
+        tool_progress = "verbose";
+        personality = "kawaii";
+      };
       agent = { max_turns = 60; verbose = false; };
     };
 

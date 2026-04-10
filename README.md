@@ -169,8 +169,8 @@ The image is intentionally declarative-first:
 - The shared scaffold now also sets `approvals.mode = "off"` for a trusted, non-interactive runtime posture.
 - The shared scaffold also enables Hermes secret redaction and Tirith integration (`tirith_enabled = true`, `tirith_fail_open = true`) while leaving the website blocklist scaffold disabled by default.
 - The shared scaffold also enables Hermes checkpoints with `max_snapshots = 50` so file mutations retain rollback history.
-- The shared scaffold also enables streaming updates with `transport = "edit"`, `edit_interval = 0.3`, and `buffer_threshold = 40`.
-- The shared scaffold also sets display defaults with `compact = false`, `tool_progress = "new"`, and `background_process_notifications = "result"`.
+- The shared scaffold also enables gateway streaming updates with `transport = "edit"`, `edit_interval = 0.3`, and `buffer_threshold = 40`.
+- The shared scaffold also sets display defaults with `compact = false`, `streaming = true`, `tool_preview_length = 0`, `tool_progress = "verbose"`, and `background_process_notifications = "result"`. In Hermes, this `display.streaming` flag controls CLI token streaming, while the top-level `streaming` block above controls progressive gateway message edits.
 - The shared scaffold explicitly disables STT with `stt.enabled = false`.
 - The shared scaffold also disables artificial response delay with `human_delay.mode = "off"`.
 - Each profile config now also scaffolds Hermes `discord` defaults with `require_mention = true`, `auto_thread = false`, `reactions = true`, and `group_sessions_per_user = true`. The gateway service then maps profile-specific env vars into Hermes' standard Discord env names so a shared `DISCORD_GENERAL_CHANNEL_ID` stays mention-only while each profile's `DISCORD_<PROFILE>_CHANNEL_ID` becomes that bot's free-response role channel without opening new Discord threads automatically.
