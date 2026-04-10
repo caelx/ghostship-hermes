@@ -316,11 +316,13 @@ let
         reactions = true;
       };
       display = {
-        compact = false;
+        compact = true;
         streaming = true;
-        tool_preview_length = 0;
-        tool_progress = "verbose";
+        tool_progress = "all";
         background_process_notifications = "result";
+        bell_on_complete = false;
+        show_reasoning = false;
+        skin = "default";
       };
       group_sessions_per_user = true;
       terminal = {
