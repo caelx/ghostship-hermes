@@ -6,16 +6,45 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up uv cache
+        uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            packages/searxng-cli/pyproject.toml
+            packages/searxng-cli/uv.lock
+            packages/ghostship-cli-contract/pyproject.toml
+            scripts/python_utility.py
+          cache-suffix: searxng-ci
 
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+
+      - name: Enable Cachix substituter
+        if: vars.CACHIX_CACHE_NAME != ''
+        uses: cachix/cachix-action@v15
+        with:
+          name: ${{ vars.CACHIX_CACHE_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Validate flake evaluation
         # Keep this step at evaluation-only scope so it catches broken flake
@@ -24,10 +53,10 @@ jobs:
         run: nix flake check --no-build
 
       - name: Run Python utility tests
-        run: nix develop -c python3 scripts/python_utility.py test packages/searxng-cli
+        run: python3 scripts/python_utility.py test packages/searxng-cli
 
       - name: Build Python utility package
-        run: nix develop -c python3 scripts/python_utility.py build packages/searxng-cli
+        run: python3 scripts/python_utility.py build packages/searxng-cli
 
       - name: Build runtime package
         run: nix build .#packages.x86_64-linux.ghostship-hermes-runtime

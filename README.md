@@ -380,12 +380,16 @@ nix eval .#packages.aarch64-linux.ghostship-hermes-image.drvPath --raw
 
 Full `aarch64-linux` publishable image builds require an arm64-capable runner or
 builder. The GitHub `publish-image` workflow uses `ubuntu-24.04-arm` for the
-arm64 release leg and keeps x86-host validation paths at `nix eval`.
+arm64 release leg, keeps x86-host validation paths at `nix eval`, and only runs
+automatically for image-affecting `main` pushes.
 The scheduled `update-hermes-release` workflow tracks the upstream
 `NousResearch/hermes-agent` release feed, updates the pinned flake input and
 lockfile when a new tag lands, and then explicitly dispatches
 `publish-image.yml` so the new Hermes build is published even though the pin
-bump commit itself is created by GitHub Actions.
+bump commit itself is created by GitHub Actions. The publish workflow now pushes
+architecture-specific tags directly from the native build jobs and leaves the
+final manifest job responsible only for multi-arch manifest creation, which
+removes the old artifact upload/download hop from the critical path.
 Inside a running container, the `hermes` user tooling refresh path keeps an
 offline bootstrap package for first boot, but refreshes Hermes itself from
 `github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already
@@ -397,6 +401,12 @@ that source with `GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF` if you need to point at a
 fork or branch.
 
 Image output contract:
+
+Optional GitHub Actions cache acceleration:
+
+- Set repository variable `CACHIX_CACHE_NAME` to enable a Cachix substituter for CI and image publication.
+- Set repository secret `CACHIX_AUTH_TOKEN` if GitHub Actions should push newly built store paths back into that cache.
+- The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.
 - `ghostship-hermes-image` is the explicit publishable image bundle consumed by `scripts/export_publishable_image.sh`, the GHCR publish workflow, and the dashboard smoke test.
