@@ -36,7 +36,7 @@ This image intentionally does not ship the old Ghostship workstation layer. Goog
 The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence installs and updates the mutable toolchain under `/home/hermes`:
 
 - user Nix profile tools: `hermes`, `git`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, `node`, `npm`
-- npm-managed agent CLIs: `codex`, `gemini`, `opencode`, `agent-browser`
+- npm-managed agent CLIs: `codex`, `opencode`, `agent-browser`
 
 The immutable layer stays focused on boot/supervision plus the repo-owned runtime surface:
 
@@ -56,7 +56,7 @@ Canonical persistent roots:
 - `/workspace`
 - `/nix`
 
-Persisting the whole home mount keeps browser and agent tooling state persistent across container replacement. That includes XDG state, `~/.agents`, `~/.agent-browser`, `~/.codex`, `~/.gemini`, `~/.copilot`, `~/.npm`, `~/.bun`, `~/.ssh`, `~/.gnupg`, and any other future tool state created under `/home/hermes`.
+Persisting the whole home mount keeps browser and agent tooling state persistent across container replacement. That includes XDG state, `~/.agents`, `~/.agent-browser`, `~/.codex`, `~/.copilot`, `~/.npm`, `~/.bun`, `~/.ssh`, `~/.gnupg`, and any other future tool state created under `/home/hermes`.
 
 ## `/home/hermes` Layout
 

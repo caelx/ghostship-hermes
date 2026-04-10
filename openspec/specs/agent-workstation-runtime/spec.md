@@ -4,7 +4,7 @@
 The workstation SHALL use already-installed local apps, persisted local state, and the active managed-runtime identity during normal invocation rather than requiring live network refresh in the hot path or falling back to service-discovery assumptions that do not match the managed image topology.
 
 #### Scenario: Local invocation uses the managed layered toolchain
-- **WHEN** the agent invokes `hermes`, `codex`, `gemini-cli`, `opencode`, `agent-browser`, or related runtime commands
+- **WHEN** the agent invokes `hermes`, `codex`, `opencode`, `agent-browser`, or related runtime commands
 - **THEN** the invocation uses the currently installed local state from the managed user Nix profile or the managed persisted npm tool prefix
 - **AND** the Hermes-user runtime contract exposes `/home/hermes/.local/bin` and the managed user profile bin on the normal invocation path for those commands
 - **AND** the invocation does not first require a live update round trip during that invocation
