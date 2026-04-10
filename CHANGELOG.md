@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed the Hermes image `agent-browser` runtime wiring so boot-time managed tooling no longer replaces the working image-packaged `agent-browser` with a broken mutable npm shim on arm64, while keeping Hermes local browser mode and `hermes doctor` aligned with the supported image-managed path.
 - Changed the managed Hermes display defaults so scaffolded profiles now use `display.streaming = true`, `display.tool_preview_length = 0`, and `display.tool_progress = "verbose"` while keeping top-level gateway streaming enabled separately.
 - Fixed persisted user-layer convergence in the Hermes image so boot-time managed tooling removes stale repo-owned Nix-profile entries, rewrites the managed npm CLI project and `.local/bin` links to the declared set, keeps the resolved `hermes` binary aligned with the current image generation after replacement, and disables Discord `auto_thread` in the managed `assistant`, `operations`, and `supervisor` profile scaffold.
 - Changed the Hermes image to stop relying on a sticky `active_profile` file for the managed assistant flow: repo-owned assistant runtime checks now use `hermes -p assistant` explicitly, bootstrap clears `~/.hermes/active_profile`, and the managed gateway wrapper now writes the full profile-local JSON `gateway.pid` record itself so `assistant`, `operations`, and `supervisor` keep stable liveness markers.
