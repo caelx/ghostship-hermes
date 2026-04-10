@@ -20,7 +20,7 @@ The Hermes image SHALL project the full supported shared profile-facing runtime 
 #### Scenario: Shared provider, browser, and workflow env are available during bootstrap
 - **WHEN** supported shared profile-facing env are present on the container during managed bootstrap
 - **THEN** each managed profile `.env` contains the matching shared profile-facing env values needed by that profile runtime
-- **AND** the shared projection includes provider credentials, browser-provider configuration, Bitwarden access, Home Assistant access, GitHub workflow auth, and supported custom-endpoint overrides that belong to profile-facing runtime behavior
+- **AND** the shared projection includes provider credentials, browser-provider configuration, Bitwarden access, Home Assistant access, GitHub workflow auth, supported custom-endpoint overrides, and the utility/service env needed by the installed `ghostship-*` CLIs and router-invoked utility calls
 
 #### Scenario: Shared projection uses the approved allowlist instead of mirroring all container env
 - **WHEN** bootstrap rewrites a managed profile `.env`
