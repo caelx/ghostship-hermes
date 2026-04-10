@@ -175,10 +175,12 @@ The image is intentionally declarative-first:
 - The shared scaffold explicitly disables STT with `stt.enabled = false`.
 - The shared scaffold also disables artificial response delay with `human_delay.mode = "off"`.
 - Each profile config now also scaffolds Hermes `discord` defaults with `require_mention = true`, `auto_thread = false`, `reactions = true`, and `group_sessions_per_user = true`. The gateway service then maps profile-specific env vars into Hermes' standard Discord env names so a shared `DISCORD_GENERAL_CHANNEL_ID` stays mention-only while each profile's `DISCORD_<PROFILE>_CHANNEL_ID` becomes that bot's free-response role channel without opening new Discord threads automatically.
+- Each managed profile gateway now also enables the Hermes webhook adapter with a fixed per-profile port map: `assistant` on `8644`, `operations` on `8645`, and `supervisor` on `8646`.
 - Hermes does not have a native per-profile Discord icon field. If you want distinct icons, each profile needs its own Discord application/bot, and you set the avatar/banner in the Discord Developer Portal for that bot.
 - All Hermes auxiliary tasks are pinned to Gemini 3.1 Flash-Lite Preview through the Google Gemini OpenAI-compatible endpoint using `${GOOGLE_AI_STUDIO_API_KEY}`. TTS is still intentionally left unconfigured for now.
 - The bootstrap writes the managed runtime env into each profile `.env` at `~/.hermes/profiles/<profile>/.env`. Each profile `.env` is the single operator-facing source of truth for that profile, and any managed env contract change must update the bootstrap writer so the regenerated `.env` files stay in sync.
 - Supported shared and profile-specific Discord runtime inputs are projected into the matching profile `.env` files during bootstrap when those values are present on the container, and bootstrap rewrites those files atomically from the current container env so managed gateway restarts do not race a partial `.env`.
+- Bootstrap also writes per-profile webhook listener env into each managed profile `.env`: `WEBHOOK_ENABLED=true`, a fixed `WEBHOOK_PORT`, and `WEBHOOK_SECRET` projected from the matching deployment-provided profile secret only for that profile.
 - The image publishes `/etc/ghostship-hermes-release` as the authoritative booted image release marker, and managed bootstrap mirrors that value into the persisted `/home/hermes/.ghostship-hermes-release` file on every boot so reused home state reflects the live image version.
 - Each managed profile gateway now owns `~/.hermes/profiles/<profile>/gateway.pid` through the repo-managed service wrapper and lifecycle hooks, and the wrapper writes the final JSON pid record itself before `exec` so all three managed profiles keep a stable profile-local liveness marker even when Hermes' default-profile helpers disagree. Hermes doctor/status uses that pidfile as the live gateway health signal.
 - Shared skills still seed from `/home/hermes/seeds/shared/skills/<skill>` and profile-specific skills still seed from `/home/hermes/seeds/profiles/<profile>/skills/<skill>`, copying only missing skill directories into Hermes-owned state. Per-profile `SOUL.md` files still seed from `/home/hermes/seeds/profiles/<profile>/SOUL.md`, but bootstrap now treats them as seed-managed files: it replaces the old Hermes-generated generic prompt during migration and keeps future seed updates in sync only while the live profile `SOUL.md` still matches the last seeded hash. Once an operator or agent edits the live profile `SOUL.md`, bootstrap stops overwriting it.
@@ -191,6 +193,14 @@ Discord per-profile env vars:
 - Assistant bot: `DISCORD_ASSISTANT_BOT_TOKEN`, `DISCORD_ASSISTANT_ALLOWED_USERS`, `DISCORD_ASSISTANT_CHANNEL_ID`
 - Operations bot: `DISCORD_OPERATIONS_BOT_TOKEN`, `DISCORD_OPERATIONS_ALLOWED_USERS`, `DISCORD_OPERATIONS_CHANNEL_ID`
 - Supervisor bot: `DISCORD_SUPERVISOR_BOT_TOKEN`, `DISCORD_SUPERVISOR_ALLOWED_USERS`, `DISCORD_SUPERVISOR_CHANNEL_ID`
+
+Webhook per-profile env vars:
+
+- Assistant listener: fixed `WEBHOOK_PORT=8644`, secret source `WEBHOOK_ASSISTANT_SECRET`
+- Operations listener: fixed `WEBHOOK_PORT=8645`, secret source `WEBHOOK_OPERATIONS_SECRET`
+- Supervisor listener: fixed `WEBHOOK_PORT=8646`, secret source `WEBHOOK_SUPERVISOR_SECRET`
+- The image scaffold always writes `WEBHOOK_ENABLED=true` for all three managed profile gateways.
+- This repo does not generate or persist webhook secrets. Downstream deployment config such as `nixos-config` must supply the three `WEBHOOK_*_SECRET` values.
 
 - Required for the planned Hermes model setup: `OPENCODE_GO_API_KEY` and `GOOGLE_AI_STUDIO_API_KEY`
 - Recommended shared runtime env for doctor-clean supported features: `OPENROUTER_API_KEY`, `GITHUB_TOKEN` or `GH_TOKEN`, `HASS_URL`, `HASS_TOKEN`
@@ -222,7 +232,7 @@ Hermes does not fully materialize its skills hub state until you exercise it onc
 
 Each profile has one operator-facing source of truth for managed runtime env: `~/.hermes/profiles/<profile>/.env`. The managed gateway services load that file with `EnvironmentFile`, and bootstrap rewrites it on every reconcile. If you change the managed runtime env contract, update the bootstrap writer in `packages/hermes-image/nixos-module.nix` so the regenerated profile `.env` files match the new contract. The root `~/.hermes/.env` is not used by the managed profile gateways in this image.
 
-Treat the profile `.env` as the canonical place for profile-facing runtime configuration: Hermes provider credentials, browser configuration, Discord settings, Bitwarden access, and operator-facing CLI/service env for tools the profile is expected to use. Keep only image infrastructure, router-daemon internals, and container boot plumbing outside the profile `.env` files.
+Treat the profile `.env` as the canonical place for profile-facing runtime configuration: Hermes provider credentials, browser configuration, Discord settings, webhook listener settings, Bitwarden access, and operator-facing CLI/service env for tools the profile is expected to use. Keep only image infrastructure, router-daemon internals, and container boot plumbing outside the profile `.env` files.
 
 ## Manual provider configuration per profile
 

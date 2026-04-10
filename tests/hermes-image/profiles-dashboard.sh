@@ -300,6 +300,9 @@ docker run -d \
   -e DISCORD_SUPERVISOR_BOT_TOKEN \
   -e DISCORD_SUPERVISOR_ALLOWED_USERS \
   -e DISCORD_SUPERVISOR_CHANNEL_ID \
+  -e WEBHOOK_ASSISTANT_SECRET \
+  -e WEBHOOK_OPERATIONS_SECRET \
+  -e WEBHOOK_SUPERVISOR_SECRET \
   -e BROWSER_CDP_URL \
   -p "${dashboard_port}:7681" \
   -v "$home_dir:/home/hermes" \
@@ -401,14 +404,23 @@ run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERA
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_ASSISTANT_BOT_TOKEN}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_ASSISTANT_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_ASSISTANT_CHANNEL_ID}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" 'grep -F "WEBHOOK_ENABLED=true" /home/hermes/.hermes/profiles/assistant/.env >/dev/null'
+run_as_hermes "$container_name" 'grep -F "WEBHOOK_PORT=8644" /home/hermes/.hermes/profiles/assistant/.env >/dev/null'
+run_as_hermes "$container_name" "grep -F \"WEBHOOK_SECRET=${WEBHOOK_ASSISTANT_SECRET}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERAL_CHANNEL_ID}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_OPERATIONS_BOT_TOKEN}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_OPERATIONS_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_OPERATIONS_CHANNEL_ID}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
+run_as_hermes "$container_name" 'grep -F "WEBHOOK_ENABLED=true" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
+run_as_hermes "$container_name" 'grep -F "WEBHOOK_PORT=8645" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
+run_as_hermes "$container_name" "grep -F \"WEBHOOK_SECRET=${WEBHOOK_OPERATIONS_SECRET}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERAL_CHANNEL_ID}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_SUPERVISOR_BOT_TOKEN}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_SUPERVISOR_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_SUPERVISOR_CHANNEL_ID}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+run_as_hermes "$container_name" 'grep -F "WEBHOOK_ENABLED=true" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null'
+run_as_hermes "$container_name" 'grep -F "WEBHOOK_PORT=8646" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null'
+run_as_hermes "$container_name" "grep -F \"WEBHOOK_SECRET=${WEBHOOK_SUPERVISOR_SECRET}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 assert_gateway_pid_contract "$container_name" assistant
 assert_gateway_pid_contract "$container_name" operations
 assert_gateway_pid_contract "$container_name" supervisor

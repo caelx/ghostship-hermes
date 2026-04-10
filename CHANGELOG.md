@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added managed Hermes webhook listener scaffolding for all three profile gateways, with fixed ports `8644`/`8645`/`8646` for `assistant`/`operations`/`supervisor` and profile-local `WEBHOOK_SECRET` projection from `WEBHOOK_ASSISTANT_SECRET`, `WEBHOOK_OPERATIONS_SECRET`, and `WEBHOOK_SUPERVISOR_SECRET`.
 - Added the `gh` GitHub CLI plus OpenSSH client tools (`ssh`, `scp`, `ssh-keygen`) to the default Hermes image runtime, converged them through the managed user toolchain, updated the approved extra-CLI policy/docs, and extended image validation to assert they are available on PATH while keeping Chromium and ffmpeg out of scope.
 
 - Fixed the Hermes image `agent-browser` runtime wiring so boot-time managed tooling no longer replaces the working image-packaged `agent-browser` with a broken mutable npm shim on arm64, while keeping Hermes local browser mode and `hermes doctor` aligned with the supported image-managed path.
