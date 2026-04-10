@@ -1025,7 +1025,6 @@ in
     pathConfig = {
       PathChanged = [
         "${profileDefinitions.assistant.configPath}"
-        "${profileDefinitions.assistant.profileRoot}/.env"
         "${profileDefinitions.assistant.profileRoot}/auth.json"
         "${profileDefinitions.assistant.soulPath}"
       ];
@@ -1038,7 +1037,6 @@ in
     pathConfig = {
       PathChanged = [
         "${profileDefinitions.operations.configPath}"
-        "${profileDefinitions.operations.profileRoot}/.env"
         "${profileDefinitions.operations.profileRoot}/auth.json"
         "${profileDefinitions.operations.soulPath}"
       ];
@@ -1051,7 +1049,6 @@ in
     pathConfig = {
       PathChanged = [
         "${profileDefinitions.supervisor.configPath}"
-        "${profileDefinitions.supervisor.profileRoot}/.env"
         "${profileDefinitions.supervisor.profileRoot}/auth.json"
         "${profileDefinitions.supervisor.soulPath}"
       ];
