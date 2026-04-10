@@ -166,7 +166,7 @@ The image is intentionally declarative-first:
 - The shared scaffold also enables transcript compression with `threshold = 0.50`, `target_ratio = 0.25`, and `protect_last_n = 20` for long-running sessions.
 - The shared scaffold explicitly keeps `session_reset.mode = "none"`, while still recording placeholder idle/daily values (`idle_minutes = 1440`, `at_hour = 4`) for future policy changes.
 - The shared scaffold also configures Hermes browser defaults with `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.
-- `agent-browser` is the documented local-browser default when Browserbase, Browser Use, Camofox, and manual `/browser connect` CDP attachment are not in use, but the supported runtime path comes from the image-managed package rather than the mutable npm tooling layer. The image does not preinstall Chrome or Chromium. Hermes does not expose a declarative multi-CDP config item; the documented CDP path is a single interactive `/browser connect [ws://host:port]` connection.
+- `agent-browser` is the documented local-browser default when Browserbase, Browser Use, Camofox, and manual `/browser connect` CDP attachment are not in use, but the supported runtime path comes from the image-managed package rather than the mutable npm tooling layer. The image does not preinstall Chrome or Chromium. For the managed `assistant`, `operations`, and `supervisor` profiles, remote CDP is configured per profile through `BROWSER_ASSISTANT_CDP_URL`, `BROWSER_OPERATIONS_CDP_URL`, and `BROWSER_SUPERVISOR_CDP_URL`, which bootstrap translates into each profile's local `BROWSER_CDP_URL`.
 - The shared scaffold now also sets `approvals.mode = "off"` for a trusted, non-interactive runtime posture.
 - The shared scaffold also enables Hermes secret redaction and Tirith integration (`tirith_enabled = true`, `tirith_fail_open = true`) while leaving the website blocklist scaffold disabled by default.
 - The shared scaffold also enables Hermes checkpoints with `max_snapshots = 50` so file mutations retain rollback history.
@@ -205,7 +205,7 @@ Webhook per-profile env vars:
 - Required for the planned Hermes model setup: `OPENCODE_GO_API_KEY` and `GOOGLE_AI_STUDIO_API_KEY`
 - Recommended shared runtime env for doctor-clean supported features: `OPENROUTER_API_KEY`, `GITHUB_TOKEN` or `GH_TOKEN`, `HASS_URL`, `HASS_TOKEN`
 - Optional browser-provider env vars passed through to Hermes and written into each profile `.env`: `CAMOFOX_URL`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `BROWSER_USE_API_KEY`, `BROWSERBASE_PROXIES`, `BROWSERBASE_ADVANCED_STEALTH`, `BROWSERBASE_KEEP_ALIVE`, `BROWSERBASE_SESSION_TIMEOUT`, `BROWSER_INACTIVITY_TIMEOUT`
-- Optional remote CDP env passthrough: `BROWSER_CDP_URL`. Hermes can use this as the persistent default CDP target for browser tools when you want remote Chrome instead of local `agent-browser`.
+- Optional remote CDP env passthrough for managed profiles: `BROWSER_ASSISTANT_CDP_URL`, `BROWSER_OPERATIONS_CDP_URL`, and `BROWSER_SUPERVISOR_CDP_URL`. Bootstrap projects each source into only that profile's local `BROWSER_CDP_URL` when you want remote Chrome instead of local `agent-browser`.
 - No extra secret is required for Holographic memory; it is local SQLite state under `$HERMES_HOME`
 - `OPENCODE_GO_API_KEY` backs the Hermes-native `fallback_model = opencode-go/minimax-m2.7`
 - `GOOGLE_AI_STUDIO_API_KEY` backs the direct Google Gemini OpenAI-compatible endpoint used for all configured auxiliary tasks
@@ -232,7 +232,7 @@ Hermes does not fully materialize its skills hub state until you exercise it onc
 
 Each profile has one operator-facing source of truth for managed runtime env: `~/.hermes/profiles/<profile>/.env`. The managed gateway services load that file with `EnvironmentFile`, and bootstrap rewrites it on every reconcile. If you change the managed runtime env contract, update the bootstrap writer in `packages/hermes-image/nixos-module.nix` so the regenerated profile `.env` files match the new contract. The root `~/.hermes/.env` is not used by the managed profile gateways in this image.
 
-Treat the profile `.env` as the canonical place for profile-facing runtime configuration: Hermes provider credentials, browser configuration, Discord settings, webhook listener settings, Bitwarden access, and operator-facing CLI/service env for tools the profile is expected to use. Keep only image infrastructure, router-daemon internals, and container boot plumbing outside the profile `.env` files.
+Treat the profile `.env` as the canonical place for profile-facing runtime configuration: Hermes provider credentials, browser configuration, Discord settings, webhook listener settings, Bitwarden access, and operator-facing CLI/service env for tools the profile is expected to use. Do not copy router-daemon configuration or other image/container plumbing into the profile `.env` files.
 
 ## Manual provider configuration per profile
 
