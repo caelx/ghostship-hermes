@@ -4,6 +4,7 @@
   system,
   ghostshipHermesRootfs,
   hermesRelease,
+  defaultImageRef ? "ghostship-hermes:${hermesRelease}",
 }:
 let
   platform =
@@ -31,5 +32,5 @@ pkgs.runCommand "ghostship-hermes-image" { } ''
   ln -s ${ghostshipHermesRootfs} "$out/rootfs"
   cp ${dockerImportChanges} "$out/docker-import-changes"
   printf '%s\n' '${platform}' > "$out/platform"
-  printf '%s\n' 'ghostship-hermes:${hermesRelease}' > "$out/default-image-ref"
+  printf '%s\n' '${defaultImageRef}' > "$out/default-image-ref"
 ''

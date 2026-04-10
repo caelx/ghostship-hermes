@@ -5,61 +5,171 @@ on:
   push:
     branches:
       - main
+    paths:
+      - '.github/workflows/publish-image.yml'
+      - '.github/workflows/update-hermes-release.yml'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'packages/**'
+      - 'scripts/export_publishable_image.sh'
+
+concurrency:
+  group: publish-image-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      image_name: ${{ steps.meta.outputs.image_name }}
+      base_image_name: ${{ steps.meta.outputs.base_image_name }}
+      tags: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute publish metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          hermes_ref="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)"
+          image_name="ghcr.io/${GITHUB_REPOSITORY_OWNER}/ghostship-hermes"
+          base_image_name="ghcr.io/${GITHUB_REPOSITORY_OWNER}/ghostship-hermes-base"
+          tags="sha-${GITHUB_SHA}"
+
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            tags="latest sha-${GITHUB_SHA} hermes-${hermes_ref}"
+          else
+            echo "non-main workflow_dispatch detected for $GITHUB_REF; publishing immutable sha tag only"
+          fi
+
+          {
+            echo "image_name=${image_name}"
+            echo "base_image_name=${base_image_name}"
+            echo "tags=${tags}"
+          } >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    needs: prepare
     strategy:
       matrix:
         include:
           - system: x86_64-linux
             runs_on: ubuntu-24.04
+            platform_tag: amd64
           - system: aarch64-linux
             runs_on: ubuntu-24.04-arm
+            platform_tag: arm64
     runs-on: ${{ matrix.runs_on }}
     permissions:
       contents: read
       packages: write
+      id-token: write
+    env:
+      IMAGE_NAME: ${{ needs.prepare.outputs.image_name }}
+      BASE_IMAGE_NAME: ${{ needs.prepare.outputs.base_image_name }}
+      TAGS: ${{ needs.prepare.outputs.tags }}
+      PLATFORM_TAG: ${{ matrix.platform_tag }}
     steps:
       - uses: actions/checkout@v6
 
-      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/nix-installer-action@main
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Build publishable image archive
-        run: |
-          # Full image publication builds execute target-system derivations, so
-          # each leg must run on infrastructure that can build that system.
-          nix build .#packages.${{ matrix.system }}.ghostship-hermes-image
-          ARCH=$(echo ${{ matrix.system }} | cut -d'-' -f1)
-          scripts/export_publishable_image.sh "$(readlink -f result)" "ghostship-hermes:ci-${ARCH}" "ghostship-hermes-${ARCH}.tar"
+      - name: Enable GitHub Actions Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
 
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v7
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
         with:
-          name: ghostship-hermes-${{ matrix.system }}
-          path: ghostship-hermes-*.tar
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  publish:
-    needs: build
+      - name: Resolve base image reference
+        id: base
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-base-image.drvPath --raw)"
+          base_tag="base-$(basename "$base_drv" .drv)"
+          base_ref="${BASE_IMAGE_NAME}:${base_tag}-${PLATFORM_TAG}"
+
+          {
+            echo "tag=${base_tag}"
+            echo "ref=${base_ref}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ensure base image tag exists
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if nix shell nixpkgs#skopeo -c skopeo inspect "docker://${BASE_REF}" >/dev/null 2>&1; then
+            echo "reusing published base image ${BASE_REF}"
+            exit 0
+          fi
+
+          echo "publishing new base image ${BASE_REF}"
+          base_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-base-image)"
+          scripts/export_publishable_image.sh "$base_bundle" "ghostship-hermes-base:ci-${PLATFORM_TAG}" "ghostship-hermes-base-${PLATFORM_TAG}.tar"
+          nix shell nixpkgs#skopeo -c skopeo copy \
+            "docker-archive:$(pwd)/ghostship-hermes-base-${PLATFORM_TAG}.tar" \
+            "docker://${BASE_REF}"
+
+      - name: Build final image from base plus overlay
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          overlay_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-overlay-bundle)"
+          docker build \
+            --build-arg "BASE_IMAGE=${BASE_REF}" \
+            --tag "ghostship-hermes:ci-${PLATFORM_TAG}" \
+            "$overlay_bundle"
+
+      - name: Publish architecture image tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > publish-arch-tags.sh <<'SCRIPT'
+          set -euo pipefail
+          for tag in $TAGS; do
+            skopeo copy \
+              "docker-daemon:ghostship-hermes:ci-${PLATFORM_TAG}" \
+              "docker://${IMAGE_NAME}:${tag}-${PLATFORM_TAG}"
+          done
+          SCRIPT
+          chmod +x publish-arch-tags.sh
+          nix shell nixpkgs#skopeo -c bash ./publish-arch-tags.sh
+
+      - name: Remove temporary publish script
+        if: always()
+        run: rm -f publish-arch-tags.sh "ghostship-hermes-base-${PLATFORM_TAG}.tar"
+
+  publish-manifests:
+    needs:
+      - prepare
+      - build-and-push
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
+    env:
+      IMAGE_NAME: ${{ needs.prepare.outputs.image_name }}
+      TAGS: ${{ needs.prepare.outputs.tags }}
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/download-artifact@v8
-        with:
-          path: dist
-
-      - name: Install Nix tooling
-        uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
       - name: Log in to GHCR
         uses: docker/login-action@v4
         with:
@@ -70,50 +180,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Publish image tags
-        env:
-          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ghostship-hermes
-          GIT_SHA: ${{ github.sha }}
+      - name: Publish manifest lists
         shell: bash
         run: |
           set -euo pipefail
 
-          HERMES_REF="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)"
-          tags=("sha-$GIT_SHA")
-
-          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            tags=(latest "sha-$GIT_SHA" "hermes-$HERMES_REF")
-          else
-            echo "non-main workflow_dispatch detected for $GITHUB_REF; publishing immutable sha tag only"
-          fi
-
-          publish_arch() {
-            arch="$1"
-            tarball="$2"
-            case "$arch" in
-              amd64)
-                platform_tag="amd64"
-                ;;
-              arm64)
-                platform_tag="arm64"
-                ;;
-              *)
-                echo "unexpected arch: $arch" >&2
-                exit 64
-                ;;
-            esac
-
-            for tag in "${tags[@]}"; do
-              nix shell nixpkgs#skopeo -c skopeo copy \
-                "docker-archive:$tarball" \
-                "docker://$IMAGE_NAME:$tag-$platform_tag"
-            done
-          }
-
-          publish_arch amd64 "$(readlink -f dist/ghostship-hermes-x86_64-linux/ghostship-hermes-x86_64.tar)"
-          publish_arch arm64 "$(readlink -f dist/ghostship-hermes-aarch64-linux/ghostship-hermes-aarch64.tar)"
-
-          for tag in "${tags[@]}"; do
+          for tag in $TAGS; do
             docker buildx imagetools create \
               --tag "$IMAGE_NAME:$tag" \
               "$IMAGE_NAME:$tag-amd64" \
