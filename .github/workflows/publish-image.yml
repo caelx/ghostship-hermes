@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      id-token: write
     outputs:
       hermes_ref: ${{ steps.meta.outputs.hermes_ref }}
       image_name: ${{ steps.meta.outputs.image_name }}
@@ -77,6 +78,10 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+
+      - name: Enable GitHub Actions Nix cache fallback
+        if: vars.CACHIX_CACHE_NAME == ''
+        uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Enable Cachix substituter
         if: vars.CACHIX_CACHE_NAME != ''

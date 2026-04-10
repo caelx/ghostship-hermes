@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Optimized GitHub Actions around the image pipeline by path-gating automatic `publish-image` runs to image-affecting pushes, adding optional Cachix-backed Nix substitution plus cached `uv` setup for the Python utility steps, recording a measured optimization baseline in `docs/github-actions-build-optimization.md`, and changing multi-arch publication so native build jobs push architecture tags directly before a lighter manifest-only job assembles the final tags.
+- Optimized GitHub Actions around the image pipeline by path-gating automatic `publish-image` runs to image-affecting pushes, adding optional Cachix-backed Nix substitution plus cached `uv` setup for the Python utility steps, adding a no-secrets Magic Nix Cache fallback plus optional Cachix acceleration, recording a measured optimization baseline in `docs/github-actions-build-optimization.md`, and changing multi-arch publication so native build jobs push architecture tags directly before a lighter manifest-only job assembles the final tags.
 
 - Added managed Hermes webhook listener scaffolding for all three profile gateways, with fixed ports `8644`/`8645`/`8646` for `assistant`/`operations`/`supervisor` and profile-local `WEBHOOK_SECRET` projection from `WEBHOOK_ASSISTANT_SECRET`, `WEBHOOK_OPERATIONS_SECRET`, and `WEBHOOK_SUPERVISOR_SECRET`.
 - Added the `gh` GitHub CLI plus OpenSSH client tools (`ssh`, `scp`, `ssh-keygen`) to the default Hermes image runtime, converged them through the managed user toolchain, updated the approved extra-CLI policy/docs, and extended image validation to assert they are available on PATH while keeping Chromium and ffmpeg out of scope.
