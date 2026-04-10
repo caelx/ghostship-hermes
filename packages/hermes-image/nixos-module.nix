@@ -32,6 +32,9 @@ let
       discordBotTokenEnv = "DISCORD_ASSISTANT_BOT_TOKEN";
       discordAllowedUsersEnv = "DISCORD_ASSISTANT_ALLOWED_USERS";
       discordChannelEnv = "DISCORD_ASSISTANT_CHANNEL_ID";
+      webhookEnabled = true;
+      webhookPort = 8644;
+      webhookSecretEnv = "WEBHOOK_ASSISTANT_SECRET";
     };
     operations = {
       personality = "operations";
@@ -41,6 +44,9 @@ let
       discordBotTokenEnv = "DISCORD_OPERATIONS_BOT_TOKEN";
       discordAllowedUsersEnv = "DISCORD_OPERATIONS_ALLOWED_USERS";
       discordChannelEnv = "DISCORD_OPERATIONS_CHANNEL_ID";
+      webhookEnabled = true;
+      webhookPort = 8645;
+      webhookSecretEnv = "WEBHOOK_OPERATIONS_SECRET";
     };
     supervisor = {
       personality = "supervisor";
@@ -50,6 +56,9 @@ let
       discordBotTokenEnv = "DISCORD_SUPERVISOR_BOT_TOKEN";
       discordAllowedUsersEnv = "DISCORD_SUPERVISOR_ALLOWED_USERS";
       discordChannelEnv = "DISCORD_SUPERVISOR_CHANNEL_ID";
+      webhookEnabled = true;
+      webhookPort = 8646;
+      webhookSecretEnv = "WEBHOOK_SUPERVISOR_SECRET";
     };
   };
   auxiliaryModelDefault = "gemini-3.1-flash-lite-preview";
@@ -499,6 +508,9 @@ EOF
       bot_token_env="''${3:-}"
       allowed_users_env="''${4:-}"
       role_channel_env="''${5:-}"
+      webhook_enabled="''${6:-}"
+      webhook_port="''${7:-}"
+      webhook_secret_env="''${8:-}"
       target_dir="$(dirname "$target")"
       tmp_target="$(mktemp "$target_dir/.env.tmp.XXXXXX")"
       general_channel="''${DISCORD_GENERAL_CHANNEL_ID:-}"
@@ -539,15 +551,27 @@ EOF
         if [ -n "$general_channel" ]; then
           printf 'DISCORD_HOME_CHANNEL=%s\n' "$general_channel"
         fi
+        if [ "$webhook_enabled" = "true" ]; then
+          printf 'WEBHOOK_ENABLED=true\n'
+        fi
+        if [ -n "$webhook_port" ]; then
+          printf 'WEBHOOK_PORT=%s\n' "$webhook_port"
+        fi
+        if [ -n "$webhook_secret_env" ]; then
+          webhook_secret="''${!webhook_secret_env:-}"
+          if [ -n "$webhook_secret" ]; then
+            printf 'WEBHOOK_SECRET=%s\n' "$webhook_secret"
+          fi
+        fi
       } >"$tmp_target"
       chmod 0600 "$tmp_target"
       mv -f "$tmp_target" "$target"
       trap - EXIT
     }
 
-    write_profile_env "${profileDefinitions.assistant.profileRoot}/.env" "${profileDefinitions.assistant.serviceWorkingDirectory}" "${profileDefinitions.assistant.discordBotTokenEnv}" "${profileDefinitions.assistant.discordAllowedUsersEnv}" "${profileDefinitions.assistant.discordChannelEnv}"
-    write_profile_env "${profileDefinitions.operations.profileRoot}/.env" "${profileDefinitions.operations.serviceWorkingDirectory}" "${profileDefinitions.operations.discordBotTokenEnv}" "${profileDefinitions.operations.discordAllowedUsersEnv}" "${profileDefinitions.operations.discordChannelEnv}"
-    write_profile_env "${profileDefinitions.supervisor.profileRoot}/.env" "${profileDefinitions.supervisor.serviceWorkingDirectory}" "${profileDefinitions.supervisor.discordBotTokenEnv}" "${profileDefinitions.supervisor.discordAllowedUsersEnv}" "${profileDefinitions.supervisor.discordChannelEnv}"
+    write_profile_env "${profileDefinitions.assistant.profileRoot}/.env" "${profileDefinitions.assistant.serviceWorkingDirectory}" "${profileDefinitions.assistant.discordBotTokenEnv}" "${profileDefinitions.assistant.discordAllowedUsersEnv}" "${profileDefinitions.assistant.discordChannelEnv}" "${if profileDefinitions.assistant.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.assistant.webhookPort}" "${profileDefinitions.assistant.webhookSecretEnv}"
+    write_profile_env "${profileDefinitions.operations.profileRoot}/.env" "${profileDefinitions.operations.serviceWorkingDirectory}" "${profileDefinitions.operations.discordBotTokenEnv}" "${profileDefinitions.operations.discordAllowedUsersEnv}" "${profileDefinitions.operations.discordChannelEnv}" "${if profileDefinitions.operations.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.operations.webhookPort}" "${profileDefinitions.operations.webhookSecretEnv}"
+    write_profile_env "${profileDefinitions.supervisor.profileRoot}/.env" "${profileDefinitions.supervisor.serviceWorkingDirectory}" "${profileDefinitions.supervisor.discordBotTokenEnv}" "${profileDefinitions.supervisor.discordAllowedUsersEnv}" "${profileDefinitions.supervisor.discordChannelEnv}" "${if profileDefinitions.supervisor.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.supervisor.webhookPort}" "${profileDefinitions.supervisor.webhookSecretEnv}"
     reconcile_seed_skills
 
     rm -f /home/hermes/.hermes/active_profile
