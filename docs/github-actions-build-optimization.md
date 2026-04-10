@@ -34,7 +34,7 @@ Optimization rounds are implemented in this order:
 1. Conservative publish gating so docs-only and OpenSpec-only `main` pushes do not publish images.
 2. Cache-backed reuse:
    - native `uv` caching for the Python utility steps in `ci`
-3. Architectural publish optimization by splitting the publish path into a reusable per-architecture `ghostship-hermes-base` image plus a small overlay bundle, then reserving the final manifest job for manifest creation only.
+3. Architectural publish optimization by splitting the publish path into a reusable per-architecture `ghostship-hermes-base` image plus a small overlay bundle, then adding content-addressed final-image reuse so repeated runs can retag an existing immutable image without rebuilding before the manifest-only job runs.
 
 ## Measuring Again
 
@@ -54,5 +54,6 @@ python3 scripts/github_actions_timings.py --workflow publish-image.yml --include
 
 The current free reuse strategy is split by workflow.
 - `uv` cache keys are derived from the tracked Python utility inputs and lockfiles, so dependency changes create a new cache key automatically.
-- The publish workflow reuses a GHCR-published `ghostship-hermes-base` image tagged from the evaluated base-image derivation, so unchanged base closures do not need to be rebuilt and re-exported on every publish run.
+- The publish workflow first checks for a GHCR-published content-addressed final image derived from the evaluated base-image and overlay-bundle derivations; if it exists, the run skips the Docker rebuild and retags that immutable image directly.
+- When the final image is not already available, the workflow still reuses a GHCR-published `ghostship-hermes-base` image tagged from the evaluated base-image derivation, so unchanged base closures do not need to be rebuilt and re-exported on every publish run.
 - Magic Nix Cache was removed from `publish-image` after the native multi-arch jobs repeatedly hit GitHub Actions cache throttling and `ResourceExhausted` responses from the cache proxy.

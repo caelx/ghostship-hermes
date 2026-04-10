@@ -406,7 +406,7 @@ Image output contract:
 
 Optional GitHub Actions cache acceleration:
 
-- The publish workflow keeps the free speedup on the GHCR-reused `ghostship-hermes-base` image path. Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
+- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image when the base-image and overlay-bundle derivations are unchanged, and otherwise falls back to the reusable `ghostship-hermes-base` image path. Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.
