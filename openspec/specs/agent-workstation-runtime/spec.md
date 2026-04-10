@@ -41,12 +41,17 @@ The workstation SHALL keep Hermes local browser workflows pointed at `agent-brow
 - **AND** the managed runtime does not prefer a broken mutable npm shim over a working image-managed `agent-browser` binary
 
 ### Requirement: Runtime keeps only a minimum viable immutable system layer
-The workstation SHALL keep only the minimum system-layer packages needed to boot, supervise services, and expose the browser/router runtime surface.
+The workstation SHALL keep only the minimum system-layer packages needed to boot, supervise services, expose the browser/router runtime surface, and provide a small approved set of baked admin/debug CLIs.
 
-#### Scenario: User-facing tools live outside the immutable system layer
+#### Scenario: Most user-facing tools live outside the immutable system layer
 - **WHEN** maintainers inspect the runtime contract for Hermes and operator-facing CLI tools
-- **THEN** the immutable image layer does not remain the primary home for updateable user-facing tools such as `hermes`, `git`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, and `node`/`npm`
-- **AND** those tools are instead expected through managed user-facing runtime layers
+- **THEN** the immutable image layer does not remain the primary home for broadly updateable user-facing tools such as `hermes`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, and `node`/`npm`
+- **AND** those tools are instead expected through managed user-facing runtime layers unless the repo explicitly approves them as baked image tools
+
+#### Scenario: Approved admin CLIs may remain baked into the image layer
+- **WHEN** maintainers inspect the default-image runtime contract for operator/admin tools
+- **THEN** the immutable image layer may include the repo-approved admin/debug CLI set such as `git`, `gh`, and the OpenSSH client tools
+- **AND** those approved baked tools do not by themselves redefine the image as the primary home for the broader mutable user-facing tool surface
 
 ### Requirement: Runtime exposes a managed persisted npm tool prefix
 The workstation SHALL expose a persisted npm-managed tool prefix on the Hermes user `PATH` for fast-moving agent CLIs that are intentionally updated outside the image closure.

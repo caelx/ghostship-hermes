@@ -1,4 +1,10 @@
-## ADDED Requirements
+# github-and-ssh-cli-runtime Specification
+
+## Purpose
+
+Define the default-image contract for shipping the GitHub CLI plus OpenSSH client tools, including SSH key generation, through the repo's normal Nix/image package wiring.
+
+## Requirements
 
 ### Requirement: Hermes image ships the GitHub and OpenSSH client CLIs
 The default Hermes image SHALL include `gh`, `ssh`, `scp`, and `ssh-keygen` on PATH, and those executables SHALL come from the repo's normal Nix/image package wiring rather than an ad hoc runtime installer.
