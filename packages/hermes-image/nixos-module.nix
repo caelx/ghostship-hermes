@@ -241,7 +241,9 @@ let
       };
       display = {
         compact = false;
-        tool_progress = "new";
+        streaming = true;
+        tool_preview_length = 0;
+        tool_progress = "verbose";
         background_process_notifications = "result";
       };
       group_sessions_per_user = true;
