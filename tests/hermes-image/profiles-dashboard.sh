@@ -374,7 +374,6 @@ run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/.managed && test -
 run_as_hermes "$container_name" '! test -d /home/hermes/.hermes/profiles/coder'
 run_as_hermes "$container_name" '! test -f /home/hermes/.hermes/active_profile'
 run_as_hermes_default_path "$container_name" 'test "$(command -v codex)" = "/home/hermes/.local/bin/codex"'
-run_as_hermes_default_path "$container_name" 'test "$(command -v gemini)" = "/home/hermes/.local/bin/gemini"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v opencode)" = "/home/hermes/.local/bin/opencode"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v agent-browser)" = "/home/hermes/.local/bin/agent-browser"'
 run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'

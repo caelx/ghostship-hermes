@@ -19,7 +19,7 @@
 - Keep local package and NixOS documentation available in the image so Hermes can inspect reference material in-container.
 - Do not seed Ghostship-managed default skills or develop-environment workstation content into the image runtime.
 - Keep the pinned `gws` CLI in the default image, but do not vendor or seed Google Workspace skills.
-- Do not preinstall Codex, Gemini CLI, Opencode, OpenSpec, `skills`, or `feed` in the default image; `gws` and `bws` are the approved extra CLIs.
+- Do not preinstall Codex, Opencode, OpenSpec, `skills`, or `feed` in the default image; `gws` and `bws` are the approved extra CLIs.
 - Keep the browser surface minimal: one dashboard, on-demand ephemeral `ttyd`, no persistent per-profile terminal services.
 - Keep the declarative Hermes profile scaffold in the image aligned to `assistant`, `operations`, and `supervisor`, with `assistant` as the primary managed profile and repo-owned assistant runtime flows addressed explicitly with `-p assistant`.
 - Keep one persistent gateway service per declared profile, managed by NixOS systemd units.
@@ -117,7 +117,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - The `hermes` user tooling refresh path must upgrade Hermes from an unlocked flake ref such as `github:caelx/ghostship-hermes#hermes-agent-wrapped`; a baked store path can bootstrap the first boot, but `nix profile upgrade --all` cannot move a locked store-path install forward.
 - The image-managed `hermes` toolchain now lives in its own Nix profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed`; keep that separation so boot-time convergence does not collide with operator-owned `~/.nix-profile` entries such as older `hermes-agent` installs.
 - `ghostship-hermes-startup.service` must not require the mutable user-tooling oneshot for the main runtime to come up; bootstrap and the dashboard/router/profile gateways should keep booting even if tool refresh work fails.
-- Hermes is not packaged in the inspected `nixos-25.11` nixpkgs tree, while `ttyd`, `codex`, `gemini-cli`, and `opencode` are.
+- Hermes is not packaged in the inspected `nixos-25.11` nixpkgs tree, while `ttyd`, `codex`, and `opencode` are.
 - Local flake evaluation only sees git-tracked files. Stage new Nix files and vendored trees before relying on `nix flake check` or `nix build` in a worktree.
 - On this host, run only one Nix build or eval at a time; overlapping Nix client commands can wedge daemon responsiveness and create misleading validation failures.
 - Keep `.nix-local-store/` gitignored. It is repo-local build state for Docker and Nix validation, not source content.

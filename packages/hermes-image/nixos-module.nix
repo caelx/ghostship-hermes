@@ -125,12 +125,10 @@ let
   ];
   managedNpmPackages = [
     "@openai/codex"
-    "@google/gemini-cli"
     "opencode-ai"
   ];
   managedNpmBins = [
     "codex"
-    "gemini"
     "opencode"
   ];
   rootConfig = {

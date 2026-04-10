@@ -20,7 +20,7 @@ The workstation SHALL copy defaults only when the persisted destination is missi
 - **THEN** boot seeding leaves the persisted content unchanged
 
 ### Requirement: Seeded workstation defaults mirror the repo-managed develop environment subset
-The workstation SHALL seed the selected repo-managed develop-environment defaults needed for Hermes, `.agents`, Codex, Gemini CLI, Opencode, OpenSpec, and related agent assets, and those seeded defaults SHALL reflect the current curated workstation skill set from this repository.
+The workstation SHALL seed the selected repo-managed develop-environment defaults needed for Hermes, `.agents`, Codex, Opencode, OpenSpec, and related agent assets, and those seeded defaults SHALL reflect the current curated workstation skill set from this repository.
 
 #### Scenario: Fresh persisted home receives the repo-managed defaults
 - **WHEN** a fresh `/opt/data/home` is prepared for the workstation

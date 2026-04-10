@@ -298,7 +298,7 @@ run_as_hermes "$container_one" 'test "$(id -u)" = "3000" && test "$(id -g)" = "3
 run_in_container "$container_one" 'test -d /home/hermes/.hermes && test -d /workspace'
 
 run_in_container "$container_one" '
-  for cmd in codex gemini opencode openspec skills bws feed; do
+  for cmd in codex opencode openspec skills bws feed; do
     if command -v "$cmd" >/dev/null 2>&1; then
       echo "unexpected preinstalled command: $cmd" >&2
       exit 1
@@ -353,7 +353,6 @@ run_as_hermes "$container_one" '
     ~/.agent-browser \
     ~/.agents \
     ~/.codex \
-    ~/.gemini \
     ~/.copilot \
     ~/.npm \
     ~/.bun \
@@ -367,7 +366,6 @@ run_as_hermes "$container_one" '
   printf "agent-browser\n" > ~/.agent-browser/persist.txt
   printf "agents\n" > ~/.agents/persist.txt
   printf "codex\n" > ~/.codex/persist.txt
-  printf "gemini\n" > ~/.gemini/persist.txt
   printf "copilot\n" > ~/.copilot/persist.txt
   printf "npm\n" > ~/.npm/persist.txt
   printf "bun\n" > ~/.bun/persist.txt
@@ -465,7 +463,6 @@ run_as_hermes "$container_two" 'grep -Fx "cache" ~/.cache/ghostship-test/persist
 run_as_hermes "$container_two" 'grep -Fx "agent-browser" ~/.agent-browser/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "agents" ~/.agents/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "codex" ~/.codex/persist.txt >/dev/null'
-run_as_hermes "$container_two" 'grep -Fx "gemini" ~/.gemini/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "copilot" ~/.copilot/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "npm" ~/.npm/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "bun" ~/.bun/persist.txt >/dev/null'
