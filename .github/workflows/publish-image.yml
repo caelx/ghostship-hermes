@@ -77,7 +77,8 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@main
         with:
-          extra_nix_config: |
+          determinate: false
+          extra-conf: |
             experimental-features = nix-command flakes
 
       - name: Log in to GHCR
