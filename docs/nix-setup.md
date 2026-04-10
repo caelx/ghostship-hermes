@@ -500,7 +500,9 @@ When hermes runs via the NixOS module, the following CLI commands are **blocked*
 This prevents drift between what Nix declares and what's on disk. Detection uses two signals:
 
 1. **`HERMES_MANAGED=true`** environment variable — set by the systemd service, visible to the gateway process
-2. **`.managed` marker file** in `HERMES_HOME` — set by the activation script, visible to interactive shells (e.g., `docker exec -it hermes-agent hermes config set ...` is also blocked)
+2. **`.managed` marker file** in `HERMES_HOME` — set by the activation script, visible to interactive shells (e.g., `docker exec -it hermes-agent hermes config set ...` is also blocked). In the managed image, the root Hermes home and each managed profile home get their own marker so `hermes -p <profile> ...` stays in managed mode too.
+
+Gateway control is also image-managed. `hermes gateway status` reports the repo-owned per-profile systemd services, while profile-scoped mutation commands such as `hermes -p assistant gateway restart` print managed guidance for the matching `ghostship-hermes-profile-<name>.service` unit instead of falling back to upstream `systemctl --user` or `hermes gateway install` flows.
 
 To change configuration, edit your Nix config and run `sudo nixos-rebuild switch`.
 
@@ -719,7 +721,11 @@ nix build .#checks.x86_64-linux.config-roundtrip    # merge script preserves use
 │   ├── memories/
 │   ├── skills/
 │   ├── cron/
-│   └── logs/
+│   ├── logs/
+│   └── profiles/
+│       ├── assistant/.managed       # Marker: profile-scoped managed CLI behavior
+│       ├── operations/.managed
+│       └── supervisor/.managed
 ├── home/                            # Agent HOME
 └── workspace/                       # MESSAGING_CWD
     ├── SOUL.md                      # From documents option

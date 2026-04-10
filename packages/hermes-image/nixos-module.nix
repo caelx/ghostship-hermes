@@ -394,7 +394,10 @@ EOF
       fi
 
       install -D -m 0600 ${profileDefinitions.${profile}.configFile} "${profileDefinitions.${profile}.configPath}"
+      install -D -m 0600 /dev/null "${profileDefinitions.${profile}.profileRoot}/.managed"
     '') managedProfiles}
+
+    install -D -m 0600 /dev/null "/home/hermes/.hermes/.managed"
 
     copy_skill_tree_if_missing() {
       source_root="$1"
