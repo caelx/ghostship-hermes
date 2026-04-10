@@ -412,7 +412,16 @@ EOF
           || true
       fi
 
-      install -D -m 0600 ${profileDefinitions.${profile}.configFile} "${profileDefinitions.${profile}.configPath}"
+      config_target="${profileDefinitions.${profile}.configPath}"
+      config_tmp="$(mktemp "''${config_target}.tmp.XXXXXX")"
+      trap 'rm -f "$config_tmp"' EXIT
+      install -D -m 0600 ${profileDefinitions.${profile}.configFile} "$config_tmp"
+      if [ -f "$config_target" ] && cmp -s "$config_tmp" "$config_target"; then
+        rm -f "$config_tmp"
+      else
+        mv -f "$config_tmp" "$config_target"
+      fi
+      trap - EXIT
       install -D -m 0600 /dev/null "${profileDefinitions.${profile}.profileRoot}/.managed"
     '') managedProfiles}
 
@@ -1054,8 +1063,6 @@ in
       PathChanged = [
         "${profileDefinitions.assistant.configPath}"
         "${profileDefinitions.assistant.profileRoot}/.env"
-        "${profileDefinitions.assistant.profileRoot}/auth.json"
-        "${profileDefinitions.assistant.soulPath}"
       ];
       Unit = "ghostship-hermes-profile-assistant-restart.service";
     };
@@ -1067,8 +1074,6 @@ in
       PathChanged = [
         "${profileDefinitions.operations.configPath}"
         "${profileDefinitions.operations.profileRoot}/.env"
-        "${profileDefinitions.operations.profileRoot}/auth.json"
-        "${profileDefinitions.operations.soulPath}"
       ];
       Unit = "ghostship-hermes-profile-operations-restart.service";
     };
@@ -1080,8 +1085,6 @@ in
       PathChanged = [
         "${profileDefinitions.supervisor.configPath}"
         "${profileDefinitions.supervisor.profileRoot}/.env"
-        "${profileDefinitions.supervisor.profileRoot}/auth.json"
-        "${profileDefinitions.supervisor.soulPath}"
       ];
       Unit = "ghostship-hermes-profile-supervisor-restart.service";
     };
