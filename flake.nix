@@ -92,6 +92,7 @@
 
           allUtilities = [
             pkgs.bws
+            pkgs.google-cloud-sdk
             agentBrowser
             googleWorkspaceCli
             ghostshipSearxng
@@ -147,6 +148,7 @@
         in
         {
           bws = pkgs.bws;
+          gcloud = pkgs.google-cloud-sdk;
           agent-browser = agentBrowser;
           gws = googleWorkspaceCli;
           hermes-dashboard = hermesDashboard;
@@ -191,6 +193,7 @@
         {
           inherit (self.packages.${system})
             bws
+            gcloud
             agent-browser
             gws
             hermes-dashboard

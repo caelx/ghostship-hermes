@@ -308,6 +308,7 @@ run_in_container "$container_one" '
 
 run_in_container "$container_one" "for cmd in $ghostship_cmds_joined; do command -v \"\$cmd\" >/dev/null; done"
 run_in_container "$container_one" 'command -v tirith >/dev/null'
+run_as_hermes "$container_one" 'command -v gcloud >/dev/null'
 run_as_hermes "$container_one" 'command -v gws >/dev/null'
 
 run_in_container "$container_one" '

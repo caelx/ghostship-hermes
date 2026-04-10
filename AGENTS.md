@@ -19,7 +19,7 @@
 - Keep local package and NixOS documentation available in the image so Hermes can inspect reference material in-container.
 - Do not seed Ghostship-managed default skills or develop-environment workstation content into the image runtime.
 - Keep the pinned `gws` CLI in the default image, but do not vendor or seed Google Workspace skills.
-- Do not preinstall Codex, Opencode, OpenSpec, `skills`, or `feed` in the default image; `gws` and `bws` are the approved extra CLIs.
+- Do not preinstall Codex, Opencode, OpenSpec, `skills`, or `feed` in the default image; `gws`, `gcloud`, and `bws` are the approved extra CLIs.
 - Keep the browser surface minimal: one dashboard, on-demand ephemeral `ttyd`, no persistent per-profile terminal services.
 - Keep the declarative Hermes profile scaffold in the image aligned to `assistant`, `operations`, and `supervisor`, with `assistant` as the primary managed profile and repo-owned assistant runtime flows addressed explicitly with `-p assistant`.
 - Keep one persistent gateway service per declared profile, managed by NixOS systemd units.
@@ -127,7 +127,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - On the current `x86_64` dev host, `nix flake check` does not build `aarch64-linux` outputs. Use `nix eval` locally to keep the arm64 image derivation wired correctly and rely on arm64 runners for full arm builds.
 - GitHub Actions image publication must run the `aarch64-linux` image leg on native arm64 infrastructure such as `ubuntu-24.04-arm`; Docker QEMU plus Nix `extra-platforms` on an x86 runner are not enough for the native arm64 Nix image build.
 - `python3.11-websockets-15.0.1` is currently flaky on native `aarch64-linux` in nixpkgs `nixos-25.11`; keep its checks disabled in the shared router/dashboard Python override scope until upstream or nixpkgs lands a fix.
-- `gws` and `bws` are the approved non-`ghostship-*` extra CLIs in the default image; keep `gws` pinned through the upstream flake package, keep `bws` sourced from nixpkgs, and do not revive vendored or seeded Google Workspace skills.
+- `gws`, `gcloud`, and `bws` are the approved non-`ghostship-*` extra CLIs in the default image; keep `gws` pinned through the upstream flake package, keep `gcloud` and `bws` sourced from nixpkgs, and do not revive vendored or seeded Google Workspace skills.
 - Keep `ghostship-hermes-image` as the explicit publishable image bundle contract for CI, GHCR pushes, and image-loading flows, and keep the lower-level `/init` workstation tarball on a separate `ghostship-hermes-rootfs` output so scripts do not guess artifact semantics from one overloaded path.
 - Git worktrees do not carry ignored local `.envrc` files by default. Live-test helpers should check the current worktree first, then another repo worktree with `.envrc`.
 - `apply_patch` is currently unreliable for files inside git worktrees in this repo. When editing worktree files, prefer direct non-interactive scripted edits (for example Python or `perl -0pi`) and verify the result immediately.
