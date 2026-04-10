@@ -183,7 +183,7 @@ assert_gateway_pid_contract() {
 
   run_as_hermes "$container_name" "pid=\$(jq -r '.pid' /home/hermes/.hermes/profiles/$profile/gateway.pid); kind=\$(jq -r '.kind' /home/hermes/.hermes/profiles/$profile/gateway.pid); argv=\$(jq -r '.argv | join(\" \")' /home/hermes/.hermes/profiles/$profile/gateway.pid); test -n \"\$pid\"; test \"\$kind\" = \"hermes-gateway\"; printf '%s' \"\$argv\" | grep -F 'hermes gateway run --replace --profile $profile' >/dev/null; kill -0 \"\$pid\""
   run_as_hermes "$container_name" "pid=\$(jq -r '.pid' /home/hermes/.hermes/profiles/$profile/gateway.pid); ps -p \"\$pid\" -o args= | grep -F \" -p $profile gateway run --replace\" >/dev/null"
-  run_as_hermes "$container_name" "hermes -p $profile gateway status | grep -F 'Gateway is running' >/dev/null"
+  run_as_hermes "$container_name" "hermes -p $profile gateway status | grep -F 'Managed gateway for profile '\''$profile'\'' is running' >/dev/null"
 }
 
 assert_websocket_proxy() {
@@ -376,8 +376,12 @@ run_as_hermes "$container_name" '! test -f /home/hermes/.hermes/active_profile'
 run_as_hermes_default_path "$container_name" 'test "$(command -v codex)" = "/home/hermes/.local/bin/codex"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v opencode)" = "/home/hermes/.local/bin/opencode"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v agent-browser)" = "/home/hermes/.local/bin/agent-browser"'
+run_as_hermes_default_path "$container_name" '! command -v gemini >/dev/null'
 run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'
 run_as_hermes "$container_name" 'test "$(command -v hermes)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/hermes"'
+run_as_hermes "$container_name" 'current_wrapper="$(systemctl cat ghostship-hermes-user-tooling.service | sed -n "s#.*\(/nix/store/[^: ]*-hermes-agent-wrapped-0\.1\.0\)/bin.*#\1#p" | tail -n1)"; test -n "$current_wrapper"; test "$(readlink -f "$(command -v hermes)")" = "$current_wrapper/bin/hermes"'
+run_as_hermes "$container_name" 'nix profile list --profile /home/hermes/.local/state/nix/profiles/ghostship-managed --json | jq -e "[.elements | keys[] | select(. == \"hermes-agent-wrapped\" or startswith(\"hermes-agent-wrapped-\"))] | length == 1" >/dev/null'
+run_as_hermes "$container_name" "node -p 'const pkg=require(\"/home/hermes/.hermes/hermes-agent/package.json\"); JSON.stringify(Object.keys(pkg.devDependencies).sort())' | grep -Fx '[\"@openai/codex\",\"agent-browser\",\"opencode-ai\"]' >/dev/null"
 run_as_hermes "$container_name" '! hermes --version 2>/dev/null | grep -F "legacy-default-hermes" >/dev/null'
 run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Model:" | grep -F "gpt-5.4" >/dev/null'
 run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Model:" | grep -F "openai-codex" >/dev/null'
@@ -385,6 +389,9 @@ run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Work
 run_as_hermes "$container_name" 'hermes -p assistant config show | grep -F "Vision" | grep -F "gemini-3.1-flash-lite-preview" >/dev/null'
 run_as_hermes "$container_name" 'grep -F "provider: holographic" /home/hermes/.hermes/profiles/assistant/config.yaml >/dev/null'
 run_as_hermes "$container_name" 'grep -F "cloud_provider: local" /home/hermes/.hermes/profiles/assistant/config.yaml >/dev/null'
+run_as_hermes "$container_name" 'grep -F "auto_thread: false" /home/hermes/.hermes/profiles/assistant/config.yaml >/dev/null'
+run_as_hermes "$container_name" 'grep -F "auto_thread: false" /home/hermes/.hermes/profiles/operations/config.yaml >/dev/null'
+run_as_hermes "$container_name" 'grep -F "auto_thread: false" /home/hermes/.hermes/profiles/supervisor/config.yaml >/dev/null'
 run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERAL_CHANNEL_ID}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_ASSISTANT_BOT_TOKEN}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_ASSISTANT_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"

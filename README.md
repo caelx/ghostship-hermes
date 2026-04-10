@@ -33,7 +33,7 @@ Upstream note:
 
 This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support is CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills.
 
-The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence installs and updates the mutable toolchain under `/home/hermes`:
+The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence reconciles the repo-owned persisted user-layer runtime contract under `/home/hermes`, removing stale managed entries and reapplying the current image-owned toolchain/config state on replacement:
 
 - user Nix profile tools: `hermes`, `git`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, `node`, `npm`
 - npm-managed agent CLIs: `codex`, `opencode`, `agent-browser`
@@ -85,7 +85,7 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-user-tooling.service`
-  converges the mutable user toolchain on boot, ensures the in-container Nix daemon is available first, installs or upgrades the image-managed Nix toolchain in a dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile, refreshes the managed npm CLIs, and does not own the main gateway startup dependency chain
+  converges the repo-owned persisted user-layer runtime contract on boot, ensures the in-container Nix daemon is available first, removes stale managed entries from the dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile before re-adding the current image-owned toolchain, rewrites the managed npm project to the declared CLI set, refreshes the managed npm CLIs and symlinks under `/home/hermes/.local/bin`, and does not own the main gateway startup dependency chain
 - `ghostship-hermes-user-tooling-refresh.timer`
   runs the same mutable toolchain refresh flow daily and also once shortly after boot
 - `ghostship-hermes-bootstrap.service`
@@ -173,7 +173,7 @@ The image is intentionally declarative-first:
 - The shared scaffold also sets display defaults with `compact = false`, `tool_progress = "new"`, and `background_process_notifications = "result"`.
 - The shared scaffold explicitly disables STT with `stt.enabled = false`.
 - The shared scaffold also disables artificial response delay with `human_delay.mode = "off"`.
-- Each profile config now also scaffolds Hermes `discord` defaults with `require_mention = true`, `auto_thread = true`, `reactions = true`, and `group_sessions_per_user = true`. The gateway service then maps profile-specific env vars into Hermes' standard Discord env names so a shared `DISCORD_GENERAL_CHANNEL_ID` stays mention-only while each profile's `DISCORD_<PROFILE>_CHANNEL_ID` becomes that bot's free-response role channel.
+- Each profile config now also scaffolds Hermes `discord` defaults with `require_mention = true`, `auto_thread = false`, `reactions = true`, and `group_sessions_per_user = true`. The gateway service then maps profile-specific env vars into Hermes' standard Discord env names so a shared `DISCORD_GENERAL_CHANNEL_ID` stays mention-only while each profile's `DISCORD_<PROFILE>_CHANNEL_ID` becomes that bot's free-response role channel without opening new Discord threads automatically.
 - Hermes does not have a native per-profile Discord icon field. If you want distinct icons, each profile needs its own Discord application/bot, and you set the avatar/banner in the Discord Developer Portal for that bot.
 - All Hermes auxiliary tasks are pinned to Gemini 3.1 Flash-Lite Preview through the Google Gemini OpenAI-compatible endpoint using `${GOOGLE_AI_STUDIO_API_KEY}`. TTS is still intentionally left unconfigured for now.
 - The bootstrap writes the managed runtime env into each profile `.env` at `~/.hermes/profiles/<profile>/.env`. Each profile `.env` is the single operator-facing source of truth for that profile, and any managed env contract change must update the bootstrap writer so the regenerated `.env` files stay in sync.

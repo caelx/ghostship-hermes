@@ -126,10 +126,12 @@ let
   managedNpmPackages = [
     "@openai/codex"
     "opencode-ai"
+    "agent-browser"
   ];
   managedNpmBins = [
     "codex"
     "opencode"
+    "agent-browser"
   ];
   rootConfig = {
     terminal = {
@@ -234,7 +236,7 @@ let
       };
       discord = {
         require_mention = true;
-        auto_thread = true;
+        auto_thread = false;
         reactions = true;
       };
       display = {
@@ -565,11 +567,16 @@ EOF
 import json
 import os
 import subprocess
+from pathlib import Path
 
 mode = os.environ.get("GHOSTSHIP_TOOLING_MODE", "bootstrap")
 runtime_flake_ref = os.environ.get("GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF", "github:caelx/ghostship-hermes")
 managed_profile = os.environ["GHOSTSHIP_HERMES_MANAGED_PROFILE"]
+project_root = Path(os.environ["GHOSTSHIP_HERMES_PROJECT_ROOT"])
+home = Path(os.environ["HOME"])
 specs = json.loads(r"""${builtins.toJSON managedUserPackages}""")
+managed_npm_packages = json.loads(r"""${builtins.toJSON managedNpmPackages}""")
+managed_npm_bins = json.loads(r"""${builtins.toJSON managedNpmBins}""")
 result = subprocess.run(
     ["nix", "profile", "list", "--profile", managed_profile, "--json"],
     check=False,
@@ -580,40 +587,55 @@ if result.returncode == 0:
     elements = json.loads(result.stdout).get("elements", {})
 else:
     elements = {}
-installed = set(elements.keys())
-missing = [
-    (item.get("bootstrapRef") or item["ref"])
-    for item in specs
-    if item["name"] not in installed
-]
-for ref in missing:
+
+for item in specs:
+    name = item["name"]
+    for entry_name in sorted(
+        key for key in elements if key == name or key.startswith(f"{name}-")
+    ):
+        subprocess.run(
+            ["nix", "profile", "remove", "--profile", managed_profile, entry_name],
+            check=True,
+        )
+    if mode == "refresh" and name == "hermes-agent-wrapped":
+        ref = f"{runtime_flake_ref}#hermes-agent-wrapped"
+    else:
+        ref = item.get("bootstrapRef") or item["ref"]
     subprocess.run(["nix", "profile", "add", "--profile", managed_profile, ref], check=True)
-if mode == "refresh":
-    hermes_name = "hermes-agent-wrapped"
-    hermes_refresh_ref = f"{runtime_flake_ref}#hermes-agent-wrapped"
-    if hermes_name in installed:
-        subprocess.run(["nix", "profile", "remove", "--profile", managed_profile, hermes_name], check=True)
-    subprocess.run(["nix", "profile", "add", "--profile", managed_profile, hermes_refresh_ref], check=True)
-    subprocess.run(["nix", "profile", "upgrade", "--profile", managed_profile, "--all"], check=True)
+
+package_json = project_root / "package.json"
+package_json.write_text(
+    json.dumps(
+        {
+            "name": "ghostship-hermes-runtime-tools",
+            "private": True,
+            "devDependencies": {pkg: "latest" for pkg in managed_npm_packages},
+        },
+        indent=2,
+    )
+    + "\n"
+)
+subprocess.run(["npm", "install", "--silent"], cwd=project_root, check=True)
+
+local_bin = home / ".local" / "bin"
+project_bin_root = project_root / "node_modules" / ".bin"
+for entry in local_bin.iterdir():
+    if not entry.is_symlink():
+        continue
+    try:
+        target = entry.resolve(strict=False)
+    except OSError:
+        continue
+    if target.parent == project_bin_root and entry.name not in managed_npm_bins:
+        entry.unlink(missing_ok=True)
+
+for bin_name in managed_npm_bins:
+    target = project_bin_root / bin_name
+    link = local_bin / bin_name
+    if target.exists():
+        link.unlink(missing_ok=True)
+        link.symlink_to(target)
 PY2
-
-    cd "$GHOSTSHIP_HERMES_PROJECT_ROOT"
-    if [ ! -f package.json ]; then
-      cat > package.json <<'JSON'
-{
-  "name": "ghostship-hermes-runtime-tools",
-  "private": true
-}
-JSON
-    fi
-
-    npm install --silent --save-dev ${lib.escapeShellArgs (map (pkg: "${pkg}@latest") managedNpmPackages)}
-
-    for bin in ${lib.escapeShellArgs managedNpmBins}; do
-      if [ -x "$GHOSTSHIP_HERMES_PROJECT_ROOT/node_modules/.bin/$bin" ]; then
-        ln -sfn "$GHOSTSHIP_HERMES_PROJECT_ROOT/node_modules/.bin/$bin" "$HOME/.local/bin/$bin"
-      fi
-    done
   '';
 
   serviceEnvironment = {
