@@ -31,11 +31,11 @@ Upstream note:
 - Upstream normally keeps managed state under `${stateDir}/.hermes` with a separate home directory.
 - Here, the repo sets `stateDir = "/home/hermes"`, so managed Hermes state and the CLI profile tree both live under `/home/hermes/.hermes` on the persisted home volume.
 
-This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support is CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills. The default image also preinstalls `gcloud` from `nixpkgs` on `PATH`.
+This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support is CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills. The default image also preinstalls `gcloud`, `gh`, `ssh`, `scp`, and `ssh-keygen` from `nixpkgs` on `PATH`.
 
 The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence reconciles the repo-owned persisted user-layer runtime contract under `/home/hermes`, removing stale managed entries and reapplying the current image-owned toolchain/config state on replacement:
 
-- user Nix profile tools: `hermes`, `git`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, `node`, `npm`
+- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, `node`, `npm`
 - npm-managed agent CLIs: `codex`, `opencode`
 - image-managed browser CLI: `agent-browser`
 
@@ -417,7 +417,7 @@ The persistence suite validates:
 - the NixOS unit graph comes up in the expected order for storage, profile bootstrap, the router, the two profile gateways, and the dashboard
  - no repo-managed default skills are seeded by default
 - optional shared and profile skill trees staged under `/home/hermes/seeds/...` are copied once without overwriting existing Hermes-managed skill directories
-- removed workstation tools other than `gws` and `gcloud` are absent by default
+- removed workstation tools other than `gws`, `gcloud`, `gh`, and approved OpenSSH client tools are absent by default
 - `ghostship-*` utilities remain available
 - HOME-backed state survives container replacement
 - `nix profile install` survives container replacement with reused `/nix`

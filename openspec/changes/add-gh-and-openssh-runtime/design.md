@@ -10,7 +10,7 @@ This change is small in code size but cross-cuts three surfaces:
 ## Goals / Non-Goals
 
 **Goals:**
-- Make `gh`, `ssh`, and `scp` available in the default Hermes image without requiring runtime installation.
+- Make `gh`, `ssh`, `scp`, and `ssh-keygen` available in the default Hermes image without requiring runtime installation.
 - Keep the implementation aligned with the repo's existing Nix/image wiring patterns.
 - Keep the policy/docs synchronized with the actual baked image contract.
 - Preserve the current decision to leave Chromium and ffmpeg out of the image.
@@ -35,7 +35,7 @@ Alternatives considered:
 
 ### Treat this as an explicit image capability, not an undocumented side effect
 
-The change should create a dedicated spec for `gh`, `ssh`, and `scp`, mirroring the existing pattern used for `gcloud` and `gws`. That keeps future image-policy decisions legible and testable.
+The change should create a dedicated spec for `gh`, `ssh`, `scp`, and `ssh-keygen`, mirroring the existing pattern used for `gcloud` and `gws`. That keeps future image-policy decisions legible and testable.
 
 Alternatives considered:
 - Fold the entire change into `agent-workstation-runtime` without a dedicated capability.
@@ -58,7 +58,7 @@ Alternatives considered:
 ## Migration Plan
 
 1. Add `gh` and `openssh` to the default image/runtime package wiring.
-2. Update the runtime policy/docs to include them in the approved default-image CLI set.
+2. Update the runtime policy/docs to include them in the approved default-image CLI set, including SSH key generation support through `ssh-keygen`.
 3. Add or update verification that the built image/runtime exposes `gh`, `ssh`, and `scp` on PATH.
 4. Roll back by removing the package wiring and reverting the corresponding spec/doc updates if the added tools prove problematic.
 

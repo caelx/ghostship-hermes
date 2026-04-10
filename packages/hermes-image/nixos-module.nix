@@ -122,6 +122,14 @@ let
       name = "nodejs_22";
       ref = "nixpkgs#nodejs_22";
     }
+    {
+      name = "gh";
+      ref = "nixpkgs#gh";
+    }
+    {
+      name = "openssh";
+      ref = "nixpkgs#openssh";
+    }
   ];
   managedNpmPackages = [
     "@openai/codex"
@@ -271,9 +279,11 @@ let
   toolingFallbackPackages = with pkgs; [
     curl
     git
+    gh
     jq
     nix
     nodejs_22
+    openssh
     ripgrep
   ];
 

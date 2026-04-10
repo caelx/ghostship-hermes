@@ -5,14 +5,14 @@ The current image runtime already exposes several operator-facing tools, but `gh
 ## What Changes
 
 - Add the GitHub CLI (`gh`) to the default Hermes image runtime through the repo's normal Nix/image package wiring.
-- Add the OpenSSH client package so `ssh` and `scp` are available on the default Hermes image PATH.
+- Add the OpenSSH client package so `ssh`, `scp`, and `ssh-keygen` are available on the default Hermes image PATH.
 - Keep this change narrowly scoped to the image/runtime contract and associated operator documentation.
 - Explicitly leave Chromium and ffmpeg out of scope for this change.
 
 ## Capabilities
 
 ### New Capabilities
-- `github-and-ssh-cli-runtime`: Define the default-image contract for shipping `gh`, `ssh`, and `scp` from the repo's normal Nix/image package wiring.
+- `github-and-ssh-cli-runtime`: Define the default-image contract for shipping `gh`, `ssh`, `scp`, and `ssh-keygen` from the repo's normal Nix/image package wiring.
 
 ### Modified Capabilities
 - `agent-workstation-runtime`: Clarify that the supported immutable runtime layer may include repo-approved admin CLIs such as `gh` and `openssh` even while the broader user-facing tool surface remains managed outside the immutable layer.

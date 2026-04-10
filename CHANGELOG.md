@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added the `gh` GitHub CLI plus OpenSSH client tools (`ssh`, `scp`, `ssh-keygen`) to the default Hermes image runtime, converged them through the managed user toolchain, updated the approved extra-CLI policy/docs, and extended image validation to assert they are available on PATH while keeping Chromium and ffmpeg out of scope.
+
 - Fixed the Hermes image `agent-browser` runtime wiring so boot-time managed tooling no longer replaces the working image-packaged `agent-browser` with a broken mutable npm shim on arm64, while keeping Hermes local browser mode and `hermes doctor` aligned with the supported image-managed path.
 - Changed the managed Hermes display defaults so scaffolded profiles now use `display.streaming = true`, `display.tool_preview_length = 0`, and `display.tool_progress = "verbose"` while keeping top-level gateway streaming enabled separately.
 - Fixed persisted user-layer convergence in the Hermes image so boot-time managed tooling removes stale repo-owned Nix-profile entries, rewrites the managed npm CLI project and `.local/bin` links to the declared set, keeps the resolved `hermes` binary aligned with the current image generation after replacement, and disables Discord `auto_thread` in the managed `assistant`, `operations`, and `supervisor` profile scaffold.
