@@ -36,7 +36,8 @@ This image intentionally does not ship the old Ghostship workstation layer. Goog
 The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence reconciles the repo-owned persisted user-layer runtime contract under `/home/hermes`, removing stale managed entries and reapplying the current image-owned toolchain/config state on replacement:
 
 - user Nix profile tools: `hermes`, `git`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, `node`, `npm`
-- npm-managed agent CLIs: `codex`, `opencode`, `agent-browser`
+- npm-managed agent CLIs: `codex`, `opencode`
+- image-managed browser CLI: `agent-browser`
 
 The immutable layer stays focused on boot/supervision plus the repo-owned runtime surface:
 
@@ -165,7 +166,7 @@ The image is intentionally declarative-first:
 - The shared scaffold also enables transcript compression with `threshold = 0.50`, `target_ratio = 0.25`, and `protect_last_n = 20` for long-running sessions.
 - The shared scaffold explicitly keeps `session_reset.mode = "none"`, while still recording placeholder idle/daily values (`idle_minutes = 1440`, `at_hour = 4`) for future policy changes.
 - The shared scaffold also configures Hermes browser defaults with `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.
-- `agent-browser` is managed in the mutable npm layer and is the documented local-browser default when Browserbase, Browser Use, Camofox, and manual `/browser connect` CDP attachment are not in use. The image does not preinstall Chrome or Chromium. Hermes does not expose a declarative multi-CDP config item; the documented CDP path is a single interactive `/browser connect [ws://host:port]` connection.
+- `agent-browser` is the documented local-browser default when Browserbase, Browser Use, Camofox, and manual `/browser connect` CDP attachment are not in use, but the supported runtime path comes from the image-managed package rather than the mutable npm tooling layer. The image does not preinstall Chrome or Chromium. Hermes does not expose a declarative multi-CDP config item; the documented CDP path is a single interactive `/browser connect [ws://host:port]` connection.
 - The shared scaffold now also sets `approvals.mode = "off"` for a trusted, non-interactive runtime posture.
 - The shared scaffold also enables Hermes secret redaction and Tirith integration (`tirith_enabled = true`, `tirith_fail_open = true`) while leaving the website blocklist scaffold disabled by default.
 - The shared scaffold also enables Hermes checkpoints with `max_snapshots = 50` so file mutations retain rollback history.

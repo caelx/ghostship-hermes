@@ -126,12 +126,10 @@ let
   managedNpmPackages = [
     "@openai/codex"
     "opencode-ai"
-    "agent-browser"
   ];
   managedNpmBins = [
     "codex"
     "opencode"
-    "agent-browser"
   ];
   rootConfig = {
     terminal = {
@@ -621,6 +619,7 @@ subprocess.run(["npm", "install", "--silent"], cwd=project_root, check=True)
 
 local_bin = home / ".local" / "bin"
 project_bin_root = project_root / "node_modules" / ".bin"
+agent_browser_link = local_bin / "agent-browser"
 for entry in local_bin.iterdir():
     if not entry.is_symlink():
         continue
@@ -637,6 +636,14 @@ for bin_name in managed_npm_bins:
     if target.exists():
         link.unlink(missing_ok=True)
         link.symlink_to(target)
+
+if agent_browser_link.is_symlink():
+    try:
+        target = agent_browser_link.resolve(strict=False)
+    except OSError:
+        target = None
+    if target is None or project_root in target.parents:
+        agent_browser_link.unlink(missing_ok=True)
 PY2
   '';
 
