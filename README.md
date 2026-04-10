@@ -406,7 +406,7 @@ Image output contract:
 
 Optional GitHub Actions cache acceleration:
 
-- The workflows use `DeterminateSystems/nix-installer-action` plus `DeterminateSystems/magic-nix-cache-action`, so GitHub Actions can reuse Nix store paths across runs without any paid cache service.
+- The publish workflow keeps the free speedup on the GHCR-reused `ghostship-hermes-base` image path. Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.

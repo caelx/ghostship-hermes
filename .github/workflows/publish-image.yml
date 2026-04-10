@@ -67,7 +67,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
     env:
       IMAGE_NAME: ${{ needs.prepare.outputs.image_name }}
       BASE_IMAGE_NAME: ${{ needs.prepare.outputs.base_image_name }}
@@ -80,9 +79,6 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
-
-      - name: Enable GitHub Actions Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
