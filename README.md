@@ -386,10 +386,12 @@ The scheduled `update-hermes-release` workflow tracks the upstream
 `NousResearch/hermes-agent` release feed, updates the pinned flake input and
 lockfile when a new tag lands, and then explicitly dispatches
 `publish-image.yml` so the new Hermes build is published even though the pin
-bump commit itself is created by GitHub Actions. The publish workflow now pushes
-architecture-specific tags directly from the native build jobs and leaves the
-final manifest job responsible only for multi-arch manifest creation, which
-removes the old artifact upload/download hop from the critical path.
+bump commit itself is created by GitHub Actions. The publish workflow now
+path-gates automatic runs, reuses GitHub-hosted Nix cache state, publishes a
+content-addressed per-architecture `ghostship-hermes-base` image only when the
+slow-changing Nix base changes, then assembles and pushes the final
+`ghostship-hermes` architecture tags by applying a small overlay bundle on top
+of that base before the manifest-only job creates the multi-arch tags.
 Inside a running container, the `hermes` user tooling refresh path keeps an
 offline bootstrap package for first boot, but refreshes Hermes itself from
 `github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already

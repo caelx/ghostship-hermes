@@ -66,20 +66,20 @@ Alternatives considered:
 - Rely only on GitHub Actions cache for Nix store state: generally weaker and less reliable than a true substituter/binary cache for large Nix closures.
 - Optimize Python only: good for `ci`, but it does not address the dominant `publish-image` cost.
 
-### 4. Reserve architectural image-pipeline changes for later rounds
+### 4. Use a reusable base-image plus overlay assembly path for the architectural round
 
-If gating plus caches do not bring the image publish path close enough to the target, later rounds may change the publication architecture while preserving the published contract. Candidate directions include:
+After the gating and cache rounds, the publish path still materially exceeds the stretch target because each architecture leg rebuilds and re-exports the full publishable image bundle. The selected architectural change is to split publication into:
 
-- splitting slow-changing base layers from fast-changing repo-owned additions
-- precomputing or reusing publishable intermediate artifacts
-- reducing duplicate work between build and publish stages
-- moving some image conversion work out of the critical path when the resulting artifact semantics remain identical
+- a slow-changing per-architecture `ghostship-hermes-base` image built from a reduced NixOS system that keeps the runtime contract but replaces repo-owned commands with overlay shims
+- a `ghostship-hermes-overlay-bundle` derivation that carries the real repo-owned utilities and runtime packages as a small Docker build context
+- a final per-architecture Docker assembly step that starts from the published base image, copies in the overlay closure, and then pushes the normal `ghostship-hermes` tags
 
-These changes should be considered only after the simpler wins are measured, because they are more invasive and have a higher chance of introducing publication regressions.
+This keeps the explicit `ghostship-hermes-image` contract for downstream consumers while making repeated publishes depend on a reusable GHCR base tag instead of rebuilding the entire image every time.
 
 Alternatives considered:
 
-- Commit immediately to a layered or prebuilt-image architecture: potentially faster, but premature without knowing whether gating and caches already solve most of the problem.
+- Commit immediately to a layered or prebuilt-image architecture before measuring gating and cache-backed reuse: potentially faster, but premature without evidence that simpler optimizations were insufficient.
+- Keep the old single-shot native publish path and tune only YAML around it: lower implementation risk, but it leaves the dominant full-image rebuild cost on every publish run.
 
 ### 5. Keep correctness verification in every round
 

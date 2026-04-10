@@ -18,7 +18,7 @@
 
 ## 4. Round 3: Architectural Pipeline Changes
 
-- [ ] 4.1 Evaluate the remaining bottlenecks after gating and cache-backed reuse and identify whether the publish path still materially exceeds the target
+- [x] 4.1 Evaluate the remaining bottlenecks after gating and cache-backed reuse and identify whether the publish path still materially exceeds the target
 - [x] 4.2 Prototype and select an architectural image build or publish change if it offers a defensible speedup while preserving the explicit image contract
 - [x] 4.3 Implement the selected architectural change and verify multi-arch publication correctness plus runtime metadata compatibility
 

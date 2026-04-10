@@ -90,6 +90,32 @@
           ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix { inherit hermesDashboard; };
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.gws;
 
+          overlayUtilityCommandNames = [
+            "ghostship-searxng"
+            "ghostship-sonarr"
+            "ghostship-radarr"
+            "ghostship-prowlarr"
+            "ghostship-plex"
+            "ghostship-romm"
+            "ghostship-nzbget"
+            "ghostship-qbittorrent"
+            "ghostship-grimmory"
+            "ghostship-tautulli"
+            "ghostship-bazarr"
+            "ghostship-synology"
+            "ghostship-flaresolverr"
+            "ghostship-pyload-ng"
+            "ghostship-cloakbrowser"
+            "ghostship-pricebuddy"
+            "ghostship-rss-bridge"
+            "ghostship-changedetection"
+            "ghostship-chaptarr"
+            "ghostship-n8n"
+          ];
+          mkOverlayShim = commandName: pkgs.writeShellScriptBin commandName ''
+            exec /opt/ghostship-overlay/bin/${commandName} "$@"
+          '';
+
           allUtilities = [
             pkgs.bws
             pkgs.google-cloud-sdk
@@ -117,17 +143,38 @@
             ghostshipN8n
           ];
 
-          ghostshipHermesSystem = nixpkgs.lib.nixosSystem {
+          overlayUtilities = [
+            ghostshipHermesRouter
+            ghostshipHermesRuntime
+            hermesDashboard
+          ] ++ allUtilities;
+          overlayUtilityEnv = pkgs.buildEnv {
+            name = "ghostship-hermes-overlay";
+            paths = overlayUtilities;
+            ignoreCollisions = true;
+          };
+          ghostshipHermesOverlayBundle = pkgs.callPackage ./packages/hermes-image/overlay-bundle.nix {
+            overlayEnv = overlayUtilityEnv;
+          };
+
+          baseGhostshipUtilities = map mkOverlayShim overlayUtilityCommandNames;
+          baseGhostshipHermesRouter = mkOverlayShim "ghostship-hermes-router";
+          baseGhostshipHermesRuntime = mkOverlayShim "ghostship-hermes-runtime";
+          baseHermesDashboard = mkOverlayShim "hermes-dashboard";
+
+          mkHermesSystem = {
+            ghostshipHermesRouterArg,
+            ghostshipHermesRuntimeArg,
+            ghostshipUtilitiesArg,
+            hermesDashboardArg,
+          }: nixpkgs.lib.nixosSystem {
             inherit system;
             specialArgs = {
-              inherit
-                ghostshipHermesRouter
-                ghostshipHermesRuntime
-                hermesRelease
-                hermesDashboard
-                wrappedHermesAgent
-                ;
-              ghostshipUtilities = allUtilities;
+              ghostshipHermesRouter = ghostshipHermesRouterArg;
+              ghostshipHermesRuntime = ghostshipHermesRuntimeArg;
+              ghostshipUtilities = ghostshipUtilitiesArg;
+              hermesDashboard = hermesDashboardArg;
+              inherit hermesRelease wrappedHermesAgent;
             };
             modules = [
               ({ ... }: {
@@ -137,13 +184,35 @@
               ./packages/hermes-image/nixos-module.nix
             ];
           };
+
+          ghostshipHermesSystem = mkHermesSystem {
+            ghostshipHermesRouterArg = ghostshipHermesRouter;
+            ghostshipHermesRuntimeArg = ghostshipHermesRuntime;
+            ghostshipUtilitiesArg = allUtilities;
+            hermesDashboardArg = hermesDashboard;
+          };
+          ghostshipHermesBaseSystem = mkHermesSystem {
+            ghostshipHermesRouterArg = baseGhostshipHermesRouter;
+            ghostshipHermesRuntimeArg = baseGhostshipHermesRuntime;
+            ghostshipUtilitiesArg = baseGhostshipUtilities;
+            hermesDashboardArg = baseHermesDashboard;
+          };
           ghostshipHermesRootfs = ghostshipHermesSystem.config.system.build.tarball;
+          ghostshipHermesBaseRootfs = ghostshipHermesBaseSystem.config.system.build.tarball;
           ghostshipHermesImage = pkgs.callPackage ./packages/hermes-image/image.nix {
             inherit
               system
               ghostshipHermesRootfs
               hermesRelease
               ;
+          };
+          ghostshipHermesBaseImage = pkgs.callPackage ./packages/hermes-image/image.nix {
+            inherit
+              system
+              hermesRelease
+              ;
+            ghostshipHermesRootfs = ghostshipHermesBaseRootfs;
+            defaultImageRef = "ghostship-hermes-base:${hermesRelease}";
           };
         in
         {
@@ -178,6 +247,8 @@
           hermes-agent-wrapped = wrappedHermesAgent;
           ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;
           ghostship-hermes-rootfs = ghostshipHermesRootfs;
+          ghostship-hermes-base-image = ghostshipHermesBaseImage;
+          ghostship-hermes-overlay-bundle = ghostshipHermesOverlayBundle;
           ghostship-hermes-image = ghostshipHermesImage;
         }
       );
@@ -223,6 +294,8 @@
             hermes-agent-wrapped
             ghostship-hermes-system
             ghostship-hermes-rootfs
+            ghostship-hermes-base-image
+            ghostship-hermes-overlay-bundle
             ghostship-hermes-image;
         }
       );

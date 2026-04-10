@@ -22,10 +22,9 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      id-token: write
     outputs:
-      hermes_ref: ${{ steps.meta.outputs.hermes_ref }}
       image_name: ${{ steps.meta.outputs.image_name }}
+      base_image_name: ${{ steps.meta.outputs.base_image_name }}
       tags: ${{ steps.meta.outputs.tags }}
     steps:
       - uses: actions/checkout@v6
@@ -38,6 +37,7 @@ jobs:
 
           hermes_ref="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)"
           image_name="ghcr.io/${GITHUB_REPOSITORY_OWNER}/ghostship-hermes"
+          base_image_name="ghcr.io/${GITHUB_REPOSITORY_OWNER}/ghostship-hermes-base"
           tags="sha-${GITHUB_SHA}"
 
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then
@@ -47,8 +47,8 @@ jobs:
           fi
 
           {
-            echo "hermes_ref=${hermes_ref}"
             echo "image_name=${image_name}"
+            echo "base_image_name=${base_image_name}"
             echo "tags=${tags}"
           } >> "$GITHUB_OUTPUT"
 
@@ -67,8 +67,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     env:
       IMAGE_NAME: ${{ needs.prepare.outputs.image_name }}
+      BASE_IMAGE_NAME: ${{ needs.prepare.outputs.base_image_name }}
       TAGS: ${{ needs.prepare.outputs.tags }}
       PLATFORM_TAG: ${{ matrix.platform_tag }}
     steps:
@@ -89,37 +91,72 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build publishable image archive
+      - name: Resolve base image reference
+        id: base
         shell: bash
         run: |
           set -euo pipefail
 
-          # Full image publication builds execute target-system derivations, so
-          # each leg must run on infrastructure that can build that system.
-          nix build .#packages.${{ matrix.system }}.ghostship-hermes-image
-          scripts/export_publishable_image.sh "$(readlink -f result)" "ghostship-hermes:ci-${PLATFORM_TAG}" "ghostship-hermes-${PLATFORM_TAG}.tar"
+          base_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-base-image.drvPath --raw)"
+          base_tag="base-$(basename "$base_drv" .drv)"
+          base_ref="${BASE_IMAGE_NAME}:${base_tag}-${PLATFORM_TAG}"
+
+          {
+            echo "tag=${base_tag}"
+            echo "ref=${base_ref}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ensure base image tag exists
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if nix shell nixpkgs#skopeo -c skopeo inspect "docker://${BASE_REF}" >/dev/null 2>&1; then
+            echo "reusing published base image ${BASE_REF}"
+            exit 0
+          fi
+
+          echo "publishing new base image ${BASE_REF}"
+          base_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-base-image)"
+          scripts/export_publishable_image.sh "$base_bundle" "ghostship-hermes-base:ci-${PLATFORM_TAG}" "ghostship-hermes-base-${PLATFORM_TAG}.tar"
+          nix shell nixpkgs#skopeo -c skopeo copy \
+            "docker-archive:$(pwd)/ghostship-hermes-base-${PLATFORM_TAG}.tar" \
+            "docker://${BASE_REF}"
+
+      - name: Build final image from base plus overlay
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          overlay_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-overlay-bundle)"
+          docker build \
+            --build-arg "BASE_IMAGE=${BASE_REF}" \
+            --tag "ghostship-hermes:ci-${PLATFORM_TAG}" \
+            "$overlay_bundle"
 
       - name: Publish architecture image tags
         shell: bash
         run: |
           set -euo pipefail
 
-          tar_path="$(pwd)/ghostship-hermes-${PLATFORM_TAG}.tar"
           cat > publish-arch-tags.sh <<'SCRIPT'
           set -euo pipefail
           for tag in $TAGS; do
             skopeo copy \
-              "docker-archive:${TAR_PATH}" \
+              "docker-daemon:ghostship-hermes:ci-${PLATFORM_TAG}" \
               "docker://${IMAGE_NAME}:${tag}-${PLATFORM_TAG}"
           done
           SCRIPT
           chmod +x publish-arch-tags.sh
-          export TAR_PATH="$tar_path"
           nix shell nixpkgs#skopeo -c bash ./publish-arch-tags.sh
 
       - name: Remove temporary publish script
         if: always()
-        run: rm -f publish-arch-tags.sh
+        run: rm -f publish-arch-tags.sh "ghostship-hermes-base-${PLATFORM_TAG}.tar"
 
   publish-manifests:
     needs:
