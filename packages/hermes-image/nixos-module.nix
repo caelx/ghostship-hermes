@@ -565,7 +565,11 @@ EOF
         fi
       } >"$tmp_target"
       chmod 0600 "$tmp_target"
-      mv -f "$tmp_target" "$target"
+      if [ -f "$target" ] && cmp -s "$tmp_target" "$target"; then
+        rm -f "$tmp_target"
+      else
+        mv -f "$tmp_target" "$target"
+      fi
       trap - EXIT
     }
 
@@ -1049,6 +1053,7 @@ in
     pathConfig = {
       PathChanged = [
         "${profileDefinitions.assistant.configPath}"
+        "${profileDefinitions.assistant.profileRoot}/.env"
         "${profileDefinitions.assistant.profileRoot}/auth.json"
         "${profileDefinitions.assistant.soulPath}"
       ];
@@ -1061,6 +1066,7 @@ in
     pathConfig = {
       PathChanged = [
         "${profileDefinitions.operations.configPath}"
+        "${profileDefinitions.operations.profileRoot}/.env"
         "${profileDefinitions.operations.profileRoot}/auth.json"
         "${profileDefinitions.operations.soulPath}"
       ];
@@ -1073,6 +1079,7 @@ in
     pathConfig = {
       PathChanged = [
         "${profileDefinitions.supervisor.configPath}"
+        "${profileDefinitions.supervisor.profileRoot}/.env"
         "${profileDefinitions.supervisor.profileRoot}/auth.json"
         "${profileDefinitions.supervisor.soulPath}"
       ];
