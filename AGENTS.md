@@ -102,6 +102,7 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Persisting `/home/hermes` directly is the supported durability model for this image; it keeps Hermes CLI profiles, managed state, XDG state, and later-installed agent-tool config together in one mount.
 - This repo should not accumulate Docker artifacts. After validation, aggressively prune unused images, stopped containers, and unused volumes so Docker keeps only the current needed image set.
 - After archiving a change, clean up the Docker artifacts generated for that change's validation work. Default to removing only the containers, images, and volumes created during the task; do a full Docker reset only when the user explicitly asks for it.
+- Do not require the deployment host to expose port `7681` directly. Validate the dashboard from inside the Hermes container or through the intended upstream proxy path, and treat missing host-level `127.0.0.1:7681` reachability as expected unless the deployment specifically documents a direct bind.
 
 ### Skill Authoring
 
