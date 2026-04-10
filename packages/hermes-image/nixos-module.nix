@@ -67,16 +67,23 @@ let
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   runtimeBin = "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime";
   yamlFormat = pkgs.formats.yaml { };
-  sharedHermesEnvKeys = [
+  sharedProfileEnvKeys = [
     "GOOGLE_AI_STUDIO_API_KEY"
     "OPENROUTER_API_KEY"
+    "OPENROUTER_BASE_URL"
+    "OPENROUTER_HTTP_REFERER"
+    "OPENROUTER_TITLE"
+    "OPENAI_API_KEY"
+    "OPENAI_BASE_URL"
     "OPENCODE_API_KEY"
     "OPENCODE_GO_API_KEY"
+    "OPENCODE_BASE_URL"
     "GITHUB_TOKEN"
     "GH_TOKEN"
     "HASS_TOKEN"
     "HASS_URL"
     "BWS_ACCESS_TOKEN"
+    "BWS_SERVER_URL"
     "BROWSERBASE_API_KEY"
     "BROWSERBASE_PROJECT_ID"
     "BROWSER_USE_API_KEY"
@@ -86,7 +93,61 @@ let
     "BROWSERBASE_SESSION_TIMEOUT"
     "BROWSER_INACTIVITY_TIMEOUT"
     "CAMOFOX_URL"
-    "BROWSER_CDP_URL"
+    "SEARXNG_URL"
+    "SONARR_URL"
+    "SONARR_API_KEY"
+    "RADARR_URL"
+    "RADARR_API_KEY"
+    "PROWLARR_URL"
+    "PROWLARR_API_KEY"
+    "PLEX_URL"
+    "PLEX_TOKEN"
+    "ROMM_URL"
+    "ROMM_TOKEN"
+    "ROMM_USERNAME"
+    "ROMM_PASSWORD"
+    "NZBGET_URL"
+    "NZBGET_USER"
+    "NZBGET_PASS"
+    "QBITTORRENT_URL"
+    "QBITTORRENT_USER"
+    "QBITTORRENT_PASS"
+    "GRIMMORY_URL"
+    "GRIMMORY_TOKEN"
+    "GRIMMORY_USERNAME"
+    "GRIMMORY_PASSWORD"
+    "TAUTULLI_URL"
+    "TAUTULLI_API_KEY"
+    "BAZARR_URL"
+    "BAZARR_API_KEY"
+    "SYNOLOGY_URL"
+    "SYNOLOGY_USER"
+    "SYNOLOGY_PASS"
+    "SYNOLOGY_VERIFY_SSL"
+    "FLARESOLVERR_URL"
+    "PYLOAD_URL"
+    "PYLOAD_USER"
+    "PYLOAD_PASS"
+    "CLOAKBROWSER_URL"
+    "CLOAKBROWSER_TOKEN"
+    "PRICEBUDDY_URL"
+    "PRICEBUDDY_TOKEN"
+    "RSS_BRIDGE_URL"
+    "CHANGEDETECTION_URL"
+    "CHANGEDETECTION_API_KEY"
+    "CHAPTARR_URL"
+    "CHAPTARR_API_KEY"
+    "CHAPTARR_API_PATH"
+    "CHAPTARR_API_VERSION"
+    "N8N_URL"
+    "N8N_API_KEY"
+    "N8N_PUBLIC_API_ENDPOINT"
+    "N8N_PUBLIC_API_VERSION"
+  ];
+  profileBrowserCdpEnvKeys = [
+    "BROWSER_ASSISTANT_CDP_URL"
+    "BROWSER_OPERATIONS_CDP_URL"
+    "BROWSER_SUPERVISOR_CDP_URL"
   ];
   discordEnvKeys = [
     "DISCORD_GENERAL_CHANNEL_ID"
@@ -520,6 +581,7 @@ EOF
       webhook_enabled="''${6:-}"
       webhook_port="''${7:-}"
       webhook_secret_env="''${8:-}"
+      browser_cdp_env="''${9:-}"
       target_dir="$(dirname "$target")"
       tmp_target="$(mktemp "$target_dir/.env.tmp.XXXXXX")"
       general_channel="''${DISCORD_GENERAL_CHANNEL_ID:-}"
@@ -530,7 +592,7 @@ EOF
       umask 077
       {
         printf 'TERMINAL_CWD=%s\n' "$terminal_cwd"
-        for key in ${lib.escapeShellArgs sharedHermesEnvKeys}; do
+        for key in ${lib.escapeShellArgs sharedProfileEnvKeys}; do
           value="''${!key:-}"
           if [ -n "$value" ]; then
             printf '%s=%s\n' "$key" "$value"
@@ -560,6 +622,12 @@ EOF
         if [ -n "$general_channel" ]; then
           printf 'DISCORD_HOME_CHANNEL=%s\n' "$general_channel"
         fi
+        if [ -n "$browser_cdp_env" ]; then
+          browser_cdp_url="''${!browser_cdp_env:-}"
+          if [ -n "$browser_cdp_url" ]; then
+            printf 'BROWSER_CDP_URL=%s\n' "$browser_cdp_url"
+          fi
+        fi
         if [ "$webhook_enabled" = "true" ]; then
           printf 'WEBHOOK_ENABLED=true\n'
         fi
@@ -582,9 +650,9 @@ EOF
       trap - EXIT
     }
 
-    write_profile_env "${profileDefinitions.assistant.profileRoot}/.env" "${profileDefinitions.assistant.serviceWorkingDirectory}" "${profileDefinitions.assistant.discordBotTokenEnv}" "${profileDefinitions.assistant.discordAllowedUsersEnv}" "${profileDefinitions.assistant.discordChannelEnv}" "${if profileDefinitions.assistant.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.assistant.webhookPort}" "${profileDefinitions.assistant.webhookSecretEnv}"
-    write_profile_env "${profileDefinitions.operations.profileRoot}/.env" "${profileDefinitions.operations.serviceWorkingDirectory}" "${profileDefinitions.operations.discordBotTokenEnv}" "${profileDefinitions.operations.discordAllowedUsersEnv}" "${profileDefinitions.operations.discordChannelEnv}" "${if profileDefinitions.operations.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.operations.webhookPort}" "${profileDefinitions.operations.webhookSecretEnv}"
-    write_profile_env "${profileDefinitions.supervisor.profileRoot}/.env" "${profileDefinitions.supervisor.serviceWorkingDirectory}" "${profileDefinitions.supervisor.discordBotTokenEnv}" "${profileDefinitions.supervisor.discordAllowedUsersEnv}" "${profileDefinitions.supervisor.discordChannelEnv}" "${if profileDefinitions.supervisor.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.supervisor.webhookPort}" "${profileDefinitions.supervisor.webhookSecretEnv}"
+    write_profile_env "${profileDefinitions.assistant.profileRoot}/.env" "${profileDefinitions.assistant.serviceWorkingDirectory}" "${profileDefinitions.assistant.discordBotTokenEnv}" "${profileDefinitions.assistant.discordAllowedUsersEnv}" "${profileDefinitions.assistant.discordChannelEnv}" "${if profileDefinitions.assistant.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.assistant.webhookPort}" "${profileDefinitions.assistant.webhookSecretEnv}" "BROWSER_ASSISTANT_CDP_URL"
+    write_profile_env "${profileDefinitions.operations.profileRoot}/.env" "${profileDefinitions.operations.serviceWorkingDirectory}" "${profileDefinitions.operations.discordBotTokenEnv}" "${profileDefinitions.operations.discordAllowedUsersEnv}" "${profileDefinitions.operations.discordChannelEnv}" "${if profileDefinitions.operations.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.operations.webhookPort}" "${profileDefinitions.operations.webhookSecretEnv}" "BROWSER_OPERATIONS_CDP_URL"
+    write_profile_env "${profileDefinitions.supervisor.profileRoot}/.env" "${profileDefinitions.supervisor.serviceWorkingDirectory}" "${profileDefinitions.supervisor.discordBotTokenEnv}" "${profileDefinitions.supervisor.discordAllowedUsersEnv}" "${profileDefinitions.supervisor.discordChannelEnv}" "${if profileDefinitions.supervisor.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.supervisor.webhookPort}" "${profileDefinitions.supervisor.webhookSecretEnv}" "BROWSER_SUPERVISOR_CDP_URL"
     reconcile_seed_skills
 
     rm -f /home/hermes/.hermes/active_profile
@@ -879,7 +947,7 @@ in
       User = "hermes";
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
-      PassEnvironment = sharedHermesEnvKeys;
+      PassEnvironment = sharedProfileEnvKeys ++ profileBrowserCdpEnvKeys;
       ExecStart = "${managedUserToolingScript} bootstrap";
     };
   };
@@ -903,7 +971,7 @@ in
       PassEnvironment = [
         "GHOSTSHIP_HERMES_SHARED_SKILLS_DIR"
         "GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT"
-      ] ++ sharedHermesEnvKeys ++ discordEnvKeys;
+      ] ++ sharedProfileEnvKeys ++ profileBrowserCdpEnvKeys ++ discordEnvKeys;
       ExecStart = bootstrapHermesScript;
     };
   };
@@ -1114,7 +1182,7 @@ in
       User = "hermes";
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
-      PassEnvironment = sharedHermesEnvKeys;
+      PassEnvironment = sharedProfileEnvKeys ++ profileBrowserCdpEnvKeys;
       ExecStart = "${managedUserToolingScript} refresh";
     };
   };

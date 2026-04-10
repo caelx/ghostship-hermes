@@ -82,78 +82,14 @@ Alternatives considered:
 
 ### Proposed persisted env inventory
 
-The contract should define these groups.
+See the full grouped contract in the proposal. The implementation contract is:
 
-Shared profile-facing env copied unchanged into every managed profile `.env` when set:
+- Shared pass-through into every managed profile `.env`: provider/workflow env, browser env, and every utility env required by the installed `ghostship-*` CLIs and router-invoked utility calls
+- Profile-scoped translations: Discord bot/user/channel vars, webhook secrets, and `BROWSER_<PROFILE>_CDP_URL` into `BROWSER_CDP_URL` for only that profile
+- Generated per-profile values: `TERMINAL_CWD`, `WEBHOOK_ENABLED=true`, profile-specific `WEBHOOK_PORT`, and the `OPENCODE_GO_API_KEY` -> `OPENCODE_API_KEY` compatibility write when needed
+- Container-only exclusions: image/bootstrap plumbing, router listener/auth/state/tuning env, and test-only utility headers
 
-- `TERMINAL_CWD`
-- `GOOGLE_AI_STUDIO_API_KEY`
-- `OPENROUTER_API_KEY`
-- `OPENROUTER_BASE_URL`
-- `OPENROUTER_HTTP_REFERER`
-- `OPENROUTER_TITLE`
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `OPENCODE_API_KEY`
-- `OPENCODE_GO_API_KEY`
-- `OPENCODE_BASE_URL`
-- `GITHUB_TOKEN`
-- `GH_TOKEN`
-- `HASS_TOKEN`
-- `HASS_URL`
-- `BWS_ACCESS_TOKEN`
-- `BROWSERBASE_API_KEY`
-- `BROWSERBASE_PROJECT_ID`
-- `BROWSER_USE_API_KEY`
-- `BROWSERBASE_PROXIES`
-- `BROWSERBASE_ADVANCED_STEALTH`
-- `BROWSERBASE_KEEP_ALIVE`
-- `BROWSERBASE_SESSION_TIMEOUT`
-- `BROWSER_INACTIVITY_TIMEOUT`
-- `CAMOFOX_URL`
-
-Shared compatibility normalization written into every managed profile `.env` when applicable:
-
-- `OPENCODE_GO_API_KEY` may also populate `OPENCODE_API_KEY` when the canonical var is unset
-
-Per-profile translated env:
-
-- `DISCORD_<PROFILE>_BOT_TOKEN` -> `DISCORD_BOT_TOKEN`
-- `DISCORD_<PROFILE>_ALLOWED_USERS` -> `DISCORD_ALLOWED_USERS`
-- `DISCORD_<PROFILE>_CHANNEL_ID` -> `DISCORD_FREE_RESPONSE_CHANNELS`
-- `DISCORD_GENERAL_CHANNEL_ID` -> `DISCORD_HOME_CHANNEL`
-- `WEBHOOK_<PROFILE>_SECRET` -> `WEBHOOK_SECRET`
-- `BROWSER_<PROFILE>_CDP_URL` -> `BROWSER_CDP_URL`
-
-Profile-local generated values:
-
-- `WEBHOOK_ENABLED=true`
-- `WEBHOOK_PORT=<profile port>`
-
-Container-only exclusions:
-
-- `HERMES_HOME`
-- `HOME`
-- `SSL_CERT_FILE`
-- `NIX_SSL_CERT_FILE`
-- `GHOSTSHIP_HERMES_PROJECT_ROOT`
-- `GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF`
-- `GHOSTSHIP_HERMES_PROFILES`
-- `GHOSTSHIP_HERMES_DEFAULT_PROFILE`
-- `GHOSTSHIP_HERMES_MANAGED_PROFILE`
-- `GHOSTSHIP_DASHBOARD_HOST`
-- `GHOSTSHIP_ROUTER_HOST`
-- `GHOSTSHIP_ROUTER_PORT`
-- `GHOSTSHIP_ROUTER_STATE_DIR`
-- `GHOSTSHIP_ROUTER_DB_PATH`
-- `GHOSTSHIP_ROUTER_REFRESH_INTERVAL`
-- `GHOSTSHIP_ROUTER_API_KEY`
-- `GHOSTSHIP_ROUTER_CORS_ORIGINS`
-- `API_SERVER_HOST`
-- `API_SERVER_PORT`
-- `API_SERVER_KEY`
-- `API_SERVER_CORS_ORIGINS`
-- all router ranking and alias policy env
+The exact variable inventory is duplicated in the proposal and README so operators can audit it without reading Nix code.
 
 ## Risks / Trade-offs
 

@@ -19,6 +19,30 @@ dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-7681}"
 dashboard_base_url="http://127.0.0.1:${dashboard_port}"
 router_base_url="http://127.0.0.1:8788"
 
+: "${DISCORD_GENERAL_CHANNEL_ID:=discord-general-channel}"
+: "${DISCORD_ASSISTANT_BOT_TOKEN:=assistant-bot-token}"
+: "${DISCORD_ASSISTANT_ALLOWED_USERS:=assistant-user}"
+: "${DISCORD_ASSISTANT_CHANNEL_ID:=assistant-channel}"
+: "${DISCORD_OPERATIONS_BOT_TOKEN:=operations-bot-token}"
+: "${DISCORD_OPERATIONS_ALLOWED_USERS:=operations-user}"
+: "${DISCORD_OPERATIONS_CHANNEL_ID:=operations-channel}"
+: "${DISCORD_SUPERVISOR_BOT_TOKEN:=supervisor-bot-token}"
+: "${DISCORD_SUPERVISOR_ALLOWED_USERS:=supervisor-user}"
+: "${DISCORD_SUPERVISOR_CHANNEL_ID:=supervisor-channel}"
+: "${WEBHOOK_ASSISTANT_SECRET:=assistant-webhook-secret}"
+: "${WEBHOOK_OPERATIONS_SECRET:=operations-webhook-secret}"
+: "${WEBHOOK_SUPERVISOR_SECRET:=supervisor-webhook-secret}"
+: "${BROWSER_ASSISTANT_CDP_URL:=ws://assistant-browser.example/ws}"
+: "${BROWSER_OPERATIONS_CDP_URL:=ws://operations-browser.example/ws}"
+: "${BROWSER_SUPERVISOR_CDP_URL:=ws://supervisor-browser.example/ws}"
+: "${PLEX_URL:=http://plex.example:32400}"
+: "${PLEX_TOKEN:=plex-token}"
+: "${CHAPTARR_URL:=http://chaptarr.example:8789}"
+: "${CHAPTARR_API_KEY:=chaptarr-token}"
+: "${CHAPTARR_API_PATH:=api}"
+: "${CHAPTARR_API_VERSION:=v1}"
+: "${GHOSTSHIP_ROUTER_API_KEY:=router-secret}"
+
 if [ "$bind_nix" = "1" ]; then
   if [ -z "$nix_volume_root" ]; then
     if [ -n "${GHOSTSHIP_NIX_STORE:-}" ]; then
@@ -303,7 +327,16 @@ docker run -d \
   -e WEBHOOK_ASSISTANT_SECRET \
   -e WEBHOOK_OPERATIONS_SECRET \
   -e WEBHOOK_SUPERVISOR_SECRET \
-  -e BROWSER_CDP_URL \
+  -e BROWSER_ASSISTANT_CDP_URL \
+  -e BROWSER_OPERATIONS_CDP_URL \
+  -e BROWSER_SUPERVISOR_CDP_URL \
+  -e PLEX_URL \
+  -e PLEX_TOKEN \
+  -e CHAPTARR_URL \
+  -e CHAPTARR_API_KEY \
+  -e CHAPTARR_API_PATH \
+  -e CHAPTARR_API_VERSION \
+  -e GHOSTSHIP_ROUTER_API_KEY \
   -p "${dashboard_port}:7681" \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
@@ -407,6 +440,15 @@ run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISC
 run_as_hermes "$container_name" 'grep -F "WEBHOOK_ENABLED=true" /home/hermes/.hermes/profiles/assistant/.env >/dev/null'
 run_as_hermes "$container_name" 'grep -F "WEBHOOK_PORT=8644" /home/hermes/.hermes/profiles/assistant/.env >/dev/null'
 run_as_hermes "$container_name" "grep -F \"WEBHOOK_SECRET=${WEBHOOK_ASSISTANT_SECRET}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"BROWSER_CDP_URL=${BROWSER_ASSISTANT_CDP_URL}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "! grep -F \"${BROWSER_OPERATIONS_CDP_URL}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"PLEX_URL=${PLEX_URL}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"PLEX_TOKEN=${PLEX_TOKEN}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"CHAPTARR_URL=${CHAPTARR_URL}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"CHAPTARR_API_KEY=${CHAPTARR_API_KEY}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"CHAPTARR_API_PATH=${CHAPTARR_API_PATH}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"CHAPTARR_API_VERSION=${CHAPTARR_API_VERSION}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
+run_as_hermes "$container_name" "! grep -F \"GHOSTSHIP_ROUTER_API_KEY=${GHOSTSHIP_ROUTER_API_KEY}\" /home/hermes/.hermes/profiles/assistant/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERAL_CHANNEL_ID}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_OPERATIONS_BOT_TOKEN}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_OPERATIONS_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
@@ -414,6 +456,8 @@ run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISC
 run_as_hermes "$container_name" 'grep -F "WEBHOOK_ENABLED=true" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
 run_as_hermes "$container_name" 'grep -F "WEBHOOK_PORT=8645" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
 run_as_hermes "$container_name" "grep -F \"WEBHOOK_SECRET=${WEBHOOK_OPERATIONS_SECRET}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"BROWSER_CDP_URL=${BROWSER_OPERATIONS_CDP_URL}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
+run_as_hermes "$container_name" "! grep -F \"${BROWSER_ASSISTANT_CDP_URL}\" /home/hermes/.hermes/profiles/operations/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_GENERAL_CHANNEL_ID}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_SUPERVISOR_BOT_TOKEN}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_SUPERVISOR_ALLOWED_USERS}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
@@ -421,6 +465,11 @@ run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISC
 run_as_hermes "$container_name" 'grep -F "WEBHOOK_ENABLED=true" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null'
 run_as_hermes "$container_name" 'grep -F "WEBHOOK_PORT=8646" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null'
 run_as_hermes "$container_name" "grep -F \"WEBHOOK_SECRET=${WEBHOOK_SUPERVISOR_SECRET}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"BROWSER_CDP_URL=${BROWSER_SUPERVISOR_CDP_URL}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+run_as_hermes "$container_name" "! grep -F \"${BROWSER_ASSISTANT_CDP_URL}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"PLEX_URL=${PLEX_URL}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"CHAPTARR_URL=${CHAPTARR_URL}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
+run_as_hermes "$container_name" "! grep -F \"GHOSTSHIP_ROUTER_API_KEY=${GHOSTSHIP_ROUTER_API_KEY}\" /home/hermes/.hermes/profiles/supervisor/.env >/dev/null"
 assert_gateway_pid_contract "$container_name" assistant
 assert_gateway_pid_contract "$container_name" operations
 assert_gateway_pid_contract "$container_name" supervisor
