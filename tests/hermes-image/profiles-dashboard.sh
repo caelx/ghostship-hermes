@@ -400,6 +400,13 @@ run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISC
 assert_gateway_pid_contract "$container_name" assistant
 assert_gateway_pid_contract "$container_name" operations
 assert_gateway_pid_contract "$container_name" supervisor
+run_as_hermes "$container_name" 'test "$(sha256sum /home/hermes/seeds/profiles/assistant/SOUL.md | cut -d" " -f1)" = "$(sha256sum /home/hermes/.hermes/profiles/assistant/SOUL.md | cut -d" " -f1)"'
+run_as_hermes "$container_name" 'test "$(sha256sum /home/hermes/seeds/profiles/operations/SOUL.md | cut -d" " -f1)" = "$(sha256sum /home/hermes/.hermes/profiles/operations/SOUL.md | cut -d" " -f1)"'
+run_as_hermes "$container_name" 'test "$(sha256sum /home/hermes/seeds/profiles/supervisor/SOUL.md | cut -d" " -f1)" = "$(sha256sum /home/hermes/.hermes/profiles/supervisor/SOUL.md | cut -d" " -f1)"'
+run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/profiles/assistant/SOUL.md.ghostship-seeded-sha256'
+run_as_hermes "$container_name" 'printf "agent-edited soul\n" >/home/hermes/.hermes/profiles/assistant/SOUL.md'
+run_in_container "$container_name" 'systemctl start ghostship-hermes-bootstrap.service'
+run_as_hermes "$container_name" 'grep -Fx "agent-edited soul" /home/hermes/.hermes/profiles/assistant/SOUL.md >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-dashboard-controller.service >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-assistant.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/workspace" >/dev/null'

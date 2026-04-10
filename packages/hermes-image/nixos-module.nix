@@ -421,6 +421,48 @@ EOF
       install -D -m 0600 "$source_path" "$target_path"
     }
 
+    manage_seeded_soul() {
+      source_path="$1"
+      target_path="$2"
+      marker_path="''${target_path}.ghostship-seeded-sha256"
+      root_soul="/home/hermes/.hermes/SOUL.md"
+      legacy_root_soul="/home/hermes/SOUL.md"
+
+      [ -f "$source_path" ] || return 0
+
+      source_hash="$(${pkgs.coreutils}/bin/sha256sum "$source_path" | ${pkgs.gawk}/bin/awk '{print $1}')"
+
+      if [ ! -e "$target_path" ]; then
+        install -D -m 0600 "$source_path" "$target_path"
+        printf '%s\n' "$source_hash" >"$marker_path"
+        chmod 0600 "$marker_path"
+        return 0
+      fi
+
+      target_hash="$(${pkgs.coreutils}/bin/sha256sum "$target_path" | ${pkgs.gawk}/bin/awk '{print $1}')"
+
+      if [ -f "$marker_path" ]; then
+        marker_hash="$(tr -d '\n' <"$marker_path")"
+        if [ "$target_hash" = "$marker_hash" ] && [ "$target_hash" != "$source_hash" ]; then
+          install -D -m 0600 "$source_path" "$target_path"
+          printf '%s\n' "$source_hash" >"$marker_path"
+          chmod 0600 "$marker_path"
+        fi
+        return 0
+      fi
+
+      for generic_path in "$root_soul" "$legacy_root_soul"; do
+        [ -f "$generic_path" ] || continue
+        generic_hash="$(${pkgs.coreutils}/bin/sha256sum "$generic_path" | ${pkgs.gawk}/bin/awk '{print $1}')"
+        if [ "$target_hash" = "$generic_hash" ]; then
+          install -D -m 0600 "$source_path" "$target_path"
+          printf '%s\n' "$source_hash" >"$marker_path"
+          chmod 0600 "$marker_path"
+          return 0
+        fi
+      done
+    }
+
     reconcile_seed_skills() {
       shared_source="''${GHOSTSHIP_HERMES_SHARED_SKILLS_DIR:-${sharedSkillSourceDir}}"
       profile_root="''${GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT:-${profileSkillSourceRoot}}"
@@ -429,13 +471,13 @@ EOF
 
       profile_source="''${profile_root}/assistant/skills"
       copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.assistant.skillPath}"
-      copy_file_if_missing "''${profile_root}/assistant/SOUL.md" "${profileDefinitions.assistant.soulPath}"
+      manage_seeded_soul "''${profile_root}/assistant/SOUL.md" "${profileDefinitions.assistant.soulPath}"
       profile_source="''${profile_root}/operations/skills"
       copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.operations.skillPath}"
-      copy_file_if_missing "''${profile_root}/operations/SOUL.md" "${profileDefinitions.operations.soulPath}"
+      manage_seeded_soul "''${profile_root}/operations/SOUL.md" "${profileDefinitions.operations.soulPath}"
       profile_source="''${profile_root}/supervisor/skills"
       copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.supervisor.skillPath}"
-      copy_file_if_missing "''${profile_root}/supervisor/SOUL.md" "${profileDefinitions.supervisor.soulPath}"
+      manage_seeded_soul "''${profile_root}/supervisor/SOUL.md" "${profileDefinitions.supervisor.soulPath}"
     }
 
     write_profile_env() {
