@@ -4,7 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Optimized GitHub Actions around the image pipeline by path-gating automatic `publish-image` runs to image-affecting pushes, using GitHub-hosted Nix installation and Magic Nix Cache plus cached `uv` setup for the Python utility steps, recording a measured optimization baseline in `docs/github-actions-build-optimization.md`, and splitting publication into reusable per-architecture `ghostship-hermes-base` GHCR tags plus a final overlay-based `ghostship-hermes` assembly path before the manifest-only job assembles the multi-arch tags.
+- Made `publish-image` more aggressive while staying free-only by adding GHCR-backed content-addressed final-image reuse on top of the existing reusable base-image path, so reruns or workflow-only publish passes can retag an already published immutable image without rebuilding it.
+
+- Fixed the new `publish-image` optimization path to stop using Magic Nix Cache on the heavy native multi-arch jobs after GitHub Actions cache throttling started returning `ResourceExhausted` errors; the publish workflow now relies on the reusable GHCR `ghostship-hermes-base` image path for free reuse instead.
+
+- Optimized GitHub Actions around the image pipeline by path-gating automatic `publish-image` runs to image-affecting pushes, using GitHub-hosted Nix installation plus cached `uv` setup for the Python utility steps, recording a measured optimization baseline in `docs/github-actions-build-optimization.md`, and splitting publication into reusable per-architecture `ghostship-hermes-base` GHCR tags plus a final overlay-based `ghostship-hermes` assembly path before the manifest-only job assembles the multi-arch tags.
 
 - Added managed Hermes webhook listener scaffolding for all three profile gateways, with fixed ports `8644`/`8645`/`8646` for `assistant`/`operations`/`supervisor` and profile-local `WEBHOOK_SECRET` projection from `WEBHOOK_ASSISTANT_SECRET`, `WEBHOOK_OPERATIONS_SECRET`, and `WEBHOOK_SUPERVISOR_SECRET`.
 - Added the `gh` GitHub CLI plus OpenSSH client tools (`ssh`, `scp`, `ssh-keygen`) to the default Hermes image runtime, converged them through the managed user toolchain, updated the approved extra-CLI policy/docs, and extended image validation to assert they are available on PATH while keeping Chromium and ffmpeg out of scope.

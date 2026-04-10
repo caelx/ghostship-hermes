@@ -67,7 +67,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
     env:
       IMAGE_NAME: ${{ needs.prepare.outputs.image_name }}
       BASE_IMAGE_NAME: ${{ needs.prepare.outputs.base_image_name }}
@@ -78,11 +77,9 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@main
         with:
-          extra_nix_config: |
+          determinate: false
+          extra-conf: |
             experimental-features = nix-command flakes
-
-      - name: Enable GitHub Actions Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -91,24 +88,47 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve base image reference
-        id: base
+      - name: Resolve image references
+        id: refs
         shell: bash
         run: |
           set -euo pipefail
 
           base_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-base-image.drvPath --raw)"
+          overlay_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-overlay-bundle.drvPath --raw)"
           base_tag="base-$(basename "$base_drv" .drv)"
           base_ref="${BASE_IMAGE_NAME}:${base_tag}-${PLATFORM_TAG}"
+          content_hash="$(printf '%s\n%s\n' "$base_drv" "$overlay_drv" | sha256sum | cut -c1-24)"
+          content_ref="${IMAGE_NAME}:content-${content_hash}-${PLATFORM_TAG}"
 
           {
-            echo "tag=${base_tag}"
-            echo "ref=${base_ref}"
+            echo "base_drv=${base_drv}"
+            echo "overlay_drv=${overlay_drv}"
+            echo "base_tag=${base_tag}"
+            echo "base_ref=${base_ref}"
+            echo "content_ref=${content_ref}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Ensure base image tag exists
+      - name: Check for reusable final image
+        id: reusable
         env:
-          BASE_REF: ${{ steps.base.outputs.ref }}
+          CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if nix shell nixpkgs#skopeo -c skopeo inspect "docker://${CONTENT_REF}" >/dev/null 2>&1; then
+            echo "reusing published final image ${CONTENT_REF}"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no reusable final image found for ${CONTENT_REF}"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ensure base image tag exists
+        if: steps.reusable.outputs.exists != 'true'
+        env:
+          BASE_REF: ${{ steps.refs.outputs.base_ref }}
         shell: bash
         run: |
           set -euo pipefail
@@ -125,9 +145,11 @@ jobs:
             "docker-archive:$(pwd)/ghostship-hermes-base-${PLATFORM_TAG}.tar" \
             "docker://${BASE_REF}"
 
-      - name: Build final image from base plus overlay
+      - name: Build and publish content-addressed final image
+        if: steps.reusable.outputs.exists != 'true'
         env:
-          BASE_REF: ${{ steps.base.outputs.ref }}
+          BASE_REF: ${{ steps.refs.outputs.base_ref }}
+          CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
         shell: bash
         run: |
           set -euo pipefail
@@ -137,8 +159,13 @@ jobs:
             --build-arg "BASE_IMAGE=${BASE_REF}" \
             --tag "ghostship-hermes:ci-${PLATFORM_TAG}" \
             "$overlay_bundle"
+          nix shell nixpkgs#skopeo -c skopeo copy \
+            "docker-daemon:ghostship-hermes:ci-${PLATFORM_TAG}" \
+            "docker://${CONTENT_REF}"
 
       - name: Publish architecture image tags
+        env:
+          CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
         shell: bash
         run: |
           set -euo pipefail
@@ -147,7 +174,7 @@ jobs:
           set -euo pipefail
           for tag in $TAGS; do
             skopeo copy \
-              "docker-daemon:ghostship-hermes:ci-${PLATFORM_TAG}" \
+              "docker://${CONTENT_REF}" \
               "docker://${IMAGE_NAME}:${tag}-${PLATFORM_TAG}"
           done
           SCRIPT
