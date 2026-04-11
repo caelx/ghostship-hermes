@@ -89,3 +89,8 @@ The repo SHALL permit internal build and publication architecture changes that m
 - **THEN** the published image still preserves the documented runtime metadata and multi-arch release semantics
 - **AND** downstream consumers do not need to change how they consume the explicit publishable image artifact
 
+#### Scenario: GitHub fast path uses layered assembly internally
+- **WHEN** the GitHub publish workflow publishes architecture images from the reusable `ghostship-hermes-base` tag plus `ghostship-hermes-overlay-bundle`
+- **THEN** the workflow still preserves the documented runtime metadata and multi-arch release semantics of the published image
+- **AND** local export and smoke-test flows continue to use the explicit `ghostship-hermes-image` bundle instead of guessing from the GitHub layering internals
+
