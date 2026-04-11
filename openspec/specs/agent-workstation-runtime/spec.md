@@ -4,7 +4,7 @@
 The workstation SHALL use already-installed local apps, persisted local state, and the active managed-runtime identity during normal invocation rather than requiring live network refresh in the hot path or falling back to service-discovery assumptions that do not match the managed image topology.
 
 #### Scenario: Local invocation uses the managed layered toolchain
-- **WHEN** the agent invokes `hermes`, `codex`, `opencode`, `agent-browser`, or related runtime commands
+- **WHEN** the agent invokes `hermes`, `codex`, `opencode`, `agent-browser`, `python3`, `pip`, `fd`, `uv`, `yq`, `tmux`, or related runtime commands
 - **THEN** the invocation uses the currently installed local state from the managed user Nix profile or the managed persisted npm tool prefix
 - **AND** the Hermes-user runtime contract exposes `/home/hermes/.local/bin` and the managed user profile bin on the normal invocation path for those commands
 - **AND** `agent-browser` may be satisfied by the image-managed runtime layer instead of the mutable npm-managed tool layer when the image declares it as a supported exception
@@ -61,6 +61,15 @@ The workstation SHALL expose a persisted npm-managed tool prefix on the Hermes u
 - **THEN** the runtime prepares a managed npm tool prefix and cache under `/home/hermes`
 - **AND** `/home/hermes/.local/bin` remains available on the Hermes-user default invocation path across restart and replacement
 - **AND** that prefix remains available on `PATH` for the Hermes runtime user across restart and replacement
+
+
+### Requirement: Managed user tooling includes a pip-capable Python runtime
+The workstation SHALL treat Python packaging support as part of the managed Hermes-user runtime toolchain rather than a partial image-layer fallback.
+
+#### Scenario: Mutable Python tooling lives in the managed runtime layer
+- **WHEN** maintainers inspect the runtime contract for Hermes and operator-facing CLI tools
+- **THEN** the supported `python3`, `pip`, and `python3 -m pip` workflow comes from the managed user profile layer
+- **AND** the runtime does not rely on a separate image-only `pip` exception to provide that workflow
 
 ### Requirement: Managed gateway commands align with repo-owned profile services
 The workstation SHALL align interactive gateway commands for managed profiles with the repo-owned `ghostship-hermes-profile-*` services instead of treating the image as an upstream user-service installation.
