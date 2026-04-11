@@ -5,7 +5,7 @@ The published `ghostship-hermes:latest` image can diverge from the repo's docume
 ## What Changes
 
 - Update the GHCR publish workflow so the final `ghostship-hermes` tags are built and published from the explicit `ghostship-hermes-image` bundle instead of a sidecar base-plus-overlay reconstruction path.
-- Derive immutable final-image reuse identifiers from the explicit publishable image artifact so exact-repeat publishes stay reusable without publishing a runtime-different artifact.
+- Derive immutable final-image reuse identifiers from the explicit publishable image artifact and the repo-owned export helper so exact-repeat publishes stay reusable without publishing a runtime-different artifact.
 - Refresh the publication docs and change log so the documented publish path matches the shipped image behavior.
 
 ## Capabilities

@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Repeat image publishes reuse immutable final images first
-The publish workflow SHALL derive an immutable per-architecture final-image identifier from the explicit publishable image artifact or its direct Nix source derivation and SHALL check GHCR for that image before starting a rebuild.
+The publish workflow SHALL derive an immutable per-architecture final-image identifier from the explicit publishable image artifact and the repo-owned conversion helper that defines its published-image semantics, and SHALL check GHCR for that image before starting a rebuild.
 
 #### Scenario: Immutable final image already exists
 - **WHEN** the publish workflow evaluates the explicit publishable `ghostship-hermes-image` artifact for an architecture and GHCR already contains the matching immutable final image

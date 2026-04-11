@@ -314,9 +314,10 @@ lockfile when a new tag lands, and then explicitly dispatches
 bump commit itself is created by GitHub Actions. The publish workflow now
 path-gates automatic runs, publishes a true per-architecture
 `ghostship-hermes-base` image from a base-specific NixOS module only when the
-tracked base-affecting Hermes/core-runtime layer changes, and then assembles the
-final `ghostship-hermes` architecture tags by applying the repo-content overlay
-on top of that base before the manifest-only job creates the multi-arch tags.
+tracked base-affecting Hermes/core-runtime layer changes, and publishes the
+final `ghostship-hermes` architecture tags from the explicit
+`ghostship-hermes-image` bundle before the manifest-only job creates the
+multi-arch tags.
 Inside a running container, the `hermes` user tooling refresh path keeps an
 offline bootstrap package for first boot, but refreshes Hermes itself from
 `github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already
@@ -331,17 +332,18 @@ Base/final layering:
 
 - `ghostship-hermes-base` now carries the upstream Hermes runtime, the core container contract, the shared system/runtime toolchain (`bashInteractive`, `cacert`, `coreutils`, `curl`, `findutils`, `git`, `gh`, `gnugrep`, `gnused`, `jq`, `nix`, `nodejs_22`, `openssh`, `procps`, `ripgrep`, `tirith`, `ttyd`, and `util-linux`), the shared Python dependency closure used across Ghostship services (`httpx`, `typer`, `fastapi`, `uvicorn`, and `websockets` via the repo's overridden Python package set), and the stable external utility closures that would otherwise bloat every overlay (`agent-browser`, `bws`, `gcloud`, and `gws`).
 - The repo-owned command surfaces stay in the final layer: `ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, `ghostship-cli-contract`, and the `ghostship-*` utilities are copied in through `/opt/ghostship-overlay` instead of living in the base closure.
-- The overlay bundle now skips any Nix store paths that are already present in the base closure. After the dependency audit, the realized overlay store paths are down to Ghostship-owned packages plus the small overlay assembly env, rather than re-copying shared Python libraries or stable external tool closures on every publish.
+- The overlay bundle now skips any Nix store paths that are already present in the base closure. After the dependency audit, the realized overlay store paths are down to Ghostship-owned packages plus the small overlay assembly env, rather than re-copying shared Python libraries or stable external tool closures into that internal overlay artifact.
 
 Image output contract:
 
 Free GitHub Actions acceleration:
 
-- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image when the tracked publish-relevant image inputs are unchanged, and otherwise falls back to a stable `ghostship-hermes-base` tag derived from tracked base-affecting inputs.
+- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image when the explicit publishable artifact semantics are unchanged, and it still maintains a stable `ghostship-hermes-base` tag derived from tracked base-affecting inputs for the separate reusable base artifact.
+- The immutable final-image reuse key follows the explicit `ghostship-hermes-image` bundle plus the repo-owned export helper that materializes that bundle into the published image, so GHCR reuse cannot silently switch the final tags onto a runtime-different assembly path.
 - The base image no longer depends on `ghostship-hermes-router`, `ghostship-hermes-runtime`, or `hermes-dashboard`, so overlay-only command changes do not invalidate the base derivation or force another native base rebuild.
 - Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
-- Measure the current workflow behavior with `python3 scripts/github_actions_timings.py --include-latest-jobs`. As of 2026-04-11 UTC, the landed workflow measured approximately `34.97` minutes for a cold-content publish, `20.48` minutes for a base-reuse publish, and `1.17` minutes for an exact warm-repeat publish; only the exact-repeat path currently beats the approximately `10` minute stretch goal.
+- Measure the current workflow behavior with `python3 scripts/github_actions_timings.py --include-latest-jobs` after workflow changes land. The 2026-04-11 timing snapshot describes the superseded overlay-based final publication path and should not be reused as the current baseline.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.
 - `ghostship-hermes-image` is the explicit publishable image bundle consumed by `scripts/export_publishable_image.sh`, the GHCR publish workflow, and the dashboard smoke test.

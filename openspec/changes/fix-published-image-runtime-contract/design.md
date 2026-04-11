@@ -26,7 +26,7 @@ Alternative considered: keep the overlay-based final publish path and teach it t
 
 ### Derive immutable final-image reuse from the explicit final artifact
 
-The immutable final-image reuse key will be derived from the explicit publishable image artifact's derivation path instead of the pair of base-image and overlay-bundle derivations. This keeps the reuse optimization aligned with the actual shipped artifact.
+The immutable final-image reuse key will be derived from the explicit publishable image artifact's derivation path plus the repo-owned export helper that materializes that bundle into the published Docker image. This keeps the reuse optimization aligned with the actual shipped artifact.
 
 Alternative considered: keep hashing the base and overlay derivations while adding extra guard logic. Rejected because it still treats a sidecar assembly path as the source of truth for the published image.
 
