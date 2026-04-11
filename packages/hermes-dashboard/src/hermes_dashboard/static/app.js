@@ -9,7 +9,7 @@ const terminalLoading = document.getElementById("terminal-loading");
 const runtimeFactsRoot = document.getElementById("runtime-facts");
 const providerPillsRoot = document.getElementById("provider-pills");
 const providerListRoot = document.getElementById("provider-list");
-const profileListRoot = document.getElementById("profile-list");
+const agentDetailsRoot = document.getElementById("agent-details");
 
 const state = {
   activeTerminalId: null,
@@ -66,8 +66,7 @@ function makePill(label, accent = false) {
 function renderHome() {
   const environment = state.environment || {};
   const providers = environment.providers || [];
-  const profiles = environment.profiles || [];
-  const defaultProfile = profiles.find((profile) => profile.is_default) || null;
+  const agent = environment.agent || {};
 
   providerPillsRoot.innerHTML = "";
   if (providers.length) {
@@ -86,10 +85,9 @@ function renderHome() {
     ["Home", environment.home],
     ["Hermes", environment.managed_hermes_home],
     ["Shell root", environment.terminal_cwd],
-    ["Default profile", environment.default_profile],
-    ["Root endpoint", environment.root_base_url],
-    ["Root model", environment.root_model || environment.model],
-    ["Default profile model", environment.default_profile_model || defaultProfile?.model],
+    ["Gateway service", environment.gateway_service],
+    ["Endpoint", environment.base_url],
+    ["Model", environment.model],
     ["Live sessions", String(state.sessions.length)],
   ];
 
@@ -137,7 +135,7 @@ function renderHome() {
         ["Kind", provider.kind],
         ["Base URL", provider.base_url],
         ["Auth", provider.auth_source ? `present via ${provider.auth_source}` : "not detected"],
-        ["Profiles", (provider.profiles || []).join(", ")],
+        ["Runtime", (provider.models || []).length ? "managed agent" : "inactive"],
       ].forEach(([label, value]) => {
         const item = document.createElement("div");
         item.className = "detail-item";
@@ -270,13 +268,13 @@ function renderHome() {
 
           const profileRow = document.createElement("div");
           profileRow.className = "meta-row";
-          const linkedProfiles = model.profiles || [];
-          if (linkedProfiles.length) {
-            linkedProfiles.forEach((profileName) => {
-              profileRow.appendChild(makePill(profileName));
+          const scopes = model.scopes || [];
+          if (scopes.length) {
+            scopes.forEach((scope) => {
+              profileRow.appendChild(makePill(scope === "managed" ? "managed agent" : scope));
             });
           } else {
-            profileRow.appendChild(makePill("global"));
+            profileRow.appendChild(makePill("managed agent"));
           }
 
           modelCard.appendChild(profileRow);
@@ -291,52 +289,52 @@ function renderHome() {
     });
   }
 
-  profileListRoot.innerHTML = "";
-  profiles.forEach((profile) => {
-    const card = document.createElement("article");
-    card.className = "profile-card";
+  agentDetailsRoot.innerHTML = "";
+  const card = document.createElement("article");
+  card.className = "profile-card";
 
-    const top = document.createElement("div");
-    top.className = "card-topline";
+  const top = document.createElement("div");
+  top.className = "card-topline";
 
-    const name = document.createElement("strong");
-    name.className = "card-title";
-    name.textContent = profile.name;
+  const name = document.createElement("strong");
+  name.className = "card-title";
+  name.textContent = agent.name || "Managed Agent";
 
-    const flags = document.createElement("div");
-    flags.className = "meta-row";
-    flags.appendChild(makePill(profile.is_default ? "default" : "profile", profile.is_default));
-    flags.appendChild(makePill(formatValue(profile.endpoint_name, "endpoint unknown")));
-    flags.appendChild(makePill(formatValue(profile.model, "model unset")));
-    top.append(name, flags);
+  const flags = document.createElement("div");
+  flags.className = "meta-row";
+  flags.appendChild(makePill(formatValue(agent.endpoint_name, "endpoint unknown"), true));
+  flags.appendChild(makePill(formatValue(agent.model, "model unset")));
+  top.append(name, flags);
 
-    const grid = document.createElement("div");
-    grid.className = "detail-grid";
-    [
-      ["Service", profile.service],
-      ["Path", profile.path],
-      ["Base URL", profile.base_url],
-      ["Config", profile.has_config ? "present" : "missing"],
-      ["Env", profile.has_env ? "present" : "missing"],
-    ].forEach(([label, value]) => {
-      const item = document.createElement("div");
-      item.className = "detail-item";
+  const grid = document.createElement("div");
+  grid.className = "detail-grid";
+  [
+    ["Service", agent.service],
+    ["Path", agent.path],
+    ["Base URL", agent.base_url],
+    ["Config", agent.has_config ? "present" : "missing"],
+    ["Env", agent.has_env ? "present" : "missing"],
+    ["Auth", agent.has_auth ? "present" : "missing"],
+    ["SOUL", agent.has_soul ? "present" : "missing"],
+    ["gateway.pid", agent.has_gateway_pid ? "present" : "missing"],
+  ].forEach(([label, value]) => {
+    const item = document.createElement("div");
+    item.className = "detail-item";
 
-      const key = document.createElement("span");
-      key.className = "detail-key";
-      key.textContent = label;
+    const key = document.createElement("span");
+    key.className = "detail-key";
+    key.textContent = label;
 
-      const detail = document.createElement("span");
-      detail.className = "detail-value";
-      detail.textContent = formatValue(value);
+    const detail = document.createElement("span");
+    detail.className = "detail-value";
+    detail.textContent = formatValue(value);
 
-      item.append(key, detail);
-      grid.appendChild(item);
-    });
-
-    card.append(top, grid);
-    profileListRoot.append(card);
+    item.append(key, detail);
+    grid.appendChild(item);
   });
+
+  card.append(top, grid);
+  agentDetailsRoot.append(card);
 }
 
 function renderTabs() {

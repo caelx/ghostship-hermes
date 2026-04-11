@@ -11,12 +11,12 @@ The running dashboard SHALL serve a browser entrypoint that preserves the Hermes
 - **AND** the entrypoint still exposes the MMX terminal-launch action rather than the older dashboard copy contract
 
 ### Requirement: Dashboard environment view reports generic model endpoint configuration
-The dashboard environment view SHALL report the effective Hermes runtime and configuration state in a provider-agnostic way instead of limiting the home view to a narrow runtime, provider, and profile summary. The home view SHALL expose grouped operator-facing facts for the configured runtime, managed profiles, model path, auxiliary overrides, and other detected Hermes feature areas without assuming OpenRouter-specific variables or a fixed set of profile names.
+The dashboard environment view SHALL report the effective managed Hermes runtime and configuration state in a provider-agnostic way instead of limiting the home view to a narrow runtime, provider, or profile summary. The home view SHALL expose grouped operator-facing facts for the configured runtime, the managed agent, the model path, auxiliary overrides, and other detected Hermes feature areas without assuming OpenRouter-specific variables or any named-profile topology.
 
 #### Scenario: Home view shows grouped runtime and configuration facts
 - **WHEN** an operator opens the dashboard home view
 - **THEN** the runtime facts include grouped sections for the effective Hermes runtime and configuration state rather than only a flat summary
-- **AND** the grouped sections include the configured root and per-profile model path details
+- **AND** the grouped sections include the managed agent path, service, and model endpoint details
 - **AND** the grouped sections include any detected auxiliary task overrides and other operator-facing Hermes feature areas that are configured at runtime
 - **AND** the view remains usable for Hermes configs that point at providers other than OpenRouter
 
@@ -40,7 +40,7 @@ When Hermes is configured to use the local router endpoint, the dashboard SHALL 
 - **THEN** the dashboard still renders the generic grouped runtime and configuration view
 - **AND** the dashboard does not require router-specific data to show the home view
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Dashboard home view uses modular feature cards
 The dashboard home view SHALL render smaller feature-oriented cards instead of relying on a few large fixed panels, and those cards SHALL stack and reflow automatically as sections appear, disappear, or change size.
@@ -48,20 +48,20 @@ The dashboard home view SHALL render smaller feature-oriented cards instead of r
 #### Scenario: Smaller cards reflow across viewport sizes
 - **WHEN** an operator opens the dashboard on a narrow or wide viewport
 - **THEN** the home view arranges its feature cards in a responsive layout that stacks and wraps naturally
-- **AND** no single fixed panel is required to span the entire page just to render profile or configuration information
+- **AND** no single fixed panel is required to span the entire page just to render managed-agent or configuration information
 
 #### Scenario: Optional sections fit into the card layout without layout breakage
 - **WHEN** the runtime exposes additional feature groups such as browser, memory, security, messaging, or env-backed capability status
 - **THEN** the dashboard renders those groups as additional feature cards within the same responsive card system
 - **AND** the layout remains readable without requiring a dashboard-specific redesign for each new group
 
-### Requirement: Dashboard home view renders discovered profiles and sections generically
-The dashboard SHALL render profile topology and feature sections from discovered runtime data instead of hardcoding specific profile names, fixed profile counts, or a rigid set of card types.
+### Requirement: Dashboard home view renders the managed agent and sections generically
+The dashboard SHALL render the managed agent and feature sections from runtime data instead of hardcoding profile names, fixed profile counts, or a profile-list-specific layout.
 
-#### Scenario: Additional managed profiles appear without frontend rewrites
-- **WHEN** the Hermes runtime includes a managed profile that was not part of the original dashboard assumptions
-- **THEN** the dashboard renders that profile in the home view using the same generic profile card or row treatment as the existing profiles
-- **AND** the page does not depend on profile names such as `operations`, `coder`, `assistant`, or `supervisor`
+#### Scenario: Managed agent facts render without profile topology
+- **WHEN** the Hermes runtime reports one managed agent and no profile list
+- **THEN** the dashboard renders the managed agent in the home view using the same generic fact-card system as the other runtime sections
+- **AND** the page does not depend on hardcoded profile names or any profile topology
 
 #### Scenario: Unknown future section fields degrade gracefully
 - **WHEN** the backend adds new facts within an existing feature group or introduces a new optional section

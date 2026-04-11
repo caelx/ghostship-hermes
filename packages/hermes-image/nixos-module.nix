@@ -15,55 +15,19 @@
   ...
 }:
 let
-  managedProfiles = [
-    "assistant"
-    "operations"
-    "supervisor"
-  ];
-  defaultProfile = "assistant";
+  managedGatewayServiceName = "ghostship-hermes-gateway";
   runtimeFlakeRefDefault = "github:caelx/ghostship-hermes";
   rootTerminalCwd = "/workspace";
-  managedProfileRoot = "/home/hermes/.hermes/profiles";
-  sharedSkillSourceDir = "/home/hermes/seeds/shared/skills";
-  profileSkillSourceRoot = "/home/hermes/seeds/profiles";
-  profileScaffold = {
-    assistant = {
-      personality = "assistant";
-      modelProvider = "openai-codex";
-      modelDefault = "gpt-5.4";
-      terminalCwd = "/workspace";
-      discordBotTokenEnv = "DISCORD_ASSISTANT_BOT_TOKEN";
-      discordAllowedUsersEnv = "DISCORD_ASSISTANT_ALLOWED_USERS";
-      discordChannelEnv = "DISCORD_ASSISTANT_CHANNEL_ID";
-      webhookEnabled = true;
-      webhookPort = 8644;
-      webhookSecretEnv = "WEBHOOK_ASSISTANT_SECRET";
-    };
-    operations = {
-      personality = "operations";
-      modelProvider = "openai-codex";
-      modelDefault = "gpt-5.4";
-      terminalCwd = "/workspace";
-      discordBotTokenEnv = "DISCORD_OPERATIONS_BOT_TOKEN";
-      discordAllowedUsersEnv = "DISCORD_OPERATIONS_ALLOWED_USERS";
-      discordChannelEnv = "DISCORD_OPERATIONS_CHANNEL_ID";
-      webhookEnabled = true;
-      webhookPort = 8645;
-      webhookSecretEnv = "WEBHOOK_OPERATIONS_SECRET";
-    };
-    supervisor = {
-      personality = "supervisor";
-      modelProvider = "openai-codex";
-      modelDefault = "gpt-5.4";
-      terminalCwd = "/workspace";
-      discordBotTokenEnv = "DISCORD_SUPERVISOR_BOT_TOKEN";
-      discordAllowedUsersEnv = "DISCORD_SUPERVISOR_ALLOWED_USERS";
-      discordChannelEnv = "DISCORD_SUPERVISOR_CHANNEL_ID";
-      webhookEnabled = true;
-      webhookPort = 8646;
-      webhookSecretEnv = "WEBHOOK_SUPERVISOR_SECRET";
-    };
-  };
+  managedHermesHome = "/home/hermes/.hermes";
+  managedSkillsSourceDir = "/home/hermes/seeds/skills";
+  managedSoulSourcePath = "/home/hermes/seeds/SOUL.md";
+  managedEnvPath = "${managedHermesHome}/.env";
+  managedGatewayPidPath = "${managedHermesHome}/gateway.pid";
+  managedSoulPath = "${managedHermesHome}/SOUL.md";
+  managedSkillsPath = "${managedHermesHome}/skills";
+  managedAuthPath = "${managedHermesHome}/auth.json";
+  managedWebhookPort = 8644;
+  managedLayoutVersion = "single-agent-v1";
   auxiliaryModelDefault = "gemini-3.1-flash-lite-preview";
   auxiliaryBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
   auxiliaryApiKeyRef = "\${GOOGLE_AI_STUDIO_API_KEY}";
@@ -73,7 +37,7 @@ let
   runtimeCommand = if includeRepoContent then "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime" else "${repoOverlayBinDir}/ghostship-hermes-runtime";
   dashboardCommand = if includeRepoContent then "${hermesDashboard}/bin/hermes-dashboard" else "${repoOverlayBinDir}/hermes-dashboard";
   yamlFormat = pkgs.formats.yaml { };
-  sharedProfileEnvKeys = [
+  managedRuntimeEnvKeys = [
     "GOOGLE_AI_STUDIO_API_KEY"
     "OPENROUTER_API_KEY"
     "OPENROUTER_BASE_URL"
@@ -143,29 +107,20 @@ let
     "CHANGEDETECTION_API_KEY"
     "CHAPTARR_URL"
     "CHAPTARR_API_KEY"
-    "CHAPTARR_API_PATH"
-    "CHAPTARR_API_VERSION"
     "N8N_URL"
     "N8N_API_KEY"
-    "N8N_PUBLIC_API_ENDPOINT"
-    "N8N_PUBLIC_API_VERSION"
   ];
-  profileBrowserCdpEnvKeys = [
-    "BROWSER_ASSISTANT_CDP_URL"
-    "BROWSER_OPERATIONS_CDP_URL"
-    "BROWSER_SUPERVISOR_CDP_URL"
+  managedDiscordEnvKeys = [
+    "DISCORD_BOT_TOKEN"
+    "DISCORD_ALLOWED_USERS"
+    "DISCORD_FREE_RESPONSE_CHANNELS"
+    "DISCORD_HOME_CHANNEL"
   ];
-  discordEnvKeys = [
-    "DISCORD_GENERAL_CHANNEL_ID"
-    "DISCORD_ASSISTANT_BOT_TOKEN"
-    "DISCORD_ASSISTANT_ALLOWED_USERS"
-    "DISCORD_ASSISTANT_CHANNEL_ID"
-    "DISCORD_OPERATIONS_BOT_TOKEN"
-    "DISCORD_OPERATIONS_ALLOWED_USERS"
-    "DISCORD_OPERATIONS_CHANNEL_ID"
-    "DISCORD_SUPERVISOR_BOT_TOKEN"
-    "DISCORD_SUPERVISOR_ALLOWED_USERS"
-    "DISCORD_SUPERVISOR_CHANNEL_ID"
+  managedBrowserEnvKeys = [
+    "BROWSER_CDP_URL"
+  ];
+  managedWebhookEnvKeys = [
+    "WEBHOOK_SECRET"
   ];
   toolingProjectRoot = "/home/hermes/.hermes/hermes-agent";
   managedUserProfile = "/home/hermes/.local/state/nix/profiles/ghostship-managed";
@@ -215,20 +170,20 @@ let
     "codex"
     "opencode"
   ];
-  rootConfig = {
-    terminal = {
-      backend = "local";
-      cwd = rootTerminalCwd;
-      timeout = 180;
-    };
-  };
-  mkProfileConfig =
-    _profileName: profileDef:
+  managedAgentConfig =
+    let
+      directGemini = {
+        model = auxiliaryModelDefault;
+        base_url = auxiliaryBaseUrl;
+        api_key = auxiliaryApiKeyRef;
+      };
+    in
     {
-      display.personality = profileDef.personality;
+      display.personality = "assistant";
       model = {
-        provider = profileDef.modelProvider;
-        default = profileDef.modelDefault;
+        provider = "auto";
+        default = "coding";
+        base_url = "http://127.0.0.1:8788/v1";
       };
       memory = {
         provider = "holographic";
@@ -300,13 +255,7 @@ let
       human_delay = {
         mode = "off";
       };
-      auxiliary = let
-        directGemini = {
-          model = auxiliaryModelDefault;
-          base_url = auxiliaryBaseUrl;
-          api_key = auxiliaryApiKeyRef;
-        };
-      in {
+      auxiliary = {
         vision = directGemini;
         web_extract = directGemini;
         approval = directGemini;
@@ -333,11 +282,10 @@ let
       group_sessions_per_user = true;
       terminal = {
         backend = "local";
-        cwd = profileDef.terminalCwd;
+        cwd = rootTerminalCwd;
         timeout = 180;
       };
     };
-  managedProfileNames = lib.concatStringsSep "," managedProfiles;
   sharedDependencyPackages = with pkgs; [
     bashInteractive
     cacert
@@ -440,129 +388,70 @@ let
     chmod 0750 "$HOME" "$GHOSTSHIP_WORKSPACE_ROOT" "$HERMES_HOME"
   '';
 
-  profileDefinitions = lib.genAttrs managedProfiles (
-    profile:
-    let
-      profileDef = profileScaffold.${profile};
-      profileRoot = "${managedProfileRoot}/${profile}";
-    in
-    profileDef
-    // {
-      name = profile;
-      profileRoot = profileRoot;
-      configPath = "${profileRoot}/config.yaml";
-      gatewayPidPath = "${profileRoot}/gateway.pid";
-      soulPath = "${profileRoot}/SOUL.md";
-      skillPath = "${profileRoot}/skills";
-      serviceName = "ghostship-hermes-profile-${profile}";
-      serviceDescription = "ghostship-hermes ${profile} gateway";
-      serviceWorkingDirectory = profileDef.terminalCwd;
-      gatewayScript = pkgs.writeShellScript "ghostship-hermes-profile-${profile}-gateway.sh" ''
-        set -euo pipefail
+  managedGatewayScript = pkgs.writeShellScript "ghostship-hermes-gateway.sh" ''
+    set -euo pipefail
 
-        export PATH="${hermesUserPathPrefix}:$PATH"
-        read -r _gateway_stat < "/proc/$$/stat"
-        set -- $_gateway_stat
-        _gateway_start_time="$22"
-        cat > ${lib.escapeShellArg "${profileRoot}/gateway.pid"} <<EOF
-{"pid": $$, "kind": "hermes-gateway", "argv": ["hermes", "gateway", "run", "--replace", "--profile", "${profile}"], "start_time": ''${_gateway_start_time}}
+    export PATH="${hermesUserPathPrefix}:$PATH"
+    read -r _gateway_stat < "/proc/$$/stat"
+    set -- $_gateway_stat
+    _gateway_start_time="$22"
+    cat > ${lib.escapeShellArg managedGatewayPidPath} <<EOF
+{"pid": $$, "kind": "hermes-gateway", "argv": ["hermes", "gateway", "run", "--replace"], "start_time": ''${_gateway_start_time}}
 EOF
 
-        exec hermes -p ${profile} gateway run --replace
-      '';
-      gatewayPreStartScript = pkgs.writeShellScript "ghostship-hermes-profile-${profile}-pre-start.sh" ''
-        set -euo pipefail
-        rm -f ${lib.escapeShellArg "${profileRoot}/gateway.pid"}
-      '';
-      gatewayPostStopScript = pkgs.writeShellScript "ghostship-hermes-profile-${profile}-post-stop.sh" ''
-        set -euo pipefail
-        rm -f ${lib.escapeShellArg "${profileRoot}/gateway.pid"}
-      '';
-      configFile = yamlFormat.generate "ghostship-hermes-profile-${profile}-config.yaml" (mkProfileConfig profile profileDef);
-    }
-  );
-  mkProfileGatewayService =
-    profile:
-    let
-      profileDef = profileDefinitions.${profile};
-    in
-    {
-      description = profileDef.serviceDescription;
-      wantedBy = [ ];
-      wants = [ "network-online.target" ];
-      after = [
-        "ghostship-storage.service"
-        "ghostship-hermes-bootstrap.service"
-        "network-online.target"
-      ];
-      requires = [
-        "ghostship-storage.service"
-        "ghostship-hermes-bootstrap.service"
-      ];
-      environment = userServiceEnvironment // {
-        HERMES_MANAGED = "true";
-      };
-      path = servicePath;
-      serviceConfig = {
-        Type = "simple";
-        User = "hermes";
-        Group = "hermes";
-        WorkingDirectory = profileDef.serviceWorkingDirectory;
-        EnvironmentFile = [ "-${profileDef.profileRoot}/.env" ];
-        ExecStartPre = profileDef.gatewayPreStartScript;
-        ExecStart = profileDef.gatewayScript;
-        ExecStopPost = profileDef.gatewayPostStopScript;
-        Restart = "always";
-        RestartSec = "2s";
-      };
-    };
+    exec hermes gateway run --replace
+  '';
+  managedGatewayPreStartScript = pkgs.writeShellScript "ghostship-hermes-gateway-pre-start.sh" ''
+    set -euo pipefail
+    rm -f ${lib.escapeShellArg managedGatewayPidPath}
+  '';
+  managedGatewayPostStopScript = pkgs.writeShellScript "ghostship-hermes-gateway-post-stop.sh" ''
+    set -euo pipefail
+    rm -f ${lib.escapeShellArg managedGatewayPidPath}
+  '';
   bootstrapHermesScript = pkgs.writeShellScript "ghostship-hermes-bootstrap.sh" ''
     set -euo pipefail
 
     export PATH="${hermesUserPathPrefix}:$PATH"
-
-    profiles_root="${managedProfileRoot}"
-    mkdir -p "$profiles_root"
+    managed_home="${managedHermesHome}"
+    managed_layout_marker="$managed_home/.ghostship-managed-layout"
 
     if [ -f /etc/ghostship-hermes-release ]; then
       install -D -m 0644 /etc/ghostship-hermes-release /home/hermes/.ghostship-hermes-release
     fi
 
-    for existing in "$profiles_root"/*; do
-      [ -d "$existing" ] || continue
-      keep=0
-      case "$(basename "$existing")" in
-        ${lib.concatMapStringsSep "|" (profile: lib.escapeShellArg profile) managedProfiles})
-          keep=1
-          ;;
-      esac
-      if [ "$keep" -eq 0 ]; then
-        rm -rf "$existing"
-        rm -f "/home/hermes/.local/bin/$(basename "$existing")"
-      fi
-    done
-
-    ${lib.concatMapStringsSep "\n" (profile: ''
-      if [ ! -d "${profileDefinitions.${profile}.profileRoot}" ]; then
-        hermes profile create ${lib.escapeShellArg profile} --clone >/dev/null 2>&1 \
-          || hermes profile create ${lib.escapeShellArg profile} >/dev/null 2>&1 \
-          || true
+    reset_legacy_profile_state() {
+      if [ ! -d "$managed_home/profiles" ] && [ ! -f "$managed_home/active_profile" ]; then
+        return 0
       fi
 
-      config_target="${profileDefinitions.${profile}.configPath}"
-      config_tmp="$(mktemp "''${config_target}.tmp.XXXXXX")"
-      trap 'rm -f "$config_tmp"' EXIT
-      install -D -m 0600 ${profileDefinitions.${profile}.configFile} "$config_tmp"
-      if [ -f "$config_target" ] && cmp -s "$config_tmp" "$config_target"; then
-        rm -f "$config_tmp"
-      else
-        mv -f "$config_tmp" "$config_target"
+      marker_value=""
+      if [ -f "$managed_layout_marker" ]; then
+        marker_value="$(tr -d '\n' <"$managed_layout_marker")"
       fi
-      trap - EXIT
-      install -D -m 0600 /dev/null "${profileDefinitions.${profile}.profileRoot}/.managed"
-    '') managedProfiles}
+      if [ "$marker_value" = "${managedLayoutVersion}" ]; then
+        return 0
+      fi
 
-    install -D -m 0600 /dev/null "/home/hermes/.hermes/.managed"
+      rm -rf \
+        "$managed_home/profiles" \
+        "${managedSkillsPath}"
+      rm -f \
+        "$managed_home/active_profile" \
+        "${managedEnvPath}" \
+        "${managedGatewayPidPath}" \
+        "${managedSoulPath}" \
+        "${managedSoulPath}.ghostship-seeded-sha256" \
+        "${managedAuthPath}" \
+        "$managed_home/.managed" \
+        "$managed_home/memory_store.db"
+    }
+
+    mkdir -p "$managed_home"
+    reset_legacy_profile_state
+    printf '%s\n' "${managedLayoutVersion}" >"$managed_layout_marker"
+    chmod 0600 "$managed_layout_marker"
+    install -D -m 0600 /dev/null "$managed_home/.managed"
 
     copy_skill_tree_if_missing() {
       source_root="$1"
@@ -593,9 +482,6 @@ EOF
       source_path="$1"
       target_path="$2"
       marker_path="''${target_path}.ghostship-seeded-sha256"
-      root_soul="/home/hermes/.hermes/SOUL.md"
-      legacy_root_soul="/home/hermes/SOUL.md"
-
       [ -f "$source_path" ] || return 0
 
       source_hash="$(${pkgs.coreutils}/bin/sha256sum "$source_path" | ${pkgs.gawk}/bin/awk '{print $1}')"
@@ -619,56 +505,32 @@ EOF
         return 0
       fi
 
-      for generic_path in "$root_soul" "$legacy_root_soul"; do
-        [ -f "$generic_path" ] || continue
-        generic_hash="$(${pkgs.coreutils}/bin/sha256sum "$generic_path" | ${pkgs.gawk}/bin/awk '{print $1}')"
-        if [ "$target_hash" = "$generic_hash" ]; then
-          install -D -m 0600 "$source_path" "$target_path"
-          printf '%s\n' "$source_hash" >"$marker_path"
-          chmod 0600 "$marker_path"
-          return 0
-        fi
-      done
+      if [ "$target_hash" = "$source_hash" ]; then
+        printf '%s\n' "$source_hash" >"$marker_path"
+        chmod 0600 "$marker_path"
+      fi
     }
 
-    reconcile_seed_skills() {
-      shared_source="''${GHOSTSHIP_HERMES_SHARED_SKILLS_DIR:-${sharedSkillSourceDir}}"
-      profile_root="''${GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT:-${profileSkillSourceRoot}}"
+    reconcile_seed_content() {
+      skill_source="''${GHOSTSHIP_HERMES_SKILLS_DIR:-${managedSkillsSourceDir}}"
+      soul_source="''${GHOSTSHIP_HERMES_SOUL_PATH:-${managedSoulSourcePath}}"
 
-      copy_skill_tree_if_missing "$shared_source" "/home/hermes/.hermes/skills"
-
-      profile_source="''${profile_root}/assistant/skills"
-      copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.assistant.skillPath}"
-      manage_seeded_soul "''${profile_root}/assistant/SOUL.md" "${profileDefinitions.assistant.soulPath}"
-      profile_source="''${profile_root}/operations/skills"
-      copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.operations.skillPath}"
-      manage_seeded_soul "''${profile_root}/operations/SOUL.md" "${profileDefinitions.operations.soulPath}"
-      profile_source="''${profile_root}/supervisor/skills"
-      copy_skill_tree_if_missing "$profile_source" "${profileDefinitions.supervisor.skillPath}"
-      manage_seeded_soul "''${profile_root}/supervisor/SOUL.md" "${profileDefinitions.supervisor.soulPath}"
+      copy_skill_tree_if_missing "$skill_source" "${managedSkillsPath}"
+      manage_seeded_soul "$soul_source" "${managedSoulPath}"
     }
 
-    write_profile_env() {
+    write_managed_env() {
       target="$1"
-      terminal_cwd="$2"
-      bot_token_env="''${3:-}"
-      allowed_users_env="''${4:-}"
-      role_channel_env="''${5:-}"
-      webhook_enabled="''${6:-}"
-      webhook_port="''${7:-}"
-      webhook_secret_env="''${8:-}"
-      browser_cdp_env="''${9:-}"
       target_dir="$(dirname "$target")"
       tmp_target="$(mktemp "$target_dir/.env.tmp.XXXXXX")"
-      general_channel="''${DISCORD_GENERAL_CHANNEL_ID:-}"
       cleanup_tmp() {
         rm -f "$tmp_target"
       }
       trap cleanup_tmp EXIT
       umask 077
       {
-        printf 'TERMINAL_CWD=%s\n' "$terminal_cwd"
-        for key in ${lib.escapeShellArgs sharedProfileEnvKeys}; do
+        printf 'TERMINAL_CWD=%s\n' "${rootTerminalCwd}"
+        for key in ${lib.escapeShellArgs managedRuntimeEnvKeys}; do
           value="''${!key:-}"
           if [ -n "$value" ]; then
             printf '%s=%s\n' "$key" "$value"
@@ -677,45 +539,14 @@ EOF
         if [ -z "''${OPENCODE_API_KEY:-}" ] && [ -n "''${OPENCODE_GO_API_KEY:-}" ]; then
           printf 'OPENCODE_API_KEY=%s\n' "''${OPENCODE_GO_API_KEY}"
         fi
-        if [ -n "$bot_token_env" ]; then
-          bot_token="''${!bot_token_env:-}"
-          if [ -n "$bot_token" ]; then
-            printf 'DISCORD_BOT_TOKEN=%s\n' "$bot_token"
+        for key in ${lib.escapeShellArgs managedDiscordEnvKeys ++ managedBrowserEnvKeys ++ managedWebhookEnvKeys}; do
+          value="''${!key:-}"
+          if [ -n "$value" ]; then
+            printf '%s=%s\n' "$key" "$value"
           fi
-        fi
-        if [ -n "$allowed_users_env" ]; then
-          allowed_users="''${!allowed_users_env:-}"
-          if [ -n "$allowed_users" ]; then
-            printf 'DISCORD_ALLOWED_USERS=%s\n' "$allowed_users"
-          fi
-        fi
-        if [ -n "$role_channel_env" ]; then
-          role_channel="''${!role_channel_env:-}"
-          if [ -n "$role_channel" ]; then
-            printf 'DISCORD_FREE_RESPONSE_CHANNELS=%s\n' "$role_channel"
-          fi
-        fi
-        if [ -n "$general_channel" ]; then
-          printf 'DISCORD_HOME_CHANNEL=%s\n' "$general_channel"
-        fi
-        if [ -n "$browser_cdp_env" ]; then
-          browser_cdp_url="''${!browser_cdp_env:-}"
-          if [ -n "$browser_cdp_url" ]; then
-            printf 'BROWSER_CDP_URL=%s\n' "$browser_cdp_url"
-          fi
-        fi
-        if [ "$webhook_enabled" = "true" ]; then
-          printf 'WEBHOOK_ENABLED=true\n'
-        fi
-        if [ -n "$webhook_port" ]; then
-          printf 'WEBHOOK_PORT=%s\n' "$webhook_port"
-        fi
-        if [ -n "$webhook_secret_env" ]; then
-          webhook_secret="''${!webhook_secret_env:-}"
-          if [ -n "$webhook_secret" ]; then
-            printf 'WEBHOOK_SECRET=%s\n' "$webhook_secret"
-          fi
-        fi
+        done
+        printf 'WEBHOOK_ENABLED=true\n'
+        printf 'WEBHOOK_PORT=%s\n' "${toString managedWebhookPort}"
       } >"$tmp_target"
       chmod 0600 "$tmp_target"
       if [ -f "$target" ] && cmp -s "$tmp_target" "$target"; then
@@ -726,15 +557,14 @@ EOF
       trap - EXIT
     }
 
-    write_profile_env "${profileDefinitions.assistant.profileRoot}/.env" "${profileDefinitions.assistant.serviceWorkingDirectory}" "${profileDefinitions.assistant.discordBotTokenEnv}" "${profileDefinitions.assistant.discordAllowedUsersEnv}" "${profileDefinitions.assistant.discordChannelEnv}" "${if profileDefinitions.assistant.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.assistant.webhookPort}" "${profileDefinitions.assistant.webhookSecretEnv}" "BROWSER_ASSISTANT_CDP_URL"
-    write_profile_env "${profileDefinitions.operations.profileRoot}/.env" "${profileDefinitions.operations.serviceWorkingDirectory}" "${profileDefinitions.operations.discordBotTokenEnv}" "${profileDefinitions.operations.discordAllowedUsersEnv}" "${profileDefinitions.operations.discordChannelEnv}" "${if profileDefinitions.operations.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.operations.webhookPort}" "${profileDefinitions.operations.webhookSecretEnv}" "BROWSER_OPERATIONS_CDP_URL"
-    write_profile_env "${profileDefinitions.supervisor.profileRoot}/.env" "${profileDefinitions.supervisor.serviceWorkingDirectory}" "${profileDefinitions.supervisor.discordBotTokenEnv}" "${profileDefinitions.supervisor.discordAllowedUsersEnv}" "${profileDefinitions.supervisor.discordChannelEnv}" "${if profileDefinitions.supervisor.webhookEnabled then "true" else "false"}" "${toString profileDefinitions.supervisor.webhookPort}" "${profileDefinitions.supervisor.webhookSecretEnv}" "BROWSER_SUPERVISOR_CDP_URL"
-    reconcile_seed_skills
+    write_managed_env "${managedEnvPath}"
+    reconcile_seed_content
 
-    rm -f /home/hermes/.hermes/active_profile
+    rm -rf "$managed_home/profiles"
+    rm -f "$managed_home/active_profile"
 
-    hermes -p ${lib.escapeShellArg defaultProfile} config path >/dev/null 2>&1 || true
-    hermes -p ${lib.escapeShellArg defaultProfile} config env-path >/dev/null 2>&1 || true
+    hermes config path >/dev/null 2>&1 || true
+    hermes config env-path >/dev/null 2>&1 || true
   '';
 
   managedUserToolingScript = pkgs.writeShellScript "ghostship-hermes-user-tooling.sh" ''
@@ -848,8 +678,7 @@ PY2
     GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF = runtimeFlakeRefDefault;
     GHOSTSHIP_TERMINAL_CWD = "/workspace";
     GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
-    GHOSTSHIP_HERMES_PROFILES = managedProfileNames;
-    GHOSTSHIP_HERMES_DEFAULT_PROFILE = defaultProfile;
+    GHOSTSHIP_HERMES_GATEWAY_SERVICE = "${managedGatewayServiceName}.service";
     GHOSTSHIP_ROUTER_HOST = "127.0.0.1";
     GHOSTSHIP_ROUTER_PORT = "8788";
     API_SERVER_HOST = "127.0.0.1";
@@ -959,7 +788,7 @@ in
     environment = {
       TERMINAL_CWD = "/workspace";
     };
-    settings = { } // rootConfig;
+    settings = { } // managedAgentConfig;
     extraPackages = [ pkgs.nix ] ++ lib.optionals includeRepoContent ghostshipUtilities;
   };
 
@@ -971,6 +800,7 @@ in
     ] ++ lib.optionals includeManagedRuntime [
       "ghostship-dashboard-controller.service"
       "ghostship-hermes-router.service"
+      "${managedGatewayServiceName}.service"
     ];
     serviceConfig = {
       Type = "oneshot";
@@ -1012,9 +842,7 @@ in
       "ghostship-hermes-bootstrap.service"
       "ghostship-hermes-router.service"
       "ghostship-dashboard-controller.service"
-      "ghostship-hermes-profile-assistant.service"
-      "ghostship-hermes-profile-operations.service"
-      "ghostship-hermes-profile-supervisor.service"
+      "${managedGatewayServiceName}.service"
     ];
     environment = userServiceEnvironment;
     path = servicePath;
@@ -1023,13 +851,13 @@ in
       User = "hermes";
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
-      PassEnvironment = sharedProfileEnvKeys ++ profileBrowserCdpEnvKeys;
+      PassEnvironment = managedRuntimeEnvKeys ++ managedBrowserEnvKeys;
       ExecStart = "${managedUserToolingScript} bootstrap";
     };
   };
 
   systemd.services.ghostship-hermes-bootstrap = lib.mkIf includeManagedRuntime {
-    description = "Bootstrap ghostship-hermes Hermes profiles";
+    description = "Bootstrap ghostship-hermes managed runtime";
     wantedBy = [ "multi-user.target" ];
     after = [ "ghostship-storage.service" ];
     requires = [ "ghostship-storage.service" ];
@@ -1041,9 +869,9 @@ in
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
       PassEnvironment = [
-        "GHOSTSHIP_HERMES_SHARED_SKILLS_DIR"
-        "GHOSTSHIP_HERMES_PROFILE_SKILLS_ROOT"
-      ] ++ sharedProfileEnvKeys ++ profileBrowserCdpEnvKeys ++ discordEnvKeys;
+        "GHOSTSHIP_HERMES_SKILLS_DIR"
+        "GHOSTSHIP_HERMES_SOUL_PATH"
+      ] ++ managedRuntimeEnvKeys ++ managedDiscordEnvKeys ++ managedBrowserEnvKeys ++ managedWebhookEnvKeys;
       ExecStart = bootstrapHermesScript;
     };
   };
@@ -1066,7 +894,10 @@ in
       RemainAfterExit = true;
       ExecStart = pkgs.writeShellScript "ghostship-hermes-startup.sh" ''
         set -euo pipefail
-        ${pkgs.systemd}/bin/systemctl start           ghostship-dashboard-controller.service           ghostship-hermes-router.service           ghostship-hermes-profile-assistant.service           ghostship-hermes-profile-operations.service           ghostship-hermes-profile-supervisor.service
+        ${pkgs.systemd}/bin/systemctl start \
+          ghostship-dashboard-controller.service \
+          ghostship-hermes-router.service \
+          ${managedGatewayServiceName}.service
       '';
     };
   };
@@ -1159,70 +990,59 @@ in
     };
   };
 
-  systemd.services.ghostship-hermes-profile-assistant = lib.mkIf includeManagedRuntime (mkProfileGatewayService "assistant");
-  systemd.services.ghostship-hermes-profile-operations = lib.mkIf includeManagedRuntime (mkProfileGatewayService "operations");
-  systemd.services.ghostship-hermes-profile-supervisor = lib.mkIf includeManagedRuntime (mkProfileGatewayService "supervisor");
+  systemd.services.${managedGatewayServiceName} = lib.mkIf includeManagedRuntime {
+    description = "ghostship-hermes managed gateway";
+    wantedBy = [ ];
+    wants = [ "network-online.target" ];
+    after = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-router.service"
+      "network-online.target"
+    ];
+    requires = [
+      "ghostship-storage.service"
+      "ghostship-hermes-bootstrap.service"
+      "ghostship-hermes-router.service"
+    ];
+    environment = userServiceEnvironment // {
+      HERMES_MANAGED = "true";
+    };
+    path = servicePath;
+    serviceConfig = {
+      Type = "simple";
+      User = "hermes";
+      Group = "hermes";
+      WorkingDirectory = rootTerminalCwd;
+      EnvironmentFile = [ "-${managedEnvPath}" ];
+      ExecStartPre = managedGatewayPreStartScript;
+      ExecStart = managedGatewayScript;
+      ExecStopPost = managedGatewayPostStopScript;
+      Restart = "always";
+      RestartSec = "2s";
+    };
+  };
 
-  systemd.services.ghostship-hermes-profile-assistant-restart = lib.mkIf includeManagedRuntime {
-    description = "Restart ghostship-hermes assistant gateway after profile changes";
+  systemd.services.ghostship-hermes-gateway-restart = lib.mkIf includeManagedRuntime {
+    description = "Restart ghostship-hermes managed gateway after runtime changes";
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = pkgs.writeShellScript "ghostship-hermes-profile-assistant-restart.sh" ''
-        exec ${pkgs.systemd}/bin/systemctl try-restart ghostship-hermes-profile-assistant.service
+      ExecStart = pkgs.writeShellScript "ghostship-hermes-gateway-restart.sh" ''
+        exec ${pkgs.systemd}/bin/systemctl try-restart ${managedGatewayServiceName}.service
       '';
     };
   };
 
-  systemd.services.ghostship-hermes-profile-operations-restart = lib.mkIf includeManagedRuntime {
-    description = "Restart ghostship-hermes operations gateway after profile changes";
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = pkgs.writeShellScript "ghostship-hermes-profile-operations-restart.sh" ''
-        exec ${pkgs.systemd}/bin/systemctl try-restart ghostship-hermes-profile-operations.service
-      '';
-    };
-  };
-
-  systemd.services.ghostship-hermes-profile-supervisor-restart = lib.mkIf includeManagedRuntime {
-    description = "Restart ghostship-hermes supervisor gateway after profile changes";
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = pkgs.writeShellScript "ghostship-hermes-profile-supervisor-restart.sh" ''
-        exec ${pkgs.systemd}/bin/systemctl try-restart ghostship-hermes-profile-supervisor.service
-      '';
-    };
-  };
-
-  systemd.paths.ghostship-hermes-profile-assistant-restart = lib.mkIf includeManagedRuntime {
+  systemd.paths.ghostship-hermes-gateway-restart = lib.mkIf includeManagedRuntime {
     wantedBy = [ "multi-user.target" ];
     pathConfig = {
       PathChanged = [
-        "${profileDefinitions.assistant.configPath}"
-        "${profileDefinitions.assistant.profileRoot}/.env"
+        "${managedHermesHome}/config.yaml"
+        "${managedEnvPath}"
+        "${managedAuthPath}"
+        "${managedSoulPath}"
       ];
-      Unit = "ghostship-hermes-profile-assistant-restart.service";
-    };
-  };
-
-  systemd.paths.ghostship-hermes-profile-operations-restart = lib.mkIf includeManagedRuntime {
-    wantedBy = [ "multi-user.target" ];
-    pathConfig = {
-      PathChanged = [
-        "${profileDefinitions.operations.configPath}"
-        "${profileDefinitions.operations.profileRoot}/.env"
-      ];
-      Unit = "ghostship-hermes-profile-operations-restart.service";
-    };
-  };
-
-  systemd.paths.ghostship-hermes-profile-supervisor-restart = lib.mkIf includeManagedRuntime {
-    wantedBy = [ "multi-user.target" ];
-    pathConfig = {
-      PathChanged = [
-        "${profileDefinitions.supervisor.configPath}"
-        "${profileDefinitions.supervisor.profileRoot}/.env"
-      ];
-      Unit = "ghostship-hermes-profile-supervisor-restart.service";
+      Unit = "ghostship-hermes-gateway-restart.service";
     };
   };
 
@@ -1238,7 +1058,7 @@ in
       User = "hermes";
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
-      PassEnvironment = sharedProfileEnvKeys ++ profileBrowserCdpEnvKeys;
+      PassEnvironment = managedRuntimeEnvKeys ++ managedBrowserEnvKeys;
       ExecStart = "${managedUserToolingScript} refresh";
     };
   };
