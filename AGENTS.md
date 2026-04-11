@@ -37,8 +37,6 @@
 - For non-`main` `workflow_dispatch`, publish immutable `sha-*` tags only.
 - Keep repo identity and OSS maintenance files present: `README.md`, `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and `.github/` metadata.
 - Document how to build and test Python CLI utilities in this repo.
-- After Docker-based verification, aggressively prune stale images, dead test containers, temporary artifacts, and unused volumes. Leave at most one retained copy of each needed image plus any still-needed live validation container.
-- Keep Docker clean during local validation: remove old `ghostship-hermes*` containers once they are no longer needed instead of letting validation containers accumulate.
 
 ## Build And Test Commands
 
@@ -94,16 +92,11 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 
 - The runtime needs a root init phase to prepare `/home/hermes`, `/home/hermes/.hermes`, `/workspace`, and `/nix` before dropping to the `hermes` user.
 - Mounting an empty Docker volume over `/nix` on a fresh Nix-built image is unsafe: it can hide or copy the image store and stall `docker run`.
-- Docker validation against a repo-local Nix store must mount that same store root into the container at `/nix`; binding the host `/nix` while the image was built in `.nix-local-store` hides the needed store paths.
-- Docker Desktop imports of the NixOS rootfs can fail with `exec /init: no such file or directory` if a WSL bind mount replaces `/nix` before startup; the dashboard smoke test should avoid binding `/nix` unless it is explicitly validating persisted store behavior.
 - Imported NixOS images may not expose `bash` through `docker exec bash`; image tests should use `/bin/sh` plus an explicit PATH to the NixOS system profile.
 - The docker-container NixOS profile leaves the firewall active inside the container; published dashboard traffic requires explicitly allowing TCP `7681`.
 - Persisted `/nix` must include a writable `/nix/var/nix/daemon-socket` path and the image must start `nix-daemon.socket` after storage preparation, or user-level `nix profile install` will fail even though `nix` is installed.
 - Persisting `/home/hermes` directly is the supported durability model for this image; it keeps Hermes CLI profiles, managed state, XDG state, and later-installed agent-tool config together in one mount.
-- This repo should not accumulate Docker artifacts. After validation, aggressively prune unused images, stopped containers, and unused volumes so Docker keeps only the current needed image set.
-- After archiving a change, clean up the Docker artifacts generated for that change's validation work. Default to removing only the containers, images, and volumes created during the task; do a full Docker reset only when the user explicitly asks for it.
 - Do not require the deployment host to expose port `7681` directly. Validate the dashboard from inside the Hermes container or through the intended upstream proxy path, and treat missing host-level `127.0.0.1:7681` reachability as expected unless the deployment specifically documents a direct bind.
-- Do not run image test builds on the local dev host by default. Use `chill-penguin` for test builds and live image validation unless the user explicitly asks to use this machine.
 
 ### Skill Authoring
 
@@ -154,7 +147,6 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 - Upstream Hermes only treats `model.base_url` as the active custom endpoint during runtime resolution when `model.provider` is explicitly `auto` or `custom`; in this repo's router-primary image configs, always write `model.provider = auto` alongside the local router `base_url`.
 - Router startup must not block the listener on fresh ranking generation; keep serving persisted inventory/rankings from SQLite while startup refresh and reranking continue in the background.
 - Router score preview paths such as `/v1/models` must not reread full SQLite state tables for every candidate score; cache `model_state`, `provider_state`, `rankings`, and override reads in-process and invalidate those caches on writes.
-- Root-side image validation shells only see the system profile PATH, so keep tools like `jq` in `environment.systemPackages` if the smoke or persistence scripts need them through `docker exec` as root.
 - `docs/api/` follows a hybrid rule: every `ghostship-*` utility needs a canonical Markdown API reference, and services with upstream machine-readable specs should also keep the mirrored raw JSON artifact beside it.
 - `ghostship-chaptarr` requires `CHAPTARR_URL`, `CHAPTARR_API_KEY`, and optional `CHAPTARR_API_PATH`/`CHAPTARR_API_VERSION`; document those env vars alongside the OpenAPI mirror so operators know how to configure the runtime.
 - RomM v4.7.0 auth uses `POST /api/token` with the OAuth password grant (`username`, `password`, `grant_type=password`), not a static token flow.
