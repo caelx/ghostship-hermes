@@ -12,6 +12,7 @@ on:
       - 'flake.lock'
       - 'packages/**'
       - 'scripts/export_publishable_image.sh'
+      - 'scripts/shared_nix_cache.sh'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -71,6 +72,11 @@ jobs:
       TAGS: ${{ needs.prepare.outputs.tags }}
       HERMES_REF: ${{ needs.prepare.outputs.hermes_ref }}
       PLATFORM_TAG: ${{ matrix.platform_tag }}
+      GHOSTSHIP_CACHE_REPO: ${{ vars.GHOSTSHIP_CACHE_REPO }}
+      GHOSTSHIP_CACHE_PUBLIC_KEY: ${{ vars.GHOSTSHIP_CACHE_PUBLIC_KEY }}
+      GHOSTSHIP_CACHE_GHCR_TOKEN: ${{ secrets.GHOSTSHIP_CACHE_GHCR_TOKEN }}
+      GHOSTSHIP_CACHE_SIGNING_KEY: ${{ secrets.GHOSTSHIP_CACHE_SIGNING_KEY }}
+      GITHUB_CACHE_FALLBACK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v6
 
@@ -86,6 +92,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bootstrap shared Ghostship Nix cache
+        id: cache
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if scripts/shared_nix_cache.sh bootstrap; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "shared Ghostship cache unavailable before build; continuing with uncached build" >&2
+          fi
 
       - name: Resolve image references
         id: refs
@@ -103,7 +122,26 @@ jobs:
             echo "content_ref=${content_ref}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Plan shared cache publication
+        id: cache_plan
+        if: steps.cache.outputs.enabled == 'true'
+        env:
+          PLAN_FILE: ${{ runner.temp }}/ghostship-cache-${{ matrix.platform_tag }}.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if scripts/shared_nix_cache.sh plan ".#packages.${{ matrix.system }}.ghostship-hermes-image" "$PLAN_FILE"; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            : > "$PLAN_FILE"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "shared cache planning failed; continuing without cache publication" >&2
+          fi
+          echo "plan_file=$PLAN_FILE" >> "$GITHUB_OUTPUT"
+
       - name: Build and publish content-addressed final image
+        id: build_image
         env:
           CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
         shell: bash
@@ -111,6 +149,7 @@ jobs:
           set -euo pipefail
 
           final_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-image)"
+          echo "final_bundle=$final_bundle" >> "$GITHUB_OUTPUT"
 
           scripts/export_publishable_image.sh \
             "$final_bundle" \
@@ -119,6 +158,21 @@ jobs:
           nix shell nixpkgs#skopeo -c skopeo copy \
             "docker-archive:$(pwd)/ghostship-hermes-${PLATFORM_TAG}.tar" \
             "docker://${CONTENT_REF}"
+
+      - name: Publish shared cache entries
+        if: steps.cache_plan.outputs.enabled == 'true'
+        env:
+          PLAN_FILE: ${{ steps.cache_plan.outputs.plan_file }}
+          FINAL_BUNDLE: ${{ steps.build_image.outputs.final_bundle }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if scripts/shared_nix_cache.sh publish "$PLAN_FILE" "$FINAL_BUNDLE"; then
+            echo "shared cache publish completed" >&2
+          else
+            echo "shared cache publish failed after image build; keeping image publication result" >&2
+          fi
 
       - name: Publish architecture image tags
         env:

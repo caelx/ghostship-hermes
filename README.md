@@ -335,10 +335,13 @@ Image output contract:
 
 GitHub Actions publication behavior:
 
-- Every publish rebuilds the explicit `ghostship-hermes-image` bundle on the runner host. There is no content-addressed final-image skip gate and no daily in-image parent path.
-- The heavy multi-arch publish job does not currently enable a third-party Nix binary cache. Magic Nix Cache remains disabled after repeated GitHub Actions cache throttling (`ResourceExhausted`) failures, and the abandoned daily-image OCI-parent path should not be used as a substitute for a real Nix cache.
-- The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
-- Measure the current workflow behavior with `python3 scripts/github_actions_timings.py --include-latest-jobs` after workflow changes land. The 2026-04-11 timing snapshot describes superseded publish paths and should not be reused as the current baseline.
+- Every publish still rebuilds the explicit `ghostship-hermes-image` bundle on the runner host before export and GHCR publication.
+- `publish-image` now treats `caelx/ghostship-cache` as a signed shared Nix binary cache. Before `nix build`, the workflow starts a runner-local `nixcache-oci` proxy backed by that cache and adds it as a substituter with the documented public key.
+- If the shared cache is unavailable before the build starts, the workflow falls back to the normal uncached host-side build instead of switching to a different image-assembly path.
+- If the shared cache serves a trust or signature mismatch, the Nix build fails; the workflow does not disable signature verification.
+- After a successful image build, `publish-image` signs and uploads the locally built store paths that were not already available from the configured caches into `ghcr.io/caelx/ghostship-cache/nix-cache`.
+- The `ci` workflow still uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps.
+- Shared-cache setup, verification, and timing guidance now live in [docs/shared-nix-cache.md](docs/shared-nix-cache.md). The 2026-04-11 timing snapshot in [docs/github-actions-build-optimization.md](docs/github-actions-build-optimization.md) is the pre-shared-cache baseline.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.
 - `ghostship-hermes-image` is the explicit publishable image bundle consumed by `scripts/export_publishable_image.sh`, local image-loading flows, and the dashboard smoke test.

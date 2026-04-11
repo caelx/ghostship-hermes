@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added phase-1 shared Nix binary cache support for `publish-image`, wiring the workflow to consume and publish signed store paths through a runner-local `nixcache-oci` proxy backed by `caelx/ghostship-cache` while preserving the explicit host-side `ghostship-hermes-image` build/export contract and uncached fallback behavior.
 - Reverted `publish-image` to unconditional host-side full builds on every publish, removed the abandoned daily-image in-container build path, and kept the explicit `ghostship-hermes-image` bundle as the only CI/GHCR publication contract after the arm64 daily-image experiment kept failing on raw-image runtime mismatches.
 - Switched the managed single-agent Hermes scaffold to use `opencode-go/minimax-m2.7` as the primary model and the local Ghostship router `coding` alias as the configured fallback via the OpenAI-compatible endpoint, making `OPENAI_API_KEY` the router fallback bearer-token input, preserving the direct Gemini auxiliary path, and blocking the exact backend id `openrouter/free` from managed router selection.
 - Fixed the managed gateway pidfile contract so the wrapped Hermes runtime now recognizes the repo-managed `.hermes-wrapped gateway run --replace` process signature; this keeps `hermes doctor` and dashboard status from deleting `/home/hermes/.hermes/gateway.pid` while `ghostship-hermes-gateway.service` is still active.

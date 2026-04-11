@@ -1,6 +1,6 @@
 # GitHub Actions Build Optimization
 
-Historical note: the 2026-04-11 overlay-based final publication path described in older drafts was superseded after it dropped managed runtime changes from the deployed image. Final GHCR publication now exports the explicit `ghostship-hermes-image` bundle instead.
+Historical note: the 2026-04-11 overlay-based final publication path described in older drafts was superseded after it dropped managed runtime changes from the deployed image. Final GHCR publication now exports the explicit `ghostship-hermes-image` bundle instead. Shared-cache follow-up measurements now belong in `docs/shared-nix-cache.md`; this file is the pre-shared-cache baseline.
 
 This note captures the measured optimization baseline for the `optimize-github-actions-image-builds` change, the acceptance metrics used for each implementation round, and the final measured outcome from the landed workflow.
 
