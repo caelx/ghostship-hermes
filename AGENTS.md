@@ -183,3 +183,4 @@ nix build .#packages.aarch64-linux.ghostship-hermes-image
 ### Python Packaging
 
 - Build the shared `ghostship-cli-contract` package from the same Python package set as each consuming CLI package. Mixing `python3` with `python311Packages` can pass local package tests and still fail `nix flake check` in GitHub.
+- For the managed Hermes user toolchain, install Python as one `python3.withPackages (ps: [ ps.pip ])` environment rather than separate `python3` and `pip` entries; separate packages can expose `pip` while still leaving `python3 -m pip` broken.

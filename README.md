@@ -32,6 +32,13 @@ Upstream note:
 
 This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support stays CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills. The default image also preinstalls `gcloud`, `gh`, `ssh`, `scp`, and `ssh-keygen` from `nixpkgs`.
 
+The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence reconciles the repo-owned persisted user-layer runtime contract under `/home/hermes`, removing stale managed entries and reapplying the current image-owned toolchain/config state on replacement:
+
+- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `python3`, `pip`, `node`, `npm`
+- managed Python contract: `python3`, `pip`, and `python3 -m pip` all resolve from the same managed Nix profile environment
+- npm-managed agent CLIs: `codex`, `opencode`
+- image-managed browser CLI: `agent-browser`
+
 The immutable image stays focused on boot, supervision, and the repo-owned runtime surface:
 
 - NixOS/container runtime
@@ -43,7 +50,8 @@ The immutable image stays focused on boot, supervision, and the repo-owned runti
 
 Boot-time runtime convergence re-applies the repo-owned mutable toolchain and config surface under `/home/hermes` on replacement:
 
-- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, `node`, `npm`
+- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `python3`, `pip`, `node`, `npm`
+- managed Python contract: `python3`, `pip`, and `python3 -m pip` all resolve from the same managed Nix profile environment
 - npm-managed agent CLIs: `codex`, `opencode`
 - image-managed browser CLI: `agent-browser`
 
@@ -79,7 +87,7 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-user-tooling.service`
-  converges the repo-owned persisted user-layer runtime contract on boot, ensures the in-container Nix daemon is available first, removes stale managed entries from `/home/hermes/.local/state/nix/profiles/ghostship-managed`, rewrites the managed npm project to the declared CLI set, refreshes `/home/hermes/.local/bin`, and does not own the main gateway startup dependency chain
+  converges the repo-owned persisted user-layer runtime contract on boot, ensures the in-container Nix daemon is available first, removes stale managed entries from the dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile before re-adding the current image-owned toolchain, restores the managed helper CLI set plus the pip-capable Python environment, rewrites the managed npm project to the declared CLI set, refreshes the managed npm CLIs and symlinks under `/home/hermes/.local/bin`, and does not own the main gateway startup dependency chain
 - `ghostship-hermes-user-tooling-refresh.timer`
   reruns the mutable tooling refresh flow daily and once shortly after boot
 - `ghostship-hermes-bootstrap.service`
@@ -139,8 +147,9 @@ The image is declarative-first:
 
 - Hermes managed config lives in `/home/hermes/.hermes`.
 - The default runtime does not let Hermes self-apply the system flake.
-- User-level Nix remains available for mutable runtime installs, and the baked `hermes` toolchain is kept in its own managed profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed`.
-- The default Hermes-user PATH includes `/home/hermes/.local/bin`, `/home/hermes/.local/state/nix/profiles/ghostship-managed/bin`, and `/home/hermes/.nix-profile/bin` ahead of the fallback system toolchain.
+- User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image uses a dedicated managed profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed` to keep the baked `hermes` toolchain updateable on boot and during daily refreshes without colliding with the operator's default `~/.nix-profile`.
+- The default Hermes-user PATH includes `/home/hermes/.local/bin`, `/home/hermes/.local/state/nix/profiles/ghostship-managed/bin`, and `/home/hermes/.nix-profile/bin` ahead of the fallback system toolchain so login shells and Hermes runtime commands discover the persisted mutable tool layers by default.
+- The managed profile now also provides the repo-approved helper CLI set (`fd`, `uv`, `yq`, `tmux`) plus a shared Python environment where `python3`, `pip`, and `python3 -m pip` all work without extra activation.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The managed config sets `timezone = "Pacific/Honolulu"`, `agent.max_turns = 110`, `agent.reasoning_effort = "high"`, `agent.verbose = false`, `memory.provider = holographic`, transcript compression, checkpoints, compact streaming display defaults, and `approvals.mode = "off"`.
 - Browser defaults remain `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.
@@ -325,6 +334,7 @@ Free GitHub Actions acceleration:
 - The base image no longer depends on `ghostship-hermes-router`, `ghostship-hermes-runtime`, or `hermes-dashboard`, so overlay-only command changes do not invalidate the base derivation or force another native base rebuild.
 - Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
+- Measure the current workflow behavior with `python3 scripts/github_actions_timings.py --include-latest-jobs`. As of 2026-04-11 UTC, the landed workflow measured approximately `34.97` minutes for a cold-content publish, `20.48` minutes for a base-reuse publish, and `1.17` minutes for an exact warm-repeat publish; only the exact-repeat path currently beats the approximately `10` minute stretch goal.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.
 - `ghostship-hermes-image` is the explicit publishable image bundle consumed by `scripts/export_publishable_image.sh`, the GHCR publish workflow, and the dashboard smoke test.
