@@ -12,6 +12,7 @@ on:
       - 'flake.lock'
       - 'packages/**'
       - 'scripts/export_publishable_image.sh'
+      - 'scripts/build_publishable_image_in_base.sh'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -35,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          hermes_ref="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)"
+          hermes_ref="$(tr -d '\\n' < packages/hermes-image/hermes-release.txt)"
           image_name="ghcr.io/${GITHUB_REPOSITORY_OWNER}/ghostship-hermes"
           base_image_name="ghcr.io/${GITHUB_REPOSITORY_OWNER}/ghostship-hermes-base"
           tags="sha-${GITHUB_SHA}"
@@ -97,9 +98,10 @@ jobs:
           base_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-base-image.drvPath --raw)"
           final_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-image.drvPath --raw)"
           base_tag="base-$(basename "$base_drv" .drv)"
-          content_hash="$(printf '%s\n' "$final_drv" | sha256sum | cut -c1-24)"
+          content_hash="$(echo "$final_drv" | sha256sum | cut -c1-24)"
           base_ref="${BASE_IMAGE_NAME}:${base_tag}-${PLATFORM_TAG}"
           content_ref="${IMAGE_NAME}:content-${content_hash}-${PLATFORM_TAG}"
+          local_base_ref="ghostship-hermes-base:ci-${PLATFORM_TAG}"
 
           {
             echo "base_drv=${base_drv}"
@@ -107,6 +109,7 @@ jobs:
             echo "content_hash=${content_hash}"
             echo "base_ref=${base_ref}"
             echo "content_ref=${content_ref}"
+            echo "local_base_ref=${local_base_ref}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Check for reusable final image
@@ -129,38 +132,36 @@ jobs:
         if: steps.reusable.outputs.exists != 'true'
         env:
           BASE_REF: ${{ steps.refs.outputs.base_ref }}
+          LOCAL_BASE_REF: ${{ steps.refs.outputs.local_base_ref }}
         shell: bash
         run: |
           set -euo pipefail
 
           if nix shell nixpkgs#skopeo -c skopeo inspect "docker://${BASE_REF}" >/dev/null 2>&1; then
             echo "reusing published base image ${BASE_REF}"
+            docker pull "$BASE_REF"
+            docker tag "$BASE_REF" "$LOCAL_BASE_REF"
             exit 0
           fi
 
           echo "publishing new base image ${BASE_REF}"
           base_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-base-image)"
-          scripts/export_publishable_image.sh "$base_bundle" "ghostship-hermes-base:ci-${PLATFORM_TAG}" "ghostship-hermes-base-${PLATFORM_TAG}.tar"
-          nix shell nixpkgs#skopeo -c skopeo copy \
-            "docker-archive:$(pwd)/ghostship-hermes-base-${PLATFORM_TAG}.tar" \
-            "docker://${BASE_REF}"
+          scripts/export_publishable_image.sh "$base_bundle" "$LOCAL_BASE_REF" "ghostship-hermes-base-${PLATFORM_TAG}.tar"
+          nix shell nixpkgs#skopeo -c skopeo copy             "docker-archive:$(pwd)/ghostship-hermes-base-${PLATFORM_TAG}.tar"             "docker://${BASE_REF}"
 
       - name: Build and publish content-addressed final image
         if: steps.reusable.outputs.exists != 'true'
         env:
           CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
+          LOCAL_BASE_REF: ${{ steps.refs.outputs.local_base_ref }}
         shell: bash
         run: |
           set -euo pipefail
 
-          final_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-image)"
-          scripts/export_publishable_image.sh \
-            "$final_bundle" \
-            "ghostship-hermes:ci-${PLATFORM_TAG}" \
-            "ghostship-hermes-${PLATFORM_TAG}.tar"
-          nix shell nixpkgs#skopeo -c skopeo copy \
-            "docker-archive:$(pwd)/ghostship-hermes-${PLATFORM_TAG}.tar" \
-            "docker://${CONTENT_REF}"
+          final_bundle_dir="$(pwd)/ghostship-hermes-image-${PLATFORM_TAG}-bundle"
+          scripts/build_publishable_image_in_base.sh             "$LOCAL_BASE_REF"             ".#packages.${{ matrix.system }}.ghostship-hermes-image"             "$final_bundle_dir"
+          scripts/export_publishable_image.sh             "$final_bundle_dir"             "ghostship-hermes:ci-${PLATFORM_TAG}"             "ghostship-hermes-${PLATFORM_TAG}.tar"
+          nix shell nixpkgs#skopeo -c skopeo copy             "docker-archive:$(pwd)/ghostship-hermes-${PLATFORM_TAG}.tar"             "docker://${CONTENT_REF}"
 
       - name: Publish architecture image tags
         env:
@@ -172,9 +173,7 @@ jobs:
           cat > publish-arch-tags.sh <<'SCRIPT'
           set -euo pipefail
           for tag in $TAGS; do
-            skopeo copy \
-              "docker://${CONTENT_REF}" \
-              "docker://${IMAGE_NAME}:${tag}-${PLATFORM_TAG}"
+            skopeo copy               "docker://${CONTENT_REF}"               "docker://${IMAGE_NAME}:${tag}-${PLATFORM_TAG}"
           done
           SCRIPT
           chmod +x publish-arch-tags.sh
@@ -182,7 +181,7 @@ jobs:
 
       - name: Remove temporary publish artifacts
         if: always()
-        run: rm -f publish-arch-tags.sh "ghostship-hermes-base-${PLATFORM_TAG}.tar" "ghostship-hermes-${PLATFORM_TAG}.tar"
+        run: rm -rf publish-arch-tags.sh "ghostship-hermes-base-${PLATFORM_TAG}.tar" "ghostship-hermes-${PLATFORM_TAG}.tar" "ghostship-hermes-image-${PLATFORM_TAG}-bundle"
 
   publish-manifests:
     needs:
@@ -212,8 +211,5 @@ jobs:
           set -euo pipefail
 
           for tag in $TAGS; do
-            docker buildx imagetools create \
-              --tag "$IMAGE_NAME:$tag" \
-              "$IMAGE_NAME:$tag-amd64" \
-              "$IMAGE_NAME:$tag-arm64"
+            docker buildx imagetools create               --tag "$IMAGE_NAME:$tag"               "$IMAGE_NAME:$tag-amd64"               "$IMAGE_NAME:$tag-arm64"
           done

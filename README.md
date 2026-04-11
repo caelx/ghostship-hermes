@@ -314,10 +314,13 @@ lockfile when a new tag lands, and then explicitly dispatches
 bump commit itself is created by GitHub Actions. The publish workflow now
 path-gates automatic runs, publishes a true per-architecture
 `ghostship-hermes-base` image from a base-specific NixOS module only when the
-tracked base-affecting Hermes/core-runtime layer changes, and publishes the
-final `ghostship-hermes` architecture tags from the explicit
+tracked base-affecting Hermes/core-runtime layer changes, and still publishes
+the final `ghostship-hermes` architecture tags from the explicit
 `ghostship-hermes-image` bundle so the managed runtime/systemd contract ships
-exactly as tested before the manifest-only job creates the multi-arch tags.
+exactly as tested. The final bundle build now runs inside the pulled
+`ghostship-hermes-base` image, which lets GitHub reuse the base image's baked
+`/nix/store` during the Nix build before the manifest-only job creates the
+multi-arch tags.
 Inside a running container, the `hermes` user tooling refresh path keeps an
 offline bootstrap package for first boot, but refreshes Hermes itself from
 `github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already
@@ -339,6 +342,7 @@ Image output contract:
 Free GitHub Actions acceleration:
 
 - The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image keyed to the explicit `ghostship-hermes-image` bundle derivation, and it still maintains a stable `ghostship-hermes-base` tag for the separate reusable base artifact.
+- When a new final image is required, GitHub now runs the explicit `ghostship-hermes-image` Nix build inside the pulled `ghostship-hermes-base` container instead of on the cold host runner, so the base image's baked `/nix/store` actually accelerates the expensive Nix step rather than only the later Docker import/push step.
 - The immutable final-image reuse key now follows the explicit final image bundle derivation instead of the layered base-plus-overlay assembly path, because the managed runtime contract lives in the final NixOS system rather than in the lightweight overlay bundle alone.
 - The base image no longer depends on `ghostship-hermes-router`, `ghostship-hermes-runtime`, or `hermes-dashboard`, so overlay-only command changes do not invalidate the base derivation or force another native base rebuild.
 - Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
