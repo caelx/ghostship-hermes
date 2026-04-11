@@ -3,11 +3,12 @@
   lib,
   modulesPath,
   pkgs,
-  ghostshipHermesRouter,
-  ghostshipHermesRuntime,
-  ghostshipUtilities,
-  hermesDashboard,
+  ghostshipHermesRouter ? null,
+  ghostshipHermesRuntime ? null,
+  ghostshipUtilities ? [ ],
+  hermesDashboard ? null,
   hermesRelease,
+  includeRepoContent ? false,
   wrappedHermesAgent,
   ...
 }:
@@ -65,7 +66,10 @@ let
   auxiliaryBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
   auxiliaryApiKeyRef = "\${GOOGLE_AI_STUDIO_API_KEY}";
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
-  runtimeBin = "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime";
+  repoOverlayBinDir = "/opt/ghostship-overlay/bin";
+  routerCommand = if includeRepoContent then "${ghostshipHermesRouter}/bin/ghostship-hermes-router" else "${repoOverlayBinDir}/ghostship-hermes-router";
+  runtimeCommand = if includeRepoContent then "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime" else "${repoOverlayBinDir}/ghostship-hermes-runtime";
+  dashboardCommand = if includeRepoContent then "${hermesDashboard}/bin/hermes-dashboard" else "${repoOverlayBinDir}/hermes-dashboard";
   yamlFormat = pkgs.formats.yaml { };
   sharedProfileEnvKeys = [
     "GOOGLE_AI_STUDIO_API_KEY"
@@ -332,40 +336,108 @@ let
       };
     };
   managedProfileNames = lib.concatStringsSep "," managedProfiles;
-  systemPackages = with pkgs; [
+  sharedDependencyPackages = with pkgs; [
     bashInteractive
     cacert
     coreutils
-    findutils
-    gnugrep
-    gnused
-    procps
-    tirith
-    ttyd
-    util-linux
-    ghostshipHermesRouter
-    ghostshipHermesRuntime
-    hermesDashboard
-  ];
-
-  toolingFallbackPackages = with pkgs; [
     curl
+    findutils
     git
     gh
+    gnugrep
+    gnused
     jq
     nix
     nodejs_22
     openssh
+    procps
     ripgrep
+    tirith
+    ttyd
+    util-linux
   ];
 
-  servicePath = systemPackages ++ toolingFallbackPackages ++ ghostshipUtilities ++ [ config.services.hermes-agent.package ];
+  repoCommandPackages = lib.optionals includeRepoContent (
+    [
+      ghostshipHermesRouter
+      ghostshipHermesRuntime
+      hermesDashboard
+    ]
+    ++ ghostshipUtilities
+  );
+
+  systemPackages = sharedDependencyPackages ++ repoCommandPackages;
+  servicePath = sharedDependencyPackages ++ [ config.services.hermes-agent.package ] ++ repoCommandPackages;
   fallbackCommandEnv = pkgs.buildEnv {
     name = "ghostship-hermes-fallback-env";
     paths = servicePath;
   };
   hermesUserPathPrefix = "/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin";
-  hermesUserDefaultPath = "${hermesUserPathPrefix}:${fallbackCommandEnv}/bin";
+  overlayPathSegment = lib.optionalString (!includeRepoContent) "${repoOverlayBinDir}:";
+  hermesUserDefaultPath = "${hermesUserPathPrefix}:${overlayPathSegment}${fallbackCommandEnv}/bin";
+  storagePreparationScript = pkgs.writeShellScript "ghostship-hermes-prepare-storage" ''
+    set -euo pipefail
+
+    export HERMES_USER="''${HERMES_USER:-hermes}"
+    export HERMES_UID="''${HERMES_UID:-3000}"
+    export HERMES_GID="''${HERMES_GID:-3000}"
+    export HOME="''${HOME:-/home/hermes}"
+    export HERMES_HOME="''${HERMES_HOME:-/home/hermes/.hermes}"
+    export GHOSTSHIP_WORKSPACE_ROOT="''${GHOSTSHIP_WORKSPACE_ROOT:-/workspace}"
+    export GHOSTSHIP_DASHBOARD_STATE_DIR="''${GHOSTSHIP_DASHBOARD_STATE_DIR:-/home/hermes/.local/state/ghostship-hermes/dashboard}"
+    export GHOSTSHIP_ROUTER_STATE_DIR="''${GHOSTSHIP_ROUTER_STATE_DIR:-/home/hermes/.local/state/ghostship-hermes/router}"
+    export XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-$HOME/.config}"
+    export XDG_DATA_HOME="''${XDG_DATA_HOME:-$HOME/.local/share}"
+    export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
+    export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}"
+    export GHOSTSHIP_AGENT_TOOLS_PREFIX="''${GHOSTSHIP_AGENT_TOOLS_PREFIX:-$HOME/.local/share/ghostship-agent-tools/npm}"
+
+    ensure_dir() {
+      local path="$1"
+      local mode="$2"
+      install -d -m "$mode" "$path"
+      chown "$HERMES_UID:$HERMES_GID" "$path"
+    }
+
+    prepare_nix_profile_state() {
+      local profile_root gc_root profile_link
+
+      profile_root="/nix/var/nix/profiles/per-user/$HERMES_USER"
+      gc_root="/nix/var/nix/gcroots/per-user/$HERMES_USER"
+      profile_link="$HOME/.nix-profile"
+
+      install -d -m 0755 /nix/var/nix/daemon-socket >/dev/null 2>&1 || true
+      install -d -m 0755 /nix/var/nix/profiles/per-user >/dev/null 2>&1 || true
+      install -d -m 0755 "$profile_root" "$gc_root" >/dev/null 2>&1 || true
+      chown -R "$HERMES_UID:$HERMES_GID" "$profile_root" "$gc_root" >/dev/null 2>&1 || true
+
+      ln -sfn "$profile_root/profile" "$profile_link"
+      chown -h "$HERMES_UID:$HERMES_GID" "$profile_link" >/dev/null 2>&1 || true
+    }
+
+    install -d -m 1777 /tmp
+    ensure_dir "$GHOSTSHIP_WORKSPACE_ROOT" 0750
+    ensure_dir "$HOME" 0750
+    ensure_dir "$HERMES_HOME" 0750
+    ensure_dir "$GHOSTSHIP_DASHBOARD_STATE_DIR" 0750
+    ensure_dir "$GHOSTSHIP_ROUTER_STATE_DIR" 0750
+
+    prepare_nix_profile_state
+    ensure_dir "$XDG_CONFIG_HOME" 0750
+    ensure_dir "$XDG_DATA_HOME" 0750
+    ensure_dir "$XDG_STATE_HOME" 0750
+    ensure_dir "$XDG_CACHE_HOME" 0750
+    ensure_dir "$HOME/.local/bin" 0750
+    ensure_dir "$GHOSTSHIP_AGENT_TOOLS_PREFIX" 0750
+    ensure_dir "$XDG_CACHE_HOME/npm" 0750
+    ensure_dir "$HOME/.config/systemd/user" 0750
+    ensure_dir "$HOME/.ssh" 0700
+    ensure_dir "$HOME/.gnupg" 0700
+    ensure_dir "$HOME/.pki" 0700
+    chown -R "$HERMES_UID:$HERMES_GID" "$HOME" "$GHOSTSHIP_WORKSPACE_ROOT" >/dev/null 2>&1 || true
+    chmod 0750 "$HOME" "$GHOSTSHIP_WORKSPACE_ROOT" "$HERMES_HOME"
+  '';
+
   profileDefinitions = lib.genAttrs managedProfiles (
     profile:
     let
@@ -885,7 +957,7 @@ in
     };
     settings = {
     } // rootConfig;
-    extraPackages = [ pkgs.nix ] ++ ghostshipUtilities;
+    extraPackages = [ pkgs.nix ] ++ lib.optionals includeRepoContent ghostshipUtilities;
   };
 
 
@@ -900,7 +972,7 @@ in
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "${runtimeBin} prepare-storage";
+      ExecStart = "${storagePreparationScript}";
     };
   };
 
@@ -1056,7 +1128,7 @@ in
         "GHOSTSHIP_ROUTER_ALIAS_PIN_VISION"
         "GHOSTSHIP_ROUTER_ALIAS_PIN_TTS"
       ];
-      ExecStart = "${ghostshipHermesRouter}/bin/ghostship-hermes-router";
+      ExecStart = routerCommand;
       Restart = "always";
       RestartSec = "2s";
       LimitNOFILE = 65536;
@@ -1084,7 +1156,7 @@ in
       Group = "hermes";
       WorkingDirectory = "/home/hermes";
       PassEnvironment = [ ];
-      ExecStart = "${runtimeBin} dashboard-controller";
+      ExecStart = dashboardCommand;
       Restart = "always";
       RestartSec = "2s";
     };
@@ -1199,7 +1271,7 @@ in
     };
   };
 
-  system.extraDependencies = servicePath ++ [ fallbackCommandEnv ];
+  system.extraDependencies = servicePath ++ [ fallbackCommandEnv storagePreparationScript ];
 
   environment.etc."ghostship-hermes-release".text = hermesRelease + "\n";
 }

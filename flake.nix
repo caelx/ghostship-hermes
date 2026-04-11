@@ -90,32 +90,6 @@
           ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix { inherit hermesDashboard; };
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.gws;
 
-          overlayUtilityCommandNames = [
-            "ghostship-searxng"
-            "ghostship-sonarr"
-            "ghostship-radarr"
-            "ghostship-prowlarr"
-            "ghostship-plex"
-            "ghostship-romm"
-            "ghostship-nzbget"
-            "ghostship-qbittorrent"
-            "ghostship-grimmory"
-            "ghostship-tautulli"
-            "ghostship-bazarr"
-            "ghostship-synology"
-            "ghostship-flaresolverr"
-            "ghostship-pyload-ng"
-            "ghostship-cloakbrowser"
-            "ghostship-pricebuddy"
-            "ghostship-rss-bridge"
-            "ghostship-changedetection"
-            "ghostship-chaptarr"
-            "ghostship-n8n"
-          ];
-          mkOverlayShim = commandName: pkgs.writeShellScriptBin commandName ''
-            exec /opt/ghostship-overlay/bin/${commandName} "$@"
-          '';
-
           allUtilities = [
             pkgs.bws
             pkgs.google-cloud-sdk
@@ -153,49 +127,43 @@
             paths = overlayUtilities;
             ignoreCollisions = true;
           };
+
+          mkHermesSystem =
+            {
+              modulePath,
+              extraSpecialArgs ? { },
+            }:
+            nixpkgs.lib.nixosSystem {
+              inherit system;
+              specialArgs = extraSpecialArgs // {
+                inherit hermesRelease wrappedHermesAgent;
+              };
+              modules = [
+                ({ ... }: {
+                  nixpkgs.config.allowUnfree = true;
+                })
+                hermes-agent.nixosModules.default
+                modulePath
+              ];
+            };
+
+          ghostshipHermesBaseSystem = mkHermesSystem {
+            modulePath = ./packages/hermes-image/nixos-base-module.nix;
+          };
+          ghostshipHermesSystem = mkHermesSystem {
+            modulePath = ./packages/hermes-image/nixos-final-module.nix;
+            extraSpecialArgs = {
+              inherit
+                ghostshipHermesRouter
+                ghostshipHermesRuntime
+                hermesDashboard
+                ;
+              ghostshipUtilities = allUtilities;
+            };
+          };
           ghostshipHermesOverlayBundle = pkgs.callPackage ./packages/hermes-image/overlay-bundle.nix {
             overlayEnv = overlayUtilityEnv;
-          };
-
-          baseGhostshipUtilities = map mkOverlayShim overlayUtilityCommandNames;
-          baseGhostshipHermesRouter = mkOverlayShim "ghostship-hermes-router";
-          baseGhostshipHermesRuntime = mkOverlayShim "ghostship-hermes-runtime";
-          baseHermesDashboard = mkOverlayShim "hermes-dashboard";
-
-          mkHermesSystem = {
-            ghostshipHermesRouterArg,
-            ghostshipHermesRuntimeArg,
-            ghostshipUtilitiesArg,
-            hermesDashboardArg,
-          }: nixpkgs.lib.nixosSystem {
-            inherit system;
-            specialArgs = {
-              ghostshipHermesRouter = ghostshipHermesRouterArg;
-              ghostshipHermesRuntime = ghostshipHermesRuntimeArg;
-              ghostshipUtilities = ghostshipUtilitiesArg;
-              hermesDashboard = hermesDashboardArg;
-              inherit hermesRelease wrappedHermesAgent;
-            };
-            modules = [
-              ({ ... }: {
-                nixpkgs.config.allowUnfree = true;
-              })
-              hermes-agent.nixosModules.default
-              ./packages/hermes-image/nixos-module.nix
-            ];
-          };
-
-          ghostshipHermesSystem = mkHermesSystem {
-            ghostshipHermesRouterArg = ghostshipHermesRouter;
-            ghostshipHermesRuntimeArg = ghostshipHermesRuntime;
-            ghostshipUtilitiesArg = allUtilities;
-            hermesDashboardArg = hermesDashboard;
-          };
-          ghostshipHermesBaseSystem = mkHermesSystem {
-            ghostshipHermesRouterArg = baseGhostshipHermesRouter;
-            ghostshipHermesRuntimeArg = baseGhostshipHermesRuntime;
-            ghostshipUtilitiesArg = baseGhostshipUtilities;
-            hermesDashboardArg = baseHermesDashboard;
+            baseClosureRoots = [ ghostshipHermesBaseSystem.config.system.build.toplevel ];
           };
           ghostshipHermesRootfs = ghostshipHermesSystem.config.system.build.tarball;
           ghostshipHermesBaseRootfs = ghostshipHermesBaseSystem.config.system.build.tarball;

@@ -387,12 +387,11 @@ The scheduled `update-hermes-release` workflow tracks the upstream
 lockfile when a new tag lands, and then explicitly dispatches
 `publish-image.yml` so the new Hermes build is published even though the pin
 bump commit itself is created by GitHub Actions. The publish workflow now
-path-gates automatic runs, reuses GitHub-hosted Nix cache state, publishes a
-stable per-architecture `ghostship-hermes-base` image keyed from tracked
-base-affecting inputs only when that slow-changing Nix base actually changes,
-then assembles and pushes the final
-`ghostship-hermes` architecture tags by applying a small overlay bundle on top
-of that base before the manifest-only job creates the multi-arch tags.
+path-gates automatic runs, publishes a true per-architecture
+`ghostship-hermes-base` image from a base-specific NixOS module only when the
+tracked base-affecting Hermes/core-runtime layer changes, and then assembles the
+final `ghostship-hermes` architecture tags by applying the repo-content overlay
+on top of that base before the manifest-only job creates the multi-arch tags.
 Inside a running container, the `hermes` user tooling refresh path keeps an
 offline bootstrap package for first boot, but refreshes Hermes itself from
 `github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already
@@ -403,11 +402,19 @@ collisions with older or operator-owned entries in `~/.nix-profile`. Override
 that source with `GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF` if you need to point at a
 fork or branch.
 
+Base/final layering:
+
+- `ghostship-hermes-base` now carries the Hermes/core container contract plus stable shared dependencies that are broadly reused by the repo-owned layer: `bashInteractive`, `cacert`, `coreutils`, `curl`, `findutils`, `git`, `gh`, `gnugrep`, `gnused`, `jq`, `nix`, `nodejs_22`, `openssh`, `procps`, `ripgrep`, `tirith`, `ttyd`, and `util-linux`.
+- The repo-owned command surfaces stay in the final layer: `ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, and the `ghostship-*` utilities are copied in through `/opt/ghostship-overlay` instead of living in the base closure.
+- The overlay bundle now skips any Nix store paths that are already present in the base closure, so moving stable shared dependencies into base materially reduces how much final-layer content has to be copied and pushed.
+
 Image output contract:
 
-Optional GitHub Actions cache acceleration:
+Free GitHub Actions acceleration:
 
-- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image when the tracked publish-relevant image inputs are unchanged, and otherwise falls back to a stable `ghostship-hermes-base` tag derived from tracked base-affecting inputs so overlay-only repo changes do not force another native base rebuild. Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
+- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image when the tracked publish-relevant image inputs are unchanged, and otherwise falls back to a stable `ghostship-hermes-base` tag derived from tracked base-affecting inputs.
+- The base image no longer depends on `ghostship-hermes-router`, `ghostship-hermes-runtime`, or `hermes-dashboard`, so overlay-only command changes do not invalidate the base derivation or force another native base rebuild.
+- Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.

@@ -4,7 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Split `ghostship-hermes-base` into a true Hermes/core-runtime base layer backed by a base-specific module, removed the old shim-binary path, moved the real repo command surfaces into the final overlay layer, and taught the overlay bundle to skip store paths already present in the base closure so overlay-only command changes stop invalidating the base image.
+
 - Made `publish-image` more aggressive while staying free-only by deriving the reusable GHCR base-image tag from tracked base-affecting inputs instead of the raw Nix derivation path, so overlay-only repo changes stop forcing a native base rebuild before the existing content-addressed final-image reuse path runs.
+
+- Made `publish-image` more aggressive while staying free-only by adding GHCR-backed content-addressed final-image reuse on top of the existing reusable base-image path, so reruns or workflow-only publish passes can retag an already published immutable image without rebuilding it.
 
 - Fixed the new `publish-image` optimization path to stop using Magic Nix Cache on the heavy native multi-arch jobs after GitHub Actions cache throttling started returning `ResourceExhausted` errors; the publish workflow now relies on the reusable GHCR `ghostship-hermes-base` image path for free reuse instead.
 

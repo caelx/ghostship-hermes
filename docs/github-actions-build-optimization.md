@@ -34,7 +34,7 @@ Optimization rounds are implemented in this order:
 1. Conservative publish gating so docs-only and OpenSpec-only `main` pushes do not publish images.
 2. Cache-backed reuse:
    - native `uv` caching for the Python utility steps in `ci`
-3. Architectural publish optimization by splitting the publish path into a reusable per-architecture `ghostship-hermes-base` image plus a small overlay bundle, then keying that base image from tracked base-affecting inputs and layering content-addressed final-image reuse on top so repeated runs can avoid both native base rebuilds and exact-repeat final rebuilds.
+3. Architectural publish optimization by splitting the publish path into a true reusable per-architecture `ghostship-hermes-base` image plus a repo-content overlay bundle, keying that base image from tracked base-affecting inputs, and layering content-addressed final-image reuse on top so repeated runs can avoid both native base rebuilds and exact-repeat final rebuilds.
 
 ## Measuring Again
 
@@ -55,5 +55,8 @@ python3 scripts/github_actions_timings.py --workflow publish-image.yml --include
 The current free reuse strategy is split by workflow.
 - `uv` cache keys are derived from the tracked Python utility inputs and lockfiles, so dependency changes create a new cache key automatically.
 - The publish workflow first checks for a GHCR-published content-addressed final image derived from the tracked publish-relevant image inputs; if it exists, the run skips the Docker rebuild and retags that immutable image directly.
+- The reusable `ghostship-hermes-base` image is built from a base-specific module that carries Hermes/core container behavior plus the stable shared dependency set (`bashInteractive`, `cacert`, `coreutils`, `curl`, `findutils`, `git`, `gh`, `gnugrep`, `gnused`, `jq`, `nix`, `nodejs_22`, `openssh`, `procps`, `ripgrep`, `tirith`, `ttyd`, and `util-linux`) instead of shimmed repo command binaries.
 - When the final image is not already available, the workflow falls back to a GHCR-published `ghostship-hermes-base` image tagged from an explicit tracked base-input set instead of the raw base derivation path, so overlay-only repo changes do not force the slow native base build step on every publish run.
+- The repo-owned command surfaces stay in the overlay bundle (`ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, and the `ghostship-*` utilities), and that bundle skips any Nix store paths already present in the base closure.
+- Structural validation for the new boundary is `nix why-depends --derivation`: the base image derivation no longer depends on `ghostship-hermes-router`, `ghostship-hermes-runtime`, or `hermes-dashboard`, so overlay-only command changes stop invalidating the base derivation.
 - Magic Nix Cache was removed from `publish-image` after the native multi-arch jobs repeatedly hit GitHub Actions cache throttling and `ResourceExhausted` responses from the cache proxy.
