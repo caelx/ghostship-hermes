@@ -8,9 +8,9 @@ usage() {
   cat >&2 <<'EOF'
 usage: build_publishable_image_in_base.sh [local-base-image-ref] [flake-attr] [bundle-output-dir]
 
-Start a temporary container from the local ghostship-hermes base image,
-run the requested Nix image-bundle build inside that container so it can reuse
-the baked /nix/store closure, and stage a portable bundle directory back to the host.
+Run the requested Nix image-bundle build inside the local ghostship-hermes base
+image so the build can reuse the baked /nix/store closure, then stage the
+portable bundle directory back to the host.
 EOF
 }
 
@@ -48,42 +48,13 @@ bundle_output_dir="$(cd "$(dirname "$bundle_output_dir")" && pwd)/$(basename "$b
 rm -rf "$bundle_output_dir"
 mkdir -p "$bundle_output_dir"
 
-container_name="ghostship-hermes-build-${RANDOM}-$$"
-
-cleanup() {
-  status=$?
-  if [ $status -ne 0 ]; then
-    docker logs "$container_name" >&2 || true
-  fi
-  docker rm -f "$container_name" >/dev/null 2>&1 || true
-  exit $status
-}
-trap cleanup EXIT
-
-docker run -d --name "$container_name"   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   "$base_image" >/dev/null
-
-ready=0
-for _ in $(seq 1 60); do
-  if docker exec "$container_name" /bin/sh -lc 'PATH="/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:$PATH"; systemctl is-active nix-daemon.socket >/dev/null 2>&1 && command -v nix >/dev/null 2>&1'; then
-    ready=1
-    break
-  fi
-  if [ "$(docker inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null || true)" != "true" ]; then
-    echo "temporary base container exited before the in-image build started" >&2
-    exit 1
-  fi
-  sleep 2
-done
-
-if [ "$ready" -ne 1 ]; then
-  echo "timed out waiting for the temporary base container to expose nix-daemon.socket" >&2
-  exit 1
-fi
-
-docker exec   -e FLAKE_ATTR="$flake_attr"   "$container_name" /bin/sh -lc '
+docker run --rm   --entrypoint /bin/sh   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   -e FLAKE_ATTR="$flake_attr"   "$base_image"   -lc '
     set -euo pipefail
     export PATH="/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:$PATH"
-    export HOME=/root
+    export HOME=/tmp/ghostship-build-home
+    export NIX_CONFIG="experimental-features = nix-command flakes
+sandbox = false"
+    mkdir -p "$HOME" /out
     git config --global --add safe.directory /src
     cd /src
     bundle="$(nix build --no-link --print-out-paths "$FLAKE_ATTR")"
