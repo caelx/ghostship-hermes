@@ -15,6 +15,7 @@ Rules:
 - `TERMINAL_CWD=/workspace` is always written.
 - `WEBHOOK_ENABLED=true` and `WEBHOOK_PORT=8644` are always written.
 - If `OPENCODE_API_KEY` is unset but `OPENCODE_GO_API_KEY` is set, bootstrap also writes `OPENCODE_API_KEY` with the same value.
+- The managed scaffold uses `OPENAI_API_KEY` as the bearer token input for the local Ghostship router fallback path.
 
 ## Single-Agent Inputs
 

@@ -21,8 +21,8 @@ Canonical image references:
 - Browser terminals start in `/workspace`.
 - The image now exposes one managed Hermes agent, not a repo-owned profile fleet.
 - The managed config lives at `/home/hermes/.hermes/config.yaml`, the managed env file at `/home/hermes/.hermes/.env`, the managed auth file at `/home/hermes/.hermes/auth.json`, the managed skill tree at `/home/hermes/.hermes/skills`, the managed prompt at `/home/hermes/.hermes/SOUL.md`, and the managed gateway liveness marker at `/home/hermes/.hermes/gateway.pid`.
-- The primary model path is router-first: `provider = auto`, `base_url = http://127.0.0.1:8788/v1`, `default = coding`.
-- The fallback model remains `opencode-go/minimax-m2.7`, and the configured auxiliary tasks still use Gemini 3.1 Flash-Lite Preview through the Google OpenAI-compatible endpoint.
+- The primary model path is direct MiniMax on OpenCode Go: `provider = opencode-go`, `default = minimax-m2.7`.
+- The fallback model is the local Ghostship router free-model lane: `provider = custom`, `model = coding`, `base_url = http://127.0.0.1:8788/v1`, `api_key_env = OPENAI_API_KEY`; the managed router also blocks the exact backend id `openrouter/free` from route selection while auxiliary tasks still use Gemini 3.1 Flash-Lite Preview through the Google OpenAI-compatible endpoint.
 
 Upstream note:
 
@@ -131,7 +131,7 @@ Notes:
 - The dashboard is the intended browser entrypoint.
 - The full managed env allowlist is documented in [docs/runtime-env.md](docs/runtime-env.md).
 - The single-agent inputs are `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `DISCORD_FREE_RESPONSE_CHANNELS`, `DISCORD_HOME_CHANNEL`, `WEBHOOK_SECRET`, and `BROWSER_CDP_URL`.
-- The required provider inputs are `OPENCODE_GO_API_KEY` for the fallback model and `GOOGLE_AI_STUDIO_API_KEY` for the direct auxiliary tasks.
+- The required provider inputs are `OPENCODE_GO_API_KEY` for the primary MiniMax path, `OPENAI_API_KEY` for the local router fallback bearer token, and `GOOGLE_AI_STUDIO_API_KEY` for the direct auxiliary tasks.
 - If you are validating the local router, source the repo `.envrc` before `docker run` so the router can use `OPENROUTER_API_KEY` plus either `OPENCODE_API_KEY` or `OPENCODE_GO_API_KEY`.
 
 After startup:
@@ -375,9 +375,9 @@ The persistence suite validates:
 - `HERMES_HOME=/home/hermes/.hermes`
 - `HOME=/home/hermes`
 - `hermes` runs as `3000:3000`
-- the root Hermes config uses `http://127.0.0.1:8788/v1` with `coding`
+- the root Hermes config uses `provider = opencode-go` with `default = minimax-m2.7`
 - one managed agent is rooted at `~/.hermes`
-- the managed config uses `provider = auto`, `base_url = http://127.0.0.1:8788/v1`, and `default = coding`
+- the managed config uses `provider = opencode-go`, `default = minimax-m2.7`, and a `fallback_model` that points at `http://127.0.0.1:8788/v1` with router alias `coding`; the managed router disables the exact backend id `openrouter/free`
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, managed bootstrap, the router, the managed gateway, and the dashboard
  - no repo-managed default skills are seeded by default

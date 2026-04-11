@@ -10,7 +10,15 @@ def _load_app_module(monkeypatch, tmp_path: Path):
     managed_home = tmp_path / ".hermes"
     managed_home.mkdir(parents=True)
     (managed_home / "config.yaml").write_text(
-        "model:\n  provider: auto\n  default: coding\n  base_url: http://127.0.0.1:8788/v1\n",
+        """model:
+  provider: opencode-go
+  default: minimax-m2.7
+fallback_model:
+  provider: custom
+  model: coding
+  base_url: http://127.0.0.1:8788/v1
+  api_key_env: OPENAI_API_KEY
+""",
         encoding="utf-8",
     )
     (managed_home / ".env").write_text("OPENAI_API_KEY=test-token\n", encoding="utf-8")
@@ -60,7 +68,7 @@ def test_status_api_uses_single_agent_contract(monkeypatch, tmp_path: Path) -> N
     assert "profiles" not in payload
     assert "default_profile" not in payload
     assert payload["environment"]["agent"]["service"] == "ghostship-hermes-gateway.service"
-    assert payload["environment"]["model"] == "coding"
+    assert payload["environment"]["model"] == "minimax-m2.7"
     assert payload["environment"]["dashboard_bind"] == "0.0.0.0:7681"
 
 
