@@ -388,8 +388,9 @@ lockfile when a new tag lands, and then explicitly dispatches
 `publish-image.yml` so the new Hermes build is published even though the pin
 bump commit itself is created by GitHub Actions. The publish workflow now
 path-gates automatic runs, reuses GitHub-hosted Nix cache state, publishes a
-content-addressed per-architecture `ghostship-hermes-base` image only when the
-slow-changing Nix base changes, then assembles and pushes the final
+stable per-architecture `ghostship-hermes-base` image keyed from tracked
+base-affecting inputs only when that slow-changing Nix base actually changes,
+then assembles and pushes the final
 `ghostship-hermes` architecture tags by applying a small overlay bundle on top
 of that base before the manifest-only job creates the multi-arch tags.
 Inside a running container, the `hermes` user tooling refresh path keeps an
@@ -406,7 +407,7 @@ Image output contract:
 
 Optional GitHub Actions cache acceleration:
 
-- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image when the base-image and overlay-bundle derivations are unchanged, and otherwise falls back to the reusable `ghostship-hermes-base` image path. Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
+- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image when the tracked publish-relevant image inputs are unchanged, and otherwise falls back to a stable `ghostship-hermes-base` tag derived from tracked base-affecting inputs so overlay-only repo changes do not force another native base rebuild. Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.

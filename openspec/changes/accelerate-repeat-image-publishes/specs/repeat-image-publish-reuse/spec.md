@@ -1,5 +1,17 @@
 ## ADDED Requirements
 
+### Requirement: Repeat image publishes reuse stable base images before rebuilding them
+The publish workflow SHALL derive a reusable per-architecture base-image identifier from tracked base-affecting inputs rather than the raw Nix derivation path and SHALL check GHCR for that base image before starting a native base rebuild.
+
+#### Scenario: Stable base image already exists
+- **WHEN** the publish workflow evaluates an architecture whose tracked base-affecting inputs match an already published GHCR base image
+- **THEN** the workflow reuses that published base image instead of rebuilding the base layer
+- **AND** overlay-only repo changes do not force a new base-image publication
+
+#### Scenario: Stable base image does not exist yet
+- **WHEN** the publish workflow evaluates an architecture whose tracked base-affecting inputs do not match any published GHCR base image
+- **THEN** the workflow builds and publishes a new base image before continuing
+
 ### Requirement: Repeat image publishes reuse immutable final images first
 The publish workflow SHALL derive an immutable per-architecture final-image identifier from the evaluated publish-relevant image content and SHALL check GHCR for that image before starting a rebuild.
 
@@ -21,10 +33,10 @@ The repeat publish optimization SHALL use existing GHCR publication and lookup c
 - **THEN** the documented free-only strategy uses GHCR-hosted immutable image reuse
 - **AND** it does not require FlakeHub, Cachix, or another paid cache service for the repeat publish path
 
-### Requirement: Warm-repeat publish measurements are tracked separately
-The repo SHALL distinguish warm-repeat publish measurements from cold-content publish measurements when reporting the effect of the repeat-publish optimization.
+### Requirement: Repeat-publish measurements are tracked separately
+The repo SHALL distinguish cold-content publish measurements, base-reuse publish measurements, and warm-repeat publish measurements when reporting the effect of the repeat-publish optimization.
 
 #### Scenario: Maintainer reviews optimization evidence
 - **WHEN** maintainers update the recorded publish timing evidence after the repeat-publish optimization lands
-- **THEN** the evidence identifies whether a measurement came from a cold-content publish or a warm-repeat publish
-- **AND** the warm-repeat result can be compared independently from the first-run native build path
+- **THEN** the evidence identifies whether a measurement came from a cold-content publish, a base-reuse publish, or a warm-repeat publish
+- **AND** the base-reuse and warm-repeat results can be compared independently from the first-run native build path

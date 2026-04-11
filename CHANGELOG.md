@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Made `publish-image` more aggressive while staying free-only by adding GHCR-backed content-addressed final-image reuse on top of the existing reusable base-image path, so reruns or workflow-only publish passes can retag an already published immutable image without rebuilding it.
+- Made `publish-image` more aggressive while staying free-only by deriving the reusable GHCR base-image tag from tracked base-affecting inputs instead of the raw Nix derivation path, so overlay-only repo changes stop forcing a native base rebuild before the existing content-addressed final-image reuse path runs.
 
 - Fixed the new `publish-image` optimization path to stop using Magic Nix Cache on the heavy native multi-arch jobs after GitHub Actions cache throttling started returning `ResourceExhausted` errors; the publish workflow now relies on the reusable GHCR `ghostship-hermes-base` image path for free reuse instead.
 

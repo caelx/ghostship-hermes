@@ -94,17 +94,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          base_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-base-image.drvPath --raw)"
-          overlay_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-overlay-bundle.drvPath --raw)"
-          base_tag="base-$(basename "$base_drv" .drv)"
-          base_ref="${BASE_IMAGE_NAME}:${base_tag}-${PLATFORM_TAG}"
-          content_hash="$(printf '%s\n%s\n' "$base_drv" "$overlay_drv" | sha256sum | cut -c1-24)"
+          base_hash="$(git ls-files -z -- flake.nix flake.lock packages/agent-browser/package.nix packages/hermes-agent-wrapped/package.nix packages/hermes-image/hermes-release.txt packages/hermes-image/image.nix packages/hermes-image/nixos-module.nix | xargs -0 sha256sum | sha256sum | cut -c1-24)"
+          overlay_hash="$(git ls-files -z -- flake.nix flake.lock packages | xargs -0 sha256sum | sha256sum | cut -c1-24)"
+          content_hash="$(printf '%s\n%s\n' "$base_hash" "$overlay_hash" | sha256sum | cut -c1-24)"
+          base_ref="${BASE_IMAGE_NAME}:base-${base_hash}-${PLATFORM_TAG}"
           content_ref="${IMAGE_NAME}:content-${content_hash}-${PLATFORM_TAG}"
 
           {
-            echo "base_drv=${base_drv}"
-            echo "overlay_drv=${overlay_drv}"
-            echo "base_tag=${base_tag}"
+            echo "base_hash=${base_hash}"
+            echo "overlay_hash=${overlay_hash}"
+            echo "content_hash=${content_hash}"
             echo "base_ref=${base_ref}"
             echo "content_ref=${content_ref}"
           } >> "$GITHUB_OUTPUT"

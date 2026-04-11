@@ -4,15 +4,15 @@ The repo now has a correct free-only multi-arch publish path, but the first succ
 
 ## What Changes
 
-- Define a focused repeat-publish optimization that prefers reusing already published immutable images in GHCR before rebuilding them.
-- Record the free-only publish strategy explicitly: immutable content-addressed final-image reuse first, reusable per-architecture base-image reuse second, native rebuild only when neither reusable image exists.
-- Measure and document the warm-repeat publish behavior separately from the cold-content publish path so maintainers can judge whether reruns and workflow-only publishes meet a materially lower latency target.
-- Keep the existing native multi-arch correctness checks and published `ghostship-hermes` image contract intact while tightening the reuse rules around immutable content tags.
+- Define a focused publish optimization that keeps the per-architecture GHCR base image reusable across overlay-only repo changes instead of keying it to the raw Nix derivation path.
+- Record the free-only publish strategy explicitly: stable base-image reuse from tracked base inputs first, immutable content-addressed final-image reuse second, native rebuild only when neither reusable image exists.
+- Measure and document whether the base-image reuse boundary materially reduces the slow `Ensure base image tag exists` step on repeated publishes.
+- Keep the existing native multi-arch correctness checks and published `ghostship-hermes` image contract intact while tightening the reuse rules around the slow-changing base layer.
 
 ## Capabilities
 
 ### New Capabilities
-- `repeat-image-publish-reuse`: Define the free-only GHCR-backed reuse strategy for repeat image publication, including immutable content-addressed image lookup, fallback behavior, and measurement expectations for warm-repeat publishes.
+- `repeat-image-publish-reuse`: Define the free-only GHCR-backed reuse strategy for repeat image publication, including stable base-image lookup, immutable final-image lookup, fallback behavior, and timing expectations.
 
 ### Modified Capabilities
 - `image-publication-contract`: Clarify that internal publication may retag previously published immutable architecture images when their evaluated content matches, while preserving the documented consumer-facing `ghostship-hermes` contract.
@@ -22,4 +22,4 @@ The repo now has a correct free-only multi-arch publish path, but the first succ
 - Affected workflows: `.github/workflows/publish-image.yml`
 - Affected documentation: `README.md`, `CHANGELOG.md`, `docs/github-actions-build-optimization.md`
 - Affected systems: GHCR image publication flow, GitHub Actions publish reruns, immutable architecture tag strategy
-- Expected outcome: warm-repeat publish runs and workflow-only republish flows avoid redundant native rebuilds when GHCR already contains the exact immutable image content
+- Expected outcome: overlay-only publish changes stop forcing a base-image rebuild, and repeat publishes reuse both the stable base tag and the immutable final-image tag whenever the actual image content matches
