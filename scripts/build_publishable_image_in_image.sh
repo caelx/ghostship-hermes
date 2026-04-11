@@ -79,8 +79,22 @@ build_shell="$(
   } | head -n 1 | normalize_listing_path
 )"
 
+certificate_bundle="$(
+  {
+    grep -E '^(\./)?nix/store/[^/]+-etc/etc/ssl/certs/ca-bundle.crt$' "$listing_file" || true
+    grep -E '^(\./)?nix/store/[^/]+-nss-cacert-[^/]+/etc/ssl/certs/ca-bundle.crt$' "$listing_file" || true
+    grep -E '^(\./)?etc/ssl/certs/ca-bundle.crt$' "$listing_file" || true
+    grep -E '^(\./)?etc/ssl/certs/ca-certificates.crt$' "$listing_file" || true
+  } | head -n 1 | normalize_listing_path
+)"
+
 if [ -z "$build_shell" ]; then
   echo "failed to find a working shell entrypoint inside $build_image" >&2
+  exit 1
+fi
+
+if [ -z "$certificate_bundle" ]; then
+  echo "failed to find a CA bundle inside $build_image" >&2
   exit 1
 fi
 
@@ -88,17 +102,14 @@ if [ -z "$system_path_bin" ]; then
   system_path_bin="$(dirname "$build_shell")"
 fi
 
-docker run --rm \
-  --entrypoint "$build_shell" \
-  -v "$repo_root:/src:ro" \
-  -v "$bundle_output_dir:/out" \
-  -e FLAKE_ATTR="$flake_attr" \
-  -e SYSTEM_PATH_BIN="$system_path_bin" \
-  "$build_image" \
-  -lc '
+docker run --rm   --entrypoint "$build_shell"   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   -e FLAKE_ATTR="$flake_attr"   -e SYSTEM_PATH_BIN="$system_path_bin"   -e CERTIFICATE_BUNDLE="$certificate_bundle"   "$build_image"   -lc '
     set -euo pipefail
     export PATH="$SYSTEM_PATH_BIN:$PATH"
     export HOME=/tmp/ghostship-build-home
+    export SSL_CERT_FILE="$CERTIFICATE_BUNDLE"
+    export NIX_SSL_CERT_FILE="$CERTIFICATE_BUNDLE"
+    export CURL_CA_BUNDLE="$CERTIFICATE_BUNDLE"
+    export GIT_SSL_CAINFO="$CERTIFICATE_BUNDLE"
     export NIX_CONFIG="experimental-features = nix-command flakes
 sandbox = false"
     mkdir -p "$HOME" /out
