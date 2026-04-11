@@ -41,6 +41,8 @@ writeShellApplication {
     export GHOSTSHIP_TTYD_HOST="''${GHOSTSHIP_TTYD_HOST:-127.0.0.1}"
     export GHOSTSHIP_TTYD_TITLE="''${GHOSTSHIP_TTYD_TITLE:-ghostship-hermes}"
     export GHOSTSHIP_TERMINAL_CWD="''${GHOSTSHIP_TERMINAL_CWD:-/home/hermes}"
+    export HERMES_HUD_PROJECTS_DIR="''${HERMES_HUD_PROJECTS_DIR:-$GHOSTSHIP_WORKSPACE_ROOT}"
+    export GHOSTSHIP_HUD_DEFAULT_PROFILE_NAME="''${GHOSTSHIP_HUD_DEFAULT_PROFILE_NAME:-Managed Agent}"
     export GHOSTSHIP_AGENT_TOOLS_PREFIX="''${GHOSTSHIP_AGENT_TOOLS_PREFIX:-$HOME/.local/share/ghostship-agent-tools/npm}"
     export XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-$HOME/.config}"
     export XDG_DATA_HOME="''${XDG_DATA_HOME:-$HOME/.local/share}"

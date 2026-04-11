@@ -1,6 +1,7 @@
 {
   lib,
   bashInteractive,
+  buildNpmPackage,
   makeWrapper,
   python311Packages,
   ttyd,
@@ -11,15 +12,27 @@ let
     bashInteractive
     ttyd
   ];
-  fastapiRuntime = python311Packages.fastapi.overridePythonAttrs (old: {
+  fastapiRuntime = python311Packages.fastapi.overridePythonAttrs (_: {
     doCheck = false;
     doInstallCheck = false;
     nativeCheckInputs = [ ];
   });
+  huduiFrontend = buildNpmPackage {
+    pname = "hermes-dashboard-frontend";
+    version = "0.2.0";
+    src = ./frontend;
+    npmDepsHash = "sha256-NWkzm4w8kXrg1a6MEcs6fEjfRs3U1w74PtrycF0XrE4=";
+    installPhase = ''
+      runHook preInstall
+      mkdir -p "$out"
+      cp -r dist/* "$out/"
+      runHook postInstall
+    '';
+  };
 in
 python311Packages.buildPythonApplication {
   pname = "hermes-dashboard";
-  version = "0.1.0";
+  version = "0.2.0";
   pyproject = true;
   src = ./.;
 
@@ -29,9 +42,11 @@ python311Packages.buildPythonApplication {
 
   dependencies = with python311Packages; [
     fastapiRuntime
-    uvicorn
-    websockets
     httpx
+    pyyaml
+    uvicorn
+    watchfiles
+    websockets
   ];
 
   nativeBuildInputs = [
@@ -44,6 +59,12 @@ python311Packages.buildPythonApplication {
 
   doCheck = false;
 
+  postPatch = ''
+    rm -rf src/hermes_dashboard/static
+    mkdir -p src/hermes_dashboard/static
+    cp -r ${huduiFrontend}/* src/hermes_dashboard/static/
+  '';
+
   pythonImportsCheck = [ "hermes_dashboard" ];
 
   postFixup = ''
@@ -53,8 +74,6 @@ python311Packages.buildPythonApplication {
   postInstall = ''
     test -x "$out/bin/hermes-dashboard"
     test -f "$out/${pythonSitePackages}/hermes_dashboard/static/index.html"
-    test -f "$out/${pythonSitePackages}/hermes_dashboard/static/app.js"
-    test -f "$out/${pythonSitePackages}/hermes_dashboard/static/styles.css"
-    test -f "$out/${pythonSitePackages}/hermes_dashboard/static/logo.png"
+    test -d "$out/${pythonSitePackages}/hermes_dashboard/static/assets"
   '';
 }

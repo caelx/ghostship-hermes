@@ -1,86 +1,18 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ghostship-hermes</title>
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-</head>
-<body class="hermes-ui" data-dashboard="ghostship-hermes-dashboard" data-dashboard-style="hermes-studio">
-  <div class="shell">
-    <aside class="rail" aria-label="Sessions rail">
-      <div class="rail-top">
-        <button id="home-button" class="rail-home" type="button" title="Home" aria-label="Home">
-          <img class="rail-logo" src="/logo.png" alt="Hermes logo">
-        </button>
-        <button id="open-terminal" class="rail-action" type="button" title="New unit" aria-label="New unit">
-          <span class="rail-action-plus">+</span>
-        </button>
-      </div>
-      <div class="rail-divider" aria-hidden="true"></div>
-      <nav id="terminal-tabs" class="rail-tabs" aria-label="Terminal sessions"></nav>
-    </aside>
-
-    <main class="stage">
-      <div class="stage-atmosphere" aria-hidden="true">
-        <div class="field field-a"></div>
-        <div class="field field-b"></div>
-        <div class="field field-c"></div>
-        <div class="mesh"></div>
-        <div class="scan"></div>
-      </div>
-
-      <section id="blank-home" class="home-view" data-home-view="environment">
-        <div class="home-shell">
-          <header class="home-bar panel">
-            <div class="home-bar-copy">
-              <h1 class="home-title">ghostship-hermes</h1>
-            </div>
-            <div id="provider-pills" class="status-rail" aria-label="Configured providers"></div>
-          </header>
-
-          <div class="home-grid">
-            <section class="panel info-panel runtime-panel">
-              <div class="section-head">
-                <span class="section-label">Runtime</span>
-              </div>
-              <dl id="runtime-facts" class="fact-list" aria-label="Runtime facts"></dl>
-            </section>
-
-            <section class="panel info-panel providers-panel">
-              <div class="section-head">
-                <span class="section-label">Providers</span>
-              </div>
-              <div id="provider-list" class="provider-list" aria-label="Configured providers"></div>
-            </section>
-
-            <section class="panel info-panel agent-panel">
-              <div class="section-head">
-                <span class="section-label">Agent</span>
-              </div>
-              <div id="agent-details" class="agent-list" aria-label="Managed agent"></div>
-            </section>
-          </div>
-        </div>
-      </section>
-
-      <section id="terminal-stage" class="terminal-stage is-hidden">
-        <button id="close-terminal" class="floating-close is-hidden" type="button" aria-label="Close active session" title="Close active session">
-          <span aria-hidden="true">×</span>
-        </button>
-
-        <div id="terminal-loading" class="terminal-loading is-hidden" aria-live="polite">
-          <div class="loading-bar"></div>
-          <div class="loading-copy">Spawning unit</div>
-        </div>
-
-        <div id="terminal-panes" class="terminal-panes"></div>
-      </section>
-    </main>
-  </div>
-  <script src="/app.js" defer></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☤</text></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0a12" />
+    <title>☤ Hermes HUD</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Funnel+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="/assets/index-CM-ICI8w.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CDeRzfyK.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>

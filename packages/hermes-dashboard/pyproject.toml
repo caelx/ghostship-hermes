@@ -4,25 +4,26 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hermes-dashboard"
-version = "0.1.0"
-description = "FastAPI dashboard for ghostship-hermes"
+version = "0.2.0"
+description = "HUDUI-aligned FastAPI dashboard for ghostship-hermes"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi>=0.111.0",
-  "uvicorn>=0.30.1",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.34.0",
+  "watchfiles>=0.24.0",
+  "pyyaml>=6.0",
   "websockets>=12.0",
   "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "mypy>=1.18.2",
   "pytest>=8.4.2",
 ]
 
 [project.scripts]
-hermes-dashboard = "hermes_dashboard.app:main"
+hermes-dashboard = "hermes_dashboard.app:cli"
 
 [tool.hatch.build]
 include = [

@@ -16,8 +16,8 @@ Canonical image references:
 - `/workspace` remains the separate persisted work-products mount.
 - `/nix` should be persisted when mutable `nix profile install`, `nix shell`, or build outputs must survive container replacement.
 - The runtime user is `hermes` at `3000:3000`.
-- The public browser surface is the packaged dashboard on port `7681`.
-- The dashboard opens on-demand ephemeral `ttyd` tabs, keeps live sessions attached across tab switches, and returns to the home view when the last session closes.
+- The public browser surface is a HUDUI-aligned dashboard on port `7681`.
+- The dashboard exposes HUDUI tabs for runtime inspection and adds one Ghostship-specific `Console` tab backed by on-demand same-origin `ttyd`.
 - Browser terminals start in `/workspace`.
 - The image now exposes one managed Hermes agent, not a repo-owned profile fleet.
 - The managed config lives at `/home/hermes/.hermes/config.yaml`, the managed env file at `/home/hermes/.hermes/.env`, the managed auth file at `/home/hermes/.hermes/auth.json`, the managed skill tree at `/home/hermes/.hermes/skills`, the managed prompt at `/home/hermes/.hermes/SOUL.md`, and the managed gateway liveness marker at `/home/hermes/.hermes/gateway.pid`.
@@ -45,7 +45,7 @@ The immutable image stays focused on boot, supervision, and the repo-owned runti
 - `ttyd`
 - `tirith`
 - `ghostship-hermes-router`
-- packaged dashboard controller
+- packaged HUDUI dashboard
 - all `ghostship-*` utilities
 
 Boot-time runtime convergence re-applies the repo-owned mutable toolchain and config surface under `/home/hermes` on replacement:
@@ -97,9 +97,9 @@ The container uses a small NixOS-managed unit graph:
 - `ghostship-hermes-gateway-restart.path`
   runs in the Hermes user manager, watches `/home/hermes/.hermes/config.yaml`, `.env`, `auth.json`, and `SOUL.md`, and triggers a managed gateway restart when those root-managed files change
 - `ghostship-hermes-startup.service`
-  starts the dashboard, router, the Hermes user manager, and the enabled `hermes-gateway.service` after storage preparation and bootstrap; a failed mutable tooling refresh must not block the main runtime boot
-- `ghostship-dashboard-controller.service`
-  serves the packaged dashboard and proxies on-demand ephemeral `ttyd` sessions on port `7681`
+  starts the HUDUI browser, router, the Hermes user manager, and the enabled `hermes-gateway.service` after storage preparation and bootstrap; a failed mutable tooling refresh must not block the main runtime boot
+- `ghostship-hermes-hudui.service`
+  serves the packaged HUDUI browser on port `7681`, watches `/home/hermes/.hermes` plus `/workspace`, and proxies the `Console` tab to on-demand ephemeral `ttyd` sessions
 - `ghostship-hermes-router.service`
   runs the local model router on `127.0.0.1:8788`, persists router state under `/home/hermes/.local/state/ghostship-hermes/router`, and serves the approved alias set
 
@@ -137,15 +137,14 @@ Notes:
 After startup:
 
 1. Open `http://localhost:7681`.
-2. Use the `+` button in the left rail to launch a new shell-backed `ttyd` session.
-3. Each new terminal appears as a focused tab immediately, even before the underlying `ttyd` process is ready.
-4. The home screen shows the one managed agent, runtime facts, and detected provider/router state.
-5. Use the floating `×` in the terminal stage to remove the active tab. When no terminals remain, the dashboard returns to the blank home state.
+2. Use the HUDUI tabs to inspect health, projects, profiles, sessions, and the rest of the managed runtime surface.
+3. Open the `Console` tab to start a same-origin shell-backed `ttyd` session rooted at `/workspace`.
+4. Close the session from the `Console` tab when you want the backing `ttyd` process torn down.
 
 Dashboard contract:
 
-- The home view renders one `Agent` section, not a profile list.
-- `/api/status` returns `environment.agent`, the managed primary/fallback model contract, and does not expose `profiles` or `default_profile`.
+- The browser contract now follows HUDUI endpoints such as `/api/health`, `/api/profiles`, `/api/projects`, and `/api/console`.
+- The HUDUI `Projects` panel is rooted at `/workspace`, and the root managed profile is rendered as `Managed Agent`.
 - The published image now carries a store-stable container `HEALTHCHECK` that curls the dashboard with `curl` from its own store path instead of relying on `/run/current-system/sw/bin/curl` during early boot.
 
 ## Hermes Configuration

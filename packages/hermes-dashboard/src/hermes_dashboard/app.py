@@ -1,798 +1,130 @@
-import asyncio
-import json
+"""Hermes HUD Web UI backend."""
+
+from __future__ import annotations
+
+import argparse
 import logging
 import os
-import shlex
-import shutil
-import signal
-import socket
-import subprocess
-import time
-import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
-from urllib.parse import urlparse
 
-import httpx
-import uvicorn
-import websockets
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, StreamingResponse
-from starlette.background import BackgroundTask
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("hermes_dashboard")
+from .api import (
+    agents,
+    cache,
+    console,
+    corrections,
+    cron,
+    dashboard,
+    health,
+    memory,
+    patterns,
+    profiles,
+    projects,
+    sessions,
+    skills,
+    snapshots,
+    state,
+    timeline,
+    token_costs,
+)
+from .console import ensure_state_dir, proxy_terminal_http, proxy_terminal_websocket
+from .file_watcher import start_watcher, stop_watcher
+from .websocket_manager import ws_manager
 
-STATE_DIR = Path(os.environ.get("GHOSTSHIP_DASHBOARD_STATE_DIR", "/home/hermes/.local/state/ghostship-hermes/dashboard"))
-STATE_FILE = STATE_DIR / "state.json"
-LOG_DIR = STATE_DIR / "logs"
-TTYD_HOST = os.environ.get("GHOSTSHIP_TTYD_HOST", "127.0.0.1")
-TTYD_PORT_BASE = int(os.environ.get("GHOSTSHIP_TTYD_PORT_BASE", "7682"))
-DASHBOARD_HOST = os.environ.get("GHOSTSHIP_DASHBOARD_HOST", "0.0.0.0")
-DASHBOARD_PORT = int(os.environ.get("GHOSTSHIP_DASHBOARD_PORT", "7681"))
-TERMINAL_CWD = os.environ.get("GHOSTSHIP_TERMINAL_CWD", "/home/hermes")
-HOME_DIR = os.environ.get("HOME", "/home/hermes")
-MANAGED_HERMES_HOME = os.environ.get("HERMES_HOME", "/home/hermes/.hermes")
-GATEWAY_SERVICE = os.environ.get("GHOSTSHIP_HERMES_GATEWAY_SERVICE", "hermes-gateway.service")
-BASH_PATH = os.environ.get("GHOSTSHIP_BASH") or shutil.which("bash") or "/bin/sh"
-DASHBOARD_ROOT = Path(__file__).parent / "static"
-
-app = FastAPI(title="ghostship-hermes-dashboard")
-state_lock = asyncio.Lock()
-
-
-def ensure_state_dir() -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def port_is_open(host: str, port: int, timeout: float = 0.15) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout)
-        try:
-            sock.connect((host, port))
-            return True
-        except OSError:
-            return False
+logger = logging.getLogger(__name__)
+STATIC_DIR = Path(__file__).parent / 'static'
+DASHBOARD_HOST = os.environ.get('GHOSTSHIP_DASHBOARD_HOST', '0.0.0.0')
+DASHBOARD_PORT = int(os.environ.get('GHOSTSHIP_DASHBOARD_PORT', '7681'))
 
 
-def process_is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-
-
-def load_state() -> dict[str, Any]:
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    hermes_dir = os.environ.get('HERMES_HOME') or os.path.expanduser('~/.hermes')
     ensure_state_dir()
-    if not STATE_FILE.exists():
-        return {"next_index": 1, "active_terminal_id": None, "sessions": []}
+    watcher_enabled = os.environ.get('GHOSTSHIP_HUD_DISABLE_WATCHER') != '1'
+    if watcher_enabled:
+        await start_watcher(hermes_dir)
+        logger.info('Hermes HUD started, watching %s', hermes_dir)
+    else:
+        logger.info('Hermes HUD started with watcher disabled')
+    yield
+    if watcher_enabled:
+        await stop_watcher()
+    logger.info('Hermes HUD stopped')
+
+
+app = FastAPI(title='Hermes HUD', version='0.1.0', lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
+
+
+@app.websocket('/ws')
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
     try:
-        payload = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"next_index": 1, "active_terminal_id": None, "sessions": []}
-
-    payload.setdefault("next_index", 1)
-    payload.setdefault("active_terminal_id", None)
-    payload.setdefault("sessions", [])
-    return payload
-
-
-def save_state(state: dict[str, Any]) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-
-
-def child_pids(pid: int) -> list[int]:
-    try:
-        children = Path(f"/proc/{pid}/task/{pid}/children").read_text(encoding="utf-8").strip()
-    except OSError:
-        return []
-    if not children:
-        return []
-    return [int(item) for item in children.split() if item.isdigit()]
-
-
-def deepest_descendant(pid: int) -> int:
-    current = pid
-    while True:
-        children = child_pids(current)
-        if not children:
-            return current
-        current = children[-1]
-
-
-def proc_name(pid: int) -> str:
-    for candidate in (f"/proc/{pid}/comm", f"/proc/{pid}/cmdline"):
-        try:
-            raw = Path(candidate).read_bytes()
-        except OSError:
-            continue
-        if not raw:
-            continue
-        if candidate.endswith("/cmdline"):
-            name = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore").strip()
-            if name:
-                return name
-        else:
-            name = raw.decode("utf-8", errors="ignore").strip()
-            if name:
-                return name
-    return ""
-
-
-def proc_cwd(pid: int) -> str:
-    try:
-        cwd = os.readlink(f"/proc/{pid}/cwd")
-    except OSError:
-        return ""
-    if cwd.startswith(HOME_DIR):
-        suffix = cwd[len(HOME_DIR):].lstrip("/")
-        return f"/home/hermes/{suffix}" if suffix else "/home/hermes"
-    return cwd
-
-
-def session_label(session: dict[str, Any]) -> str:
-    ttyd_pid = session["pid"]
-    shell_pid = child_pids(ttyd_pid)
-    if not shell_pid:
-        return session["cwd"] or session["label"]
-    active_pid = deepest_descendant(shell_pid[-1])
-    active_name = proc_name(active_pid)
-    if active_name:
-        try:
-            command = shlex.split(active_name)[0] if active_name.strip() else ""
-        except ValueError:
-            command = active_name.split(" ", 1)[0]
-        command_name = Path(command).name
-        if command_name and command_name not in {"bash", "sh"}:
-            return command_name
-    cwd = proc_cwd(active_pid)
-    return cwd or session["cwd"] or session["label"]
-
-
-def safe_path_exists(path: Path) -> bool:
-    try:
-        return path.exists()
-    except OSError:
-        return False
-
-
-def parse_env_file(path: Path) -> dict[str, str]:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return {}
-
-    payload: dict[str, str] = {}
-    for raw_line in lines:
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        payload[key.strip()] = value.strip()
-    return payload
-
-
-def _yaml_value(raw_line: str) -> str | None:
-    value = raw_line.split(":", 1)[1].strip().strip("\"'")
-    return value or None
-
-
-def read_runtime_settings(path: Path) -> dict[str, dict[str, str | None]]:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return {
-            "model": {"provider": None, "default": None, "base_url": None, "api_key_env": None},
-            "fallback_model": {"provider": None, "model": None, "base_url": None, "api_key_env": None},
-        }
-
-    settings = {
-        "model": {"provider": None, "default": None, "base_url": None, "api_key_env": None},
-        "fallback_model": {"provider": None, "model": None, "base_url": None, "api_key_env": None},
-    }
-    active_section: str | None = None
-    section_indent = 0
-
-    for raw_line in lines:
-        line = raw_line.split("#", 1)[0].rstrip()
-        if not line.strip():
-            continue
-
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
-        stripped = line.strip()
-
-        if stripped in {"model:", "fallback_model:"}:
-            active_section = stripped[:-1]
-            section_indent = indent
-            continue
-
-        if active_section and indent <= section_indent:
-            active_section = None
-
-        if not active_section or ":" not in stripped:
-            continue
-
-        key = stripped.split(":", 1)[0].strip()
-        if key in settings[active_section]:
-            settings[active_section][key] = _yaml_value(stripped)
-
-    return settings
-
-
-def model_vendor_name(model_name: str | None) -> str | None:
-    if not model_name or "/" not in model_name:
-        return None
-    vendor = model_name.split("/", 1)[0].strip().lower()
-    return vendor or None
-
-
-def endpoint_kind(base_url: str | None) -> str:
-    if not base_url:
-        return "default provider"
-    if is_local_router_base_url(base_url):
-        return "local router"
-    return "custom endpoint"
-
-
-def is_local_router_base_url(base_url: str | None) -> bool:
-    if not base_url:
-        return False
-    parsed = urlparse(base_url)
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    return parsed.hostname in {"127.0.0.1", "localhost"} and port == 8788
-
-
-def endpoint_display_name(base_url: str | None, model_name: str | None, provider_name: str | None = None) -> str:
-    if is_local_router_base_url(base_url):
-        return "ghostship-router"
-    if base_url:
-        parsed = urlparse(base_url)
-        host = parsed.hostname or ""
-        if host == "openrouter.ai":
-            return "openrouter"
-        if host:
-            return host
-    return provider_name or model_vendor_name(model_name) or "default"
-
-
-def detect_auth_source(base_url: str | None, env_payload: dict[str, str], provider_name: str | None = None) -> str | None:
-    if is_local_router_base_url(base_url):
-        for key in ("OPENAI_API_KEY", "GHOSTSHIP_ROUTER_API_KEY", "API_SERVER_KEY"):
-            if env_payload.get(key):
-                return key
-        return None
-    if base_url and urlparse(base_url).hostname == "openrouter.ai" and env_payload.get("OPENROUTER_API_KEY"):
-        return "OPENROUTER_API_KEY"
-    if provider_name == "opencode-go":
-        if env_payload.get("OPENCODE_GO_API_KEY"):
-            return "OPENCODE_GO_API_KEY"
-        if env_payload.get("OPENCODE_API_KEY"):
-            return "OPENCODE_API_KEY"
-    return None
-
-
-def router_http_headers(env_payload: dict[str, str]) -> dict[str, str]:
-    token = (
-        env_payload.get("OPENAI_API_KEY")
-        or env_payload.get("GHOSTSHIP_ROUTER_API_KEY")
-        or env_payload.get("API_SERVER_KEY")
-    )
-    return {"Authorization": f"Bearer {token}"} if token else {}
-
-
-def fetch_router_enrichment(base_url: str, env_payload: dict[str, str]) -> dict[str, Any] | None:
-    router_base = base_url.rstrip("/")
-    if router_base.endswith("/v1"):
-        router_base = router_base[:-3]
-    headers = router_http_headers(env_payload)
-
-    try:
-        with httpx.Client(timeout=1.5, follow_redirects=True) as client:
-            ready_response = client.get(f"{router_base}/readyz")
-            ready_response.raise_for_status()
-            ready_payload = ready_response.json()
-
-            providers_response = client.get(f"{router_base}/debug/providers")
-            providers_response.raise_for_status()
-            providers_payload = providers_response.json()
-
-            aliases: list[dict[str, Any]] = []
-            models_response = client.get(f"{router_base}/v1/models", headers=headers)
-            if models_response.status_code == 200:
-                for item in models_response.json().get("data", []):
-                    metadata = item.get("metadata") or {}
-                    aliases.append(
-                        {
-                            "name": item.get("id"),
-                            "description": metadata.get("description"),
-                            "candidate_count": metadata.get("candidate_count", 0),
-                            "candidates": metadata.get("candidates", []),
-                        }
-                    )
-            else:
-                for alias_name in ("auxiliary", "coding", "agentic", "vision", "tts"):
-                    route_response = client.get(f"{router_base}/debug/routes/{alias_name}")
-                    if route_response.status_code != 200:
-                        continue
-                    route_payload = route_response.json()
-                    candidates = route_payload.get("candidates", [])
-                    aliases.append(
-                        {
-                            "name": alias_name,
-                            "description": None,
-                            "candidate_count": len(candidates),
-                            "candidates": candidates,
-                        }
-                    )
-
-            return {
-                "reachable": True,
-                "ready": bool(ready_payload.get("ok")),
-                "detail": ready_payload.get("detail"),
-                "providers": providers_payload if isinstance(providers_payload, list) else [],
-                "aliases": aliases,
-            }
-    except (httpx.HTTPError, ValueError):
-        return None
-
-
-def current_environment_payload() -> dict[str, Any]:
-    root_env_path = Path(MANAGED_HERMES_HOME) / ".env"
-    root_config_path = Path(MANAGED_HERMES_HOME) / "config.yaml"
-    auth_path = Path(MANAGED_HERMES_HOME) / "auth.json"
-    soul_path = Path(MANAGED_HERMES_HOME) / "SOUL.md"
-    gateway_pid_path = Path(MANAGED_HERMES_HOME) / "gateway.pid"
-    runtime_env = {
-        key: value
-        for key in (
-            "OPENAI_API_KEY",
-            "GHOSTSHIP_ROUTER_API_KEY",
-            "API_SERVER_KEY",
-            "OPENROUTER_API_KEY",
-            "OPENROUTER_BASE_URL",
-            "OPENROUTER_HTTP_REFERER",
-            "OPENROUTER_TITLE",
-        )
-        if (value := os.environ.get(key))
-    }
-    root_env = parse_env_file(root_env_path) or runtime_env
-    runtime_settings = read_runtime_settings(root_config_path)
-    primary_settings = runtime_settings["model"]
-    fallback_settings = runtime_settings["fallback_model"]
-    root_model = primary_settings["default"]
-    root_base_url = primary_settings["base_url"]
-    root_provider = primary_settings["provider"]
-    fallback_model = fallback_settings["model"]
-    fallback_base_url = fallback_settings["base_url"]
-    fallback_provider = fallback_settings["provider"]
-    router_disabled_models = os.environ.get("GHOSTSHIP_ROUTER_DISABLED_MODELS")
-    endpoints: dict[str, dict[str, Any]] = {}
-    endpoint_models: dict[str, dict[str, dict[str, Any]]] = {}
-
-    def register_model(endpoint_key: str, model_name: str | None, *, scope: str) -> None:
-        if not model_name:
-            return
-        model_map = endpoint_models.setdefault(endpoint_key, {})
-        entry = model_map.setdefault(
-            model_name,
-            {
-                "name": model_name,
-                "vendor": model_vendor_name(model_name),
-                "scopes": [],
-            },
-        )
-        if scope not in entry["scopes"]:
-            entry["scopes"].append(scope)
-
-    def register_endpoint(
-        *,
-        base_url: str | None,
-        model_name: str | None,
-        provider_name: str | None,
-        env_payload: dict[str, str],
-        scope: str,
-    ) -> None:
-        key = base_url or f"default::{provider_name or model_vendor_name(model_name) or 'default'}"
-        auth_source = detect_auth_source(base_url, env_payload, provider_name)
-        entry = endpoints.setdefault(
-            key,
-            {
-                "name": endpoint_display_name(base_url, model_name, provider_name),
-                "kind": endpoint_kind(base_url),
-                "configured": bool(base_url or model_name or provider_name),
-                "base_url": base_url,
-                "provider": provider_name,
-                "auth_source": auth_source,
-                "models": [],
-                "router": None,
-            },
-        )
-        if auth_source and not entry.get("auth_source"):
-            entry["auth_source"] = auth_source
-        register_model(key, model_name, scope=scope)
-
-    register_endpoint(base_url=root_base_url, model_name=root_model, provider_name=root_provider, env_payload=root_env | runtime_env, scope="managed")
-    register_endpoint(base_url=fallback_base_url, model_name=fallback_model, provider_name=fallback_provider, env_payload=root_env | runtime_env, scope="fallback")
-
-    providers: list[dict[str, Any]] = []
-    for key, entry in endpoints.items():
-        entry["models"] = sorted(endpoint_models.get(key, {}).values(), key=lambda item: item["name"])
-        if is_local_router_base_url(entry["base_url"]):
-            entry["router"] = fetch_router_enrichment(entry["base_url"], root_env | runtime_env)
-        providers.append(entry)
-
-    return {
-        "host": socket.gethostname(),
-        "dashboard_bind": f"{DASHBOARD_HOST}:{DASHBOARD_PORT}",
-        "terminal_cwd": TERMINAL_CWD,
-        "home": HOME_DIR,
-        "managed_hermes_home": MANAGED_HERMES_HOME,
-        "gateway_service": GATEWAY_SERVICE,
-        "model": root_model,
-        "base_url": root_base_url,
-        "model_provider": root_provider,
-        "fallback_model": fallback_model,
-        "fallback_base_url": fallback_base_url,
-        "fallback_provider": fallback_provider,
-        "router_disabled_models": router_disabled_models,
-        "agent": {
-            "name": "Managed Agent",
-            "path": MANAGED_HERMES_HOME,
-            "service": GATEWAY_SERVICE,
-            "model": root_model,
-            "model_provider": root_provider,
-            "base_url": root_base_url,
-            "endpoint_name": endpoint_display_name(root_base_url, root_model, root_provider),
-            "model_vendor": model_vendor_name(root_model),
-            "fallback_model": fallback_model,
-            "fallback_provider": fallback_provider,
-            "fallback_base_url": fallback_base_url,
-            "fallback_endpoint_name": endpoint_display_name(fallback_base_url, fallback_model, fallback_provider),
-            "router_disabled_models": router_disabled_models,
-            "has_env": safe_path_exists(root_env_path),
-            "has_config": safe_path_exists(root_config_path),
-            "has_auth": safe_path_exists(auth_path),
-            "has_soul": safe_path_exists(soul_path),
-            "has_gateway_pid": safe_path_exists(gateway_pid_path),
-        },
-        "providers": sorted(providers, key=lambda item: item["name"]),
-    }
-
-
-def prune_dead_sessions(state: dict[str, Any]) -> dict[str, Any]:
-    alive_sessions = [session for session in state["sessions"] if process_is_alive(session["pid"])]
-    state["sessions"] = alive_sessions
-    session_ids = {session["id"] for session in alive_sessions}
-    if state["active_terminal_id"] not in session_ids:
-        state["active_terminal_id"] = alive_sessions[-1]["id"] if alive_sessions else None
-    return state
-
-
-def terminal_payload(state: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "terminal_cwd": TERMINAL_CWD,
-        "home": HOME_DIR,
-        "managed_hermes_home": MANAGED_HERMES_HOME,
-        "environment": current_environment_payload(),
-        "active_terminal_id": state["active_terminal_id"],
-        "sessions": [
-            {
-                "id": session["id"],
-                "label": session_label(session),
-                "pid": session["pid"],
-                "port": session["port"],
-                "terminal_url": session["terminal_url"],
-                "cwd": session["cwd"],
-                "ready": port_is_open(TTYD_HOST, session["port"]),
-            }
-            for session in state["sessions"]
-        ],
-    }
-
-
-def available_port(state: dict[str, Any]) -> int:
-    used_ports = {session["port"] for session in state["sessions"]}
-    port = TTYD_PORT_BASE
-    while port in used_ports or port_is_open(TTYD_HOST, port):
-        port += 1
-    return port
-
-
-def ttyd_command(session: dict[str, Any]) -> list[str]:
-    shell_command = f"cd {shlex.quote(TERMINAL_CWD)} && exec {shlex.quote(BASH_PATH)} -l"
-    return [
-        "ttyd",
-        "--writable",
-        "-i",
-        TTYD_HOST,
-        "-p",
-        str(session["port"]),
-        "-t",
-        "disableLeaveAlert=true",
-        "-t",
-        "disableResizeOverlay=true",
-        "-t",
-        "rendererType=webgl",
-        "-t",
-        "fontFamily=IBM Plex Mono, monospace",
-        "-t",
-        "theme={\"background\":\"#070b14\",\"foreground\":\"#f4f7ff\",\"cursor\":\"#9fb0ff\",\"selectionBackground\":\"rgba(122,140,255,0.28)\",\"black\":\"#070b14\",\"red\":\"#ff6b8f\",\"green\":\"#7a8cff\",\"yellow\":\"#ffd479\",\"blue\":\"#7a8cff\",\"magenta\":\"#b99cff\",\"cyan\":\"#7fd6ff\",\"white\":\"#cfd8ff\",\"brightBlack\":\"#2f3956\",\"brightRed\":\"#ff90ad\",\"brightGreen\":\"#9fb0ff\",\"brightYellow\":\"#ffe29d\",\"brightBlue\":\"#9fb0ff\",\"brightMagenta\":\"#d1b8ff\",\"brightCyan\":\"#a5e5ff\",\"brightWhite\":\"#ffffff\"}",
-        "--base-path",
-        session["terminal_url"].rstrip("/"),
-        BASH_PATH,
-        "-lc",
-        shell_command,
-    ]
-
-
-async def open_terminal_logic() -> dict[str, Any]:
-    async with state_lock:
-        state = prune_dead_sessions(load_state())
-        label = f"Terminal {state['next_index']}"
-        session_id = uuid.uuid4().hex[:10]
-        session = {
-            "id": session_id,
-            "label": label,
-            "port": available_port(state),
-            "cwd": TERMINAL_CWD,
-            "terminal_url": f"/terminals/{session_id}/",
-            "started_at": int(time.time()),
-        }
-        log_path = LOG_DIR / f"{session_id}.log"
-        with log_path.open("ab") as log_handle:
-            process = subprocess.Popen(
-                ttyd_command(session),
-                cwd=TERMINAL_CWD,
-                env=os.environ.copy(),
-                stdout=log_handle,
-                stderr=log_handle,
-                start_new_session=True,
-            )
-
-        # ttyd fails fast on bind/path issues; surface that immediately instead
-        # of saving a dead session that points at an unrelated stale listener.
-        await asyncio.sleep(0.15)
-        if process.poll() is not None:
-            raise RuntimeError(f"ttyd exited during startup with code {process.returncode}")
-
-        session["pid"] = process.pid
-
-        state["next_index"] += 1
-        state["sessions"].append(session)
-        state["active_terminal_id"] = session_id
-        save_state(state)
-        return terminal_payload(state)
-
-
-def terminate_session(session: dict[str, Any], timeout: float = 0.75) -> None:
-    pid = session.get("pid")
-    if not pid or not process_is_alive(pid):
-        return
-    try:
-        os.killpg(pid, signal.SIGTERM)
-    except OSError:
-        return
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline and process_is_alive(pid):
-        time.sleep(0.05)
-    if process_is_alive(pid):
-        try:
-            os.killpg(pid, signal.SIGKILL)
-        except OSError:
-            pass
-
-
-async def close_terminal_logic(session_id: str) -> dict[str, Any]:
-    async with state_lock:
-        state = prune_dead_sessions(load_state())
-        session = next((entry for entry in state["sessions"] if entry["id"] == session_id), None)
-        if session is None:
-            return terminal_payload(state)
-
-        terminate_session(session)
-        state["sessions"] = [entry for entry in state["sessions"] if entry["id"] != session_id]
-        if state["active_terminal_id"] == session_id:
-            state["active_terminal_id"] = state["sessions"][-1]["id"] if state["sessions"] else None
-        save_state(state)
-        return terminal_payload(state)
-
-
-async def current_status_logic() -> dict[str, Any]:
-    async with state_lock:
-        state = prune_dead_sessions(load_state())
-        save_state(state)
-        return terminal_payload(state)
-
-
-def get_terminal_session(terminal_id: str) -> dict[str, Any] | None:
-    state = prune_dead_sessions(load_state())
-    for session in state["sessions"]:
-        if session["id"] == terminal_id:
-            return session
-    return None
-
-
-@app.get("/api/status")
-async def get_status():
-    return await current_status_logic()
-
-
-@app.post("/api/terminal/open")
-async def open_terminal():
-    try:
-        return await open_terminal_logic()
-    except Exception as e:
-        logger.exception("Failed to open terminal")
-        raise HTTPException(status_code=502, detail=str(e))
-
-
-@app.post("/api/terminals/{session_id}/close")
-async def close_terminal(session_id: str):
-    try:
-        return await close_terminal_logic(session_id)
-    except Exception as e:
-        logger.exception("Failed to close terminal")
-        raise HTTPException(status_code=502, detail=str(e))
-
-
-@app.get("/healthz")
-def healthz():
-    return {"ok": True}
-
-
-async def _proxy_http(request: Request, session_id: str, path: str):
-    session = get_terminal_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Terminal not found")
-    
-    url = f"http://{TTYD_HOST}:{session['port']}/terminals/{session_id}/{path}"
-    query = request.url.query
-    if query:
-        url += f"?{query}"
-        
-    client = httpx.AsyncClient()
-    headers = dict(request.headers)
-    headers.pop("host", None)
-    headers.pop("connection", None)
-    headers.pop("keep-alive", None)
-    
-    try:
-        body = await request.body()
-        req = client.build_request(
-            method=request.method,
-            url=url,
-            headers=headers,
-            content=body
-        )
-        resp = await client.send(req, stream=True)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Terminal is starting")
-    
-    async def stream_response():
-        async for chunk in resp.aiter_bytes():
-            yield chunk
-
-    async def close_upstream() -> None:
-        await resp.aclose()
-        await client.aclose()
-
-    response_headers = dict(resp.headers)
-    response_headers.pop("content-encoding", None)
-    response_headers.pop("transfer-encoding", None)
-    response_headers.pop("content-length", None)
-
-    return StreamingResponse(
-        stream_response(),
-        status_code=resp.status_code,
-        headers=response_headers,
-        background=BackgroundTask(close_upstream),
-    )
-
-
-@app.api_route("/terminals/{session_id}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"])
-async def proxy_terminal_http(request: Request, session_id: str, path: str):
-    return await _proxy_http(request, session_id, path)
-
-
-@app.websocket("/terminals/{session_id}/{path:path}")
-async def proxy_terminal_websocket(websocket: WebSocket, session_id: str, path: str):
-    session = get_terminal_session(session_id)
-    if not session:
-        await websocket.close(code=1008)
-        return
-
-    query = websocket.url.query
-    target_url = f"ws://{TTYD_HOST}:{session['port']}/terminals/{session_id}/{path}"
-    if query:
-        target_url += f"?{query}"
-
-    requested_subprotocols = [
-        value.strip()
-        for value in websocket.headers.get("sec-websocket-protocol", "").split(",")
-        if value.strip()
-    ]
-
-    try:
-        async with websockets.connect(
-            target_url,
-            subprotocols=requested_subprotocols or None,
-        ) as upstream_ws:
-            await websocket.accept(subprotocol=upstream_ws.subprotocol)
-
-            async def forward_to_upstream() -> None:
-                while True:
-                    data = await websocket.receive()
-                    if data.get("type") == "websocket.disconnect":
-                        break
-                    if "text" in data:
-                        await upstream_ws.send(data["text"])
-                    elif "bytes" in data:
-                        await upstream_ws.send(data["bytes"])
-
-            async def forward_to_client() -> None:
-                async for message in upstream_ws:
-                    if isinstance(message, str):
-                        await websocket.send_text(message)
-                    else:
-                        await websocket.send_bytes(message)
-
-            upstream_task = asyncio.create_task(forward_to_upstream())
-            client_task = asyncio.create_task(forward_to_client())
-            done, pending = await asyncio.wait(
-                {upstream_task, client_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-
-            for task in pending:
-                task.cancel()
-            if pending:
-                await asyncio.gather(*pending, return_exceptions=True)
-            for task in done:
-                exc = task.exception()
-                if exc and not isinstance(exc, WebSocketDisconnect):
-                    raise exc
-    except WebSocketDisconnect:
+        while True:
+            data = await websocket.receive_text()
+            if data == 'ping':
+                await websocket.send_text('pong')
+    except Exception:
         pass
-    except websockets.exceptions.ConnectionClosed:
-        pass
-    except Exception as e:
-        logger.error(f"WebSocket proxy failed: {e}")
-        try:
-            await websocket.close(code=1011)
-        except Exception:
-            pass
+    finally:
+        await ws_manager.disconnect(websocket)
 
 
-def asset_url(name: str) -> str:
-    asset = DASHBOARD_ROOT / name
-    if not asset.exists():
-        return f"/{name}"
-    return f"/{name}?v={asset.stat().st_mtime_ns}"
+@app.get('/healthz')
+def healthz() -> dict[str, bool]:
+    return {'ok': True}
 
 
-@app.get("/")
-def serve_index():
-    index_file = DASHBOARD_ROOT / "index.html"
-    if not index_file.exists():
-        return HTMLResponse("<html><body>Frontend not found</body></html>", status_code=404)
+app.include_router(state.router, prefix='/api')
+app.include_router(memory.router, prefix='/api')
+app.include_router(sessions.router, prefix='/api')
+app.include_router(skills.router, prefix='/api')
+app.include_router(cron.router, prefix='/api')
+app.include_router(projects.router, prefix='/api')
+app.include_router(health.router, prefix='/api')
+app.include_router(profiles.router, prefix='/api')
+app.include_router(patterns.router, prefix='/api')
+app.include_router(corrections.router, prefix='/api')
+app.include_router(agents.router, prefix='/api')
+app.include_router(timeline.router, prefix='/api')
+app.include_router(snapshots.router, prefix='/api')
+app.include_router(dashboard.router, prefix='/api')
+app.include_router(token_costs.router, prefix='/api')
+app.include_router(cache.router, prefix='/api')
+app.include_router(console.router, prefix='/api')
+app.add_api_route(
+    '/terminals/{session_id}/{path:path}',
+    proxy_terminal_http,
+    methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD', 'PATCH', 'TRACE'],
+)
+app.add_api_websocket_route('/terminals/{session_id}/{path:path}', proxy_terminal_websocket)
 
-    html = index_file.read_text(encoding="utf-8")
-    html = html.replace('href="/styles.css"', f'href="{asset_url("styles.css")}"')
-    html = html.replace('src="/logo.png"', f'src="{asset_url("logo.png")}"')
-    html = html.replace('src="/app.js"', f'src="{asset_url("app.js")}"')
-    return HTMLResponse(html)
+if STATIC_DIR.exists():
+    app.mount('/', StaticFiles(directory=str(STATIC_DIR), html=True), name='static')
 
 
-app.mount("/", StaticFiles(directory=str(DASHBOARD_ROOT)), name="static")
+def cli() -> None:
+    parser = argparse.ArgumentParser(description='Hermes HUD Web UI')
+    parser.add_argument('--port', type=int, default=DASHBOARD_PORT, help='Port (default: 7681)')
+    parser.add_argument('--host', default=DASHBOARD_HOST, help='Host (default: 0.0.0.0)')
+    parser.add_argument('--dev', action='store_true', help='Development mode (auto-reload)')
+    parser.add_argument('--hermes-dir', default=None, help='Hermes data directory (default: ~/.hermes)')
+    args = parser.parse_args()
+    if args.hermes_dir:
+        os.environ['HERMES_HOME'] = args.hermes_dir
+    import uvicorn
+    uvicorn.run('hermes_dashboard.app:app', host=args.host, port=args.port, reload=args.dev)
 
 
-def main() -> None:
-    ensure_state_dir()
-    uvicorn.run(app, host=DASHBOARD_HOST, port=DASHBOARD_PORT)
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    cli()
