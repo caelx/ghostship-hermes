@@ -48,7 +48,27 @@ bundle_output_dir="$(cd "$(dirname "$bundle_output_dir")" && pwd)/$(basename "$b
 rm -rf "$bundle_output_dir"
 mkdir -p "$bundle_output_dir"
 
-docker run --rm   --entrypoint /bin/sh   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   -e FLAKE_ATTR="$flake_attr"   "$base_image"   -lc '
+shell_candidates=(
+  /bin/sh
+  /run/current-system/sw/bin/sh
+  /nix/var/nix/profiles/default/bin/sh
+  /nix/var/nix/profiles/system/sw/bin/sh
+)
+
+base_shell=""
+for candidate in "${shell_candidates[@]}"; do
+  if docker run --rm --entrypoint "$candidate" "$base_image" -lc 'exit 0' >/dev/null 2>&1; then
+    base_shell="$candidate"
+    break
+  fi
+done
+
+if [ -z "$base_shell" ]; then
+  echo "failed to find a working shell entrypoint inside $base_image" >&2
+  exit 1
+fi
+
+docker run --rm   --entrypoint "$base_shell"   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   -e FLAKE_ATTR="$flake_attr"   "$base_image"   -lc '
     set -euo pipefail
     export PATH="/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:$PATH"
     export HOME=/tmp/ghostship-build-home
