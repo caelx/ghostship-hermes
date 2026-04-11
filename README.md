@@ -311,13 +311,10 @@ The scheduled `update-hermes-release` workflow tracks the upstream
 `NousResearch/hermes-agent` release feed, updates the pinned flake input and
 lockfile when a new tag lands, and then explicitly dispatches
 `publish-image.yml` so the new Hermes build is published even though the pin
-bump commit itself is created by GitHub Actions. The publish workflow now
-path-gates automatic runs, schedules a fresh full-image build once per day at `14:00 UTC`, and always publishes the final
-`ghostship-hermes` architecture tags from the explicit
-`ghostship-hermes-image` bundle so the managed runtime/systemd contract ships
-exactly as tested. Each day gets a rolling full-image cache tag in GHCR, and
-subsequent same-day publishes rebuild on top of that full image instead of
-trying to skip the build outright.
+bump commit itself is created by GitHub Actions. The publish workflow path-gates
+automatic runs and always publishes the final `ghostship-hermes` architecture
+tags from the explicit `ghostship-hermes-image` bundle so the managed
+runtime/systemd contract ships exactly as tested.
 Inside a running container, the `hermes` user tooling refresh path keeps an
 offline bootstrap package for first boot, but refreshes Hermes itself from
 `github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already
@@ -336,15 +333,12 @@ Base/final layering:
 
 Image output contract:
 
-Free GitHub Actions acceleration:
+GitHub Actions publication behavior:
 
-- The publish workflow no longer skips image builds based on content-addressed final-image reuse; every publish rebuilds the explicit `ghostship-hermes-image` bundle.
-- A rolling daily full-image cache tag (`daily-<hermes-release>-<YYYY-MM-DD>-<arch>`) is published once per day at `14:00 UTC` or on the first image-affecting push of that UTC day, then refreshed after every successful same-day publish. Because the tag includes `hermes-release.txt`, a Hermes version bump automatically starts a fresh daily line.
-- Same-day publishes rebuild inside that rolling daily full image so the in-image Nix build can reuse the full baked `/nix/store` from the most recent daily image rather than only a stripped base layer.
-- `workflow_dispatch` now exposes `force_full_build=true` so you can bypass the daily cache and make the workflow do a full host-side rebuild on demand.
-- Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
+- Every publish rebuilds the explicit `ghostship-hermes-image` bundle on the runner host. There is no content-addressed final-image skip gate and no daily in-image parent path.
+- The heavy multi-arch publish job does not currently enable a third-party Nix binary cache. Magic Nix Cache remains disabled after repeated GitHub Actions cache throttling (`ResourceExhausted`) failures, and the abandoned daily-image OCI-parent path should not be used as a substitute for a real Nix cache.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
-- Measure the current workflow behavior with `python3 scripts/github_actions_timings.py --include-latest-jobs` after workflow changes land. The 2026-04-11 timing snapshot describes the superseded overlay-based final publication path and should not be reused as the current baseline.
+- Measure the current workflow behavior with `python3 scripts/github_actions_timings.py --include-latest-jobs` after workflow changes land. The 2026-04-11 timing snapshot describes superseded publish paths and should not be reused as the current baseline.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.
 - `ghostship-hermes-image` is the explicit publishable image bundle consumed by `scripts/export_publishable_image.sh`, local image-loading flows, and the dashboard smoke test.
