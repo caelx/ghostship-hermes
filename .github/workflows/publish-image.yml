@@ -2,6 +2,14 @@ name: publish-image
 
 on:
   workflow_dispatch:
+    inputs:
+      force_full_build:
+        description: Build from scratch instead of using today's Hawaii daily image
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: '0 14 * * *'
   push:
     branches:
       - main
@@ -12,7 +20,7 @@ on:
       - 'flake.lock'
       - 'packages/**'
       - 'scripts/export_publishable_image.sh'
-      - 'scripts/build_publishable_image_in_base.sh'
+      - 'scripts/build_publishable_image_in_image.sh'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,8 +33,9 @@ jobs:
       contents: read
     outputs:
       image_name: ${{ steps.meta.outputs.image_name }}
-      base_image_name: ${{ steps.meta.outputs.base_image_name }}
       tags: ${{ steps.meta.outputs.tags }}
+      hermes_ref: ${{ steps.meta.outputs.hermes_ref }}
+      force_full_build: ${{ steps.meta.outputs.force_full_build }}
     steps:
       - uses: actions/checkout@v6
 
@@ -36,10 +45,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          hermes_ref="$(tr -d '\\n' < packages/hermes-image/hermes-release.txt)"
+          hermes_ref="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)"
           image_name="ghcr.io/${GITHUB_REPOSITORY_OWNER}/ghostship-hermes"
-          base_image_name="ghcr.io/${GITHUB_REPOSITORY_OWNER}/ghostship-hermes-base"
           tags="sha-${GITHUB_SHA}"
+          force_full_build=false
 
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then
             tags="latest sha-${GITHUB_SHA} hermes-${hermes_ref}"
@@ -47,10 +56,15 @@ jobs:
             echo "non-main workflow_dispatch detected for $GITHUB_REF; publishing immutable sha tag only"
           fi
 
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_full_build || false }}" = "true" ]; then
+            force_full_build=true
+          fi
+
           {
             echo "image_name=${image_name}"
-            echo "base_image_name=${base_image_name}"
             echo "tags=${tags}"
+            echo "hermes_ref=${hermes_ref}"
+            echo "force_full_build=${force_full_build}"
           } >> "$GITHUB_OUTPUT"
 
   build-and-push:
@@ -70,8 +84,9 @@ jobs:
       packages: write
     env:
       IMAGE_NAME: ${{ needs.prepare.outputs.image_name }}
-      BASE_IMAGE_NAME: ${{ needs.prepare.outputs.base_image_name }}
       TAGS: ${{ needs.prepare.outputs.tags }}
+      HERMES_REF: ${{ needs.prepare.outputs.hermes_ref }}
+      FORCE_FULL_BUILD: ${{ needs.prepare.outputs.force_full_build }}
       PLATFORM_TAG: ${{ matrix.platform_tag }}
     steps:
       - uses: actions/checkout@v6
@@ -95,73 +110,80 @@ jobs:
         run: |
           set -euo pipefail
 
-          base_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-base-image.drvPath --raw)"
           final_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-image.drvPath --raw)"
-          base_tag="base-$(basename "$base_drv" .drv)"
           content_hash="$(echo "$final_drv" | sha256sum | cut -c1-24)"
-          base_ref="${BASE_IMAGE_NAME}:${base_tag}-${PLATFORM_TAG}"
+          hawaii_date="$(TZ=Pacific/Honolulu date +%F)"
           content_ref="${IMAGE_NAME}:content-${content_hash}-${PLATFORM_TAG}"
-          local_base_ref="ghostship-hermes-base:ci-${PLATFORM_TAG}"
+          daily_ref="${IMAGE_NAME}:daily-${HERMES_REF}-${hawaii_date}-${PLATFORM_TAG}"
+          local_daily_ref="ghostship-hermes-daily:ci-${PLATFORM_TAG}"
 
           {
-            echo "base_drv=${base_drv}"
             echo "final_drv=${final_drv}"
             echo "content_hash=${content_hash}"
-            echo "base_ref=${base_ref}"
+            echo "hawaii_date=${hawaii_date}"
             echo "content_ref=${content_ref}"
-            echo "local_base_ref=${local_base_ref}"
+            echo "daily_ref=${daily_ref}"
+            echo "local_daily_ref=${local_daily_ref}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Check for reusable final image
-        id: reusable
+      - name: Decide build strategy
+        id: strategy
         env:
-          CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
+          DAILY_REF: ${{ steps.refs.outputs.daily_ref }}
+          LOCAL_DAILY_REF: ${{ steps.refs.outputs.local_daily_ref }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if nix shell nixpkgs#skopeo -c skopeo inspect "docker://${CONTENT_REF}" >/dev/null 2>&1; then
-            echo "reusing published final image ${CONTENT_REF}"
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+          build_strategy=full
+          build_reason=missing-daily-image
+
+          if [ "$FORCE_FULL_BUILD" = "true" ]; then
+            build_reason=forced-full-build
+          elif nix shell nixpkgs#skopeo -c skopeo inspect "docker://${DAILY_REF}" >/dev/null 2>&1; then
+            echo "reusing Hawaii daily image ${DAILY_REF}"
+            docker pull "$DAILY_REF"
+            docker tag "$DAILY_REF" "$LOCAL_DAILY_REF"
+            build_strategy=daily-cache
+            build_reason=reused-daily-image
           else
-            echo "no reusable final image found for ${CONTENT_REF}"
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "no Hawaii daily image found for ${DAILY_REF}; doing full build"
           fi
 
-      - name: Ensure base image tag exists
-        if: steps.reusable.outputs.exists != 'true'
-        env:
-          BASE_REF: ${{ steps.refs.outputs.base_ref }}
-          LOCAL_BASE_REF: ${{ steps.refs.outputs.local_base_ref }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if nix shell nixpkgs#skopeo -c skopeo inspect "docker://${BASE_REF}" >/dev/null 2>&1; then
-            echo "reusing published base image ${BASE_REF}"
-            docker pull "$BASE_REF"
-            docker tag "$BASE_REF" "$LOCAL_BASE_REF"
-            exit 0
-          fi
-
-          echo "publishing new base image ${BASE_REF}"
-          base_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-base-image)"
-          scripts/export_publishable_image.sh "$base_bundle" "$LOCAL_BASE_REF" "ghostship-hermes-base-${PLATFORM_TAG}.tar"
-          nix shell nixpkgs#skopeo -c skopeo copy             "docker-archive:$(pwd)/ghostship-hermes-base-${PLATFORM_TAG}.tar"             "docker://${BASE_REF}"
+          {
+            echo "build_strategy=${build_strategy}"
+            echo "build_reason=${build_reason}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and publish content-addressed final image
-        if: steps.reusable.outputs.exists != 'true'
         env:
           CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
-          LOCAL_BASE_REF: ${{ steps.refs.outputs.local_base_ref }}
+          LOCAL_DAILY_REF: ${{ steps.refs.outputs.local_daily_ref }}
+          BUILD_STRATEGY: ${{ steps.strategy.outputs.build_strategy }}
         shell: bash
         run: |
           set -euo pipefail
 
-          final_bundle_dir="$(pwd)/ghostship-hermes-image-${PLATFORM_TAG}-bundle"
-          scripts/build_publishable_image_in_base.sh             "$LOCAL_BASE_REF"             ".#packages.${{ matrix.system }}.ghostship-hermes-image"             "$final_bundle_dir"
-          scripts/export_publishable_image.sh             "$final_bundle_dir"             "ghostship-hermes:ci-${PLATFORM_TAG}"             "ghostship-hermes-${PLATFORM_TAG}.tar"
+          if [ "$BUILD_STRATEGY" = "daily-cache" ]; then
+            final_bundle_dir="$(pwd)/ghostship-hermes-image-${PLATFORM_TAG}-bundle"
+            scripts/build_publishable_image_in_image.sh               "$LOCAL_DAILY_REF"               ".#packages.${{ matrix.system }}.ghostship-hermes-image"               "$final_bundle_dir"
+            final_bundle="$final_bundle_dir"
+          else
+            final_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-image)"
+          fi
+
+          scripts/export_publishable_image.sh             "$final_bundle"             "ghostship-hermes:ci-${PLATFORM_TAG}"             "ghostship-hermes-${PLATFORM_TAG}.tar"
           nix shell nixpkgs#skopeo -c skopeo copy             "docker-archive:$(pwd)/ghostship-hermes-${PLATFORM_TAG}.tar"             "docker://${CONTENT_REF}"
+
+      - name: Refresh Hawaii daily image
+        env:
+          CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
+          DAILY_REF: ${{ steps.refs.outputs.daily_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          nix shell nixpkgs#skopeo -c skopeo copy             "docker://${CONTENT_REF}"             "docker://${DAILY_REF}"
 
       - name: Publish architecture image tags
         env:
@@ -181,7 +203,7 @@ jobs:
 
       - name: Remove temporary publish artifacts
         if: always()
-        run: rm -rf publish-arch-tags.sh "ghostship-hermes-base-${PLATFORM_TAG}.tar" "ghostship-hermes-${PLATFORM_TAG}.tar" "ghostship-hermes-image-${PLATFORM_TAG}-bundle"
+        run: rm -rf publish-arch-tags.sh "ghostship-hermes-${PLATFORM_TAG}.tar" "ghostship-hermes-image-${PLATFORM_TAG}-bundle"
 
   publish-manifests:
     needs:

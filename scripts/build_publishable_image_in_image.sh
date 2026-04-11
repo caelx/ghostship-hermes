@@ -6,10 +6,10 @@ cd "$repo_root"
 
 usage() {
   cat >&2 <<'EOF'
-usage: build_publishable_image_in_base.sh [local-base-image-ref] [flake-attr] [bundle-output-dir]
+usage: build_publishable_image_in_image.sh [local-build-image-ref] [flake-attr] [bundle-output-dir]
 
-Run the requested Nix image-bundle build inside the local ghostship-hermes base
-image so the build can reuse the baked /nix/store closure, then stage the
+Run the requested Nix image-bundle build inside a local ghostship-hermes image
+so the build can reuse that image's baked /nix/store closure, then stage the
 portable bundle directory back to the host.
 EOF
 }
@@ -20,7 +20,7 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 fi
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "docker is required to build the publishable image bundle inside ghostship-hermes-base" >&2
+  echo "docker is required to build the publishable image bundle inside a local image" >&2
   exit 1
 fi
 
@@ -29,17 +29,17 @@ if ! docker version >/dev/null 2>&1; then
   exit 1
 fi
 
-base_image="${1:-}"
+build_image="${1:-}"
 flake_attr="${2:-}"
 bundle_output_dir="${3:-}"
 
-if [ -z "$base_image" ] || [ -z "$flake_attr" ] || [ -z "$bundle_output_dir" ]; then
+if [ -z "$build_image" ] || [ -z "$flake_attr" ] || [ -z "$bundle_output_dir" ]; then
   usage
   exit 1
 fi
 
-if ! docker image inspect "$base_image" >/dev/null 2>&1; then
-  echo "base image is not available locally: $base_image" >&2
+if ! docker image inspect "$build_image" >/dev/null 2>&1; then
+  echo "build image is not available locally: $build_image" >&2
   exit 1
 fi
 
@@ -55,22 +55,22 @@ shell_candidates=(
   /nix/var/nix/profiles/system/sw/bin/sh
 )
 
-base_shell=""
+build_shell=""
 for candidate in "${shell_candidates[@]}"; do
-  if docker run --rm --entrypoint "$candidate" "$base_image" -lc 'exit 0' >/dev/null 2>&1; then
-    base_shell="$candidate"
+  if docker run --rm --entrypoint "$candidate" "$build_image" -lc 'exit 0' >/dev/null 2>&1; then
+    build_shell="$candidate"
     break
   fi
 done
 
-if [ -z "$base_shell" ]; then
-  echo "failed to find a working shell entrypoint inside $base_image" >&2
+if [ -z "$build_shell" ]; then
+  echo "failed to find a working shell entrypoint inside $build_image" >&2
   exit 1
 fi
 
-docker run --rm   --entrypoint "$base_shell"   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   -e FLAKE_ATTR="$flake_attr"   "$base_image"   -lc '
+docker run --rm   --entrypoint "$build_shell"   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   -e FLAKE_ATTR="$flake_attr"   "$build_image"   -lc '
     set -euo pipefail
-    export PATH="/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:$PATH"
+    export PATH="/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/system/sw/bin:$PATH"
     export HOME=/tmp/ghostship-build-home
     export NIX_CONFIG="experimental-features = nix-command flakes
 sandbox = false"

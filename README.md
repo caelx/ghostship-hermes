@@ -312,15 +312,13 @@ The scheduled `update-hermes-release` workflow tracks the upstream
 lockfile when a new tag lands, and then explicitly dispatches
 `publish-image.yml` so the new Hermes build is published even though the pin
 bump commit itself is created by GitHub Actions. The publish workflow now
-path-gates automatic runs, publishes a true per-architecture
-`ghostship-hermes-base` image from a base-specific NixOS module only when the
-tracked base-affecting Hermes/core-runtime layer changes, and still publishes
-the final `ghostship-hermes` architecture tags from the explicit
+path-gates automatic runs, schedules a fresh Hawaii-day full-image build at
+`04:00 Pacific/Honolulu` (`14:00 UTC`), and always publishes the final
+`ghostship-hermes` architecture tags from the explicit
 `ghostship-hermes-image` bundle so the managed runtime/systemd contract ships
-exactly as tested. The final bundle build now runs inside the pulled
-`ghostship-hermes-base` image, which lets GitHub reuse the base image's baked
-`/nix/store` during the Nix build before the manifest-only job creates the
-multi-arch tags.
+exactly as tested. Each day gets a rolling full-image cache tag in GHCR, and
+subsequent same-day publishes rebuild on top of that full image instead of
+trying to skip the build outright.
 Inside a running container, the `hermes` user tooling refresh path keeps an
 offline bootstrap package for first boot, but refreshes Hermes itself from
 `github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already
@@ -341,10 +339,10 @@ Image output contract:
 
 Free GitHub Actions acceleration:
 
-- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image keyed to the explicit `ghostship-hermes-image` bundle derivation, and it still maintains a stable `ghostship-hermes-base` tag for the separate reusable base artifact.
-- When a new final image is required, GitHub now runs the explicit `ghostship-hermes-image` Nix build inside the pulled `ghostship-hermes-base` container instead of on the cold host runner, so the base image's baked `/nix/store` actually accelerates the expensive Nix step rather than only the later Docker import/push step.
-- The immutable final-image reuse key now follows the explicit final image bundle derivation instead of the layered base-plus-overlay assembly path, because the managed runtime contract lives in the final NixOS system rather than in the lightweight overlay bundle alone.
-- The base image no longer depends on `ghostship-hermes-router`, `ghostship-hermes-runtime`, or `hermes-dashboard`, so overlay-only command changes do not invalidate the base derivation or force another native base rebuild.
+- The publish workflow no longer skips image builds based on content-addressed final-image reuse; every publish rebuilds the explicit `ghostship-hermes-image` bundle.
+- A rolling Hawaii-day full-image cache tag (`daily-<hermes-release>-<YYYY-MM-DD>-<arch>`) is published once per day at `04:00 Pacific/Honolulu` (`14:00 UTC`) or on the first image-affecting push that day, then refreshed after every successful same-day publish. Because the tag includes `hermes-release.txt`, a Hermes version bump automatically starts a fresh daily line.
+- Same-day publishes rebuild inside that rolling daily full image so the in-image Nix build can reuse the full baked `/nix/store` from the most recent daily image rather than only a stripped base layer.
+- `workflow_dispatch` now exposes `force_full_build=true` so you can bypass the daily cache and make the workflow do a full host-side rebuild on demand.
 - Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
 - Measure the current workflow behavior with `python3 scripts/github_actions_timings.py --include-latest-jobs` after workflow changes land. The 2026-04-11 timing snapshot describes the superseded overlay-based final publication path and should not be reused as the current baseline.
