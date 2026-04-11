@@ -16,7 +16,10 @@ interface UseWebSocketReturn {
   sendMessage: (data: string) => void
 }
 
-const WS_URL = `ws://${window.location.host}/ws`
+function getWebSocketUrl(): string {
+  const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${wsScheme}://${window.location.host}/ws`
+}
 
 export function useWebSocket(): UseWebSocketReturn {
   const [status, setStatus] = useState<WebSocketStatus>('disconnected')
@@ -25,12 +28,31 @@ export function useWebSocket(): UseWebSocketReturn {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectAttemptsRef = useRef(0)
 
+  const scheduleReconnect = useCallback(() => {
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000)
+    reconnectAttemptsRef.current++
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      connect()
+    }, delay)
+  }, [])
+
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
     setStatus('connecting')
-    
-    const ws = new WebSocket(WS_URL)
+
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(getWebSocketUrl())
+    } catch (err) {
+      console.warn('[WS] Failed to create websocket:', err)
+      setStatus('error')
+      wsRef.current = null
+      scheduleReconnect()
+      return
+    }
+
     wsRef.current = ws
 
     ws.onopen = () => {
@@ -103,18 +125,13 @@ export function useWebSocket(): UseWebSocketReturn {
       wsRef.current = null
 
       // Exponential backoff reconnect
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000)
-      reconnectAttemptsRef.current++
-      
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connect()
-      }, delay)
+      scheduleReconnect()
     }
 
     ws.onerror = () => {
       setStatus('error')
     }
-  }, [])
+  }, [scheduleReconnect])
 
   const sendMessage = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
