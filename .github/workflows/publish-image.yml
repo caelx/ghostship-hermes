@@ -11,6 +11,7 @@ on:
       - 'flake.nix'
       - 'flake.lock'
       - 'packages/**'
+      - 'scripts/export_publishable_image.sh'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -153,19 +154,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          for attempt in 1 2 3 4 5; do
-            if docker pull "${BASE_REF}"; then
-              break
-            fi
-            if [ "$attempt" -eq 5 ]; then
-              echo "failed to pull base image ${BASE_REF} after ${attempt} attempts" >&2
-              exit 1
-            fi
-            sleep "$((attempt * 5))"
-          done
+          source_base_image="ghostship-hermes-base:ci-${PLATFORM_TAG}"
+          if ! docker image inspect "${source_base_image}" >/dev/null 2>&1; then
+            source_base_image="${BASE_REF}"
+            for attempt in 1 2 3 4 5; do
+              if docker pull "${source_base_image}"; then
+                break
+              fi
+              if [ "$attempt" -eq 5 ]; then
+                echo "failed to pull base image ${source_base_image} after ${attempt} attempts" >&2
+                exit 1
+              fi
+              sleep "$((attempt * 5))"
+            done
+          fi
 
           local_base_image="ghostship-hermes-base:build-${PLATFORM_TAG}"
-          docker tag "${BASE_REF}" "${local_base_image}"
+          docker tag "${source_base_image}" "${local_base_image}"
 
           overlay_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-overlay-bundle)"
           docker build \
