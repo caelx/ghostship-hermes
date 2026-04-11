@@ -200,6 +200,8 @@ printf 'legacy-profile\n' > "$home_dir/.hermes/profiles/assistant/.managed"
 printf 'assistant\n' > "$home_dir/.hermes/active_profile"
 printf 'seed-skill-v1\n' > "$home_dir/seeds/skills/workflow-single/SKILL.md"
 printf 'seed-soul-v1\n' > "$home_dir/seeds/SOUL.md"
+chmod 0555 "$home_dir/seeds/skills/workflow-single"
+chmod 0444 "$home_dir/seeds/skills/workflow-single/SKILL.md"
 xz -dc "$rootfs_tar" | docker import - "$image_ref" >/dev/null
 
 docker run -d \
@@ -245,6 +247,8 @@ run_as_hermes "$container_one" 'test "$HERMES_HOME" = "/home/hermes/.hermes"'
 run_as_hermes "$container_one" '! test -d /home/hermes/.hermes/profiles'
 run_as_hermes "$container_one" '! test -f /home/hermes/.hermes/active_profile'
 run_as_hermes "$container_one" 'grep -Fx "seed-skill-v1" /home/hermes/.hermes/skills/workflow-single/SKILL.md >/dev/null'
+run_as_hermes "$container_one" 'test -w /home/hermes/.hermes/skills/workflow-single'
+run_as_hermes "$container_one" 'test -w /home/hermes/.hermes/skills/workflow-single/SKILL.md'
 run_as_hermes "$container_one" '! test -e /home/hermes/.hermes/profiles/assistant/skills/workflow-single/SKILL.md'
 run_as_hermes "$container_one" 'grep -Fx "seed-soul-v1" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_one" 'printf "{\"provider\":\"codex\"}\n" > /home/hermes/.hermes/auth.json'
@@ -312,6 +316,7 @@ run_as_hermes "$container_one" '
   printf "user-skill-v2\n" > /home/hermes/.hermes/skills/workflow-single/SKILL.md
   printf "user-soul-v2\n" > /home/hermes/.hermes/SOUL.md
 '
+chmod u+w "$home_dir/seeds/skills/workflow-single" "$home_dir/seeds/skills/workflow-single/SKILL.md"
 printf 'seed-skill-v2\n' > "$home_dir/seeds/skills/workflow-single/SKILL.md"
 printf 'seed-soul-v2\n' > "$home_dir/seeds/SOUL.md"
 

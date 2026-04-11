@@ -164,7 +164,7 @@ The image is declarative-first:
 - The managed gateway always writes `/home/hermes/.hermes/gateway.pid`, and `hermes gateway status` is wired to the repo-owned `ghostship-hermes-gateway.service`.
 - The managed env file is `/home/hermes/.hermes/.env`. Bootstrap writes only the approved runtime allowlist into that file, omits unset values, always writes `WEBHOOK_ENABLED=true`, `WEBHOOK_PORT=8644`, and `TERMINAL_CWD=/workspace`, and intentionally excludes router/container plumbing plus the fixed Chaptarr and n8n path/version selectors.
 - The full managed env contract, including every copied key and the intentionally excluded keys, is documented in [docs/runtime-env.md](docs/runtime-env.md).
-- Seeded skills come from `/home/hermes/seeds/skills`, and the seeded prompt comes from `/home/hermes/seeds/SOUL.md`. Bootstrap copies missing skill directories only into `/home/hermes/.hermes/skills`; it does not seed any `~/.hermes/profiles/...` tree, and it only refreshes `SOUL.md` while the live file still matches the last seeded hash.
+- Seeded skills come from `/home/hermes/seeds/skills`, and the seeded prompt comes from `/home/hermes/seeds/SOUL.md`. Bootstrap copies missing skill directories only into `/home/hermes/.hermes/skills`, normalizes the copied skill tree to writable Hermes-owned runtime permissions, does not seed any `~/.hermes/profiles/...` tree, and only refreshes `SOUL.md` while the live file still matches the last seeded hash.
 
 ### Codex OAuth
 

@@ -278,6 +278,8 @@ EOF
 chmod +x "$home_dir/.nix-profile/bin/hermes"
 printf 'seed-skill-v1\n' > "$home_dir/seeds/skills/workflow-single/SKILL.md"
 printf 'seed-soul-v1\n' > "$home_dir/seeds/SOUL.md"
+chmod 0555 "$home_dir/seeds/skills/workflow-single"
+chmod 0444 "$home_dir/seeds/skills/workflow-single/SKILL.md"
 printf 'legacy-profile\n' > "$home_dir/.hermes/profiles/assistant/.managed"
 printf 'assistant\n' > "$home_dir/.hermes/active_profile"
 docker rm -f "$container_name" >/dev/null 2>&1 || true
@@ -404,6 +406,8 @@ run_as_hermes "$container_name" '! grep -F "N8N_PUBLIC_API_ENDPOINT=" /home/herm
 run_as_hermes "$container_name" '! grep -F "N8N_PUBLIC_API_VERSION=" /home/hermes/.hermes/.env >/dev/null'
 run_as_hermes "$container_name" '! grep -F "GHOSTSHIP_ROUTER_API_KEY=" /home/hermes/.hermes/.env >/dev/null'
 run_as_hermes "$container_name" 'grep -Fx "seed-skill-v1" /home/hermes/.hermes/skills/workflow-single/SKILL.md >/dev/null'
+run_as_hermes "$container_name" 'test -w /home/hermes/.hermes/skills/workflow-single'
+run_as_hermes "$container_name" 'test -w /home/hermes/.hermes/skills/workflow-single/SKILL.md'
 run_as_hermes "$container_name" '! test -e /home/hermes/.hermes/profiles/assistant/skills/workflow-single/SKILL.md'
 run_as_hermes "$container_name" 'grep -Fx "seed-soul-v1" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/SOUL.md.ghostship-seeded-sha256'

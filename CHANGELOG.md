@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Documented the full single-agent managed runtime env allowlist in `docs/runtime-env.md`, corrected the README router/env wording to match the actual bootstrap contract, and tightened dashboard coverage so the home surface stays on one `Agent` section instead of a profile list.
+- Fixed seeded skill bootstrap permissions so skill trees copied from read-only staged sources are normalized to writable Hermes-owned runtime permissions under `/home/hermes/.hermes/skills`, and hardened image validation to simulate store-style read-only seed inputs.
 
 - Breaking: collapsed the repo-owned multi-profile Hermes topology into one managed agent rooted at `/home/hermes/.hermes`, replaced the per-profile `.env`/skills/`SOUL.md`/`gateway.pid`/service graph with single-agent equivalents, switched the dashboard and validation contract to one managed gateway service, and added a destructive one-time reset that deletes the old repo-owned profile tree before the new runtime is reinitialized.
 - Expanded the managed Hermes user-tooling contract to include `fd`, `uv`, `yq`, and `tmux`, and replaced the partial Python runtime with a single managed pip-capable Python environment so `python3`, `pip`, and `python3 -m pip` all work from `/home/hermes/.local/state/nix/profiles/ghostship-managed`; updated smoke validation and runtime docs to match.

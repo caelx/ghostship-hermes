@@ -483,6 +483,7 @@ EOF
         skill_name="$(basename "$skill_dir")"
         if [ ! -e "$target_root/$skill_name" ]; then
           cp -R "$skill_dir" "$target_root/$skill_name"
+          chmod -R u+rwX "$target_root/$skill_name"
         fi
       done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
     }
@@ -557,7 +558,7 @@ EOF
         if [ -z "''${OPENCODE_API_KEY:-}" ] && [ -n "''${OPENCODE_GO_API_KEY:-}" ]; then
           printf 'OPENCODE_API_KEY=%s\n' "''${OPENCODE_GO_API_KEY}"
         fi
-        for key in ${lib.escapeShellArgs managedDiscordEnvKeys ++ managedBrowserEnvKeys ++ managedWebhookEnvKeys}; do
+        for key in ${lib.escapeShellArgs (managedDiscordEnvKeys ++ managedBrowserEnvKeys ++ managedWebhookEnvKeys)}; do
           value="''${!key:-}"
           if [ -n "$value" ]; then
             printf '%s=%s\n' "$key" "$value"
