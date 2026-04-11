@@ -68,6 +68,13 @@ system_path_bin="$(
   ) | head -n 1 | normalize_listing_path | sed 's#/bash$##'
 )"
 
+nix_binary="$(
+  {
+    grep -E '^(\./)?nix/store/[^/]+-system-path/bin/nix$' "$listing_file" || true
+    grep -E '^(\./)?nix/store/[^/]+-nix-[^/]+/bin/nix$' "$listing_file" || true
+  } | head -n 1 | normalize_listing_path
+)"
+
 build_shell="$(
   {
     grep -E '^(\./)?nix/store/[^/]+-system-path/bin/bash$' "$listing_file" || true
@@ -88,8 +95,20 @@ certificate_bundle="$(
   } | head -n 1 | normalize_listing_path
 )"
 
+nix_library_path="$(
+  {
+    grep -E '^(\./)?nix/store/[^/]+-nix-(cmd|expr|fetchers|flake|main|store|util)-[^/]+/lib/lib[^/]+\.so([.][^/]+)?$' "$listing_file" || true
+    grep -E '^(\./)?nix/store/[^/]+-(boost|brotli|bzip2|curl|editline|gcc|glibc|libarchive|libsodium|lowdown|openssl|sqlite|xgcc|xz|zstd)-[^/]+/lib/lib[^/]+\.so([.][^/]+)?$' "$listing_file" || true
+  } | normalize_listing_path | xargs -r -n 1 dirname | awk '!seen[$0]++' | paste -sd ':' -
+)"
+
 if [ -z "$build_shell" ]; then
   echo "failed to find a working shell entrypoint inside $build_image" >&2
+  exit 1
+fi
+
+if [ -z "$nix_binary" ]; then
+  echo "failed to find a nix binary inside $build_image" >&2
   exit 1
 fi
 
@@ -102,7 +121,7 @@ if [ -z "$system_path_bin" ]; then
   system_path_bin="$(dirname "$build_shell")"
 fi
 
-docker run --rm   --entrypoint "$build_shell"   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   -e FLAKE_ATTR="$flake_attr"   -e SYSTEM_PATH_BIN="$system_path_bin"   -e CERTIFICATE_BUNDLE="$certificate_bundle"   "$build_image"   -lc '
+docker run --rm   --entrypoint "$build_shell"   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   -e FLAKE_ATTR="$flake_attr"   -e SYSTEM_PATH_BIN="$system_path_bin"   -e CERTIFICATE_BUNDLE="$certificate_bundle"   -e NIX_BINARY="$nix_binary"   -e NIX_LIBRARY_PATH="$nix_library_path"   "$build_image"   -lc '
     set -euo pipefail
     export PATH="$SYSTEM_PATH_BIN:$PATH"
     export HOME=/tmp/ghostship-build-home
@@ -110,14 +129,22 @@ docker run --rm   --entrypoint "$build_shell"   -v "$repo_root:/src:ro"   -v "$b
     export NIX_SSL_CERT_FILE="$CERTIFICATE_BUNDLE"
     export CURL_CA_BUNDLE="$CERTIFICATE_BUNDLE"
     export GIT_SSL_CAINFO="$CERTIFICATE_BUNDLE"
+    export NIX_REMOTE=local
     export NIX_CONFIG="experimental-features = nix-command flakes
 sandbox = false
 build-users-group =
+build-hook =
+builders =
 "
+    build_nix="$NIX_BINARY"
+    if [ -n "$NIX_LIBRARY_PATH" ]; then
+      export LD_LIBRARY_PATH="$NIX_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    fi
     mkdir -p "$HOME" /out
     git config --global --add safe.directory /src
     cd /src
-    bundle="$(nix build --no-link --print-out-paths "$FLAKE_ATTR")"
+    "$build_nix" --version >/dev/null
+    bundle="$("$build_nix" build --no-link --print-out-paths "$FLAKE_ATTR")"
     find /out -mindepth 1 -maxdepth 1 -exec rm -rf {} +
     cp -aL "$bundle"/. /out/
   '
