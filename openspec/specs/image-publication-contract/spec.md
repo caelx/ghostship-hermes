@@ -12,12 +12,18 @@ The repo SHALL expose explicit image-related outputs so maintainers can distingu
 - **AND** the repo identifies which output is the publishable image artifact intended for GHCR and image-loading workflows
 
 ### Requirement: Publishable image artifact preserves the workstation runtime contract
-The repo SHALL derive the publishable `ghostship-hermes` image artifact from the workstation runtime source artifact through a repo-owned conversion path that preserves the documented container metadata.
+The repo SHALL derive the publishable `ghostship-hermes` image artifact from the workstation runtime source artifact through a repo-owned conversion path that preserves the documented container metadata and the final managed runtime bootstrap behavior.
 
 #### Scenario: Published image keeps expected runtime metadata
 - **WHEN** maintainers build or publish the explicit publishable image artifact
 - **THEN** the resulting image starts with `/init` as the runtime entry path
 - **AND** the resulting image preserves the documented runtime defaults such as `HOME=/home/hermes`, `HERMES_HOME=/home/hermes/.hermes`, and port `7681`
+
+#### Scenario: Published image keeps managed runtime bootstrap behavior
+- **WHEN** maintainers publish `ghostship-hermes` to GHCR or export the explicit publishable image bundle locally
+- **THEN** the resulting image preserves the final repo-owned managed runtime wiring that rewrites `/home/hermes/.hermes/.env`
+- **AND** the resulting image preserves the root seed consumption behavior for `/home/hermes/.hermes/skills` and `/home/hermes/.hermes/SOUL.md`
+- **AND** the published image does not silently fall back to a different upstream-only Hermes activation path
 
 ### Requirement: CI and image tests consume the publishable image contract
 GitHub Actions image publication and image-focused test helpers SHALL consume the explicit publishable image artifact instead of inferring image semantics from the low-level workstation tarball layout. Architecture-specific publication builds SHALL run on a runner or builder environment that can execute the target system's Nix derivations, and x86-only validation paths MUST limit arm64 checks to derivation evaluation unless an executable arm64 builder is configured.
@@ -82,3 +88,4 @@ The repo SHALL permit internal build and publication architecture changes that m
 - **WHEN** maintainers replace part of the internal image assembly or publication flow with a materially faster architecture
 - **THEN** the published image still preserves the documented runtime metadata and multi-arch release semantics
 - **AND** downstream consumers do not need to change how they consume the explicit publishable image artifact
+
