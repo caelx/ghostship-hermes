@@ -25,6 +25,11 @@ The workstation SHALL use already-installed local apps, persisted local state, a
 - **THEN** repo-owned persisted runtime config that is meant to track the current image generation is reconciled to the current contract during managed convergence
 - **AND** stale persisted repo-managed values do not continue shadowing newer baked or bootstrap-defined runtime behavior from the replacement image
 
+#### Scenario: Retired router-primary key does not survive replacement
+- **WHEN** the current image contract no longer owns `model.base_url` for the root managed agent and persisted config still contains the older router-primary value
+- **THEN** managed convergence removes that retired repo-owned key during boot
+- **AND** the resulting managed config no longer routes the direct primary lane through the local router
+
 ## ADDED Requirements
 
 ### Requirement: Local Hermes browser default resolves to a working agent-browser command
@@ -71,23 +76,22 @@ The workstation SHALL treat Python packaging support as part of the managed Herm
 - **THEN** the supported `python3`, `pip`, and `python3 -m pip` workflow comes from the managed user profile layer
 - **AND** the runtime does not rely on a separate image-only `pip` exception to provide that workflow
 
-## REMOVED Requirements
+## MODIFIED Requirements
 
-### Requirement: Managed gateway commands align with repo-owned profile services
-**Reason**: The supported image topology no longer uses a repo-owned fleet of named-profile gateway services.
-**Migration**: Route interactive gateway status and control guidance through the single managed gateway service contract.
+### Requirement: Managed gateway commands align with upstream Hermes user services
+The workstation SHALL align interactive gateway commands with upstream Hermes Linux service behavior by using a real `systemd --user` `hermes-gateway.service` owned by `hermes` instead of a repo-owned system unit or an upstream named-profile fleet.
 
-## ADDED Requirements
+#### Scenario: Managed gateway status reflects the upstream Hermes user unit
+- **WHEN** an operator runs `hermes gateway status` or an equivalent Hermes status surface inside the managed image
+- **THEN** the command reports the state of `systemd --user` `hermes-gateway.service`
+- **AND** it does not claim the gateway is stopped solely because the image uses a repo-specific system-unit layout
 
-### Requirement: Managed gateway commands align with the repo-owned single-agent service
-The workstation SHALL align interactive gateway commands with the repo-owned single-agent managed gateway service instead of treating the image as an upstream user-service installation or a fleet of named profile services.
-
-#### Scenario: Managed gateway status reflects the repo-owned single-agent unit
-- **WHEN** an operator runs `hermes gateway status` inside the managed image
-- **THEN** the command reports the state of the repo-owned managed gateway service for the single agent
-- **AND** it does not claim the gateway is stopped solely because an upstream user-scoped Hermes service is absent
-
-#### Scenario: Managed control paths do not suggest upstream user-service recovery
+#### Scenario: Managed control paths target the upstream Hermes user unit
 - **WHEN** an operator runs `hermes gateway start`, `stop`, or `restart` inside the managed image
-- **THEN** the command either targets the correct repo-owned managed service or exits with explicit managed-runtime guidance
-- **AND** it does not instruct the operator to use `systemctl --user`, `loginctl enable-linger`, or upstream `hermes gateway install` flows
+- **THEN** the command targets `systemd --user` `hermes-gateway.service` or equivalent upstream Hermes control behavior
+- **AND** it does not redirect the operator to a Ghostship-specific system-unit contract
+
+#### Scenario: Managed gateway starts without interactive login
+- **WHEN** the container boots the managed runtime without an interactive Hermes login session
+- **THEN** the Hermes user manager is available for `hermes-gateway.service`
+- **AND** the managed gateway can start and restart through that user-service topology during normal boot
