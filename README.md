@@ -129,7 +129,8 @@ Notes:
 - Fix the per-user Nix ownership on the persisted volume before expecting mutable Nix workflows to work for `hermes`.
 - Persisting `/home/hermes` directly is the intended way to keep Hermes managed state, XDG state, and later-installed agent tooling across container replacement.
 - The dashboard is the intended browser entrypoint.
-- The single-agent env contract is generic: `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `DISCORD_FREE_RESPONSE_CHANNELS`, `DISCORD_HOME_CHANNEL`, `WEBHOOK_SECRET`, and `BROWSER_CDP_URL`.
+- The full managed env allowlist is documented in [docs/runtime-env.md](docs/runtime-env.md).
+- The single-agent inputs are `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `DISCORD_FREE_RESPONSE_CHANNELS`, `DISCORD_HOME_CHANNEL`, `WEBHOOK_SECRET`, and `BROWSER_CDP_URL`.
 - The required provider inputs are `OPENCODE_GO_API_KEY` for the fallback model and `GOOGLE_AI_STUDIO_API_KEY` for the direct auxiliary tasks.
 - If you are validating the local router, source the repo `.envrc` before `docker run` so the router can use `OPENROUTER_API_KEY` plus either `OPENCODE_API_KEY` or `OPENCODE_GO_API_KEY`.
 
@@ -140,6 +141,11 @@ After startup:
 3. Each new terminal appears as a focused tab immediately, even before the underlying `ttyd` process is ready.
 4. The home screen shows the one managed agent, runtime facts, and detected provider/router state.
 5. Use the floating `×` in the terminal stage to remove the active tab. When no terminals remain, the dashboard returns to the blank home state.
+
+Dashboard contract:
+
+- The home view renders one `Agent` section, not a profile list.
+- `/api/status` returns `environment.agent` and does not expose `profiles` or `default_profile`.
 
 ## Hermes Configuration
 
@@ -156,7 +162,8 @@ The image is declarative-first:
 - `agent-browser` is the documented local-browser default unless an operator provides `BROWSER_CDP_URL`.
 - Discord defaults remain `require_mention = true`, `auto_thread = false`, `reactions = true`, and `group_sessions_per_user = true`.
 - The managed gateway always writes `/home/hermes/.hermes/gateway.pid`, and `hermes gateway status` is wired to the repo-owned `ghostship-hermes-gateway.service`.
-- The managed env file is `/home/hermes/.hermes/.env`. Bootstrap writes only the approved runtime allowlist into that file, omits unset values, omits router/container plumbing, and intentionally excludes the fixed Chaptarr and n8n path/version selectors (`CHAPTARR_API_PATH`, `CHAPTARR_API_VERSION`, `N8N_PUBLIC_API_ENDPOINT`, `N8N_PUBLIC_API_VERSION`).
+- The managed env file is `/home/hermes/.hermes/.env`. Bootstrap writes only the approved runtime allowlist into that file, omits unset values, always writes `WEBHOOK_ENABLED=true`, `WEBHOOK_PORT=8644`, and `TERMINAL_CWD=/workspace`, and intentionally excludes router/container plumbing plus the fixed Chaptarr and n8n path/version selectors.
+- The full managed env contract, including every copied key and the intentionally excluded keys, is documented in [docs/runtime-env.md](docs/runtime-env.md).
 - Seeded skills come from `/home/hermes/seeds/skills`, and the seeded prompt comes from `/home/hermes/seeds/SOUL.md`. Bootstrap copies missing skill directories only into `/home/hermes/.hermes/skills`; it does not seed any `~/.hermes/profiles/...` tree, and it only refreshes `SOUL.md` while the live file still matches the last seeded hash.
 
 ### Codex OAuth
@@ -179,7 +186,7 @@ To change the managed agent provider defaults after the server/container is runn
 
 This keeps the provider wiring in Nix so every redeploy regenerates the same config and the services stay in sync.
 
-- Router provider vars such as `OPENROUTER_API_KEY` and `OPENCODE_API_KEY` remain router-only, but the router now also accepts the Hermes-facing `OPENCODE_GO_API_KEY` alias so the Minimax fallback credential name can be shared between Hermes and the router
+- Router-compatible provider vars such as `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `OPENCODE_API_KEY`, and `OPENCODE_GO_API_KEY` are part of the managed env allowlist; the local router can reuse them when the managed agent points at `http://127.0.0.1:8788/v1`.
 
 Upstream Hermes docs still apply for CLI behavior:
 
@@ -344,7 +351,7 @@ Run the dashboard smoke test:
 
 ```fish
 # Run this from a shell where ../../.envrc has already exported
-# OPENROUTER_API_KEY and OPENCODE_API_KEY for the local router.
+# OPENROUTER_API_KEY and either OPENCODE_API_KEY or OPENCODE_GO_API_KEY for the local router.
 bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:single-agent
 ```
 

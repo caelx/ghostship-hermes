@@ -365,7 +365,7 @@ code {
   min-height: 100%;
 }
 
-.profiles-panel {
+.agent-panel {
   grid-column: 1 / -1;
 }
 
@@ -415,13 +415,13 @@ code {
 }
 
 .provider-list,
-.profile-list {
+.agent-list {
   display: grid;
   gap: 12px;
 }
 
 .provider-card,
-.profile-card {
+.agent-card {
   display: grid;
   gap: 14px;
   padding: 16px 18px;
@@ -623,7 +623,7 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .profiles-panel {
+  .agent-panel {
     grid-column: auto;
   }
 }

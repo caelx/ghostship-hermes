@@ -112,6 +112,15 @@ assert_http_contains() {
   grep -q "$pattern" <<<"$body"
 }
 
+assert_http_not_contains() {
+  local url="$1"
+  local pattern="$2"
+  local body
+
+  body="$(curl -fsS "$url")"
+  ! grep -q "$pattern" <<<"$body"
+}
+
 run_in_container() {
   local target_container="$1"
   shift
@@ -323,6 +332,7 @@ assert_http_contains "${dashboard_base_url}/" 'data-home-view="environment"'
 assert_http_contains "${dashboard_base_url}/" "Runtime"
 assert_http_contains "${dashboard_base_url}/" "Providers"
 assert_http_contains "${dashboard_base_url}/" "Agent"
+assert_http_not_contains "${dashboard_base_url}/" "Profiles"
 wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
 wait_for_json_value "${dashboard_base_url}/api/status" '.environment.agent.service' "ghostship-hermes-gateway.service"
 curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not' >/dev/null

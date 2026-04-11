@@ -291,7 +291,7 @@ function renderHome() {
 
   agentDetailsRoot.innerHTML = "";
   const card = document.createElement("article");
-  card.className = "profile-card";
+  card.className = "agent-card";
 
   const top = document.createElement("div");
   top.className = "card-topline";

@@ -37,7 +37,10 @@ def test_environment_payload_reports_single_agent(monkeypatch, tmp_path: Path) -
     payload = app_module.current_environment_payload()
 
     assert "profiles" not in payload
+    assert "default_profile" not in payload
     assert payload["gateway_service"] == "ghostship-hermes-gateway.service"
+    assert payload["agent"]["name"] == "Managed Agent"
+    assert payload["agent"]["path"] == str(tmp_path / ".hermes")
     assert payload["agent"]["service"] == "ghostship-hermes-gateway.service"
     assert payload["agent"]["has_config"] is True
     assert payload["agent"]["has_env"] is True
@@ -55,5 +58,17 @@ def test_status_api_uses_single_agent_contract(monkeypatch, tmp_path: Path) -> N
     assert response.status_code == 200
     payload = response.json()
     assert "profiles" not in payload
+    assert "default_profile" not in payload
     assert payload["environment"]["agent"]["service"] == "ghostship-hermes-gateway.service"
     assert payload["environment"]["model"] == "coding"
+
+
+def test_home_page_uses_agent_label_not_profiles(monkeypatch, tmp_path: Path) -> None:
+    app_module = _load_app_module(monkeypatch, tmp_path)
+    client = TestClient(app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Agent" in response.text
+    assert "Profiles" not in response.text

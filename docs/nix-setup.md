@@ -345,6 +345,10 @@ hermes-env: |
     ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+For the Ghostship Hermes image, the managed single-agent runtime allowlist is
+documented in [docs/runtime-env.md](runtime-env.md).
+Only those approved keys are projected into `/home/hermes/.hermes/.env`.
+
 ### agenix
 
 ```nix
