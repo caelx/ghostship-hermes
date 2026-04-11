@@ -125,9 +125,9 @@ jobs:
           if [ "${CACHE_REFRESH_REQUESTED:-false}" != "true" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "shared cache publication is gated off for this run; only the daily schedule or workflow_dispatch with publish_shared_cache=true can refresh the cache" >&2
-          elif [ -z "${GHOSTSHIP_CACHE_PUBLIC_KEY:-}" ] || [ -z "${GHOSTSHIP_CACHE_GHCR_TOKEN:-}" ] || [ -z "${GHOSTSHIP_CACHE_SIGNING_KEY:-}" ]; then
+          elif [ -z "${GHOSTSHIP_CACHE_PUBLIC_KEY:-}" ] || [ -z "${GHOSTSHIP_CACHE_SIGNING_KEY:-}" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "shared cache publish credentials missing; skipping cache publication" >&2
+            echo "shared cache signing or public-key configuration missing; skipping cache publication" >&2
           elif scripts/shared_nix_cache.sh can-publish; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
