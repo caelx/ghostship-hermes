@@ -8,7 +8,7 @@ Provide a repo-owned `ghostship-chaptarr` wrapper that makes the Chaptarr Readar
 
 ### Requirement: The Hermes image SHALL bundle `ghostship-chaptarr` and expose it on `PATH`
 - WHEN the image is built, the `ghostship-chaptarr` package must be present alongside the other repo utilities.
-- THEN `ghostship-chaptarr` is available in both the `operations` and `coder` profiles without an extra installation step.
+- THEN `ghostship-chaptarr` is available in the managed Hermes runtime without an extra installation step.
 
 ### Requirement: `ghostship-chaptarr` SHALL cover every upstream OpenAPI operation with a dedicated snake_case command
 - WHEN maintainers compare the mirrored spec (`docs/api/chaptarr-openapi.json`) to the CLI catalog, every path/method pair should have its own typed command or clearly documented alias.

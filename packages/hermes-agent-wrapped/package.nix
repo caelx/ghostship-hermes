@@ -73,27 +73,9 @@ def _ghostship_managed_profiles_root() -> Path:
     return (Path.home() / ".hermes" / "profiles").resolve()
 
 
-def _ghostship_managed_profile_name() -> str | None:
-    home = get_hermes_home().resolve()
-    try:
-        relative = home.relative_to(_ghostship_managed_profiles_root())
-    except ValueError:
-        return None
-    parts = relative.parts
-    if len(parts) != 1:
-        return None
-    return parts[0]
-
-
-def _ghostship_managed_profile_names() -> list[str]:
-    root = _ghostship_managed_profiles_root()
-    if not root.is_dir():
-        return []
-    return sorted(entry.name for entry in root.iterdir() if entry.is_dir())
-
-
-def _ghostship_managed_service_name(profile: str) -> str:
-    return f"ghostship-hermes-profile-{profile}"
+def _ghostship_managed_service_name() -> str:
+    service = os.environ.get("GHOSTSHIP_HERMES_GATEWAY_SERVICE", "ghostship-hermes-gateway.service").strip()
+    return service[:-8] if service.endswith(".service") else service
 
 
 def _ghostship_systemd_state(service_name: str) -> str:
@@ -107,34 +89,14 @@ def _ghostship_systemd_state(service_name: str) -> str:
     return result.stdout.strip() or "unknown"
 
 
-def _ghostship_print_root_managed_status() -> None:
-    profiles = _ghostship_managed_profile_names()
-    if not profiles:
-        print("✗ No managed profile gateways found")
-        return
-
-    print("✓ Managed gateway runtime is enabled")
-    print("  This image runs one repo-managed gateway service per profile.")
-    print()
-    for profile in profiles:
-        service_name = _ghostship_managed_service_name(profile)
-        state = _ghostship_systemd_state(service_name)
-        icon = "✓" if state == "active" else "✗"
-        print(f"  {icon} {profile}: {state} ({service_name}.service)")
-    print()
-    print("Use profile-scoped status for full details:")
-    for profile in profiles:
-        print(f"  hermes -p {profile} gateway status")
-
-
-def _ghostship_print_profile_managed_status(profile: str, deep: bool = False) -> None:
-    service_name = _ghostship_managed_service_name(profile)
+def _ghostship_print_managed_status(deep: bool = False) -> None:
+    service_name = _ghostship_managed_service_name()
     state = _ghostship_systemd_state(service_name)
 
     if state == "active":
-        print(f"✓ Managed gateway for profile '{profile}' is running")
+        print("✓ Managed gateway service is running")
     else:
-        print(f"✗ Managed gateway for profile '{profile}' is {state}")
+        print(f"✗ Managed gateway service is {state}")
     print(f"  Service: {service_name}.service")
 
     if deep:
@@ -155,18 +117,11 @@ def _ghostship_print_profile_managed_status(profile: str, deep: bool = False) ->
         print("  Use --deep for systemd status and recent logs.")
 
 
-def _ghostship_managed_mutation_guidance(subcmd: str, profile: str | None) -> None:
+def _ghostship_managed_mutation_guidance(subcmd: str) -> None:
+    service_name = _ghostship_managed_service_name()
     print("This image manages Hermes gateway services through repo-owned systemd units.")
-    if profile:
-        service_name = _ghostship_managed_service_name(profile)
-        print(f"Use: systemctl {subcmd} {service_name}.service")
-        print(f"Or inspect first: hermes -p {profile} gateway status --deep")
-    else:
-        print("Choose a profile-specific gateway service:")
-        for name in _ghostship_managed_profile_names():
-            service_name = _ghostship_managed_service_name(name)
-            print(f"  systemctl {subcmd} {service_name}.service")
-        print("Or inspect the managed summary with: hermes gateway status")
+    print(f"Use: systemctl {subcmd} {service_name}.service")
+    print("Or inspect first: hermes gateway status --deep")
 
 
 def _ghostship_handle_managed_gateway_command(args) -> bool:
@@ -177,15 +132,11 @@ def _ghostship_handle_managed_gateway_command(args) -> bool:
     if subcmd not in {"status", "start", "stop", "restart"}:
         return False
 
-    profile = _ghostship_managed_profile_name()
     if subcmd == "status":
-        if profile:
-            _ghostship_print_profile_managed_status(profile, deep=getattr(args, "deep", False))
-        else:
-            _ghostship_print_root_managed_status()
+        _ghostship_print_managed_status(deep=getattr(args, "deep", False))
         return True
 
-    _ghostship_managed_mutation_guidance(subcmd, profile)
+    _ghostship_managed_mutation_guidance(subcmd)
     return True
 
 

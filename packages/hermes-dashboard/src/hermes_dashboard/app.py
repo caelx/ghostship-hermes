@@ -34,8 +34,7 @@ DASHBOARD_PORT = int(os.environ.get("GHOSTSHIP_DASHBOARD_PORT", "7683"))
 TERMINAL_CWD = os.environ.get("GHOSTSHIP_TERMINAL_CWD", "/home/hermes")
 HOME_DIR = os.environ.get("HOME", "/home/hermes")
 MANAGED_HERMES_HOME = os.environ.get("HERMES_HOME", "/home/hermes/.hermes")
-MANAGED_PROFILES = [item.strip() for item in os.environ.get("GHOSTSHIP_HERMES_PROFILES", "assistant,operations,supervisor").split(",") if item.strip()]
-DEFAULT_PROFILE = os.environ.get("GHOSTSHIP_HERMES_DEFAULT_PROFILE", MANAGED_PROFILES[0] if MANAGED_PROFILES else "default")
+GATEWAY_SERVICE = os.environ.get("GHOSTSHIP_HERMES_GATEWAY_SERVICE", "ghostship-hermes-gateway.service")
 BASH_PATH = os.environ.get("GHOSTSHIP_BASH") or shutil.which("bash") or "/bin/sh"
 DASHBOARD_ROOT = Path(__file__).parent / "static"
 
@@ -328,9 +327,11 @@ def fetch_router_enrichment(base_url: str, env_payload: dict[str, str]) -> dict[
 
 
 def current_environment_payload() -> dict[str, Any]:
-    profiles_root = Path(MANAGED_HERMES_HOME) / "profiles"
     root_env_path = Path(MANAGED_HERMES_HOME) / ".env"
     root_config_path = Path(MANAGED_HERMES_HOME) / "config.yaml"
+    auth_path = Path(MANAGED_HERMES_HOME) / "auth.json"
+    soul_path = Path(MANAGED_HERMES_HOME) / "SOUL.md"
+    gateway_pid_path = Path(MANAGED_HERMES_HOME) / "gateway.pid"
     runtime_env = {
         key: value
         for key in (
@@ -351,7 +352,7 @@ def current_environment_payload() -> dict[str, Any]:
     endpoints: dict[str, dict[str, Any]] = {}
     endpoint_models: dict[str, dict[str, dict[str, Any]]] = {}
 
-    def register_model(endpoint_key: str, model_name: str | None, *, scope: str, profile_name: str | None = None) -> None:
+    def register_model(endpoint_key: str, model_name: str | None, *, scope: str) -> None:
         if not model_name:
             return
         model_map = endpoint_models.setdefault(endpoint_key, {})
@@ -361,13 +362,10 @@ def current_environment_payload() -> dict[str, Any]:
                 "name": model_name,
                 "vendor": model_vendor_name(model_name),
                 "scopes": [],
-                "profiles": [],
             },
         )
         if scope not in entry["scopes"]:
             entry["scopes"].append(scope)
-        if profile_name and profile_name not in entry["profiles"]:
-            entry["profiles"].append(profile_name)
 
     def register_endpoint(
         *,
@@ -375,7 +373,6 @@ def current_environment_payload() -> dict[str, Any]:
         model_name: str | None,
         env_payload: dict[str, str],
         scope: str,
-        profile_name: str | None = None,
     ) -> None:
         key = base_url or f"default::{model_vendor_name(model_name) or 'default'}"
         auth_source = detect_auth_source(base_url, env_payload)
@@ -388,47 +385,14 @@ def current_environment_payload() -> dict[str, Any]:
                 "base_url": base_url,
                 "auth_source": auth_source,
                 "models": [],
-                "profiles": [],
                 "router": None,
             },
         )
         if auth_source and not entry.get("auth_source"):
             entry["auth_source"] = auth_source
-        if profile_name and profile_name not in entry["profiles"]:
-            entry["profiles"].append(profile_name)
-        register_model(key, model_name, scope=scope, profile_name=profile_name)
+        register_model(key, model_name, scope=scope)
 
-    profiles = []
-    register_endpoint(base_url=root_base_url, model_name=root_model, env_payload=root_env | runtime_env, scope="root")
-
-    for name in MANAGED_PROFILES:
-        profile_root = profiles_root / name
-        profile_env = parse_env_file(profile_root / ".env")
-        profile_settings = read_model_settings(profile_root / "config.yaml")
-        profile_model = profile_settings["default"] or root_model
-        profile_base_url = profile_settings["base_url"] or root_base_url
-        register_endpoint(
-            base_url=profile_base_url,
-            model_name=profile_model,
-            env_payload=profile_env | root_env | runtime_env,
-            scope="profile",
-            profile_name=name,
-        )
-
-        profiles.append(
-            {
-                "name": name,
-                "path": str(profile_root),
-                "service": f"ghostship-hermes-profile-{name}.service",
-                "is_default": name == DEFAULT_PROFILE,
-                "model": profile_model,
-                "base_url": profile_base_url,
-                "endpoint_name": endpoint_display_name(profile_base_url, profile_model),
-                "model_vendor": model_vendor_name(profile_model),
-                "has_env": safe_path_exists(profile_root / ".env"),
-                "has_config": safe_path_exists(profile_root / "config.yaml"),
-            }
-        )
+    register_endpoint(base_url=root_base_url, model_name=root_model, env_payload=root_env | runtime_env, scope="managed")
 
     providers: list[dict[str, Any]] = []
     for key, entry in endpoints.items():
@@ -437,21 +401,30 @@ def current_environment_payload() -> dict[str, Any]:
             entry["router"] = fetch_router_enrichment(entry["base_url"], root_env | runtime_env)
         providers.append(entry)
 
-    default_profile_model = next((profile["model"] for profile in profiles if profile["is_default"]), None)
-
     return {
         "host": socket.gethostname(),
         "dashboard_bind": f"{DASHBOARD_HOST}:{DASHBOARD_PORT}",
         "terminal_cwd": TERMINAL_CWD,
         "home": HOME_DIR,
         "managed_hermes_home": MANAGED_HERMES_HOME,
-        "default_profile": DEFAULT_PROFILE,
-        "root_base_url": root_base_url,
-        "root_model": root_model,
-        "default_profile_model": default_profile_model,
+        "gateway_service": GATEWAY_SERVICE,
         "model": root_model,
+        "base_url": root_base_url,
+        "agent": {
+            "name": "Managed Agent",
+            "path": MANAGED_HERMES_HOME,
+            "service": GATEWAY_SERVICE,
+            "model": root_model,
+            "base_url": root_base_url,
+            "endpoint_name": endpoint_display_name(root_base_url, root_model),
+            "model_vendor": model_vendor_name(root_model),
+            "has_env": safe_path_exists(root_env_path),
+            "has_config": safe_path_exists(root_config_path),
+            "has_auth": safe_path_exists(auth_path),
+            "has_soul": safe_path_exists(soul_path),
+            "has_gateway_pid": safe_path_exists(gateway_pid_path),
+        },
         "providers": sorted(providers, key=lambda item: item["name"]),
-        "profiles": profiles,
     }
 
 
@@ -465,25 +438,12 @@ def prune_dead_sessions(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def terminal_payload(state: dict[str, Any]) -> dict[str, Any]:
-    profiles = []
-    profiles_root = Path(MANAGED_HERMES_HOME) / "profiles"
-    for name in MANAGED_PROFILES:
-        profiles.append(
-            {
-                "name": name,
-                "path": str(profiles_root / name),
-                "service": f"ghostship-hermes-profile-{name}.service",
-                "is_default": name == DEFAULT_PROFILE,
-            }
-        )
     return {
         "terminal_cwd": TERMINAL_CWD,
         "home": HOME_DIR,
         "managed_hermes_home": MANAGED_HERMES_HOME,
-        "default_profile": DEFAULT_PROFILE,
         "environment": current_environment_payload(),
         "active_terminal_id": state["active_terminal_id"],
-        "profiles": profiles,
         "sessions": [
             {
                 "id": session["id"],
@@ -624,23 +584,6 @@ def get_terminal_session(terminal_id: str) -> dict[str, Any] | None:
 @app.get("/api/status")
 async def get_status():
     return await current_status_logic()
-
-
-@app.get("/api/profiles.json")
-async def get_profiles_legacy():
-    payload = await current_status_logic()
-    return {
-        "profiles": [
-            {
-                "slug": profile["name"],
-                "name": profile["name"].replace("-", " ").title(),
-                "terminal_path": f"/profiles/{profile['name']}/",
-                "gateway_expected": True,
-                "is_default": profile["is_default"],
-            }
-            for profile in payload["profiles"]
-        ]
-    }
 
 
 @app.post("/api/terminal/open")

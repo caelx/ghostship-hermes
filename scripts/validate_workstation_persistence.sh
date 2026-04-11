@@ -86,29 +86,6 @@ host_gid="$(id -g)"
 container_shell="/bin/sh"
 container_path="/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin"
 
-ghostship_cmds=(
-  ghostship-bazarr
-  ghostship-changedetection
-  ghostship-cloakbrowser
-  ghostship-flaresolverr
-  ghostship-grimmory
-  ghostship-nzbget
-  ghostship-plex
-  ghostship-pricebuddy
-  ghostship-prowlarr
-  ghostship-pyload-ng
-  ghostship-qbittorrent
-  ghostship-radarr
-  ghostship-romm
-  ghostship-rss-bridge
-  ghostship-searxng
-  ghostship-sonarr
-  ghostship-synology
-  ghostship-tautulli
-)
-
-ghostship_cmds_joined="$(printf '%q ' "${ghostship_cmds[@]}")"
-
 cleanup() {
   docker rm -f "$container_one" "$container_two" >/dev/null 2>&1 || true
   docker run --rm -v "$tmp_root:/cleanup" alpine sh -lc "
@@ -137,15 +114,6 @@ wait_for_http() {
   return 1
 }
 
-assert_http_contains() {
-  local url="$1"
-  local pattern="$2"
-  local body
-
-  body="$(curl -fsS "$url")"
-  grep -q "$pattern" <<<"$body"
-}
-
 assert_file_contains() {
   local file="$1"
   local pattern="$2"
@@ -153,43 +121,16 @@ assert_file_contains() {
 }
 
 run_in_container() {
-  local container_name="$1"
+  local target_container="$1"
   shift
   docker exec \
     -e PATH="$container_path" \
-    "$container_name" \
+    "$target_container" \
     "$container_shell" -lc "$*"
 }
 
-wait_for_container_ready() {
-  local container_name="$1"
-  local tries=0
-
-  until run_in_container "$container_name" '
-    systemctl is-active ghostship-storage.service >/dev/null 2>&1 &&
-    test "$(systemctl show -P Result ghostship-hermes-bootstrap.service 2>/dev/null)" = "success" &&
-    systemctl is-active ghostship-hermes-router.service >/dev/null 2>&1 &&
-    systemctl is-active ghostship-hermes-profile-operations.service >/dev/null 2>&1 &&
-    systemctl is-active ghostship-hermes-profile-coder.service >/dev/null 2>&1 &&
-    systemctl is-active ghostship-dashboard-controller.service >/dev/null 2>&1 &&
-    curl -fsS http://127.0.0.1:8788/readyz >/dev/null 2>&1 &&
-    curl -fsS http://127.0.0.1:7681/api/status >/dev/null 2>&1
-  '; do
-    tries=$((tries + 1))
-    if [ "$tries" -ge 90 ]; then
-      echo "container $container_name did not become ready" >&2
-      docker logs "$container_name" >&2 || true
-      run_in_container "$container_name" '
-        systemctl --no-pager --full status ghostship-storage.service ghostship-hermes-bootstrap.service ghostship-hermes-router.service ghostship-hermes-profile-operations.service ghostship-hermes-profile-coder.service ghostship-dashboard-controller.service || true
-      ' >&2 || true
-      exit 1
-    fi
-    sleep 2
-  done
-}
-
 run_as_hermes() {
-  local container_name="$1"
+  local target_container="$1"
   shift
   docker exec \
     -u 3000:3000 \
@@ -197,16 +138,42 @@ run_as_hermes() {
     -e HERMES_HOME=/home/hermes/.hermes \
     -e TERMINAL_CWD=/home/hermes \
     -e PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin \
-    "$container_name" \
+    "$target_container" \
     "$container_shell" -lc "$*"
 }
 
+wait_for_container_ready() {
+  local target_container="$1"
+  local tries=0
+
+  until run_in_container "$target_container" '
+    systemctl is-active ghostship-storage.service >/dev/null 2>&1 &&
+    test "$(systemctl show -P Result ghostship-hermes-bootstrap.service 2>/dev/null)" = "success" &&
+    systemctl is-active ghostship-hermes-router.service >/dev/null 2>&1 &&
+    systemctl is-active ghostship-hermes-gateway.service >/dev/null 2>&1 &&
+    systemctl is-active ghostship-dashboard-controller.service >/dev/null 2>&1 &&
+    curl -fsS http://127.0.0.1:8788/readyz >/dev/null 2>&1 &&
+    curl -fsS http://127.0.0.1:7681/api/status >/dev/null 2>&1
+  '; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 90 ]; then
+      echo "container $target_container did not become ready" >&2
+      docker logs "$target_container" >&2 || true
+      run_in_container "$target_container" '
+        systemctl --no-pager --full status ghostship-storage.service ghostship-hermes-bootstrap.service ghostship-hermes-router.service ghostship-hermes-gateway.service ghostship-dashboard-controller.service || true
+      ' >&2 || true
+      exit 1
+    fi
+    sleep 2
+  done
+}
+
 wait_for_hermes_condition() {
-  local container_name="$1"
+  local target_container="$1"
   local command="$2"
   local tries=0
 
-  until run_as_hermes "$container_name" "$command"; do
+  until run_as_hermes "$target_container" "$command"; do
     tries=$((tries + 1))
     if [ "$tries" -ge 60 ]; then
       echo "timed out waiting for hermes condition: $command" >&2
@@ -217,45 +184,22 @@ wait_for_hermes_condition() {
 }
 
 assert_router_inventory() {
-  local container_name="$1"
-  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"agentic\") and index(\"vision\") and index(\"tts\")' >/dev/null"
-}
-
-assert_free_router_buckets() {
-  local container_name="$1"
-  run_in_container "$container_name" "curl -fsS ${router_base_url}/v1/models | jq -e '
-    [.data[] | select(.id == \"auxiliary\" or .id == \"coding\" or .id == \"agentic\" or .id == \"vision\" or .id == \"tts\")]
-    | length == 5
-    and all(.[]; all(.metadata.candidates[]; .is_free == true))
-    and all(.[]; if .id == \"tts\" then true else .metadata.candidate_count > 0 end)
-  ' >/dev/null"
+  local target_container="$1"
+  run_in_container "$target_container" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"agentic\") and index(\"vision\") and index(\"tts\")' >/dev/null"
 }
 
 assert_model_config() {
-  local container_name="$1"
-  local scope="$2"
-  local expected_model="$3"
-  local command
-
-  if [ "$scope" = "root" ]; then
-    command='hermes config show'
-  else
-    command="hermes -p $scope config show"
-  fi
-
-  run_as_hermes "$container_name" "$command | grep -F 'provider: auto' >/dev/null"
-  run_as_hermes "$container_name" "$command | grep -F 'base_url: http://127.0.0.1:8788/v1' >/dev/null"
-  run_as_hermes "$container_name" "$command | grep -F 'default: $expected_model' >/dev/null"
+  local target_container="$1"
+  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: auto" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "base_url: http://127.0.0.1:8788/v1" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "default: coding" >/dev/null'
 }
 
-mkdir -p "$home_dir" "$workspace_dir"
-mkdir -p \
-  "$workspace_dir/skills/shared/workflow-shared" \
-  "$workspace_dir/skills/profiles/operations/workflow-operations" \
-  "$workspace_dir/skills/profiles/coder/workflow-coder"
-printf 'shared-source-v1\n' > "$workspace_dir/skills/shared/workflow-shared/SKILL.md"
-printf 'operations-source-v1\n' > "$workspace_dir/skills/profiles/operations/workflow-operations/SKILL.md"
-printf 'coder-source-v1\n' > "$workspace_dir/skills/profiles/coder/workflow-coder/SKILL.md"
+mkdir -p "$home_dir/.hermes/profiles/assistant" "$home_dir/seeds/skills/workflow-single" "$workspace_dir"
+printf 'legacy-profile\n' > "$home_dir/.hermes/profiles/assistant/.managed"
+printf 'assistant\n' > "$home_dir/.hermes/active_profile"
+printf 'seed-skill-v1\n' > "$home_dir/seeds/skills/workflow-single/SKILL.md"
+printf 'seed-soul-v1\n' > "$home_dir/seeds/SOUL.md"
 xz -dc "$rootfs_tar" | docker import - "$image_ref" >/dev/null
 
 docker run -d \
@@ -270,6 +214,15 @@ docker run -d \
   -e OPENROUTER_BASE_URL \
   -e OPENROUTER_HTTP_REFERER \
   -e OPENROUTER_TITLE \
+  -e DISCORD_BOT_TOKEN=single-agent-bot-token \
+  -e DISCORD_ALLOWED_USERS=single-agent-user \
+  -e DISCORD_FREE_RESPONSE_CHANNELS=single-agent-channel \
+  -e DISCORD_HOME_CHANNEL=single-agent-home \
+  -e WEBHOOK_SECRET=single-agent-webhook-secret \
+  -e BROWSER_CDP_URL=ws://single-agent-browser.example/ws \
+  -e CHAPTARR_URL=http://chaptarr.example:8789 \
+  -e CHAPTARR_API_KEY=chaptarr-token \
+  -e GHOSTSHIP_ROUTER_API_KEY=router-secret \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
@@ -280,74 +233,26 @@ docker run -d \
 wait_for_container_ready "$container_one"
 wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/status"
-test "$(curl -fsS "${dashboard_base_url}/api/status" | jq -r '.profiles[] | select(.name == "operations") | .name')" = "operations"
-test "$(curl -fsS "${dashboard_base_url}/api/status" | jq -r '.profiles[] | select(.name == "coder") | .name')" = "coder"
-test "$(curl -fsS "${dashboard_base_url}/api/status" | jq -r '.default_profile')" = "operations"
-test "$(curl -fsS "${dashboard_base_url}/api/status" | jq -r '.environment.providers[] | select(.name == "ghostship-router") | .router.ready')" = "true"
+curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not and .environment.agent.service == "ghostship-hermes-gateway.service"' >/dev/null
 
 run_in_container "$container_one" 'id hermes | grep -F "uid=3000(hermes) gid=3000(hermes)" >/dev/null'
 run_in_container "$container_one" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
 run_in_container "$container_one" '! systemctl is-active hermes-agent.service >/dev/null'
 run_in_container "$container_one" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
-run_in_container "$container_one" 'systemctl cat ghostship-hermes-bootstrap.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
-run_in_container "$container_one" 'systemctl cat ghostship-hermes-profile-operations.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
-run_in_container "$container_one" 'systemctl cat ghostship-hermes-profile-coder.service | grep -F "WorkingDirectory=/home/hermes" >/dev/null'
+run_in_container "$container_one" 'systemctl is-active ghostship-hermes-gateway.service >/dev/null'
 run_as_hermes "$container_one" 'test "$HOME" = "/home/hermes"'
 run_as_hermes "$container_one" 'test "$HERMES_HOME" = "/home/hermes/.hermes"'
-run_as_hermes "$container_one" 'test "$(id -u)" = "3000" && test "$(id -g)" = "3000"'
-run_in_container "$container_one" 'test -d /home/hermes/.hermes && test -d /workspace'
-
-run_in_container "$container_one" '
-  for cmd in codex opencode openspec skills bws feed; do
-    if command -v "$cmd" >/dev/null 2>&1; then
-      echo "unexpected preinstalled command: $cmd" >&2
-      exit 1
-    fi
-  done
-'
-
-run_in_container "$container_one" "for cmd in $ghostship_cmds_joined; do command -v \"\$cmd\" >/dev/null; done"
-run_in_container "$container_one" 'command -v tirith >/dev/null'
-run_as_hermes "$container_one" 'command -v gcloud >/dev/null'
-run_as_hermes "$container_one" 'command -v gws >/dev/null'
-
-run_in_container "$container_one" '
-  for skill in bitwarden changedetection current-environment feed hermes-nix; do
-    if [ -d "/home/hermes/.hermes/skills/$skill" ]; then
-      echo "unexpected custom skill seeded: $skill" >&2
-      exit 1
-    fi
-  done
-
-  if [ -d "/home/hermes/.hermes/skills" ] && find "/home/hermes/.hermes/skills" -mindepth 1 -maxdepth 1 -type d \( -name "gws*" -o -name "google-workspace*" \) | grep -q .; then
-    echo "unexpected Google Workspace skill seeded" >&2
-    exit 1
-  fi
-'
-
-run_as_hermes "$container_one" 'hermes profile show operations >/dev/null'
-run_as_hermes "$container_one" 'hermes profile show coder >/dev/null'
-run_as_hermes "$container_one" 'test "$(cat /home/hermes/.hermes/active_profile)" = "operations"'
-run_as_hermes "$container_one" 'test -d /home/hermes/.hermes/profiles/operations'
-run_as_hermes "$container_one" 'test -d /home/hermes/.hermes/profiles/coder'
-run_as_hermes "$container_one" '! test -d /home/hermes/.hermes/profiles/test'
-run_as_hermes "$container_one" 'hermes config show | grep -F "/home/hermes" >/dev/null'
-run_as_hermes "$container_one" 'hermes profile list | grep -F "operations" >/dev/null'
-run_as_hermes "$container_one" 'hermes profile list | grep -F "coder" >/dev/null'
+run_as_hermes "$container_one" '! test -d /home/hermes/.hermes/profiles'
+run_as_hermes "$container_one" '! test -f /home/hermes/.hermes/active_profile'
+run_as_hermes "$container_one" 'grep -Fx "seed-skill-v1" /home/hermes/.hermes/skills/workflow-single/SKILL.md >/dev/null'
+run_as_hermes "$container_one" '! test -e /home/hermes/.hermes/profiles/assistant/skills/workflow-single/SKILL.md'
+run_as_hermes "$container_one" 'grep -Fx "seed-soul-v1" /home/hermes/.hermes/SOUL.md >/dev/null'
+run_as_hermes "$container_one" 'printf "{\"provider\":\"codex\"}\n" > /home/hermes/.hermes/auth.json'
 assert_router_inventory "$container_one"
-assert_free_router_buckets "$container_one"
-assert_model_config "$container_one" root coding
-assert_model_config "$container_one" operations coding
-assert_model_config "$container_one" coder coding
-run_as_hermes "$container_one" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/operations/.env >/dev/null'
-run_as_hermes "$container_one" 'grep -F "OPENROUTER_API_KEY=" /home/hermes/.hermes/profiles/coder/.env >/dev/null'
-run_as_hermes "$container_one" 'grep -Fx "shared-source-v1" /home/hermes/.hermes/skills/workflow-shared/SKILL.md >/dev/null'
-run_as_hermes "$container_one" 'grep -Fx "operations-source-v1" /home/hermes/.hermes/profiles/operations/skills/workflow-operations/SKILL.md >/dev/null'
-run_as_hermes "$container_one" 'grep -Fx "coder-source-v1" /home/hermes/.hermes/profiles/coder/skills/workflow-coder/SKILL.md >/dev/null'
+assert_model_config "$container_one"
 
 run_as_hermes "$container_one" '
   mkdir -p \
-    ~/.hermes \
     ~/.config/ghostship-test \
     ~/.local/share/ghostship-test \
     ~/.cache/ghostship-test \
@@ -360,7 +265,6 @@ run_as_hermes "$container_one" '
     ~/.ssh \
     ~/.gnupg \
     ~/.pki
-  printf "hermes-home\n" > ~/.hermes/persist.txt
   printf "config\n" > ~/.config/ghostship-test/persist.txt
   printf "local\n" > ~/.local/share/ghostship-test/persist.txt
   printf "cache\n" > ~/.cache/ghostship-test/persist.txt
@@ -404,29 +308,12 @@ run_as_hermes "$container_one" '
   printf "cache\n" > ~/.cache/opencode/persist.txt
 '
 
-curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-terminal-open.json
-terminal_one="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open.json)"
-terminal_one_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_one"'") | .terminal_url' /tmp/ghostship-terminal-open.json)"
-wait_for_http "${dashboard_base_url}${terminal_one_url}"
-
-curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-terminal-open-2.json
-terminal_two="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open-2.json)"
-terminal_two_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_two"'") | .terminal_url' /tmp/ghostship-terminal-open-2.json)"
-wait_for_http "${dashboard_base_url}${terminal_two_url}"
-
-curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_two/close" >/tmp/ghostship-terminal-close-2.json
-assert_file_contains /tmp/ghostship-terminal-close-2.json '"id": "'"$terminal_one"'"'
-curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_one/close" >/tmp/ghostship-terminal-close.json
-assert_file_contains /tmp/ghostship-terminal-close.json '"sessions": \[\]'
-
 run_as_hermes "$container_one" '
-  printf "shared-user-v2\n" > /home/hermes/.hermes/skills/workflow-shared/SKILL.md
-  printf "operations-user-v2\n" > /home/hermes/.hermes/profiles/operations/skills/workflow-operations/SKILL.md
-  printf "coder-user-v2\n" > /home/hermes/.hermes/profiles/coder/skills/workflow-coder/SKILL.md
+  printf "user-skill-v2\n" > /home/hermes/.hermes/skills/workflow-single/SKILL.md
+  printf "user-soul-v2\n" > /home/hermes/.hermes/SOUL.md
 '
-printf 'shared-source-v2\n' > "$workspace_dir/skills/shared/workflow-shared/SKILL.md"
-printf 'operations-source-v2\n' > "$workspace_dir/skills/profiles/operations/workflow-operations/SKILL.md"
-printf 'coder-source-v2\n' > "$workspace_dir/skills/profiles/coder/workflow-coder/SKILL.md"
+printf 'seed-skill-v2\n' > "$home_dir/seeds/skills/workflow-single/SKILL.md"
+printf 'seed-soul-v2\n' > "$home_dir/seeds/SOUL.md"
 
 docker rm -f "$container_one" >/dev/null
 
@@ -442,6 +329,15 @@ docker run -d \
   -e OPENROUTER_BASE_URL \
   -e OPENROUTER_HTTP_REFERER \
   -e OPENROUTER_TITLE \
+  -e DISCORD_BOT_TOKEN=single-agent-bot-token \
+  -e DISCORD_ALLOWED_USERS=single-agent-user \
+  -e DISCORD_FREE_RESPONSE_CHANNELS=single-agent-channel \
+  -e DISCORD_HOME_CHANNEL=single-agent-home \
+  -e WEBHOOK_SECRET=single-agent-webhook-secret \
+  -e BROWSER_CDP_URL=ws://single-agent-browser.example/ws \
+  -e CHAPTARR_URL=http://chaptarr.example:8789 \
+  -e CHAPTARR_API_KEY=chaptarr-token \
+  -e GHOSTSHIP_ROUTER_API_KEY=router-secret \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
@@ -452,12 +348,8 @@ docker run -d \
 wait_for_container_ready "$container_two"
 wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/status"
-test "$(curl -fsS "${dashboard_base_url}/api/status" | jq -r '.profiles[] | select(.name == "operations") | .name')" = "operations"
-test "$(curl -fsS "${dashboard_base_url}/api/status" | jq -r '.profiles[] | select(.name == "coder") | .name')" = "coder"
-test "$(curl -fsS "${dashboard_base_url}/api/status" | jq -r '.default_profile')" = "operations"
-test "$(curl -fsS "${dashboard_base_url}/api/status" | jq -r '.environment.providers[] | select(.name == "ghostship-router") | .router.ready')" = "true"
+curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not and .environment.agent.service == "ghostship-hermes-gateway.service"' >/dev/null
 
-run_as_hermes "$container_two" 'grep -Fx "hermes-home" ~/.hermes/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/ghostship-test/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "local" ~/.local/share/ghostship-test/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "cache" ~/.cache/ghostship-test/persist.txt >/dev/null'
@@ -471,28 +363,16 @@ run_as_hermes "$container_two" 'grep -Fx "ssh" ~/.ssh/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "gnupg" ~/.gnupg/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "pki" ~/.pki/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "workspace" /workspace/work-item.txt >/dev/null'
-run_as_hermes "$container_two" 'hermes profile show operations >/dev/null'
-run_as_hermes "$container_two" 'test "$(cat /home/hermes/.hermes/active_profile)" = "operations"'
-run_as_hermes "$container_two" 'test -d /home/hermes/.hermes/profiles/operations'
-run_as_hermes "$container_two" 'test -d /home/hermes/.hermes/profiles/coder'
-run_as_hermes "$container_two" '! test -d /home/hermes/.hermes/profiles/test'
-run_as_hermes "$container_two" 'hermes profile list | grep -F "operations" >/dev/null'
-run_as_hermes "$container_two" 'hermes profile list | grep -F "coder" >/dev/null'
-run_in_container "$container_two" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
-assert_router_inventory "$container_two"
-assert_free_router_buckets "$container_two"
-assert_model_config "$container_two" root coding
-assert_model_config "$container_two" operations coding
-assert_model_config "$container_two" coder coding
+run_as_hermes "$container_two" '! test -d /home/hermes/.hermes/profiles'
+run_as_hermes "$container_two" '! test -f /home/hermes/.hermes/active_profile'
 run_as_hermes "$container_two" 'hello >/tmp/hello.out && grep -F "Hello, world!" /tmp/hello.out >/dev/null'
-run_as_hermes "$container_two" 'command -v tirith >/dev/null'
 run_as_hermes "$container_two" 'command -v opencode >/dev/null'
-run_as_hermes "$container_two" 'grep -Fx "shared-user-v2" /home/hermes/.hermes/skills/workflow-shared/SKILL.md >/dev/null'
-run_as_hermes "$container_two" 'grep -Fx "operations-user-v2" /home/hermes/.hermes/profiles/operations/skills/workflow-operations/SKILL.md >/dev/null'
-run_as_hermes "$container_two" 'grep -Fx "coder-user-v2" /home/hermes/.hermes/profiles/coder/skills/workflow-coder/SKILL.md >/dev/null'
-run_as_hermes "$container_two" '! grep -Fx "shared-source-v2" /home/hermes/.hermes/skills/workflow-shared/SKILL.md >/dev/null'
-run_as_hermes "$container_two" '! grep -Fx "operations-source-v2" /home/hermes/.hermes/profiles/operations/skills/workflow-operations/SKILL.md >/dev/null'
-run_as_hermes "$container_two" '! grep -Fx "coder-source-v2" /home/hermes/.hermes/profiles/coder/skills/workflow-coder/SKILL.md >/dev/null'
+run_as_hermes "$container_two" 'grep -F "\"provider\":\"codex\"" /home/hermes/.hermes/auth.json >/dev/null'
+run_as_hermes "$container_two" 'grep -Fx "user-skill-v2" /home/hermes/.hermes/skills/workflow-single/SKILL.md >/dev/null'
+run_as_hermes "$container_two" '! test -e /home/hermes/.hermes/profiles/assistant/skills/workflow-single/SKILL.md'
+run_as_hermes "$container_two" '! grep -Fx "seed-skill-v2" /home/hermes/.hermes/skills/workflow-single/SKILL.md >/dev/null'
+run_as_hermes "$container_two" 'grep -Fx "user-soul-v2" /home/hermes/.hermes/SOUL.md >/dev/null'
+run_as_hermes "$container_two" '! grep -Fx "seed-soul-v2" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/opencode/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "share" ~/.local/share/opencode/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "state" ~/.local/state/opencode/persist.txt >/dev/null'
@@ -500,6 +380,8 @@ run_as_hermes "$container_two" 'grep -Fx "cache" ~/.cache/opencode/persist.txt >
 run_as_hermes "$container_two" '
   node -p "require(process.env.HOME + \"/.local/node_modules/cowsay/package.json\").version" | grep -Fx "1.6.0" >/dev/null
 '
+assert_router_inventory "$container_two"
+assert_model_config "$container_two"
 
 curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-terminal-open-3.json
 terminal_three="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open-3.json)"

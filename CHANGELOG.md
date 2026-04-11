@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Breaking: collapsed the repo-owned multi-profile Hermes topology into one managed agent rooted at `/home/hermes/.hermes`, replaced the per-profile `.env`/skills/`SOUL.md`/`gateway.pid`/service graph with single-agent equivalents, switched the dashboard and validation contract to one managed gateway service, and added a destructive one-time reset that deletes the old repo-owned profile tree before the new runtime is reinitialized.
 - Expanded the managed Hermes user-tooling contract to include `fd`, `uv`, `yq`, and `tmux`, and replaced the partial Python runtime with a single managed pip-capable Python environment so `python3`, `pip`, and `python3 -m pip` all work from `/home/hermes/.local/state/nix/profiles/ghostship-managed`; updated smoke validation and runtime docs to match.
 
 - Split `ghostship-hermes-base` into a true Hermes/core-runtime base layer with Ghostship-managed bootstrap/tooling/router/dashboard wiring removed, moved the repo-owned command surfaces into the final overlay layer, pulled the shared Python service deps (`httpx`, `typer`, `fastapi`, `uvicorn`, `websockets`) plus stable external utility closures (`agent-browser`, `bws`, `gcloud`, `gws`) down into base, and taught the overlay bundle to skip store paths already present in the base closure so the realized overlay is now Ghostship-owned packages instead of re-copied shared dependency trees.
