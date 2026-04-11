@@ -11,7 +11,6 @@ on:
       - 'flake.nix'
       - 'flake.lock'
       - 'packages/**'
-      - 'scripts/export_publishable_image.sh'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -95,17 +94,15 @@ jobs:
           set -euo pipefail
 
           base_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-base-image.drvPath --raw)"
-          image_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-image.drvPath --raw)"
-          export_script_hash="$(sha256sum scripts/export_publishable_image.sh | cut -d' ' -f1)"
+          overlay_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-overlay-bundle.drvPath --raw)"
           base_tag="base-$(basename "$base_drv" .drv)"
-          content_hash="$(printf '%s\n%s\n' "$image_drv" "$export_script_hash" | sha256sum | cut -c1-24)"
+          content_hash="$(printf '%s\n%s\n' "$base_drv" "$overlay_drv" | sha256sum | cut -c1-24)"
           base_ref="${BASE_IMAGE_NAME}:${base_tag}-${PLATFORM_TAG}"
           content_ref="${IMAGE_NAME}:content-${content_hash}-${PLATFORM_TAG}"
 
           {
             echo "base_drv=${base_drv}"
-            echo "image_drv=${image_drv}"
-            echo "export_script_hash=${export_script_hash}"
+            echo "overlay_drv=${overlay_drv}"
             echo "content_hash=${content_hash}"
             echo "base_ref=${base_ref}"
             echo "content_ref=${content_ref}"
@@ -150,19 +147,33 @@ jobs:
       - name: Build and publish content-addressed final image
         if: steps.reusable.outputs.exists != 'true'
         env:
+          BASE_REF: ${{ steps.refs.outputs.base_ref }}
           CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
         shell: bash
         run: |
           set -euo pipefail
 
-          image_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-image)"
-          scripts/export_publishable_image.sh \
-            "$image_bundle" \
-            "ghostship-hermes:ci-${PLATFORM_TAG}" \
-            "ghostship-hermes-${PLATFORM_TAG}.tar" \
-            >/dev/null
+          for attempt in 1 2 3 4 5; do
+            if docker pull "${BASE_REF}"; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "failed to pull base image ${BASE_REF} after ${attempt} attempts" >&2
+              exit 1
+            fi
+            sleep "$((attempt * 5))"
+          done
+
+          local_base_image="ghostship-hermes-base:build-${PLATFORM_TAG}"
+          docker tag "${BASE_REF}" "${local_base_image}"
+
+          overlay_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-overlay-bundle)"
+          docker build \
+            --build-arg "BASE_IMAGE=${local_base_image}" \
+            --tag "ghostship-hermes:ci-${PLATFORM_TAG}" \
+            "$overlay_bundle"
           nix shell nixpkgs#skopeo -c skopeo copy \
-            "docker-archive:$(pwd)/ghostship-hermes-${PLATFORM_TAG}.tar" \
+            "docker-daemon:ghostship-hermes:ci-${PLATFORM_TAG}" \
             "docker://${CONTENT_REF}"
 
       - name: Publish architecture image tags
@@ -185,7 +196,7 @@ jobs:
 
       - name: Remove temporary publish script
         if: always()
-        run: rm -f publish-arch-tags.sh "ghostship-hermes-base-${PLATFORM_TAG}.tar" "ghostship-hermes-${PLATFORM_TAG}.tar"
+        run: rm -f publish-arch-tags.sh "ghostship-hermes-base-${PLATFORM_TAG}.tar"
 
   publish-manifests:
     needs:

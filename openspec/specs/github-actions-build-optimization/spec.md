@@ -25,7 +25,7 @@ The optimization effort SHALL target an approximately 10-minute end-to-end image
 #### Scenario: Optimization round improves speed
 - **WHEN** a maintainer lands an optimization round that changes the image build or publish path
 - **THEN** the round is evaluated against the stretch goal of about 10 minutes for the publish path
-- **AND** the round still verifies native multi-arch publication behavior and the declared `ghostship-hermes-image` artifact contract
+- **AND** the round still verifies native multi-arch publication behavior while keeping the explicit local `ghostship-hermes-image` contract separate from the layered GitHub publish path
 
 ### Requirement: Architectural pipeline changes are allowed when they materially reduce build time
 The repo SHALL allow architectural changes to the image build and publish pipeline when they materially reduce end-to-end time and preserve the explicit published image semantics.
@@ -33,5 +33,5 @@ The repo SHALL allow architectural changes to the image build and publish pipeli
 #### Scenario: Maintainer proposes a faster image assembly path
 - **WHEN** a maintainer identifies a materially faster image build or publication architecture
 - **THEN** the repo may adopt that architecture if it preserves the explicit publishable image contract
-- **AND** the optimization plan documents the trade-offs and verification needed for the new path
+- **AND** the optimization plan documents the trade-offs and artifact boundaries for the new path
 

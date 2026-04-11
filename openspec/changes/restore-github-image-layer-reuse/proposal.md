@@ -5,8 +5,8 @@ The current GitHub `publish-image` workflow regained the correct managed-runtime
 ## What Changes
 
 - Restore GitHub final-image assembly to the reusable `ghostship-hermes-base` plus `ghostship-hermes-overlay-bundle` path for non-reused content publishes.
-- Add a GitHub-side runtime-contract verification step that exercises the exact architecture image built from that layered path before the workflow pushes it to GHCR.
-- Update the image publication and repeat-reuse specs so the fast path is only valid when it verifies the actual image destined for publication.
+- Make the immutable final-image reuse key follow that same layered GitHub assembly path again.
+- Update the image publication and repeat-reuse specs so the layered GitHub path and the explicit local bundle contract are documented separately.
 
 ## Capabilities
 
@@ -16,14 +16,13 @@ The current GitHub `publish-image` workflow regained the correct managed-runtime
 
 ### Modified Capabilities
 
-- `image-publication-contract`: Clarify that faster internal assembly is allowed only when the workflow verifies the exact publish-bound image against the managed runtime contract.
+- `image-publication-contract`: Clarify that GitHub publication may use a faster layered internal assembly path while local export and smoke flows keep using the explicit `ghostship-hermes-image` bundle.
 - `repeat-image-publish-reuse`: Restore immutable final-image reuse to the base-plus-overlay content identity used by the GitHub publish path.
-- `github-actions-build-optimization`: Require workflow-side verification for optimized internal image assembly paths.
+- `github-actions-build-optimization`: Keep the optimization contract focused on the layered GitHub path instead of the full final rootfs bundle.
 
 ## Impact
 
 - `.github/workflows/publish-image.yml`
-- `tests/hermes-image/`
 - `README.md`
 - `CHANGELOG.md`
 - `AGENTS.md`

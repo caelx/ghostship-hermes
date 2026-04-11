@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Fixed GHCR publication drift so the final `ghostship-hermes` tags are now exported from the explicit `ghostship-hermes-image` bundle instead of a base-plus-overlay reconstruction path, which keeps the published image aligned with the repo-managed bootstrap contract for `/home/hermes/.hermes/.env`, seeded skills, and seeded `SOUL.md`.
+- Restored layered GHCR publication so the final `ghostship-hermes` tags are again assembled from reusable `ghostship-hermes-base` plus `ghostship-hermes-overlay-bundle`, while `ghostship-hermes-image` remains the explicit local export and smoke-test bundle.
 - Documented the full single-agent managed runtime env allowlist in `docs/runtime-env.md`, corrected the README router/env wording to match the actual bootstrap contract, and tightened dashboard coverage so the home surface stays on one `Agent` section instead of a profile list.
 - Fixed seeded skill bootstrap permissions so skill trees copied from read-only staged sources are normalized to writable Hermes-owned runtime permissions under `/home/hermes/.hermes/skills`, and hardened image validation to simulate store-style read-only seed inputs.
 
