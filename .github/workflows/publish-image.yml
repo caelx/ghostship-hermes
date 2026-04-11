@@ -119,6 +119,24 @@ jobs:
             echo "shared cache publish credentials missing; skipping cache publication" >&2
           fi
 
+      - name: Plan shared cache publication (pre-build)
+        id: cache_plan
+        if: steps.cache_publish.outputs.enabled == 'true'
+        env:
+          PLAN_FILE: ${{ runner.temp }}/ghostship-cache-${{ matrix.platform_tag }}.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if timeout 900 scripts/shared_nix_cache.sh plan ".#packages.${{ matrix.system }}.ghostship-hermes-image" "$PLAN_FILE"; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            : > "$PLAN_FILE"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "shared cache planning failed before image build; skipping cache upload for this leg" >&2
+          fi
+          echo "plan_file=$PLAN_FILE" >> "$GITHUB_OUTPUT"
+
       - name: Build and publish architecture archive
         id: build_image
         shell: bash
@@ -149,24 +167,6 @@ jobs:
           SCRIPT
           chmod +x publish-arch-tags.sh
           nix shell nixpkgs#skopeo -c bash ./publish-arch-tags.sh
-
-      - name: Plan shared cache publication
-        id: cache_plan
-        if: steps.cache_publish.outputs.enabled == 'true'
-        env:
-          PLAN_FILE: ${{ runner.temp }}/ghostship-cache-${{ matrix.platform_tag }}.txt
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if timeout 900 scripts/shared_nix_cache.sh plan ".#packages.${{ matrix.system }}.ghostship-hermes-image" "$PLAN_FILE"; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            : > "$PLAN_FILE"
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "shared cache planning failed after image publish; skipping cache upload" >&2
-          fi
-          echo "plan_file=$PLAN_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Publish shared cache entries
         if: steps.cache_plan.outputs.enabled == 'true'

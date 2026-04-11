@@ -5,10 +5,11 @@
 ## Workflow Contract
 
 - before `nix build`, `publish-image` consumes the shared cache only when `caelx/ghostship-cache` already has a reachable `cache-index`
-- on a cold cache with no index yet, the workflow continues with the normal uncached host-side build and then publishes newly built paths into the shared cache
+- on a cold cache with no index yet, the workflow continues with the normal uncached host-side build and then publishes newly built paths into the shared cache using a plan captured before the real build starts
 - if the proxy is unavailable after an index is expected, the workflow continues with the normal uncached host-side build
 - if the proxy serves a signature mismatch, the Nix build fails; the workflow does not disable signature verification
-- after a successful build, the workflow signs and uploads only the store paths that were built locally and not already available from the configured caches
+- after a successful build, the workflow signs and uploads only the store paths captured by the pre-build dry-run planner that were not already available from the configured caches
+- a run only counts as a real cache seed when it creates or updates the OCI `cache-index`; a successful upload step with zero planned paths is a no-op, not a seeded cache
 
 ## Required GitHub Actions Configuration
 
@@ -29,13 +30,15 @@ Actions secrets:
 1. Point `GHOSTSHIP_CACHE_REPO` at an empty backend or clear the existing `nix-cache` package index.
 2. Trigger `publish-image` on `main`.
 3. Expect the image build to complete successfully even though the cache has no reusable Ghostship paths yet.
-4. Expect the post-build cache planning and publish steps to upload new paths into `ghcr.io/caelx/ghostship-cache/nix-cache`.
+4. Expect the pre-build cache planning step to produce a non-empty upload plan and the later publish step to upload those paths into `ghcr.io/caelx/ghostship-cache/nix-cache`.
+5. Confirm a `cache-index` manifest now exists for `ghcr.io/caelx/ghostship-cache/nix-cache`; without that manifest, later runs will still skip cache consumption.
 
 ### Warm repeat publish reuses cached paths
 
 1. Trigger `publish-image` again without changing image inputs.
-2. Inspect the `Build and publish content-addressed final image` log for proxy-backed substitutions from `http://127.0.0.1:37515`.
-3. Inspect the shared-cache publish summary; it should report few or zero newly uploaded paths.
+2. Confirm `Bootstrap shared Ghostship Nix cache` no longer reports `cache index not present yet`; it should start the local proxy instead.
+3. Inspect the image build log for cache-backed reuse, such as proxy-backed substitutions from `http://127.0.0.1:37515` or materially reduced local build work.
+4. Inspect the shared-cache publish summary; it should report few or zero newly uploaded paths.
 
 ## Timing Evidence
 

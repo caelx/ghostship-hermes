@@ -1,8 +1,8 @@
 ## 1. Restore real cache seeding
 
-- [ ] 1.1 Move shared-cache planning in `publish-image` to a pre-build step and persist the plan file for later upload.
-- [ ] 1.2 Keep cache planning and cache publication non-fatal so image publication still succeeds when the shared cache is unavailable.
-- [ ] 1.3 Update `scripts/shared_nix_cache.sh` or related workflow wiring so the saved pre-build plan is the input to post-build cache publication.
+- [x] 1.1 Move shared-cache planning in `publish-image` to a pre-build step and persist the plan file for later upload.
+- [x] 1.2 Keep cache planning and cache publication non-fatal so image publication still succeeds when the shared cache is unavailable.
+- [x] 1.3 Update `scripts/shared_nix_cache.sh` or related workflow wiring so the saved pre-build plan is the input to post-build cache publication.
 
 ## 2. Verify cache behavior
 
@@ -12,5 +12,5 @@
 
 ## 3. Document the fixed contract
 
-- [ ] 3.1 Update the shared-cache docs and changelog to explain that pre-build planning is required for the current dry-run-based seeding path.
+- [x] 3.1 Update the shared-cache docs and changelog to explain that pre-build planning is required for the current dry-run-based seeding path.
 - [ ] 3.2 Record before/after warm-cache timing evidence and note any residual limits if the cache still does not materially speed the build.

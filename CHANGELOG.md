@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed shared-cache seeding in `publish-image` by moving the dry-run cache planning step ahead of the real image build, so cold runs can create `ghcr.io/caelx/ghostship-cache/nix-cache:cache-index` and later unchanged runs can actually consume the signed Ghostship cache.
+
 - Realigned the managed gateway to upstream Hermes Linux service behavior by replacing the repo-owned system unit with automatic boot-time `systemd --user` `hermes-gateway.service`, exporting the user-manager runtime env for Hermes shells, and removing the stale Ghostship gateway CLI shim.
 - Fixed managed config convergence so boot now strips the retired router-primary `model.base_url: http://127.0.0.1:8788/v1` from `/home/hermes/.hermes/config.yaml`, preventing the direct `opencode-go/minimax-m2.7` primary lane from being silently sent back through the local router.
 - Replaced the old custom dashboard controller with a HUDUI-aligned browser service, wired HUDUI to `/home/hermes/.hermes` plus `/workspace`, added a same-origin `Console` tab backed by on-demand `ttyd`, and updated image validation to the new `/api/health`/`/api/profiles`/`/api/projects`/`/api/console` contract.
