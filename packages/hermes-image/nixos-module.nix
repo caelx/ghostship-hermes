@@ -119,6 +119,8 @@ let
   ];
   managedBrowserEnvKeys = [
     "BROWSER_CDP_URL"
+    "HERMES_HUD_PROJECTS_DIR"
+    "GHOSTSHIP_HUD_DEFAULT_PROFILE_NAME"
   ];
   managedWebhookEnvKeys = [
     "WEBHOOK_SECRET"
@@ -726,6 +728,8 @@ PY2
     GHOSTSHIP_DASHBOARD_PORT = "7681";
     GHOSTSHIP_TTYD_PORT_BASE = "7682";
     GHOSTSHIP_HERMES_GATEWAY_SERVICE = "${managedGatewayServiceName}.service";
+    HERMES_HUD_PROJECTS_DIR = "/workspace";
+    GHOSTSHIP_HUD_DEFAULT_PROFILE_NAME = "Managed Agent";
     GHOSTSHIP_ROUTER_HOST = "127.0.0.1";
     GHOSTSHIP_ROUTER_PORT = "8788";
     API_SERVER_HOST = "127.0.0.1";
@@ -846,7 +850,7 @@ in
     before = [
       "hermes-agent.service"
     ] ++ lib.optionals includeManagedRuntime [
-      "ghostship-dashboard-controller.service"
+      "ghostship-hermes-hudui.service"
       "ghostship-hermes-router.service"
       "${managedGatewayServiceName}.service"
     ];
@@ -889,7 +893,7 @@ in
     before = [
       "ghostship-hermes-bootstrap.service"
       "ghostship-hermes-router.service"
-      "ghostship-dashboard-controller.service"
+      "ghostship-hermes-hudui.service"
       "${managedGatewayServiceName}.service"
     ];
     environment = userServiceEnvironment;
@@ -943,7 +947,7 @@ in
       ExecStart = pkgs.writeShellScript "ghostship-hermes-startup.sh" ''
         set -euo pipefail
         ${pkgs.systemd}/bin/systemctl start \
-          ghostship-dashboard-controller.service \
+          ghostship-hermes-hudui.service \
           ghostship-hermes-router.service \
           ${managedGatewayServiceName}.service
       '';
@@ -1011,8 +1015,8 @@ in
     };
   };
 
-  systemd.services.ghostship-dashboard-controller = lib.mkIf includeManagedRuntime {
-    description = "ghostship-hermes dashboard controller";
+  systemd.services.ghostship-hermes-hudui = lib.mkIf includeManagedRuntime {
+    description = "ghostship-hermes HUDUI browser";
     wantedBy = [ ];
     wants = [ "network-online.target" ];
     after = [

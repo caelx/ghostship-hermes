@@ -187,7 +187,9 @@ assert_model_config() {
   run_as_hermes "$target_container" 'hermes config show | grep -F "base_url: http://127.0.0.1:8788/v1" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "api_key_env: OPENAI_API_KEY" >/dev/null'
   run_in_container "$target_container" 'printenv GHOSTSHIP_ROUTER_DISABLED_MODELS | grep -Fx "openrouter/free" >/dev/null'
-  run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/status | jq -e ' .environment.model == \"minimax-m2.7\" and .environment.model_provider == \"opencode-go\" and .environment.fallback_model == \"agentic\" and .environment.fallback_provider == \"custom\" and .environment.router_disabled_models == \"openrouter/free\" ' >/dev/null"
+  run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/health | jq -e '.config_model == \"minimax-m2.7\" and .config_provider == \"opencode-go\"' >/dev/null"
+  run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/profiles | jq -e '.profiles[0].name == \"Managed Agent\" and .profiles[0].model == \"minimax-m2.7\" and .profiles[0].provider == \"opencode-go\"' >/dev/null"
+  run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/projects | jq -e '.projects_dir == \"/workspace\"' >/dev/null"
 }
 
 assert_gateway_pid_contract() {
@@ -295,11 +297,11 @@ assert_dashboard_browser_open() {
   )
 
   agent-browser "${browser_args[@]}" open "${dashboard_base_url}/" >/tmp/ghostship-agent-browser-open.json
-  agent-browser "${browser_args[@]}" click "#open-terminal" >/tmp/ghostship-agent-browser-click.json
-  agent-browser "${browser_args[@]}" wait "iframe.terminal-frame" >/tmp/ghostship-agent-browser-wait-frame.json
+  agent-browser "${browser_args[@]}" eval '(() => { const button = [...document.querySelectorAll("button")].find((node) => node.textContent?.includes("Console")); if (!button) throw new Error("console button missing"); button.click(); return true; })()' >/tmp/ghostship-agent-browser-click.json
+  agent-browser "${browser_args[@]}" wait "iframe[title=\"Console\"]" >/tmp/ghostship-agent-browser-wait-frame.json
   agent-browser "${browser_args[@]}" wait 1500 >/tmp/ghostship-agent-browser-wait-time.json
-  agent-browser "${browser_args[@]}" is visible "iframe.terminal-frame" >/tmp/ghostship-agent-browser-visible.json
-  agent-browser "${browser_args[@]}" eval '(() => document.querySelector("iframe.terminal-frame")?.getAttribute("src") || "")()' >/tmp/ghostship-agent-browser-frame-src.json
+  agent-browser "${browser_args[@]}" is visible "iframe[title=\"Console\"]" >/tmp/ghostship-agent-browser-visible.json
+  agent-browser "${browser_args[@]}" eval '(() => document.querySelector("iframe[title=\\\"Console\\\"]")?.getAttribute("src") || "")()' >/tmp/ghostship-agent-browser-frame-src.json
   jq -r '.data.result // empty' /tmp/ghostship-agent-browser-frame-src.json | grep -E '^/terminals/.+/$' >/dev/null
   agent-browser --session "$browser_session" close --all >/dev/null 2>&1 || true
 }
@@ -373,39 +375,39 @@ docker run -d \
   "$image_tag" /init >/dev/null
 
 wait_for_http "${dashboard_base_url}/"
-wait_for_http "${dashboard_base_url}/api/status"
+wait_for_http "${dashboard_base_url}/api/health"
+wait_for_http "${dashboard_base_url}/api/profiles"
+wait_for_http "${dashboard_base_url}/api/projects"
+wait_for_http "${dashboard_base_url}/api/console"
 wait_for_router_ready "$container_name"
 
-assert_http_contains "${dashboard_base_url}/" 'data-dashboard="ghostship-hermes-dashboard"'
-assert_http_contains "${dashboard_base_url}/" 'data-dashboard-style="hermes-studio"'
-assert_http_contains "${dashboard_base_url}/" 'data-home-view="environment"'
-assert_http_contains "${dashboard_base_url}/" "Runtime"
-assert_http_contains "${dashboard_base_url}/" "Providers"
-assert_http_contains "${dashboard_base_url}/" "Agent"
-assert_http_not_contains "${dashboard_base_url}/" "Profiles"
-wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
-wait_for_json_value "${dashboard_base_url}/api/status" '.environment.agent.service' "ghostship-hermes-gateway.service"
-curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not' >/dev/null
+assert_http_contains "${dashboard_base_url}/" "Hermes HUD"
+assert_http_contains "${dashboard_base_url}/" "/assets/index-"
+wait_for_json_value "${dashboard_base_url}/api/console" ' .session == null' "true"
+wait_for_json_value "${dashboard_base_url}/api/profiles" ' .profiles[0].name' "Managed Agent"
+wait_for_json_value "${dashboard_base_url}/api/projects" ' .projects_dir' "/workspace"
+curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "minimax-m2.7" and .config_provider == "opencode-go" ' >/dev/null
 
 open_started_ms="$(date +%s%3N)"
-curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-hermes-terminal-open-1.json
+curl -fsS -X POST "${dashboard_base_url}/api/console/open" >/tmp/ghostship-hermes-terminal-open-1.json
 open_finished_ms="$(date +%s%3N)"
 test $((open_finished_ms - open_started_ms)) -lt 2000
-terminal_one="$(jq -r '.active_terminal_id' /tmp/ghostship-hermes-terminal-open-1.json)"
-terminal_one_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_one"'") | .terminal_url' /tmp/ghostship-hermes-terminal-open-1.json)"
+terminal_one="$(jq -r ' .session.id' /tmp/ghostship-hermes-terminal-open-1.json)"
+terminal_one_url="$(jq -r ' .session.terminal_url' /tmp/ghostship-hermes-terminal-open-1.json)"
 wait_for_http "${dashboard_base_url}${terminal_one_url}"
-wait_for_json_value "${dashboard_base_url}/api/status" ".sessions[] | select(.id == \"$terminal_one\") | .ready" "true"
+wait_for_json_value "${dashboard_base_url}/api/console" ' .session.ready' "true"
 assert_http_contains "${dashboard_base_url}${terminal_one_url}" "ttyd"
 assert_websocket_proxy "$terminal_one_url"
 assert_dashboard_browser_open
 
-curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_one/close" >/tmp/ghostship-hermes-terminal-close-1.json
-wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
+curl -fsS -X POST "${dashboard_base_url}/api/console/sessions/$terminal_one/close" >/tmp/ghostship-hermes-terminal-close-1.json
+wait_for_json_value "${dashboard_base_url}/api/console" ' .session == null' "true"
 
 run_in_container "$container_name" 'id hermes | grep -F "uid=3000" >/dev/null'
 run_in_container "$container_name" '! systemctl is-active hermes-agent.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-gateway.service >/dev/null'
+run_in_container "$container_name" 'systemctl is-active ghostship-hermes-hudui.service >/dev/null'
 run_in_container "$container_name" 'test "$(cat /etc/ghostship-hermes-release)" = "$(cat /home/hermes/.ghostship-hermes-release)"'
 run_in_container "$container_name" 'systemctl cat ghostship-hermes-gateway.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
 run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/.managed'

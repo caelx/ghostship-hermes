@@ -1,19 +1,9 @@
 # hermes-dashboard
 
-Packaged Hermes-tailored dashboard for `ghostship-hermes`.
+This package ships a HUDUI-aligned browser surface for `ghostship-hermes`.
 
-It serves the bundled Hermes shell frontend, reports dashboard status over FastAPI, and proxies on-demand `ttyd` terminals from the same origin used by the Hermes container dashboard.
-
-Build it directly with:
-
-```fish
-nix build .#packages.x86_64-linux.hermes-dashboard
-```
-
-The runtime entrypoint is:
-
-```fish
-hermes-dashboard
-```
-
-The home view is an environment console for the current runtime: the managed single-agent surface, provider metadata, and Hermes paths.
+The packaged artifact contains:
+- the Hermes HUDUI-style FastAPI backend
+- a compiled React/Vite frontend built during the Nix package build
+- Ghostship image compatibility patches for `/home/hermes/.hermes` and `/workspace`
+- a `Console` tab backed by on-demand same-origin `ttyd`

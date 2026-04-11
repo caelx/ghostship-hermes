@@ -151,16 +151,16 @@ wait_for_container_ready() {
     test "$(systemctl show -P Result ghostship-hermes-bootstrap.service 2>/dev/null)" = "success" &&
     systemctl is-active ghostship-hermes-router.service >/dev/null 2>&1 &&
     systemctl is-active ghostship-hermes-gateway.service >/dev/null 2>&1 &&
-    systemctl is-active ghostship-dashboard-controller.service >/dev/null 2>&1 &&
+    systemctl is-active ghostship-hermes-hudui.service >/dev/null 2>&1 &&
     curl -fsS http://127.0.0.1:8788/readyz >/dev/null 2>&1 &&
-    curl -fsS http://127.0.0.1:7681/api/status >/dev/null 2>&1
+    curl -fsS http://127.0.0.1:7681/api/health >/dev/null 2>&1
   '; do
     tries=$((tries + 1))
     if [ "$tries" -ge 90 ]; then
       echo "container $target_container did not become ready" >&2
       docker logs "$target_container" >&2 || true
       run_in_container "$target_container" '
-        systemctl --no-pager --full status ghostship-storage.service ghostship-hermes-bootstrap.service ghostship-hermes-router.service ghostship-hermes-gateway.service ghostship-dashboard-controller.service || true
+        systemctl --no-pager --full status ghostship-storage.service ghostship-hermes-bootstrap.service ghostship-hermes-router.service ghostship-hermes-gateway.service ghostship-hermes-hudui.service || true
       ' >&2 || true
       exit 1
     fi
@@ -234,8 +234,12 @@ docker run -d \
 
 wait_for_container_ready "$container_one"
 wait_for_http "${dashboard_base_url}/"
-wait_for_http "${dashboard_base_url}/api/status"
-curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not and .environment.agent.service == "ghostship-hermes-gateway.service"' >/dev/null
+wait_for_http "${dashboard_base_url}/api/health"
+wait_for_http "${dashboard_base_url}/api/profiles"
+wait_for_http "${dashboard_base_url}/api/projects"
+curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "coding" and .config_provider == "auto" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/profiles" | jq -e ' .profiles[0].name == "Managed Agent" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/projects" | jq -e ' .projects_dir == "/workspace" ' >/dev/null
 
 run_in_container "$container_one" 'id hermes | grep -F "uid=3000(hermes) gid=3000(hermes)" >/dev/null'
 run_in_container "$container_one" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
@@ -352,8 +356,12 @@ docker run -d \
 
 wait_for_container_ready "$container_two"
 wait_for_http "${dashboard_base_url}/"
-wait_for_http "${dashboard_base_url}/api/status"
-curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not and .environment.agent.service == "ghostship-hermes-gateway.service"' >/dev/null
+wait_for_http "${dashboard_base_url}/api/health"
+wait_for_http "${dashboard_base_url}/api/profiles"
+wait_for_http "${dashboard_base_url}/api/projects"
+curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "coding" and .config_provider == "auto" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/profiles" | jq -e ' .profiles[0].name == "Managed Agent" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/projects" | jq -e ' .projects_dir == "/workspace" ' >/dev/null
 
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/ghostship-test/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "local" ~/.local/share/ghostship-test/persist.txt >/dev/null'
@@ -388,11 +396,11 @@ run_as_hermes "$container_two" '
 assert_router_inventory "$container_two"
 assert_model_config "$container_two"
 
-curl -fsS -X POST "${dashboard_base_url}/api/terminal/open" >/tmp/ghostship-terminal-open-3.json
-terminal_three="$(jq -r '.active_terminal_id' /tmp/ghostship-terminal-open-3.json)"
-terminal_three_url="$(jq -r '.sessions[] | select(.id == "'"$terminal_three"'") | .terminal_url' /tmp/ghostship-terminal-open-3.json)"
+curl -fsS -X POST "${dashboard_base_url}/api/console/open" >/tmp/ghostship-terminal-open-3.json
+terminal_three="$(jq -r ' .session.id' /tmp/ghostship-terminal-open-3.json)"
+terminal_three_url="$(jq -r ' .session.terminal_url' /tmp/ghostship-terminal-open-3.json)"
 wait_for_http "${dashboard_base_url}${terminal_three_url}"
-curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_three/close" >/tmp/ghostship-terminal-close-3.json
-assert_file_contains /tmp/ghostship-terminal-close-3.json '"sessions": \[\]'
+curl -fsS -X POST "${dashboard_base_url}/api/console/sessions/$terminal_three/close" >/tmp/ghostship-terminal-close-3.json
+assert_file_contains /tmp/ghostship-terminal-close-3.json '"session": null'
 
 printf 'validated ghostship-hermes image persistence with %s\n' "$image_ref"

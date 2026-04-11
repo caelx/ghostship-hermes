@@ -1,0 +1,198 @@
+"""File watcher service for Hermes HUD."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from pathlib import Path
+from typing import Callable
+
+from watchfiles import watch
+
+from .cache import clear_cache
+from .collectors.utils import default_hermes_dir, default_projects_dir
+from .websocket_manager import ws_manager
+
+logger = logging.getLogger(__name__)
+
+FILE_PATTERNS = {
+    'state.db': ['sessions', 'patterns', 'timeline'],
+    'MEMORY.md': ['memory'],
+    'USER.md': ['user', 'memory'],
+    'config.yaml': ['config', 'profiles'],
+    'SKILL.md': ['skills'],
+    'jobs.json': ['cron'],
+    '.env': ['health', 'profiles'],
+    'SOUL.md': ['profiles'],
+}
+
+DIR_PATTERNS = {
+    'skills': ['skills'],
+    'profiles': ['profiles'],
+    'projects': ['projects'],
+    'memories': ['memory', 'user'],
+    'cron': ['cron'],
+}
+
+
+def _detect_change_type(path: Path, projects_dir: Path | None = None) -> list[str]:
+    path_str = str(path)
+    name = path.name
+    if projects_dir:
+        try:
+            path.relative_to(projects_dir)
+            return ['projects']
+        except ValueError:
+            pass
+    if name in FILE_PATTERNS:
+        return FILE_PATTERNS[name]
+    for dir_name, data_types in DIR_PATTERNS.items():
+        if f'/{dir_name}/' in path_str or path_str.endswith(f'/{dir_name}'):
+            return data_types
+    if name.endswith('.db'):
+        return ['sessions', 'patterns']
+    if name == 'corrections.json':
+        return ['corrections']
+    if name == 'snapshots.json':
+        return ['snapshots']
+    return ['state']
+
+
+def _should_ignore(path: Path) -> bool:
+    name = path.name
+    ignore_patterns = ('.tmp', '.temp', '.swp', '.swo', '.~', '.lock', '__pycache__', '.pyc')
+    if any(name.endswith(pattern) or pattern in name for pattern in ignore_patterns):
+        return True
+    if name.startswith('.') and name not in {'.env', '.hermes', '.git'}:
+        return True
+    return False
+
+
+class FileWatcherService:
+    def __init__(self, hermes_dir: str | None = None, projects_dir: str | None = None):
+        self.hermes_dir = Path(default_hermes_dir(hermes_dir))
+        self.projects_dir = Path(default_projects_dir(projects_dir))
+        self._stop_event = asyncio.Event()
+        self._task: asyncio.Task | None = None
+        self._on_change: Callable[[list[str], Path], None] | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def on_change(self, callback: Callable[[list[str], Path], None]) -> None:
+        self._on_change = callback
+
+    async def start(self) -> None:
+        if self._task is not None:
+            return
+        if not self.hermes_dir.exists():
+            logger.warning('Hermes directory does not exist: %s', self.hermes_dir)
+            return
+        self._stop_event.clear()
+        self._task = asyncio.create_task(self._watch_loop())
+        logger.info('File watcher started for %s and %s', self.hermes_dir, self.projects_dir)
+
+    async def stop(self) -> None:
+        if self._task is None:
+            return
+        self._stop_event.set()
+        self._task.cancel()
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
+        self._task = None
+        logger.info('File watcher stopped')
+
+    def _get_watch_paths(self) -> list[Path]:
+        paths = [self.hermes_dir]
+        for subdir in ['skills', 'profiles', 'memories', 'cron']:
+            path = self.hermes_dir / subdir
+            if path.exists():
+                paths.append(path)
+        if self.projects_dir.exists() and self.projects_dir not in paths:
+            paths.append(self.projects_dir)
+        return paths
+
+    def _run_sync_watcher(self) -> None:
+        import time
+
+        last_broadcast: dict[str, float] = {}
+        min_broadcast_interval = 5.0
+
+        def should_broadcast(data_types: set[str]) -> bool:
+            now = time.time()
+            return any(now - last_broadcast.get(data_type, 0) >= min_broadcast_interval for data_type in data_types)
+
+        def update_last_broadcast(data_types: set[str]) -> None:
+            now = time.time()
+            for data_type in data_types:
+                last_broadcast[data_type] = now
+
+        try:
+            watch_paths = [str(path) for path in self._get_watch_paths()]
+            for changes in watch(*watch_paths, stop_event=self._stop_event, force_polling=True):
+                if self._stop_event.is_set():
+                    break
+                data_types_changed: set[str] = set()
+                changed_files: list[Path] = []
+                for change_type, path_str in changes:
+                    path = Path(path_str)
+                    if _should_ignore(path):
+                        continue
+                    data_types = _detect_change_type(path, self.projects_dir)
+                    data_types_changed.update(data_types)
+                    changed_files.append(path)
+                    logger.debug('Detected %s: %s -> %s', change_type.name, path, data_types)
+                if data_types_changed and should_broadcast(data_types_changed):
+                    update_last_broadcast(data_types_changed)
+                    if self._loop and self._loop.is_running():
+                        asyncio.run_coroutine_threadsafe(
+                            self._handle_changes(data_types_changed, changed_files),
+                            self._loop,
+                        )
+        except Exception:
+            logger.exception('File watcher error')
+
+    async def _handle_changes(self, data_types_changed: set[str], changed_files: list[Path]) -> None:
+        try:
+            clear_cache()
+            await ws_manager.broadcast(
+                {
+                    'type': 'data_changed',
+                    'data_types': list(data_types_changed),
+                    'paths': [str(path) for path in changed_files[:5]],
+                }
+            )
+            if self._on_change:
+                for data_type in data_types_changed:
+                    self._on_change([data_type], changed_files[0] if changed_files else Path('.'))
+        except Exception:
+            logger.exception('Error handling file changes')
+
+    async def _watch_loop(self) -> None:
+        import threading
+
+        self._loop = asyncio.get_event_loop()
+        try:
+            thread = threading.Thread(target=self._run_sync_watcher, daemon=True)
+            thread.start()
+            while not self._stop_event.is_set():
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            logger.debug('Watch loop cancelled')
+            raise
+
+    def is_running(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+
+file_watcher = FileWatcherService()
+
+
+async def start_watcher(hermes_dir: str | None = None) -> None:
+    global file_watcher
+    file_watcher = FileWatcherService(hermes_dir)
+    await file_watcher.start()
+
+
+async def stop_watcher() -> None:
+    await file_watcher.stop()
