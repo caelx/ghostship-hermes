@@ -55,6 +55,37 @@ cache_token() {
   fi
 }
 
+
+cache_publish_user() {
+  if [[ -n "${GHOSTSHIP_CACHE_GHCR_USER:-}" ]]; then
+    printf '%s\n' "$GHOSTSHIP_CACHE_GHCR_USER"
+  elif [[ -n "${GITHUB_REPOSITORY_OWNER:-}" ]]; then
+    printf '%s\n' "$GITHUB_REPOSITORY_OWNER"
+  elif [[ -n "${GITHUB_ACTOR:-}" ]]; then
+    printf '%s\n' "$GITHUB_ACTOR"
+  fi
+}
+
+cache_can_publish() {
+  require_cmd curl
+
+  local token user repo registry http_code
+  token="$(cache_token || true)"
+  user="$(cache_publish_user || true)"
+  repo="$(cache_repo)"
+  registry="${GHOSTSHIP_CACHE_REGISTRY:-ghcr.io}"
+
+  [[ -n "$token" ]] || return 1
+  [[ -n "$user" ]] || return 1
+
+  http_code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 20 \
+    -u "${user}:${token}" \
+    -X POST \
+    "https://${registry}/v2/${repo}/nix-cache/blobs/uploads/" 2>/dev/null || true)
+
+  [[ "$http_code" == "202" ]]
+}
+
 cache_has_index() {
   require_cmd curl
 
@@ -240,6 +271,8 @@ usage() {
   cat >&2 <<'EOF'
 usage:
   shared_nix_cache.sh bootstrap
+  shared_nix_cache.sh has-index
+  shared_nix_cache.sh can-publish
   shared_nix_cache.sh plan <flake-ref> <output-file>
   shared_nix_cache.sh publish <paths-file> <gc-root> [gc-root...]
 EOF
@@ -251,6 +284,16 @@ main() {
     bootstrap)
       shift
       bootstrap_cache "$@"
+      ;;
+    has-index)
+      shift
+      (( $# == 0 )) || { usage; exit 1; }
+      cache_has_index
+      ;;
+    can-publish)
+      shift
+      (( $# == 0 )) || { usage; exit 1; }
+      cache_can_publish
       ;;
     plan)
       shift

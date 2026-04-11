@@ -2,6 +2,14 @@ name: publish-image
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_shared_cache:
+        description: Publish or refresh the shared Nix cache after the image build
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: '0 14 * * *'
   push:
     branches:
       - main
@@ -76,7 +84,9 @@ jobs:
       GHOSTSHIP_CACHE_PUBLIC_KEY: ${{ vars.GHOSTSHIP_CACHE_PUBLIC_KEY }}
       GHOSTSHIP_CACHE_GHCR_TOKEN: ${{ secrets.GHOSTSHIP_CACHE_GHCR_TOKEN }}
       GHOSTSHIP_CACHE_SIGNING_KEY: ${{ secrets.GHOSTSHIP_CACHE_SIGNING_KEY }}
+      GHOSTSHIP_CACHE_GHCR_USER: ${{ github.repository_owner }}
       GITHUB_CACHE_FALLBACK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CACHE_REFRESH_REQUESTED: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_shared_cache == 'true') }}
     steps:
       - uses: actions/checkout@v6
 
@@ -112,11 +122,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -n "${GHOSTSHIP_CACHE_PUBLIC_KEY:-}" ] && [ -n "${GHOSTSHIP_CACHE_GHCR_TOKEN:-}" ] && [ -n "${GHOSTSHIP_CACHE_SIGNING_KEY:-}" ]; then
+          if [ "${CACHE_REFRESH_REQUESTED:-false}" != "true" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "shared cache publication is gated off for this run; only the daily schedule or workflow_dispatch with publish_shared_cache=true can refresh the cache" >&2
+          elif [ -z "${GHOSTSHIP_CACHE_PUBLIC_KEY:-}" ] || [ -z "${GHOSTSHIP_CACHE_GHCR_TOKEN:-}" ] || [ -z "${GHOSTSHIP_CACHE_SIGNING_KEY:-}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "shared cache publish credentials missing; skipping cache publication" >&2
+          elif scripts/shared_nix_cache.sh can-publish; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "shared cache publish credentials missing; skipping cache publication" >&2
+            echo "shared cache publish token cannot open GHCR uploads for ${GHOSTSHIP_CACHE_REPO:-caelx/ghostship-cache}; skipping cache publication" >&2
           fi
 
       - name: Plan shared cache publication (pre-build)

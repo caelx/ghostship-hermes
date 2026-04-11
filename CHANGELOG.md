@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Fixed shared-cache seeding in `publish-image` by moving the dry-run cache planning step ahead of the real image build, so cold runs can create `ghcr.io/caelx/ghostship-cache/nix-cache:cache-index` and later unchanged runs can actually consume the signed Ghostship cache.
+- Gated shared-cache publication so normal push builds only try to consume `caelx/ghostship-cache`; only the daily scheduled `publish-image` run at `14:00 UTC` or a manual `workflow_dispatch` with `publish_shared_cache=true` attempts cache uploads, which keeps routine image publishes from paying the broken or redundant cache-seeding cost.
 
 - Realigned the managed gateway to upstream Hermes Linux service behavior by replacing the repo-owned system unit with automatic boot-time `systemd --user` `hermes-gateway.service`, exporting the user-manager runtime env for Hermes shells, and removing the stale Ghostship gateway CLI shim.
 - Fixed managed config convergence so boot now strips the retired router-primary `model.base_url: http://127.0.0.1:8788/v1` from `/home/hermes/.hermes/config.yaml`, preventing the direct `opencode-go/minimax-m2.7` primary lane from being silently sent back through the local router.

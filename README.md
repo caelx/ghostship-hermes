@@ -337,9 +337,9 @@ GitHub Actions publication behavior:
 
 - Every publish still rebuilds the explicit `ghostship-hermes-image` bundle on the runner host before export and GHCR publication.
 - `publish-image` now treats `caelx/ghostship-cache` as a signed shared Nix binary cache. When a `cache-index` already exists, the workflow starts a runner-local `nixcache-oci` proxy before `nix build` and adds it as a substituter with the documented public key.
-- On a cold cache with no published index yet, the workflow skips cache consumption for that run, completes the normal uncached host-side build, and then publishes the newly built store paths so later runs can consume them.
+- On a cold cache with no published index yet, normal push builds still complete the uncached host-side build; cache refresh is gated to the daily scheduled `publish-image` run at `14:00 UTC` or an explicit `workflow_dispatch` run with `publish_shared_cache=true`.
 - If the shared cache serves a trust or signature mismatch, the Nix build fails; the workflow does not disable signature verification.
-- After a successful image build, `publish-image` signs and uploads the locally built store paths that were not already available from the configured caches into `ghcr.io/caelx/ghostship-cache/nix-cache`.
+- On a cache-refresh run, `publish-image` signs and uploads the locally built store paths captured by the pre-build dry-run planner into `ghcr.io/caelx/ghostship-cache/nix-cache`.
 - The `ci` workflow still uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps.
 - Shared-cache setup, verification, and timing guidance now live in [docs/shared-nix-cache.md](docs/shared-nix-cache.md). The 2026-04-11 timing snapshot in [docs/github-actions-build-optimization.md](docs/github-actions-build-optimization.md) is the pre-shared-cache baseline.
 
