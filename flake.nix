@@ -162,19 +162,15 @@
             };
 
           ghostshipHermesBaseSystem = mkHermesSystem {
-            modulePath = ./packages/hermes-image/nixos-module.nix;
+            modulePath = ./packages/hermes-image/nixos-base-module.nix;
             extraSpecialArgs = {
-              includeRepoContent = false;
-              includeManagedRuntime = false;
               hermesAgentPackage = upstreamHermesAgent;
               sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseUtilityPackages;
             };
           };
           ghostshipHermesSystem = mkHermesSystem {
-            modulePath = ./packages/hermes-image/nixos-module.nix;
+            modulePath = ./packages/hermes-image/nixos-final-module.nix;
             extraSpecialArgs = {
-              includeRepoContent = true;
-              includeManagedRuntime = true;
               inherit
                 ghostshipHermesRouter
                 ghostshipHermesRuntime
