@@ -19,6 +19,7 @@ let
     ENTRYPOINT ["/init"]
     ENV HOME=/home/hermes
     ENV HERMES_HOME=/home/hermes/.hermes
+    HEALTHCHECK CMD ["/bin/sh", "-lc", "${pkgs.curl}/bin/curl -fsS http://127.0.0.1:7681/ >/dev/null || exit 1"]
     EXPOSE 7681/tcp
     VOLUME /home/hermes
     VOLUME /workspace

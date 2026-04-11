@@ -15,7 +15,7 @@ def _load_app_module(monkeypatch, tmp_path: Path):
   default: minimax-m2.7
 fallback_model:
   provider: custom
-  model: coding
+  model: agentic
   base_url: http://127.0.0.1:8788/v1
   api_key_env: OPENAI_API_KEY
 """,
@@ -30,6 +30,7 @@ fallback_model:
     monkeypatch.setenv("HERMES_HOME", str(managed_home))
     monkeypatch.setenv("GHOSTSHIP_DASHBOARD_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("GHOSTSHIP_HERMES_GATEWAY_SERVICE", "ghostship-hermes-gateway.service")
+    monkeypatch.setenv("GHOSTSHIP_ROUTER_DISABLED_MODELS", "openrouter/free")
     monkeypatch.setenv("GHOSTSHIP_TERMINAL_CWD", "/workspace")
 
     import hermes_dashboard.app as app_module
@@ -55,6 +56,12 @@ def test_environment_payload_reports_single_agent(monkeypatch, tmp_path: Path) -
     assert payload["agent"]["has_auth"] is True
     assert payload["agent"]["has_soul"] is True
     assert payload["agent"]["has_gateway_pid"] is True
+    assert payload["agent"]["fallback_model"] == "agentic"
+    assert payload["agent"]["fallback_provider"] == "custom"
+    assert payload["agent"]["fallback_base_url"] == "http://127.0.0.1:8788/v1"
+    provider_names = {provider["name"] for provider in payload["providers"]}
+    assert "ghostship-router" in provider_names
+    assert "opencode-go" in provider_names
 
 
 def test_status_api_uses_single_agent_contract(monkeypatch, tmp_path: Path) -> None:
@@ -69,6 +76,10 @@ def test_status_api_uses_single_agent_contract(monkeypatch, tmp_path: Path) -> N
     assert "default_profile" not in payload
     assert payload["environment"]["agent"]["service"] == "ghostship-hermes-gateway.service"
     assert payload["environment"]["model"] == "minimax-m2.7"
+    assert payload["environment"]["model_provider"] == "opencode-go"
+    assert payload["environment"]["fallback_model"] == "agentic"
+    assert payload["environment"]["fallback_provider"] == "custom"
+    assert payload["environment"]["router_disabled_models"] == "openrouter/free"
     assert payload["environment"]["dashboard_bind"] == "0.0.0.0:7681"
 
 

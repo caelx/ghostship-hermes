@@ -22,7 +22,7 @@ Canonical image references:
 - The image now exposes one managed Hermes agent, not a repo-owned profile fleet.
 - The managed config lives at `/home/hermes/.hermes/config.yaml`, the managed env file at `/home/hermes/.hermes/.env`, the managed auth file at `/home/hermes/.hermes/auth.json`, the managed skill tree at `/home/hermes/.hermes/skills`, the managed prompt at `/home/hermes/.hermes/SOUL.md`, and the managed gateway liveness marker at `/home/hermes/.hermes/gateway.pid`.
 - The primary model path is direct MiniMax on OpenCode Go: `provider = opencode-go`, `default = minimax-m2.7`.
-- The fallback model is the local Ghostship router free-model lane: `provider = custom`, `model = coding`, `base_url = http://127.0.0.1:8788/v1`, `api_key_env = OPENAI_API_KEY`; the managed router also blocks the exact backend id `openrouter/free` from route selection while auxiliary tasks still use Gemini 3.1 Flash-Lite Preview through the Google OpenAI-compatible endpoint.
+- The fallback model is the local Ghostship router free-model lane: `provider = custom`, `model = agentic`, `base_url = http://127.0.0.1:8788/v1`, `api_key_env = OPENAI_API_KEY`; the managed router also blocks the exact backend id `openrouter/free` from route selection while auxiliary tasks still use Gemini 3.1 Flash-Lite Preview through the Google OpenAI-compatible endpoint.
 
 Upstream note:
 
@@ -145,7 +145,8 @@ After startup:
 Dashboard contract:
 
 - The home view renders one `Agent` section, not a profile list.
-- `/api/status` returns `environment.agent` and does not expose `profiles` or `default_profile`.
+- `/api/status` returns `environment.agent`, the managed primary/fallback model contract, and does not expose `profiles` or `default_profile`.
+- The published image now carries a store-stable container `HEALTHCHECK` that curls the dashboard with `curl` from its own store path instead of relying on `/run/current-system/sw/bin/curl` during early boot.
 
 ## Hermes Configuration
 
@@ -374,7 +375,7 @@ The persistence suite validates:
 - `hermes` runs as `3000:3000`
 - the root Hermes config uses `provider = opencode-go` with `default = minimax-m2.7`
 - one managed agent is rooted at `~/.hermes`
-- the managed config uses `provider = opencode-go`, `default = minimax-m2.7`, and a `fallback_model` that points at `http://127.0.0.1:8788/v1` with router alias `coding`; the managed router disables the exact backend id `openrouter/free`
+- the managed config uses `provider = opencode-go`, `default = minimax-m2.7`, and a `fallback_model` that points at `http://127.0.0.1:8788/v1` with router alias `agentic`; the managed router disables the exact backend id `openrouter/free`
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, managed bootstrap, the router, the managed gateway, and the dashboard
  - no repo-managed default skills are seeded by default

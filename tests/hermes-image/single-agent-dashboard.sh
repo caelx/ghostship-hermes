@@ -183,10 +183,11 @@ assert_model_config() {
   run_as_hermes "$target_container" 'hermes config show | grep -F "default: minimax-m2.7" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "fallback_model:" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "provider: custom" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "model: coding" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "model: agentic" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "base_url: http://127.0.0.1:8788/v1" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "api_key_env: OPENAI_API_KEY" >/dev/null'
   run_in_container "$target_container" 'printenv GHOSTSHIP_ROUTER_DISABLED_MODELS | grep -Fx "openrouter/free" >/dev/null'
+  run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/status | jq -e ' .environment.model == \"minimax-m2.7\" and .environment.model_provider == \"opencode-go\" and .environment.fallback_model == \"agentic\" and .environment.fallback_provider == \"custom\" and .environment.router_disabled_models == \"openrouter/free\" ' >/dev/null"
 }
 
 assert_gateway_pid_contract() {

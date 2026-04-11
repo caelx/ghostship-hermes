@@ -180,15 +180,21 @@ def _yaml_value(raw_line: str) -> str | None:
     return value or None
 
 
-def read_model_settings(path: Path) -> dict[str, str | None]:
+def read_runtime_settings(path: Path) -> dict[str, dict[str, str | None]]:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return {"default": None, "base_url": None}
+        return {
+            "model": {"provider": None, "default": None, "base_url": None, "api_key_env": None},
+            "fallback_model": {"provider": None, "model": None, "base_url": None, "api_key_env": None},
+        }
 
-    in_model = False
-    model_indent = 0
-    settings = {"default": None, "base_url": None}
+    settings = {
+        "model": {"provider": None, "default": None, "base_url": None, "api_key_env": None},
+        "fallback_model": {"provider": None, "model": None, "base_url": None, "api_key_env": None},
+    }
+    active_section: str | None = None
+    section_indent = 0
 
     for raw_line in lines:
         line = raw_line.split("#", 1)[0].rstrip()
@@ -198,18 +204,20 @@ def read_model_settings(path: Path) -> dict[str, str | None]:
         indent = len(raw_line) - len(raw_line.lstrip(" "))
         stripped = line.strip()
 
-        if stripped == "model:":
-            in_model = True
-            model_indent = indent
+        if stripped in {"model:", "fallback_model:"}:
+            active_section = stripped[:-1]
+            section_indent = indent
             continue
 
-        if in_model and indent <= model_indent:
-            in_model = False
+        if active_section and indent <= section_indent:
+            active_section = None
 
-        if in_model and stripped.startswith("default:"):
-            settings["default"] = _yaml_value(stripped)
-        if in_model and stripped.startswith("base_url:"):
-            settings["base_url"] = _yaml_value(stripped)
+        if not active_section or ":" not in stripped:
+            continue
+
+        key = stripped.split(":", 1)[0].strip()
+        if key in settings[active_section]:
+            settings[active_section][key] = _yaml_value(stripped)
 
     return settings
 
@@ -237,7 +245,7 @@ def is_local_router_base_url(base_url: str | None) -> bool:
     return parsed.hostname in {"127.0.0.1", "localhost"} and port == 8788
 
 
-def endpoint_display_name(base_url: str | None, model_name: str | None) -> str:
+def endpoint_display_name(base_url: str | None, model_name: str | None, provider_name: str | None = None) -> str:
     if is_local_router_base_url(base_url):
         return "ghostship-router"
     if base_url:
@@ -247,10 +255,10 @@ def endpoint_display_name(base_url: str | None, model_name: str | None) -> str:
             return "openrouter"
         if host:
             return host
-    return model_vendor_name(model_name) or "default"
+    return provider_name or model_vendor_name(model_name) or "default"
 
 
-def detect_auth_source(base_url: str | None, env_payload: dict[str, str]) -> str | None:
+def detect_auth_source(base_url: str | None, env_payload: dict[str, str], provider_name: str | None = None) -> str | None:
     if is_local_router_base_url(base_url):
         for key in ("OPENAI_API_KEY", "GHOSTSHIP_ROUTER_API_KEY", "API_SERVER_KEY"):
             if env_payload.get(key):
@@ -258,6 +266,11 @@ def detect_auth_source(base_url: str | None, env_payload: dict[str, str]) -> str
         return None
     if base_url and urlparse(base_url).hostname == "openrouter.ai" and env_payload.get("OPENROUTER_API_KEY"):
         return "OPENROUTER_API_KEY"
+    if provider_name == "opencode-go":
+        if env_payload.get("OPENCODE_GO_API_KEY"):
+            return "OPENCODE_GO_API_KEY"
+        if env_payload.get("OPENCODE_API_KEY"):
+            return "OPENCODE_API_KEY"
     return None
 
 
@@ -346,9 +359,16 @@ def current_environment_payload() -> dict[str, Any]:
         if (value := os.environ.get(key))
     }
     root_env = parse_env_file(root_env_path) or runtime_env
-    root_settings = read_model_settings(root_config_path)
-    root_model = root_settings["default"]
-    root_base_url = root_settings["base_url"]
+    runtime_settings = read_runtime_settings(root_config_path)
+    primary_settings = runtime_settings["model"]
+    fallback_settings = runtime_settings["fallback_model"]
+    root_model = primary_settings["default"]
+    root_base_url = primary_settings["base_url"]
+    root_provider = primary_settings["provider"]
+    fallback_model = fallback_settings["model"]
+    fallback_base_url = fallback_settings["base_url"]
+    fallback_provider = fallback_settings["provider"]
+    router_disabled_models = os.environ.get("GHOSTSHIP_ROUTER_DISABLED_MODELS")
     endpoints: dict[str, dict[str, Any]] = {}
     endpoint_models: dict[str, dict[str, dict[str, Any]]] = {}
 
@@ -371,18 +391,20 @@ def current_environment_payload() -> dict[str, Any]:
         *,
         base_url: str | None,
         model_name: str | None,
+        provider_name: str | None,
         env_payload: dict[str, str],
         scope: str,
     ) -> None:
-        key = base_url or f"default::{model_vendor_name(model_name) or 'default'}"
-        auth_source = detect_auth_source(base_url, env_payload)
+        key = base_url or f"default::{provider_name or model_vendor_name(model_name) or 'default'}"
+        auth_source = detect_auth_source(base_url, env_payload, provider_name)
         entry = endpoints.setdefault(
             key,
             {
-                "name": endpoint_display_name(base_url, model_name),
+                "name": endpoint_display_name(base_url, model_name, provider_name),
                 "kind": endpoint_kind(base_url),
-                "configured": bool(base_url or model_name),
+                "configured": bool(base_url or model_name or provider_name),
                 "base_url": base_url,
+                "provider": provider_name,
                 "auth_source": auth_source,
                 "models": [],
                 "router": None,
@@ -392,7 +414,8 @@ def current_environment_payload() -> dict[str, Any]:
             entry["auth_source"] = auth_source
         register_model(key, model_name, scope=scope)
 
-    register_endpoint(base_url=root_base_url, model_name=root_model, env_payload=root_env | runtime_env, scope="managed")
+    register_endpoint(base_url=root_base_url, model_name=root_model, provider_name=root_provider, env_payload=root_env | runtime_env, scope="managed")
+    register_endpoint(base_url=fallback_base_url, model_name=fallback_model, provider_name=fallback_provider, env_payload=root_env | runtime_env, scope="fallback")
 
     providers: list[dict[str, Any]] = []
     for key, entry in endpoints.items():
@@ -410,14 +433,25 @@ def current_environment_payload() -> dict[str, Any]:
         "gateway_service": GATEWAY_SERVICE,
         "model": root_model,
         "base_url": root_base_url,
+        "model_provider": root_provider,
+        "fallback_model": fallback_model,
+        "fallback_base_url": fallback_base_url,
+        "fallback_provider": fallback_provider,
+        "router_disabled_models": router_disabled_models,
         "agent": {
             "name": "Managed Agent",
             "path": MANAGED_HERMES_HOME,
             "service": GATEWAY_SERVICE,
             "model": root_model,
+            "model_provider": root_provider,
             "base_url": root_base_url,
-            "endpoint_name": endpoint_display_name(root_base_url, root_model),
+            "endpoint_name": endpoint_display_name(root_base_url, root_model, root_provider),
             "model_vendor": model_vendor_name(root_model),
+            "fallback_model": fallback_model,
+            "fallback_provider": fallback_provider,
+            "fallback_base_url": fallback_base_url,
+            "fallback_endpoint_name": endpoint_display_name(fallback_base_url, fallback_model, fallback_provider),
+            "router_disabled_models": router_disabled_models,
             "has_env": safe_path_exists(root_env_path),
             "has_config": safe_path_exists(root_config_path),
             "has_auth": safe_path_exists(auth_path),
