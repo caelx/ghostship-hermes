@@ -1,5 +1,7 @@
 # GitHub Actions Build Optimization
 
+Historical note: the 2026-04-11 overlay-based final publication path described in older drafts was superseded after it dropped managed runtime changes from the deployed image. Final GHCR publication now exports the explicit `ghostship-hermes-image` bundle instead.
+
 This note captures the measured optimization baseline for the `optimize-github-actions-image-builds` change, the acceptance metrics used for each implementation round, and the final measured outcome from the landed workflow.
 
 ## Baseline
@@ -66,7 +68,7 @@ Optimization rounds are implemented in this order:
 1. Conservative publish gating so docs-only and OpenSpec-only `main` pushes do not publish images.
 2. Cache-backed reuse:
    - native `uv` caching for the Python utility steps in `ci`
-3. Architectural publish optimization by splitting the publish path into a true reusable per-architecture `ghostship-hermes-base` image plus a repo-content overlay bundle, keying that base image from tracked base-affecting inputs, and layering content-addressed final-image reuse on top so repeated runs can avoid both native base rebuilds and exact-repeat final rebuilds.
+3. Architectural publish optimization by keeping a true reusable per-architecture `ghostship-hermes-base` image for the shared Hermes/core-runtime layer, while keying content-addressed final-image reuse to the explicit `ghostship-hermes-image` bundle so repeated runs can still avoid exact-repeat publishes without dropping managed runtime changes from the final image.
 
 ## Measuring Again
 
@@ -88,9 +90,9 @@ The helper emits JSON so runs, job timings, and the latest-job breakdown can be 
 
 The current free reuse strategy is split by workflow.
 - `uv` cache keys are derived from the tracked Python utility inputs and lockfiles, so dependency changes create a new cache key automatically.
-- The publish workflow first checks for a GHCR-published content-addressed final image derived from the tracked publish-relevant image inputs; if it exists, the run skips the Docker rebuild and retags that immutable image directly.
+- The publish workflow first checks for a GHCR-published content-addressed final image derived from the explicit `ghostship-hermes-image` bundle derivation; if it exists, the run skips rebuilding/exporting that final image and retags the immutable image directly.
 - The reusable `ghostship-hermes-base` image is built from the shared module with final-only wiring disabled. It now carries upstream Hermes/core container behavior, the stable shared system/runtime toolchain (`bashInteractive`, `cacert`, `coreutils`, `curl`, `findutils`, `git`, `gh`, `gnugrep`, `gnused`, `jq`, `nix`, `nodejs_22`, `openssh`, `procps`, `ripgrep`, `tirith`, `ttyd`, and `util-linux`), the shared Python dependency closure (`httpx`, `typer`, `fastapi`, `uvicorn`, and `websockets` from the repo's overridden Python package set), and the stable external utility closures (`agent-browser`, `bws`, `gcloud`, and `gws`).
-- When the final image is not already available, the workflow falls back to a GHCR-published `ghostship-hermes-base` image tagged from an explicit tracked base-input set instead of the raw base derivation path, so overlay-only repo changes do not force the slow native base build step on every publish run.
-- The repo-owned command surfaces stay in the overlay bundle (`ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, `ghostship-cli-contract`, and the `ghostship-*` utilities), and that bundle skips any Nix store paths already present in the base closure.
-- Structural validation for the new boundary is both `nix why-depends --derivation` and realized overlay inspection: the base image derivation no longer depends on `hermes-agent-wrapped`, `ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, `agent-browser`, or `ghostship-cli-contract`, and the realized overlay bundle store paths are reduced to Ghostship-owned packages plus the tiny overlay env.
+- When the final image is not already available, the workflow still ensures the separate GHCR-published `ghostship-hermes-base` image exists, tagged from an explicit tracked base-input set instead of the raw base derivation path, so the reusable base artifact stays current without forcing another native base build on overlay-only changes.
+- The repo-owned command surfaces still stay out of the base closure (`ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, `ghostship-cli-contract`, and the `ghostship-*` utilities). The overlay bundle remains an internal closure-audit artifact, but final GHCR publication no longer reconstructs `ghostship-hermes` from that lightweight overlay path.
+- Structural validation for the split boundary is still `nix why-depends --derivation` plus realized overlay inspection: the base image derivation should stay free of final-only Ghostship closures, and the overlay bundle store paths should remain limited to Ghostship-owned packages plus the tiny overlay env.
 - Magic Nix Cache was removed from `publish-image` after the native multi-arch jobs repeatedly hit GitHub Actions cache throttling and `ResourceExhausted` responses from the cache proxy.

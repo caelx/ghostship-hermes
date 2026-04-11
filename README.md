@@ -315,9 +315,9 @@ bump commit itself is created by GitHub Actions. The publish workflow now
 path-gates automatic runs, publishes a true per-architecture
 `ghostship-hermes-base` image from a base-specific NixOS module only when the
 tracked base-affecting Hermes/core-runtime layer changes, and publishes the
-final `ghostship-hermes` architecture tags by building the repo overlay on top
-of that reusable base image before the manifest-only job creates the multi-arch
-tags.
+final `ghostship-hermes` architecture tags from the explicit
+`ghostship-hermes-image` bundle so the managed runtime/systemd contract ships
+exactly as tested before the manifest-only job creates the multi-arch tags.
 Inside a running container, the `hermes` user tooling refresh path keeps an
 offline bootstrap package for first boot, but refreshes Hermes itself from
 `github:caelx/ghostship-hermes#hermes-agent-wrapped` by default so an already
@@ -338,8 +338,8 @@ Image output contract:
 
 Free GitHub Actions acceleration:
 
-- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image keyed to the exact GitHub base-plus-overlay assembly path, and it still maintains a stable `ghostship-hermes-base` tag for the separate reusable base artifact.
-- The immutable final-image reuse key now follows the reusable base-image tag plus the `ghostship-hermes-overlay-bundle` derivation that GitHub actually builds, so content publishes stop paying for the full final rootfs derivation when only the layered publish artifact is needed.
+- The publish workflow keeps the free speedup on GHCR reuse: it first reuses a content-addressed final image keyed to the explicit `ghostship-hermes-image` bundle derivation, and it still maintains a stable `ghostship-hermes-base` tag for the separate reusable base artifact.
+- The immutable final-image reuse key now follows the explicit final image bundle derivation instead of the layered base-plus-overlay assembly path, because the managed runtime contract lives in the final NixOS system rather than in the lightweight overlay bundle alone.
 - The base image no longer depends on `ghostship-hermes-router`, `ghostship-hermes-runtime`, or `hermes-dashboard`, so overlay-only command changes do not invalidate the base derivation or force another native base rebuild.
 - Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.

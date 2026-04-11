@@ -314,6 +314,7 @@ let
     cacert
     coreutils
     curl
+    diffutils
     findutils
     git
     gh
