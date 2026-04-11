@@ -37,6 +37,7 @@ site = Path(os.environ["SITE_PACKAGES"])
 doctor = site / "hermes_cli" / "doctor.py"
 tools = site / "hermes_cli" / "tools_config.py"
 gateway = site / "hermes_cli" / "gateway.py"
+gateway_status = site / "gateway" / "status.py"
 
 doctor_text = doctor.read_text()
 doctor_text = doctor_text.replace(
@@ -168,6 +169,16 @@ gateway_text = gateway_text.replace(setup_block, setup_replacement, 1)
 if setup_replacement not in gateway_text:
     raise RuntimeError("failed to route managed gateway commands through ghostship shim")
 gateway.write_text(gateway_text)
+
+status_text = gateway_status.read_text()
+status_text = status_text.replace(
+    '        "gateway/run.py",\n    )',
+    '        "gateway/run.py",\n        ".hermes-wrapped gateway",\n        "gateway run --replace",\n        "gateway run",\n    )',
+    2,
+)
+if status_text.count('".hermes-wrapped gateway"') != 2:
+    raise RuntimeError("failed to expand gateway process signatures in gateway.status")
+gateway_status.write_text(status_text)
 PATCH
 
     for prog in hermes hermes-agent hermes-acp; do

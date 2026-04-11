@@ -423,6 +423,7 @@ run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/SOUL.md.ghostship-
 run_as_hermes "$container_name" 'printf "agent-edited soul\n" >/home/hermes/.hermes/SOUL.md'
 run_in_container "$container_name" 'systemctl start ghostship-hermes-bootstrap.service'
 run_as_hermes "$container_name" 'grep -Fx "agent-edited soul" /home/hermes/.hermes/SOUL.md >/dev/null'
+run_as_hermes "$container_name" 'hermes doctor >/dev/null'
 assert_gateway_pid_contract "$container_name"
 run_as_hermes "$container_name" 'hermes gateway status | grep -F "Managed gateway service is running" >/dev/null'
 run_as_hermes "$container_name" 'hermes gateway status | grep -F "ghostship-hermes-gateway.service" >/dev/null'
