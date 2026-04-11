@@ -312,8 +312,7 @@ The scheduled `update-hermes-release` workflow tracks the upstream
 lockfile when a new tag lands, and then explicitly dispatches
 `publish-image.yml` so the new Hermes build is published even though the pin
 bump commit itself is created by GitHub Actions. The publish workflow now
-path-gates automatic runs, schedules a fresh Hawaii-day full-image build at
-`04:00 Pacific/Honolulu` (`14:00 UTC`), and always publishes the final
+path-gates automatic runs, schedules a fresh full-image build once per day at `14:00 UTC`, and always publishes the final
 `ghostship-hermes` architecture tags from the explicit
 `ghostship-hermes-image` bundle so the managed runtime/systemd contract ships
 exactly as tested. Each day gets a rolling full-image cache tag in GHCR, and
@@ -340,7 +339,7 @@ Image output contract:
 Free GitHub Actions acceleration:
 
 - The publish workflow no longer skips image builds based on content-addressed final-image reuse; every publish rebuilds the explicit `ghostship-hermes-image` bundle.
-- A rolling Hawaii-day full-image cache tag (`daily-<hermes-release>-<YYYY-MM-DD>-<arch>`) is published once per day at `04:00 Pacific/Honolulu` (`14:00 UTC`) or on the first image-affecting push that day, then refreshed after every successful same-day publish. Because the tag includes `hermes-release.txt`, a Hermes version bump automatically starts a fresh daily line.
+- A rolling daily full-image cache tag (`daily-<hermes-release>-<YYYY-MM-DD>-<arch>`) is published once per day at `14:00 UTC` or on the first image-affecting push of that UTC day, then refreshed after every successful same-day publish. Because the tag includes `hermes-release.txt`, a Hermes version bump automatically starts a fresh daily line.
 - Same-day publishes rebuild inside that rolling daily full image so the in-image Nix build can reuse the full baked `/nix/store` from the most recent daily image rather than only a stripped base layer.
 - `workflow_dispatch` now exposes `force_full_build=true` so you can bypass the daily cache and make the workflow do a full host-side rebuild on demand.
 - Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.

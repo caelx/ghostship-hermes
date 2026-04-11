@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       force_full_build:
-        description: Build from scratch instead of using today's Hawaii daily image
+        description: Build from scratch instead of using today's daily image
         required: false
         default: false
         type: boolean
@@ -112,15 +112,15 @@ jobs:
 
           final_drv="$(nix eval .#packages.${{ matrix.system }}.ghostship-hermes-image.drvPath --raw)"
           content_hash="$(echo "$final_drv" | sha256sum | cut -c1-24)"
-          hawaii_date="$(TZ=Pacific/Honolulu date +%F)"
+          daily_date="$(date -u +%F)"
           content_ref="${IMAGE_NAME}:content-${content_hash}-${PLATFORM_TAG}"
-          daily_ref="${IMAGE_NAME}:daily-${HERMES_REF}-${hawaii_date}-${PLATFORM_TAG}"
+          daily_ref="${IMAGE_NAME}:daily-${HERMES_REF}-${daily_date}-${PLATFORM_TAG}"
           local_daily_ref="ghostship-hermes-daily:ci-${PLATFORM_TAG}"
 
           {
             echo "final_drv=${final_drv}"
             echo "content_hash=${content_hash}"
-            echo "hawaii_date=${hawaii_date}"
+            echo "daily_date=${daily_date}"
             echo "content_ref=${content_ref}"
             echo "daily_ref=${daily_ref}"
             echo "local_daily_ref=${local_daily_ref}"
@@ -141,13 +141,13 @@ jobs:
           if [ "$FORCE_FULL_BUILD" = "true" ]; then
             build_reason=forced-full-build
           elif nix shell nixpkgs#skopeo -c skopeo inspect "docker://${DAILY_REF}" >/dev/null 2>&1; then
-            echo "reusing Hawaii daily image ${DAILY_REF}"
+            echo "reusing daily image ${DAILY_REF}"
             docker pull "$DAILY_REF"
             docker tag "$DAILY_REF" "$LOCAL_DAILY_REF"
             build_strategy=daily-cache
             build_reason=reused-daily-image
           else
-            echo "no Hawaii daily image found for ${DAILY_REF}; doing full build"
+            echo "no daily image found for ${DAILY_REF}; doing full build"
           fi
 
           {
@@ -175,7 +175,7 @@ jobs:
           scripts/export_publishable_image.sh             "$final_bundle"             "ghostship-hermes:ci-${PLATFORM_TAG}"             "ghostship-hermes-${PLATFORM_TAG}.tar"
           nix shell nixpkgs#skopeo -c skopeo copy             "docker-archive:$(pwd)/ghostship-hermes-${PLATFORM_TAG}.tar"             "docker://${CONTENT_REF}"
 
-      - name: Refresh Hawaii daily image
+      - name: Refresh daily image
         env:
           CONTENT_REF: ${{ steps.refs.outputs.content_ref }}
           DAILY_REF: ${{ steps.refs.outputs.daily_ref }}
