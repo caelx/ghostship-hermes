@@ -9,7 +9,9 @@
   hermesDashboard ? null,
   hermesRelease,
   includeRepoContent ? false,
-  wrappedHermesAgent,
+  includeManagedRuntime ? false,
+  hermesAgentPackage,
+  sharedGhostshipDependencyPackages ? [ ],
   ...
 }:
 let
@@ -170,7 +172,7 @@ let
   managedUserPackages = [
     {
       name = "hermes-agent-wrapped";
-      bootstrapRef = "${wrappedHermesAgent}";
+      bootstrapRef = "${hermesAgentPackage}";
     }
     {
       name = "git";
@@ -355,7 +357,7 @@ let
     tirith
     ttyd
     util-linux
-  ];
+  ] ++ sharedGhostshipDependencyPackages;
 
   repoCommandPackages = lib.optionals includeRepoContent (
     [
@@ -838,9 +840,12 @@ PY2
 
   serviceEnvironment = {
     HERMES_HOME = "/home/hermes/.hermes";
+    TERMINAL_CWD = "/workspace";
+    SSL_CERT_FILE = certificateFile;
+    NIX_SSL_CERT_FILE = certificateFile;
+  } // lib.optionalAttrs includeManagedRuntime {
     GHOSTSHIP_HERMES_PROJECT_ROOT = toolingProjectRoot;
     GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF = runtimeFlakeRefDefault;
-    TERMINAL_CWD = "/workspace";
     GHOSTSHIP_TERMINAL_CWD = "/workspace";
     GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
     GHOSTSHIP_HERMES_PROFILES = managedProfileNames;
@@ -852,12 +857,11 @@ PY2
     GHOSTSHIP_ROUTER_STATE_DIR = "/home/hermes/.local/state/ghostship-hermes/router";
     GHOSTSHIP_ROUTER_DB_PATH = "/home/hermes/.local/state/ghostship-hermes/router/router.db";
     GHOSTSHIP_ROUTER_REFRESH_INTERVAL = "300";
-    SSL_CERT_FILE = certificateFile;
-    NIX_SSL_CERT_FILE = certificateFile;
   };
 
   userServiceEnvironment = serviceEnvironment // {
     HOME = "/home/hermes";
+  } // lib.optionalAttrs includeManagedRuntime {
     GHOSTSHIP_HERMES_MANAGED_PROFILE = managedUserProfile;
   };
 
@@ -910,7 +914,7 @@ in
       export HOME=/home/hermes
       export PATH="${hermesUserDefaultPath}:$PATH"
       export HERMES_HOME=/home/hermes/.hermes
-      export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}
+      ${lib.optionalString includeManagedRuntime "export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}"}
       export TERMINAL_CWD=/workspace
       export SSL_CERT_FILE=${certificateFile}
       export NIX_SSL_CERT_FILE=${certificateFile}
@@ -922,7 +926,7 @@ in
     fi
     export PATH="${hermesUserDefaultPath}:$PATH"
     export HERMES_HOME=/home/hermes/.hermes
-    export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}
+    ${lib.optionalString includeManagedRuntime "export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}"}
     export TERMINAL_CWD=/workspace
     export SSL_CERT_FILE=${certificateFile}
     export NIX_SSL_CERT_FILE=${certificateFile}
@@ -940,7 +944,7 @@ in
   };
 
   services.hermes-agent = {
-    package = wrappedHermesAgent;
+    package = hermesAgentPackage;
     enable = true;
     addToSystemPackages = false;
     createUser = false;
@@ -955,17 +959,16 @@ in
     environment = {
       TERMINAL_CWD = "/workspace";
     };
-    settings = {
-    } // rootConfig;
+    settings = { } // rootConfig;
     extraPackages = [ pkgs.nix ] ++ lib.optionals includeRepoContent ghostshipUtilities;
   };
-
 
   systemd.services.ghostship-storage = {
     description = "Prepare ghostship-hermes persisted storage";
     wantedBy = [ "multi-user.target" ];
     before = [
       "hermes-agent.service"
+    ] ++ lib.optionals includeManagedRuntime [
       "ghostship-dashboard-controller.service"
       "ghostship-hermes-router.service"
     ];
@@ -982,7 +985,7 @@ in
     requires = [ "ghostship-storage.service" ];
     environment = lib.mkForce (
       userServiceEnvironment
-      // {
+      // lib.optionalAttrs includeManagedRuntime {
         HERMES_MANAGED = "true";
       }
     );
@@ -992,8 +995,7 @@ in
       WorkingDirectory = lib.mkForce "/home/hermes";
     };
   };
-
-  systemd.services.ghostship-hermes-user-tooling = {
+  systemd.services.ghostship-hermes-user-tooling = lib.mkIf includeManagedRuntime {
     description = "Converge ghostship-hermes user tooling";
     wantedBy = [ "multi-user.target" ];
     wants = [ "network-online.target" ];
@@ -1026,15 +1028,11 @@ in
     };
   };
 
-  systemd.services.ghostship-hermes-bootstrap = {
+  systemd.services.ghostship-hermes-bootstrap = lib.mkIf includeManagedRuntime {
     description = "Bootstrap ghostship-hermes Hermes profiles";
     wantedBy = [ "multi-user.target" ];
-    after = [
-      "ghostship-storage.service"
-    ];
-    requires = [
-      "ghostship-storage.service"
-    ];
+    after = [ "ghostship-storage.service" ];
+    requires = [ "ghostship-storage.service" ];
     environment = userServiceEnvironment;
     path = servicePath;
     serviceConfig = {
@@ -1050,8 +1048,7 @@ in
     };
   };
 
-
-  systemd.services.ghostship-hermes-startup = {
+  systemd.services.ghostship-hermes-startup = lib.mkIf includeManagedRuntime {
     description = "Start ghostship-hermes runtime services";
     wantedBy = [ "multi-user.target" ];
     wants = [ "network-online.target" ];
@@ -1074,7 +1071,7 @@ in
     };
   };
 
-  systemd.services.ghostship-hermes-router = {
+  systemd.services.ghostship-hermes-router = lib.mkIf includeManagedRuntime {
     description = "ghostship-hermes model router";
     wantedBy = [ ];
     wants = [ "network-online.target" ];
@@ -1135,7 +1132,7 @@ in
     };
   };
 
-  systemd.services.ghostship-dashboard-controller = {
+  systemd.services.ghostship-dashboard-controller = lib.mkIf includeManagedRuntime {
     description = "ghostship-hermes dashboard controller";
     wantedBy = [ ];
     wants = [ "network-online.target" ];
@@ -1162,14 +1159,11 @@ in
     };
   };
 
-  systemd.services.ghostship-hermes-profile-assistant = mkProfileGatewayService "assistant";
+  systemd.services.ghostship-hermes-profile-assistant = lib.mkIf includeManagedRuntime (mkProfileGatewayService "assistant");
+  systemd.services.ghostship-hermes-profile-operations = lib.mkIf includeManagedRuntime (mkProfileGatewayService "operations");
+  systemd.services.ghostship-hermes-profile-supervisor = lib.mkIf includeManagedRuntime (mkProfileGatewayService "supervisor");
 
-  systemd.services.ghostship-hermes-profile-operations = mkProfileGatewayService "operations";
-
-  systemd.services.ghostship-hermes-profile-supervisor = mkProfileGatewayService "supervisor";
-
-
-  systemd.services.ghostship-hermes-profile-assistant-restart = {
+  systemd.services.ghostship-hermes-profile-assistant-restart = lib.mkIf includeManagedRuntime {
     description = "Restart ghostship-hermes assistant gateway after profile changes";
     serviceConfig = {
       Type = "oneshot";
@@ -1179,7 +1173,7 @@ in
     };
   };
 
-  systemd.services.ghostship-hermes-profile-operations-restart = {
+  systemd.services.ghostship-hermes-profile-operations-restart = lib.mkIf includeManagedRuntime {
     description = "Restart ghostship-hermes operations gateway after profile changes";
     serviceConfig = {
       Type = "oneshot";
@@ -1189,7 +1183,7 @@ in
     };
   };
 
-  systemd.services.ghostship-hermes-profile-supervisor-restart = {
+  systemd.services.ghostship-hermes-profile-supervisor-restart = lib.mkIf includeManagedRuntime {
     description = "Restart ghostship-hermes supervisor gateway after profile changes";
     serviceConfig = {
       Type = "oneshot";
@@ -1199,7 +1193,7 @@ in
     };
   };
 
-  systemd.paths.ghostship-hermes-profile-assistant-restart = {
+  systemd.paths.ghostship-hermes-profile-assistant-restart = lib.mkIf includeManagedRuntime {
     wantedBy = [ "multi-user.target" ];
     pathConfig = {
       PathChanged = [
@@ -1210,7 +1204,7 @@ in
     };
   };
 
-  systemd.paths.ghostship-hermes-profile-operations-restart = {
+  systemd.paths.ghostship-hermes-profile-operations-restart = lib.mkIf includeManagedRuntime {
     wantedBy = [ "multi-user.target" ];
     pathConfig = {
       PathChanged = [
@@ -1221,7 +1215,7 @@ in
     };
   };
 
-  systemd.paths.ghostship-hermes-profile-supervisor-restart = {
+  systemd.paths.ghostship-hermes-profile-supervisor-restart = lib.mkIf includeManagedRuntime {
     wantedBy = [ "multi-user.target" ];
     pathConfig = {
       PathChanged = [
@@ -1232,19 +1226,7 @@ in
     };
   };
 
-  systemd.services.nix-daemon = {
-    wantedBy = lib.mkForce [ "multi-user.target" ];
-    after = [ "ghostship-storage.service" ];
-    requires = [ "ghostship-storage.service" ];
-  };
-
-  systemd.sockets.nix-daemon = {
-    wantedBy = lib.mkForce [ "multi-user.target" ];
-    after = [ "ghostship-storage.service" ];
-    requires = [ "ghostship-storage.service" ];
-  };
-
-  systemd.services.ghostship-hermes-user-tooling-refresh = {
+  systemd.services.ghostship-hermes-user-tooling-refresh = lib.mkIf includeManagedRuntime {
     description = "Refresh ghostship-hermes user tooling";
     after = [ "network-online.target" "nix-daemon.service" ];
     requires = [ "nix-daemon.service" ];
@@ -1261,7 +1243,7 @@ in
     };
   };
 
-  systemd.timers.ghostship-hermes-user-tooling-refresh = {
+  systemd.timers.ghostship-hermes-user-tooling-refresh = lib.mkIf includeManagedRuntime {
     wantedBy = [ "timers.target" ];
     timerConfig = {
       OnBootSec = "15min";
@@ -1269,6 +1251,17 @@ in
       Persistent = true;
       Unit = "ghostship-hermes-user-tooling-refresh.service";
     };
+  };
+  systemd.services.nix-daemon = {
+    wantedBy = lib.mkForce [ "multi-user.target" ];
+    after = [ "ghostship-storage.service" ];
+    requires = [ "ghostship-storage.service" ];
+  };
+
+  systemd.sockets.nix-daemon = {
+    wantedBy = lib.mkForce [ "multi-user.target" ];
+    after = [ "ghostship-storage.service" ];
+    requires = [ "ghostship-storage.service" ];
   };
 
   system.extraDependencies = servicePath ++ [ fallbackCommandEnv storagePreparationScript ];

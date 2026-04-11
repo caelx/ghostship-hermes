@@ -5,9 +5,10 @@ The current image architecture uses one shared NixOS module for both `ghostship-
 ## Goals / Non-Goals
 
 **Goals:**
-- Produce a real reusable base image whose NixOS closure contains the Hermes runtime, container boot contract, and the stable shared runtimes/dependency closures that many repo-owned packages repeatedly need.
-- Move repo-owned router/dashboard/runtime service wiring and utility exposure out of the base layer and into the final image composition path.
+- Produce a real reusable base image whose NixOS closure contains the upstream Hermes runtime, container boot contract, and the stable shared runtimes/dependency closures that Ghostship-owned final content repeatedly needs.
+- Move every Ghostship-owned runtime package and managed service unit out of the base layer and into the final image composition path.
 - Remove shim binaries from the base image entirely.
+- Prove the boundary from the built base closure itself, not only from module structure.
 - Preserve the existing final `ghostship-hermes` runtime behavior, published tags, and consumer-facing image semantics.
 
 **Non-Goals:**
@@ -29,13 +30,17 @@ Alternatives considered:
 
 The base image may include stable shared runtimes and dependency closures that are broadly reused by the repo-owned layer, such as interpreters, language runtimes, or common support packages, but only when those dependencies are not themselves carrying repo-owned service semantics. That gives the overlay less to copy while keeping the base image decoupled from repo-specific commands.
 
+Current audited base-side shared dependencies:
+- Shared Python service deps from the repo's overridden Python package set: `httpx`, `typer`, `fastapi`, `uvicorn`, `websockets`
+- Stable external utility closures that are approved in the default image and otherwise inflate every overlay: `agent-browser`, `bws`, `gcloud`, `gws`
+
 Alternatives considered:
 - Keep every non-Hermes dependency in the overlay: simplest conceptual split, but it leaves obvious high-fanout shared closures out of the reusable layer and reduces the benefit of the new base boundary.
 - Move all repo package dependencies into base aggressively: larger reuse, but it risks pulling repo coupling and churn back into the base layer.
 
-### 3. Treat repo-owned services as final-image-only wiring
+### 3. Treat all Ghostship-owned runtime wiring as final-image-only
 
-`ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, and the `ghostship-*` utilities should be absent from the base NixOS closure. The final image composition path should add those real binaries and whichever systemd/PATH integration they need.
+`ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, the `ghostship-*` utilities, `wrappedHermesAgent`, and Ghostship-managed bootstrap/tooling/profile services should be absent from the base NixOS closure. The final image composition path should add those real binaries and whichever systemd/PATH integration they need.
 
 Alternatives considered:
 - Keep tiny placeholder binaries in base: easy, but it defeats the point of making the base truly upstream-like and low-churn.
@@ -58,10 +63,10 @@ Alternatives considered:
 
 1. Introduce distinct base and final image composition paths in the flake/module layout.
 2. Identify which shared runtimes/dependency closures belong in base versus final content.
-3. Move repo-owned services and PATH wiring out of the base path.
+3. Move every Ghostship-owned runtime package, managed service, and PATH wiring out of the base path.
 4. Remove shim binaries from the base image.
 5. Update publish logic and docs to describe the true base/final split.
-6. Validate that the final published image still matches the current runtime contract and that overlay-only changes no longer require a repo-coupled base rebuild path.
+6. Validate from the built base closure that Ghostship-owned runtime content is absent and that overlay-only changes no longer require a repo-coupled base rebuild path.
 
 Rollback strategy:
 - Revert to the current shared-module-plus-shims architecture if the split drops required runtime behavior or becomes too invasive for the current release window.

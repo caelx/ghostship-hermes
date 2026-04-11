@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
-### Requirement: Reusable base image excludes repo-owned command surfaces
-The repo SHALL build the reusable `ghostship-hermes-base` image from a base-specific image composition path that excludes repo-owned command surfaces such as `ghostship-*`, `ghostship-hermes-router`, `ghostship-hermes-runtime`, and `hermes-dashboard`.
+### Requirement: Reusable base image excludes Ghostship-owned runtime surfaces
+The repo SHALL build the reusable `ghostship-hermes-base` image from a base-specific image composition path that excludes Ghostship-owned runtime surfaces such as `ghostship-*`, `ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, `wrappedHermesAgent`, and Ghostship-managed bootstrap/tooling/profile services.
 
 #### Scenario: Maintainer inspects the base image architecture
 - **WHEN** maintainers review the flake outputs or image composition modules for `ghostship-hermes-base`
@@ -31,3 +31,11 @@ The final published `ghostship-hermes` image SHALL add repo-owned router, dashbo
 - **WHEN** the final `ghostship-hermes` image is built or published
 - **THEN** the real repo-owned binaries and runtime wiring are added after the base image boundary
 - **AND** the final image exposes the repo-owned commands expected by operators and managed services
+
+### Requirement: Base-image verification inspects the built closure
+The repo SHALL verify the true-base split against the built `ghostship-hermes-base` closure or realized image contents, not only against source-level module boundaries.
+
+#### Scenario: Maintainer validates the base image
+- **WHEN** maintainers validate the true-base split
+- **THEN** they inspect the built base derivation, its realized closure, or both
+- **AND** they confirm Ghostship-owned runtime packages are absent while approved shared dependencies remain present

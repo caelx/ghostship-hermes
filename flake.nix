@@ -76,9 +76,20 @@
           ghostshipN8n = pkgs.callPackage ./packages/n8n-cli/package.nix { inherit ghostshipCliContract; };
           ghostshipChaptarr = pkgs.callPackage ./packages/chaptarr-cli/package.nix { inherit ghostshipCliContract; };
           agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
+          upstreamHermesAgent = hermes-agent.packages.${system}.default;
           wrappedHermesAgent = pkgs.callPackage ./packages/hermes-agent-wrapped/package.nix {
-            hermesAgentPackage = hermes-agent.packages.${system}.default;
+            hermesAgentPackage = upstreamHermesAgent;
             agentBrowserPackage = agentBrowser;
+          };
+          ghostshipSharedPython = pkgs.buildEnv {
+            name = "ghostship-shared-python-deps";
+            paths = with routerPython311Packages; [
+              httpx
+              typer
+              fastapi
+              uvicorn
+              websockets
+            ];
           };
           ghostshipHermesRouter = pkgs.callPackage ./packages/hermes-router/package.nix {
             python311Packages = routerPython311Packages;
@@ -90,11 +101,14 @@
           ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix { inherit hermesDashboard; };
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.gws;
 
-          allUtilities = [
+          baseUtilityPackages = [
             pkgs.bws
             pkgs.google-cloud-sdk
             agentBrowser
             googleWorkspaceCli
+          ];
+
+          allUtilities = baseUtilityPackages ++ [
             ghostshipSearxng
             ghostshipSonarr
             ghostshipRadarr
@@ -136,7 +150,7 @@
             nixpkgs.lib.nixosSystem {
               inherit system;
               specialArgs = extraSpecialArgs // {
-                inherit hermesRelease wrappedHermesAgent;
+                inherit hermesRelease;
               };
               modules = [
                 ({ ... }: {
@@ -148,17 +162,27 @@
             };
 
           ghostshipHermesBaseSystem = mkHermesSystem {
-            modulePath = ./packages/hermes-image/nixos-base-module.nix;
+            modulePath = ./packages/hermes-image/nixos-module.nix;
+            extraSpecialArgs = {
+              includeRepoContent = false;
+              includeManagedRuntime = false;
+              hermesAgentPackage = upstreamHermesAgent;
+              sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseUtilityPackages;
+            };
           };
           ghostshipHermesSystem = mkHermesSystem {
-            modulePath = ./packages/hermes-image/nixos-final-module.nix;
+            modulePath = ./packages/hermes-image/nixos-module.nix;
             extraSpecialArgs = {
+              includeRepoContent = true;
+              includeManagedRuntime = true;
               inherit
                 ghostshipHermesRouter
                 ghostshipHermesRuntime
                 hermesDashboard
                 ;
+              hermesAgentPackage = wrappedHermesAgent;
               ghostshipUtilities = allUtilities;
+              sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseUtilityPackages;
             };
           };
           ghostshipHermesOverlayBundle = pkgs.callPackage ./packages/hermes-image/overlay-bundle.nix {

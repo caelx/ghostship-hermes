@@ -5,8 +5,10 @@ The current `ghostship-hermes-base` image is still a repo-specific image contrac
 ## What Changes
 
 - Split the current image definition into a true Hermes base layer and a repo-content layer instead of reusing one NixOS module with shim binaries.
-- Keep the base image focused on the upstream Hermes runtime, core OS contract, container boot requirements, and any stable shared dependency closures that materially reduce how much custom repo content has to be layered in later.
-- Remove the shim-binary pattern from the base image so the base no longer needs fake `ghostship-*`, `ghostship-hermes-router`, `ghostship-hermes-runtime`, or `hermes-dashboard` commands just to satisfy the NixOS system closure.
+- Keep the base image focused on the upstream Hermes runtime, core OS contract, container boot requirements, and every stable shared dependency closure that the Ghostship router, dashboard, runtime, wrapped Hermes layer, and `ghostship-*` utilities repeatedly need.
+- Remove all Ghostship-owned runtime packages and managed service wiring from the base image, including `wrappedHermesAgent`, Ghostship bootstrap/tooling units, `ghostship-*`, `ghostship-hermes-router`, `ghostship-hermes-runtime`, and `hermes-dashboard`.
+- Verify the split from the built base image and its realized closure, not just from source-level module boundaries.
+- Treat the current approved base-side shared dependency set as part of the proposal acceptance criteria: the shared Python service deps (`httpx`, `typer`, `fastapi`, `uvicorn`, `websockets`) and the stable external utility closures (`agent-browser`, `bws`, `gcloud`, `gws`) belong in base unless a later audit shows they cause unacceptable base churn.
 - Preserve the published `ghostship-hermes` consumer contract and multi-arch publish flow while making the internal base/content boundary materially cleaner and more reusable.
 
 ## Capabilities

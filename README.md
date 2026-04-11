@@ -404,9 +404,9 @@ fork or branch.
 
 Base/final layering:
 
-- `ghostship-hermes-base` now carries the Hermes/core container contract plus stable shared dependencies that are broadly reused by the repo-owned layer: `bashInteractive`, `cacert`, `coreutils`, `curl`, `findutils`, `git`, `gh`, `gnugrep`, `gnused`, `jq`, `nix`, `nodejs_22`, `openssh`, `procps`, `ripgrep`, `tirith`, `ttyd`, and `util-linux`.
-- The repo-owned command surfaces stay in the final layer: `ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, and the `ghostship-*` utilities are copied in through `/opt/ghostship-overlay` instead of living in the base closure.
-- The overlay bundle now skips any Nix store paths that are already present in the base closure, so moving stable shared dependencies into base materially reduces how much final-layer content has to be copied and pushed.
+- `ghostship-hermes-base` now carries the upstream Hermes runtime, the core container contract, the shared system/runtime toolchain (`bashInteractive`, `cacert`, `coreutils`, `curl`, `findutils`, `git`, `gh`, `gnugrep`, `gnused`, `jq`, `nix`, `nodejs_22`, `openssh`, `procps`, `ripgrep`, `tirith`, `ttyd`, and `util-linux`), the shared Python dependency closure used across Ghostship services (`httpx`, `typer`, `fastapi`, `uvicorn`, and `websockets` via the repo's overridden Python package set), and the stable external utility closures that would otherwise bloat every overlay (`agent-browser`, `bws`, `gcloud`, and `gws`).
+- The repo-owned command surfaces stay in the final layer: `ghostship-hermes-router`, `ghostship-hermes-runtime`, `hermes-dashboard`, `ghostship-cli-contract`, and the `ghostship-*` utilities are copied in through `/opt/ghostship-overlay` instead of living in the base closure.
+- The overlay bundle now skips any Nix store paths that are already present in the base closure. After the dependency audit, the realized overlay store paths are down to Ghostship-owned packages plus the small overlay assembly env, rather than re-copying shared Python libraries or stable external tool closures on every publish.
 
 Image output contract:
 
