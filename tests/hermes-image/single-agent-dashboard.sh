@@ -138,6 +138,8 @@ run_as_hermes() {
     -e HOME=/home/hermes \
     -e HERMES_HOME=/home/hermes/.hermes \
     -e TERMINAL_CWD=/home/hermes \
+    -e XDG_RUNTIME_DIR=/run/user/3000 \
+    -e DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3000/bus \
     -e PATH=/home/hermes/.local/bin:/home/hermes/.local/state/nix/profiles/ghostship-managed/bin:/home/hermes/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin \
     "$target_container" \
     "$container_shell" -lc "$*"
@@ -151,6 +153,8 @@ run_as_hermes_default_path() {
     -e HOME=/home/hermes \
     -e HERMES_HOME=/home/hermes/.hermes \
     -e TERMINAL_CWD=/home/hermes \
+    -e XDG_RUNTIME_DIR=/run/user/3000 \
+    -e DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3000/bus \
     "$target_container" \
     "$container_shell" -lc "$*"
 }
@@ -188,6 +192,19 @@ assert_model_config() {
   run_as_hermes "$target_container" 'hermes config show | grep -F "api_key_env: OPENAI_API_KEY" >/dev/null'
   run_in_container "$target_container" 'printenv GHOSTSHIP_ROUTER_DISABLED_MODELS | grep -Fx "openrouter/free" >/dev/null'
   run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/status | jq -e ' .environment.model == \"minimax-m2.7\" and .environment.model_provider == \"opencode-go\" and .environment.fallback_model == \"agentic\" and .environment.fallback_provider == \"custom\" and .environment.router_disabled_models == \"openrouter/free\" ' >/dev/null"
+}
+
+assert_config_migration() {
+  local target_container="$1"
+  run_as_hermes "$target_container" 'sed -i "/^model:$/a\  base_url: http://127.0.0.1:8788/v1" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+  run_in_container "$target_container" 'systemctl start ghostship-hermes-bootstrap.service'
+  run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+}
+
+assert_primary_execution() {
+  local target_container="$1"
+  run_as_hermes "$target_container" 'output_file=/tmp/ghostship-hermes-primary-chat.txt; hermes chat -q "Reply with exactly OK." >"$output_file" 2>&1; ! grep -F "switching to fallback" "$output_file" >/dev/null; grep -F "OK" "$output_file" >/dev/null'
 }
 
 assert_gateway_pid_contract() {
@@ -384,7 +401,7 @@ assert_http_contains "${dashboard_base_url}/" "Providers"
 assert_http_contains "${dashboard_base_url}/" "Agent"
 assert_http_not_contains "${dashboard_base_url}/" "Profiles"
 wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
-wait_for_json_value "${dashboard_base_url}/api/status" '.environment.agent.service' "ghostship-hermes-gateway.service"
+wait_for_json_value "${dashboard_base_url}/api/status" '.environment.agent.service' "hermes-gateway.service"
 curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not' >/dev/null
 
 open_started_ms="$(date +%s%3N)"
@@ -405,9 +422,11 @@ wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"
 run_in_container "$container_name" 'id hermes | grep -F "uid=3000" >/dev/null'
 run_in_container "$container_name" '! systemctl is-active hermes-agent.service >/dev/null'
 run_in_container "$container_name" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
-run_in_container "$container_name" 'systemctl is-active ghostship-hermes-gateway.service >/dev/null'
+run_as_hermes "$container_name" 'systemctl --user is-active hermes-gateway.service >/dev/null'
+run_as_hermes "$container_name" 'test -L /home/hermes/.config/systemd/user/hermes-gateway.service'
+run_as_hermes "$container_name" 'readlink /home/hermes/.config/systemd/user/hermes-gateway.service | grep -Fx "/etc/systemd/user/hermes-gateway.service" >/dev/null'
 run_in_container "$container_name" 'test "$(cat /etc/ghostship-hermes-release)" = "$(cat /home/hermes/.ghostship-hermes-release)"'
-run_in_container "$container_name" 'systemctl cat ghostship-hermes-gateway.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
+run_as_hermes "$container_name" 'systemctl --user cat hermes-gateway.service | grep -F "WorkingDirectory=/workspace" >/dev/null'
 run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/.managed'
 run_as_hermes "$container_name" '! test -d /home/hermes/.hermes/profiles'
 run_as_hermes "$container_name" '! test -f /home/hermes/.hermes/active_profile'
@@ -438,6 +457,8 @@ run_as_hermes "$container_name" 'test "$(command -v hermes)" = "/home/hermes/.lo
 run_as_hermes "$container_name" '! hermes --version 2>/dev/null | grep -F "legacy-default-hermes" >/dev/null'
 assert_router_inventory "$container_name"
 assert_model_config "$container_name"
+assert_config_migration "$container_name"
+assert_primary_execution "$container_name"
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}\" /home/hermes/.hermes/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_ALLOWED_USERS}\" /home/hermes/.hermes/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_FREE_RESPONSE_CHANNELS}\" /home/hermes/.hermes/.env >/dev/null"
@@ -474,8 +495,9 @@ run_in_container "$container_name" 'systemctl start ghostship-hermes-bootstrap.s
 run_as_hermes "$container_name" 'grep -Fx "agent-edited soul" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_name" 'hermes doctor >/dev/null'
 assert_gateway_pid_contract "$container_name"
-run_as_hermes "$container_name" 'hermes gateway status | grep -F "Managed gateway service is running" >/dev/null'
-run_as_hermes "$container_name" 'hermes gateway status | grep -F "ghostship-hermes-gateway.service" >/dev/null'
-run_as_hermes "$container_name" 'hermes gateway restart | grep -F "systemctl restart ghostship-hermes-gateway.service" >/dev/null'
+run_as_hermes "$container_name" 'hermes gateway status | grep -F "User gateway service is running" >/dev/null'
+run_as_hermes "$container_name" 'hermes gateway status | grep -F "hermes-gateway.service" >/dev/null'
+run_as_hermes "$container_name" '! hermes gateway status | grep -F "Installed gateway service definition is outdated" >/dev/null'
+run_as_hermes "$container_name" 'hermes gateway restart | grep -F "User service restarted" >/dev/null'
 
 printf 'validated ghostship-hermes dashboard smoke test with %s\n' "$image_tag"

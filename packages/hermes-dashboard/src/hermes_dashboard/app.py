@@ -34,7 +34,7 @@ DASHBOARD_PORT = int(os.environ.get("GHOSTSHIP_DASHBOARD_PORT", "7681"))
 TERMINAL_CWD = os.environ.get("GHOSTSHIP_TERMINAL_CWD", "/home/hermes")
 HOME_DIR = os.environ.get("HOME", "/home/hermes")
 MANAGED_HERMES_HOME = os.environ.get("HERMES_HOME", "/home/hermes/.hermes")
-GATEWAY_SERVICE = os.environ.get("GHOSTSHIP_HERMES_GATEWAY_SERVICE", "ghostship-hermes-gateway.service")
+GATEWAY_SERVICE = os.environ.get("GHOSTSHIP_HERMES_GATEWAY_SERVICE", "hermes-gateway.service")
 BASH_PATH = os.environ.get("GHOSTSHIP_BASH") or shutil.which("bash") or "/bin/sh"
 DASHBOARD_ROOT = Path(__file__).parent / "static"
 

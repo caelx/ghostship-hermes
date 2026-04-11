@@ -36,7 +36,7 @@ import os
 site = Path(os.environ["SITE_PACKAGES"])
 doctor = site / "hermes_cli" / "doctor.py"
 tools = site / "hermes_cli" / "tools_config.py"
-gateway = site / "hermes_cli" / "gateway.py"
+gateway_cli = site / "hermes_cli" / "gateway.py"
 gateway_status = site / "gateway" / "status.py"
 
 doctor_text = doctor.read_text()
@@ -70,115 +70,22 @@ tools_text = tools_text.replace(
 )
 tools.write_text(tools_text)
 
-gateway_text = gateway.read_text()
-main_command_marker = """
-# =============================================================================
-# Main Command Handler
-# =============================================================================
-"""
-gateway_text = gateway_text.replace(
-    main_command_marker,
-    """
-
-def _ghostship_managed_profiles_root() -> Path:
-    return (Path.home() / ".hermes" / "profiles").resolve()
-
-
-def _ghostship_managed_service_name() -> str:
-    service = os.environ.get("GHOSTSHIP_HERMES_GATEWAY_SERVICE", "ghostship-hermes-gateway.service").strip()
-    return service[:-8] if service.endswith(".service") else service
-
-
-def _ghostship_systemd_state(service_name: str) -> str:
-    result = subprocess.run(
-        ["systemctl", "is-active", service_name],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    return result.stdout.strip() or "unknown"
-
-
-def _ghostship_print_managed_status(deep: bool = False) -> None:
-    service_name = _ghostship_managed_service_name()
-    state = _ghostship_systemd_state(service_name)
-
-    if state == "active":
-        print("✓ Managed gateway service is running")
-    else:
-        print(f"✗ Managed gateway service is {state}")
-    print(f"  Service: {service_name}.service")
-
-    if deep:
-        print()
-        subprocess.run(
-            ["systemctl", "status", service_name, "--no-pager"],
-            check=False,
-            timeout=10,
-        )
-        print()
-        print("Recent logs:")
-        subprocess.run(
-            ["journalctl", "-u", service_name, "-n", "20", "--no-pager"],
-            check=False,
-            timeout=10,
-        )
-    else:
-        print("  Use --deep for systemd status and recent logs.")
-
-
-def _ghostship_managed_mutation_guidance(subcmd: str) -> None:
-    service_name = _ghostship_managed_service_name()
-    print("This image manages Hermes gateway services through repo-owned systemd units.")
-    print(f"Use: systemctl {subcmd} {service_name}.service")
-    print("Or inspect first: hermes gateway status --deep")
-
-
-def _ghostship_handle_managed_gateway_command(args) -> bool:
-    if not is_managed():
-        return False
-
-    subcmd = getattr(args, "gateway_command", None)
-    if subcmd not in {"status", "start", "stop", "restart"}:
-        return False
-
-    if subcmd == "status":
-        _ghostship_print_managed_status(deep=getattr(args, "deep", False))
-        return True
-
-    _ghostship_managed_mutation_guidance(subcmd)
-    return True
-
-
-# =============================================================================
-# Main Command Handler
-# =============================================================================
-""",
+gateway_cli_text = gateway_cli.read_text()
+gateway_cli_text = gateway_cli_text.replace(
+    'def get_systemd_unit_path(system: bool = False) -> Path:\n    name = get_service_name()\n    if system:\n        return Path("/etc/systemd/system") / f"{name}.service"\n    return Path.home() / ".config" / "systemd" / "user" / f"{name}.service"\n',
+    'def _managed_user_systemd_unit_path() -> Path:\n    return Path("/etc/systemd/user") / f"{get_service_name()}.service"\n\n\ndef get_systemd_unit_path(system: bool = False) -> Path:\n    name = get_service_name()\n    if system:\n        return Path("/etc/systemd/system") / f"{name}.service"\n    user_unit = Path.home() / ".config" / "systemd" / "user" / f"{name}.service"\n    managed_unit = _managed_user_systemd_unit_path()\n    if user_unit.exists():\n        return user_unit\n    if managed_unit.exists():\n        return managed_unit\n    return user_unit\n',
     1,
 )
-if "_ghostship_handle_managed_gateway_command" not in gateway_text:
-    raise RuntimeError("failed to inject ghostship managed gateway helpers into hermes_cli.gateway")
-
-setup_block = """    if subcmd == "setup":
-        gateway_setup()
-        return
-
-    # Service management commands
-"""
-setup_replacement = """    if subcmd == "setup":
-        gateway_setup()
-        return
-
-    if _ghostship_handle_managed_gateway_command(args):
-        return
-
-    # Service management commands
-"""
-gateway_text = gateway_text.replace(setup_block, setup_replacement, 1)
-if setup_replacement not in gateway_text:
-    raise RuntimeError("failed to route managed gateway commands through ghostship shim")
-gateway.write_text(gateway_text)
+if "def _managed_user_systemd_unit_path() -> Path:" not in gateway_cli_text:
+    raise RuntimeError("failed to teach Hermes gateway about managed /etc/systemd/user units")
+gateway_cli_text = gateway_cli_text.replace(
+    'def systemd_unit_is_current(system: bool = False) -> bool:\n    unit_path = get_systemd_unit_path(system=system)\n    if not unit_path.exists():\n        return False\n\n    installed = unit_path.read_text(encoding="utf-8")\n    expected_user = _read_systemd_user_from_unit(unit_path) if system else None\n    expected = generate_systemd_unit(system=system, run_as_user=expected_user)\n    return _normalize_service_definition(installed) == _normalize_service_definition(expected)\n',
+    'def systemd_unit_is_current(system: bool = False) -> bool:\n    unit_path = get_systemd_unit_path(system=system)\n    if not unit_path.exists():\n        return False\n\n    if not system:\n        managed_unit = _managed_user_systemd_unit_path()\n        try:\n            if managed_unit.exists() and unit_path.resolve() == managed_unit.resolve():\n                return True\n        except OSError:\n            pass\n\n    installed = unit_path.read_text(encoding="utf-8")\n    expected_user = _read_systemd_user_from_unit(unit_path) if system else None\n    expected = generate_systemd_unit(system=system, run_as_user=expected_user)\n    return _normalize_service_definition(installed) == _normalize_service_definition(expected)\n',
+    1,
+)
+if 'managed_unit.exists() and unit_path.resolve() == managed_unit.resolve()' not in gateway_cli_text:
+    raise RuntimeError("failed to mark managed user-unit symlinks current for Hermes gateway status")
+gateway_cli.write_text(gateway_cli_text)
 
 status_text = gateway_status.read_text()
 status_text = status_text.replace(
@@ -201,7 +108,7 @@ PATCH
     done
   '';
   meta = with lib; {
-    description = "Wrapped Hermes package with agent-browser layout for doctor/runtime";
+    description = "Wrapped Hermes package with agent-browser layout and runtime fixes";
     platforms = hermesAgentPackage.meta.platforms or platforms.linux;
     mainProgram = "hermes";
   };

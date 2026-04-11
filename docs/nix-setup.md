@@ -524,7 +524,7 @@ This prevents drift between what Nix declares and what's on disk. Detection uses
 1. **`HERMES_MANAGED=true`** environment variable — set by the systemd service, visible to the gateway process
 2. **`.managed` marker file** in `HERMES_HOME` — set by the activation script, visible to interactive shells (e.g., `docker exec -it hermes-agent hermes config set ...` is also blocked).
 
-Gateway control is also image-managed. `hermes gateway status` reports the repo-owned managed gateway unit, and mutation commands such as `hermes gateway restart` print managed guidance for `ghostship-hermes-gateway.service` instead of falling back to upstream `systemctl --user` or `hermes gateway install` flows.
+Gateway control now aligns with upstream Hermes. The image enables `systemd --user` `hermes-gateway.service` for `hermes` at boot, so `hermes gateway status` and `hermes gateway restart` use the normal upstream user-service flow without requiring an interactive login session.
 
 To change configuration, edit your Nix config and run `sudo nixos-rebuild switch`.
 

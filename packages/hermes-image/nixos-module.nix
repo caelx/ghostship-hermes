@@ -15,7 +15,8 @@
   ...
 }:
 let
-  managedGatewayServiceName = "ghostship-hermes-gateway";
+  managedGatewayServiceName = "hermes-gateway";
+  managedUserRuntimeDir = "/run/user/3000";
   runtimeFlakeRefDefault = "github:caelx/ghostship-hermes";
   rootTerminalCwd = "/workspace";
   managedHermesHome = "/home/hermes/.hermes";
@@ -426,6 +427,18 @@ EOF
   managedGatewayPreStartScript = pkgs.writeShellScript "ghostship-hermes-gateway-pre-start.sh" ''
     set -euo pipefail
     rm -f ${lib.escapeShellArg managedGatewayPidPath}
+
+    config_path=${lib.escapeShellArg (managedHermesHome + "/config.yaml")}
+    env_path=${lib.escapeShellArg managedEnvPath}
+    for _ in $(${pkgs.coreutils}/bin/seq 1 60); do
+      if [ -f "$config_path" ] && [ -f "$env_path" ] && ${pkgs.curl}/bin/curl -fsS http://127.0.0.1:8788/readyz >/dev/null 2>&1; then
+        exit 0
+      fi
+      ${pkgs.coreutils}/bin/sleep 1
+    done
+
+    echo "managed gateway prerequisites did not become ready" >&2
+    exit 1
   '';
   managedGatewayPostStopScript = pkgs.writeShellScript "ghostship-hermes-gateway-post-stop.sh" ''
     set -euo pipefail
@@ -559,6 +572,44 @@ EOF
       manage_seeded_soul "$soul_source" "${managedSoulPath}"
     }
 
+    reconcile_managed_config() {
+      config_path="${managedHermesHome}/config.yaml"
+      [ -f "$config_path" ] || return 0
+
+      tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
+      ${pkgs.gawk}/bin/awk '
+        BEGIN { in_model = 0 }
+        /^model:[[:space:]]*$/ {
+          in_model = 1
+          print
+          next
+        }
+        in_model && /^[^[:space:]]/ {
+          in_model = 0
+        }
+        in_model && $0 == "  base_url: http://127.0.0.1:8788/v1" {
+          next
+        }
+        { print }
+      ' "$config_path" >"$tmp_path"
+      chmod 0600 "$tmp_path"
+      if ! cmp -s "$tmp_path" "$config_path"; then
+        mv -f "$tmp_path" "$config_path"
+      else
+        rm -f "$tmp_path"
+      fi
+    }
+
+    reconcile_gateway_user_unit_path() {
+      managed_unit="/etc/systemd/user/${managedGatewayServiceName}.service"
+      user_unit_dir="$HOME/.config/systemd/user"
+      user_unit="$user_unit_dir/${managedGatewayServiceName}.service"
+
+      [ -e "$managed_unit" ] || return 0
+      mkdir -p "$user_unit_dir"
+      ln -sfn "$managed_unit" "$user_unit"
+    }
+
     write_managed_env() {
       target="$1"
       target_dir="$(dirname "$target")"
@@ -605,6 +656,8 @@ EOF
 
     hermes config path >/dev/null 2>&1 || true
     hermes config env-path >/dev/null 2>&1 || true
+    reconcile_managed_config
+    reconcile_gateway_user_unit_path
   '';
 
   managedUserToolingScript = pkgs.writeShellScript "ghostship-hermes-user-tooling.sh" ''
@@ -738,6 +791,8 @@ PY2
 
   userServiceEnvironment = serviceEnvironment // {
     HOME = "/home/hermes";
+    XDG_RUNTIME_DIR = managedUserRuntimeDir;
+    DBUS_SESSION_BUS_ADDRESS = "unix:path=${managedUserRuntimeDir}/bus";
   } // lib.optionalAttrs includeManagedRuntime {
     GHOSTSHIP_HERMES_MANAGED_PROFILE = managedUserProfile;
   };
@@ -791,6 +846,10 @@ in
       export HOME=/home/hermes
       export PATH="${hermesUserDefaultPath}:$PATH"
       export HERMES_HOME=/home/hermes/.hermes
+      export XDG_RUNTIME_DIR=${managedUserRuntimeDir}
+      if [ -S ${managedUserRuntimeDir}/bus ]; then
+        export DBUS_SESSION_BUS_ADDRESS=unix:path=${managedUserRuntimeDir}/bus
+      fi
       ${lib.optionalString includeManagedRuntime "export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}"}
       export TERMINAL_CWD=/workspace
       export SSL_CERT_FILE=${certificateFile}
@@ -800,6 +859,10 @@ in
   environment.shellInit = ''
     if [ "$(id -u)" = "3000" ]; then
       export HOME=/home/hermes
+      export XDG_RUNTIME_DIR=${managedUserRuntimeDir}
+      if [ -S ${managedUserRuntimeDir}/bus ]; then
+        export DBUS_SESSION_BUS_ADDRESS=unix:path=${managedUserRuntimeDir}/bus
+      fi
     fi
     export PATH="${hermesUserDefaultPath}:$PATH"
     export HERMES_HOME=/home/hermes/.hermes
@@ -943,9 +1006,23 @@ in
       ExecStart = pkgs.writeShellScript "ghostship-hermes-startup.sh" ''
         set -euo pipefail
         ${pkgs.systemd}/bin/systemctl start \
+          user@3000.service \
           ghostship-dashboard-controller.service \
-          ghostship-hermes-router.service \
-          ${managedGatewayServiceName}.service
+          ghostship-hermes-router.service
+
+        for _ in $(${pkgs.coreutils}/bin/seq 1 30); do
+          if [ -S ${managedUserRuntimeDir}/bus ]; then
+            break
+          fi
+          ${pkgs.coreutils}/bin/sleep 1
+        done
+
+        exec ${pkgs.util-linux}/bin/runuser -u hermes -- env \
+          XDG_RUNTIME_DIR=${managedUserRuntimeDir} \
+          DBUS_SESSION_BUS_ADDRESS=unix:path=${managedUserRuntimeDir}/bus \
+          ${pkgs.systemd}/bin/systemctl --user start \
+            ghostship-hermes-gateway-restart.path \
+            ${managedGatewayServiceName}.service
       '';
     };
   };
@@ -1038,29 +1115,17 @@ in
     };
   };
 
-  systemd.services.${managedGatewayServiceName} = lib.mkIf includeManagedRuntime {
-    description = "ghostship-hermes managed gateway";
-    wantedBy = [ ];
+  systemd.user.services.${managedGatewayServiceName} = lib.mkIf includeManagedRuntime {
+    description = "Hermes managed gateway";
+    wantedBy = [ "default.target" ];
     wants = [ "network-online.target" ];
-    after = [
-      "ghostship-storage.service"
-      "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-router.service"
-      "network-online.target"
-    ];
-    requires = [
-      "ghostship-storage.service"
-      "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-router.service"
-    ];
+    after = [ "network-online.target" ];
     environment = userServiceEnvironment // {
       HERMES_MANAGED = "true";
     };
     path = servicePath;
     serviceConfig = {
       Type = "simple";
-      User = "hermes";
-      Group = "hermes";
       WorkingDirectory = rootTerminalCwd;
       EnvironmentFile = [ "-${managedEnvPath}" ];
       ExecStartPre = managedGatewayPreStartScript;
@@ -1071,18 +1136,18 @@ in
     };
   };
 
-  systemd.services.ghostship-hermes-gateway-restart = lib.mkIf includeManagedRuntime {
-    description = "Restart ghostship-hermes managed gateway after runtime changes";
+  systemd.user.services.ghostship-hermes-gateway-restart = lib.mkIf includeManagedRuntime {
+    description = "Restart Hermes managed gateway after runtime changes";
     serviceConfig = {
       Type = "oneshot";
       ExecStart = pkgs.writeShellScript "ghostship-hermes-gateway-restart.sh" ''
-        exec ${pkgs.systemd}/bin/systemctl try-restart ${managedGatewayServiceName}.service
+        exec ${pkgs.systemd}/bin/systemctl --user try-restart ${managedGatewayServiceName}.service
       '';
     };
   };
 
-  systemd.paths.ghostship-hermes-gateway-restart = lib.mkIf includeManagedRuntime {
-    wantedBy = [ "multi-user.target" ];
+  systemd.user.paths.ghostship-hermes-gateway-restart = lib.mkIf includeManagedRuntime {
+    wantedBy = [ "default.target" ];
     pathConfig = {
       PathChanged = [
         "${managedHermesHome}/config.yaml"

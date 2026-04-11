@@ -29,7 +29,7 @@ fallback_model:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_HOME", str(managed_home))
     monkeypatch.setenv("GHOSTSHIP_DASHBOARD_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("GHOSTSHIP_HERMES_GATEWAY_SERVICE", "ghostship-hermes-gateway.service")
+    monkeypatch.setenv("GHOSTSHIP_HERMES_GATEWAY_SERVICE", "hermes-gateway.service")
     monkeypatch.setenv("GHOSTSHIP_ROUTER_DISABLED_MODELS", "openrouter/free")
     monkeypatch.setenv("GHOSTSHIP_TERMINAL_CWD", "/workspace")
 
@@ -47,10 +47,10 @@ def test_environment_payload_reports_single_agent(monkeypatch, tmp_path: Path) -
 
     assert "profiles" not in payload
     assert "default_profile" not in payload
-    assert payload["gateway_service"] == "ghostship-hermes-gateway.service"
+    assert payload["gateway_service"] == "hermes-gateway.service"
     assert payload["agent"]["name"] == "Managed Agent"
     assert payload["agent"]["path"] == str(tmp_path / ".hermes")
-    assert payload["agent"]["service"] == "ghostship-hermes-gateway.service"
+    assert payload["agent"]["service"] == "hermes-gateway.service"
     assert payload["agent"]["has_config"] is True
     assert payload["agent"]["has_env"] is True
     assert payload["agent"]["has_auth"] is True
@@ -74,7 +74,7 @@ def test_status_api_uses_single_agent_contract(monkeypatch, tmp_path: Path) -> N
     payload = response.json()
     assert "profiles" not in payload
     assert "default_profile" not in payload
-    assert payload["environment"]["agent"]["service"] == "ghostship-hermes-gateway.service"
+    assert payload["environment"]["agent"]["service"] == "hermes-gateway.service"
     assert payload["environment"]["model"] == "minimax-m2.7"
     assert payload["environment"]["model_provider"] == "opencode-go"
     assert payload["environment"]["fallback_model"] == "agentic"

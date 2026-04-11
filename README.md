@@ -92,12 +92,12 @@ The container uses a small NixOS-managed unit graph:
   reruns the mutable tooling refresh flow daily and once shortly after boot
 - `ghostship-hermes-bootstrap.service`
   performs the single-agent managed-state convergence, deletes the old repo-owned profile tree during migration, rewrites `/home/hermes/.hermes/.env` atomically from the approved allowlist, seeds `/home/hermes/.hermes/skills` and `/home/hermes/.hermes/SOUL.md`, and mirrors `/etc/ghostship-hermes-release` into `/home/hermes/.ghostship-hermes-release`
-- `ghostship-hermes-gateway.service`
-  keeps the one managed Hermes gateway running with `hermes gateway run --replace`
+- `hermes-gateway.service`
+  is enabled as a real `systemd --user` service for `hermes`, auto-starts at boot without interactive login, and keeps the one managed Hermes gateway running with `hermes gateway run --replace`
 - `ghostship-hermes-gateway-restart.path`
-  watches `/home/hermes/.hermes/config.yaml`, `.env`, `auth.json`, and `SOUL.md` and triggers a managed gateway restart when those root-managed files change
+  runs in the Hermes user manager, watches `/home/hermes/.hermes/config.yaml`, `.env`, `auth.json`, and `SOUL.md`, and triggers a managed gateway restart when those root-managed files change
 - `ghostship-hermes-startup.service`
-  starts the dashboard, router, and managed gateway after storage preparation and bootstrap; a failed mutable tooling refresh must not block the main runtime boot
+  starts the dashboard, router, the Hermes user manager, and the enabled `hermes-gateway.service` after storage preparation and bootstrap; a failed mutable tooling refresh must not block the main runtime boot
 - `ghostship-dashboard-controller.service`
   serves the packaged dashboard and proxies on-demand ephemeral `ttyd` sessions on port `7681`
 - `ghostship-hermes-router.service`
@@ -162,7 +162,7 @@ The image is declarative-first:
 - Browser defaults remain `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.
 - `agent-browser` is the documented local-browser default unless an operator provides `BROWSER_CDP_URL`.
 - Discord defaults remain `require_mention = true`, `auto_thread = false`, `reactions = true`, and `group_sessions_per_user = true`.
-- The managed gateway always writes `/home/hermes/.hermes/gateway.pid`, and `hermes gateway status` is wired to the repo-owned `ghostship-hermes-gateway.service`.
+- The managed gateway always writes `/home/hermes/.hermes/gateway.pid`, and `hermes gateway status` now follows the upstream `systemd --user` `hermes-gateway.service` flow.
 - The managed env file is `/home/hermes/.hermes/.env`. Bootstrap writes only the approved runtime allowlist into that file, omits unset values, always writes `WEBHOOK_ENABLED=true`, `WEBHOOK_PORT=8644`, and `TERMINAL_CWD=/workspace`, and intentionally excludes router/container plumbing plus the fixed Chaptarr and n8n path/version selectors.
 - The full managed env contract, including every copied key and the intentionally excluded keys, is documented in [docs/runtime-env.md](docs/runtime-env.md).
 - Seeded skills come from `/home/hermes/seeds/skills`, and the seeded prompt comes from `/home/hermes/seeds/SOUL.md`. Bootstrap copies missing skill directories only into `/home/hermes/.hermes/skills`, runs `hermes skills list` once to materialize the runtime skills hub, normalizes the full live skills tree to writable Hermes-owned runtime permissions, does not seed any `~/.hermes/profiles/...` tree, replaces the known unmanaged upstream default `SOUL.md` during single-agent migration, and only refreshes later seeded updates while the live file still matches the last seeded hash.

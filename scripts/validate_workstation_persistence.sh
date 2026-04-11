@@ -137,6 +137,8 @@ run_as_hermes() {
     -e HOME=/home/hermes \
     -e HERMES_HOME=/home/hermes/.hermes \
     -e TERMINAL_CWD=/home/hermes \
+    -e XDG_RUNTIME_DIR=/run/user/3000 \
+    -e DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3000/bus \
     -e PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin \
     "$target_container" \
     "$container_shell" -lc "$*"
@@ -150,8 +152,8 @@ wait_for_container_ready() {
     systemctl is-active ghostship-storage.service >/dev/null 2>&1 &&
     test "$(systemctl show -P Result ghostship-hermes-bootstrap.service 2>/dev/null)" = "success" &&
     systemctl is-active ghostship-hermes-router.service >/dev/null 2>&1 &&
-    systemctl is-active ghostship-hermes-gateway.service >/dev/null 2>&1 &&
     systemctl is-active ghostship-dashboard-controller.service >/dev/null 2>&1 &&
+    runuser -u hermes -- env XDG_RUNTIME_DIR=/run/user/3000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3000/bus systemctl --user is-active hermes-gateway.service >/dev/null 2>&1 &&
     curl -fsS http://127.0.0.1:8788/readyz >/dev/null 2>&1 &&
     curl -fsS http://127.0.0.1:7681/api/status >/dev/null 2>&1
   '; do
@@ -160,7 +162,8 @@ wait_for_container_ready() {
       echo "container $target_container did not become ready" >&2
       docker logs "$target_container" >&2 || true
       run_in_container "$target_container" '
-        systemctl --no-pager --full status ghostship-storage.service ghostship-hermes-bootstrap.service ghostship-hermes-router.service ghostship-hermes-gateway.service ghostship-dashboard-controller.service || true
+        systemctl --no-pager --full status ghostship-storage.service ghostship-hermes-bootstrap.service ghostship-hermes-router.service ghostship-dashboard-controller.service || true
+        runuser -u hermes -- env XDG_RUNTIME_DIR=/run/user/3000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3000/bus systemctl --user --no-pager --full status hermes-gateway.service ghostship-hermes-gateway-restart.path || true
       ' >&2 || true
       exit 1
     fi
@@ -190,9 +193,26 @@ assert_router_inventory() {
 
 assert_model_config() {
   local target_container="$1"
-  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: auto" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "base_url: http://127.0.0.1:8788/v1" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "default: coding" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "default: minimax-m2.7" >/dev/null'
+  run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: agentic" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+}
+
+assert_config_migration() {
+  local target_container="$1"
+  run_as_hermes "$target_container" 'sed -i "/^model:$/a\  base_url: http://127.0.0.1:8788/v1" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+  run_in_container "$target_container" 'systemctl start ghostship-hermes-bootstrap.service >/dev/null'
+  run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+}
+
+assert_primary_execution() {
+  local target_container="$1"
+  run_as_hermes "$target_container" 'hermes chat -q "Reply with exactly OK." >/tmp/hermes-primary.out 2>&1'
+  run_as_hermes "$target_container" '! grep -Fi "switching to fallback" /tmp/hermes-primary.out >/dev/null'
+  run_as_hermes "$target_container" 'grep -Fx "OK" /tmp/hermes-primary.out >/dev/null'
 }
 
 mkdir -p "$home_dir/.hermes/profiles/assistant" "$home_dir/seeds/skills/workflow-single" "$workspace_dir"
@@ -235,13 +255,16 @@ docker run -d \
 wait_for_container_ready "$container_one"
 wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/status"
-curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not and .environment.agent.service == "ghostship-hermes-gateway.service"' >/dev/null
+curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not and .environment.agent.service == "hermes-gateway.service"' >/dev/null
 
 run_in_container "$container_one" 'id hermes | grep -F "uid=3000(hermes) gid=3000(hermes)" >/dev/null'
 run_in_container "$container_one" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
 run_in_container "$container_one" '! systemctl is-active hermes-agent.service >/dev/null'
 run_in_container "$container_one" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
-run_in_container "$container_one" 'systemctl is-active ghostship-hermes-gateway.service >/dev/null'
+run_as_hermes "$container_one" 'systemctl --user is-active hermes-gateway.service >/dev/null'
+run_as_hermes "$container_one" 'test -L /home/hermes/.config/systemd/user/hermes-gateway.service'
+run_as_hermes "$container_one" 'readlink /home/hermes/.config/systemd/user/hermes-gateway.service | grep -Fx "/etc/systemd/user/hermes-gateway.service" >/dev/null'
+run_as_hermes "$container_one" 'hermes gateway status >/tmp/gateway-status.out 2>&1; grep -F "User gateway service is running" /tmp/gateway-status.out >/dev/null; ! grep -F "Installed gateway service definition is outdated" /tmp/gateway-status.out >/dev/null'
 run_as_hermes "$container_one" 'test "$HOME" = "/home/hermes"'
 run_as_hermes "$container_one" 'test "$HERMES_HOME" = "/home/hermes/.hermes"'
 run_as_hermes "$container_one" '! test -d /home/hermes/.hermes/profiles'
@@ -254,6 +277,8 @@ run_as_hermes "$container_one" 'grep -Fx "seed-soul-v1" /home/hermes/.hermes/SOU
 run_as_hermes "$container_one" 'printf "{\"provider\":\"codex\"}\n" > /home/hermes/.hermes/auth.json'
 assert_router_inventory "$container_one"
 assert_model_config "$container_one"
+assert_config_migration "$container_one"
+assert_primary_execution "$container_one"
 
 run_as_hermes "$container_one" '
   mkdir -p \
@@ -353,7 +378,7 @@ docker run -d \
 wait_for_container_ready "$container_two"
 wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/status"
-curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not and .environment.agent.service == "ghostship-hermes-gateway.service"' >/dev/null
+curl -fsS "${dashboard_base_url}/api/status" | jq -e 'has("profiles") | not and .environment.agent.service == "hermes-gateway.service"' >/dev/null
 
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/ghostship-test/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "local" ~/.local/share/ghostship-test/persist.txt >/dev/null'
