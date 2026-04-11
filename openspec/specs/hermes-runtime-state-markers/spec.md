@@ -13,27 +13,35 @@ The Hermes image SHALL refresh the persisted home-scoped release marker from the
 - **THEN** the managed boot refreshes `/home/hermes/.ghostship-hermes-release` to the new image release value
 - **AND** the persisted marker does not remain pinned to the older deployment's version string
 
+## REMOVED Requirements
+
 ### Requirement: Managed profile gateways publish a live `gateway.pid`
-Each repo-managed profile gateway service SHALL maintain a `gateway.pid` marker that matches the live managed gateway process used for Hermes health checks.
+**Reason**: The supported image topology no longer maintains per-profile liveness markers for a fleet of named-profile gateways.
+**Migration**: Publish one managed `gateway.pid` at `/home/hermes/.hermes/gateway.pid` for the single gateway service.
+
+## ADDED Requirements
+
+### Requirement: The managed gateway publishes a live `gateway.pid`
+The repo-managed gateway service SHALL maintain a `gateway.pid` marker at the root managed Hermes home that matches the live managed gateway process used for Hermes health checks.
 
 #### Scenario: Managed gateway start writes the current PID
-- **WHEN** a managed profile gateway service starts
-- **THEN** the corresponding profile `gateway.pid` file is created or replaced
-- **AND** the file contains the PID of the long-running managed gateway process for that profile
+- **WHEN** the managed gateway service starts
+- **THEN** `/home/hermes/.hermes/gateway.pid` is created or replaced
+- **AND** the file contains the PID of the long-running managed gateway process
 
 #### Scenario: Managed gateway restart refreshes stale pidfiles
-- **WHEN** a managed profile gateway service restarts or replaces an earlier process
+- **WHEN** the managed gateway service restarts or replaces an earlier process
 - **THEN** any stale `gateway.pid` content from the earlier run is removed or overwritten
 - **AND** the resulting `gateway.pid` points to the current managed gateway process rather than the previous run
 
 ### Requirement: Managed gateway liveness markers follow the service lifecycle
-Repo-owned managed gateway marker files SHALL stay aligned with the managed service lifecycle so Hermes doctor/status surfaces do not report false negatives for live repo-managed gateways.
+Repo-owned managed gateway marker files SHALL stay aligned with the managed service lifecycle so Hermes doctor/status surfaces do not report false negatives for the live repo-managed gateway.
 
-#### Scenario: Live managed gateways are visible to Hermes health checks
-- **WHEN** the repo-managed profile gateway process is running under the managed systemd service
-- **THEN** the profile's liveness markers expose that gateway as running to Hermes doctor/status checks
+#### Scenario: Live managed gateway is visible to Hermes health checks
+- **WHEN** the repo-managed gateway process is running under the managed systemd service
+- **THEN** the liveness marker exposes that gateway as running to Hermes doctor/status checks
 
-#### Scenario: Stopped managed gateways do not leave misleading liveness state
-- **WHEN** the managed profile gateway service stops cleanly
+#### Scenario: Stopped managed gateway does not leave misleading liveness state
+- **WHEN** the managed gateway service stops cleanly
 - **THEN** stale repo-owned liveness markers are removed or invalidated during the stop lifecycle
 - **AND** later health checks do not report a stopped managed gateway as still live because of stale marker state

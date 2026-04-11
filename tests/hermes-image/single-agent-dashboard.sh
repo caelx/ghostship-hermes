@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-image_bundle="${1:?usage: profiles-dashboard.sh <image-bundle> [image-tag]}"
+image_bundle="${1:?usage: single-agent-dashboard.sh <image-bundle> [image-tag]}"
 release="$(tr -d '\n' < "$repo_root/packages/hermes-image/hermes-release.txt")"
 image_tag="${2:-ghostship-hermes:$release}"
 container_name="ghostship-hermes-dashboard-test"

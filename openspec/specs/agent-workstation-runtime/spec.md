@@ -10,10 +10,10 @@ The workstation SHALL use already-installed local apps, persisted local state, a
 - **AND** `agent-browser` may be satisfied by the image-managed runtime layer instead of the mutable npm-managed tool layer when the image declares it as a supported exception
 - **AND** the invocation does not first require a live update round trip during that invocation
 
-#### Scenario: Profile-scoped Hermes invocation sees managed runtime identity
-- **WHEN** an operator runs `hermes -p <profile> ...` inside the managed image
-- **THEN** the active profile home exposes the managed-runtime marker or equivalent managed identity that Hermes checks for interactive commands
-- **AND** the invocation does not fall back to upstream user-service assumptions solely because it switched from the root `HERMES_HOME` to a managed profile home
+#### Scenario: Managed Hermes invocation sees managed runtime identity
+- **WHEN** an operator runs `hermes ...` inside the managed image
+- **THEN** the root managed Hermes home exposes the managed-runtime marker or equivalent managed identity that Hermes checks for interactive commands
+- **AND** the invocation does not require switching into a repo-owned named profile to discover the supported managed runtime behavior
 
 #### Scenario: Image replacement converges the active Hermes wrapper generation
 - **WHEN** the workstation boots after replacing the image while `/home/hermes` persists
@@ -31,7 +31,7 @@ The workstation SHALL use already-installed local apps, persisted local state, a
 The workstation SHALL keep Hermes local browser workflows pointed at `agent-browser` while ensuring that the resolved command launches a working backend on supported image architectures.
 
 #### Scenario: Local browser default stays anchored on agent-browser
-- **WHEN** maintainers inspect the managed Hermes profile scaffold or operators inspect the active profile browser configuration
+- **WHEN** maintainers inspect the managed single-agent config or operators inspect the managed agent browser configuration
 - **THEN** Hermes local browser mode remains the default browser path
 - **AND** that default continues to use `agent-browser` as the local browser command rather than switching to a different provider to avoid this bug
 
@@ -71,20 +71,23 @@ The workstation SHALL treat Python packaging support as part of the managed Herm
 - **THEN** the supported `python3`, `pip`, and `python3 -m pip` workflow comes from the managed user profile layer
 - **AND** the runtime does not rely on a separate image-only `pip` exception to provide that workflow
 
+## REMOVED Requirements
+
 ### Requirement: Managed gateway commands align with repo-owned profile services
-The workstation SHALL align interactive gateway commands for managed profiles with the repo-owned `ghostship-hermes-profile-*` services instead of treating the image as an upstream user-service installation.
+**Reason**: The supported image topology no longer uses a repo-owned fleet of named-profile gateway services.
+**Migration**: Route interactive gateway status and control guidance through the single managed gateway service contract.
 
-#### Scenario: Managed profile status reflects the repo-owned gateway unit
-- **WHEN** an operator runs `hermes -p <profile> gateway status` for a managed profile
-- **THEN** the command reports the state of the matching repo-owned managed gateway service
-- **AND** it does not claim the gateway is stopped solely because an upstream `hermes-gateway-<profile>` unit is absent
+## ADDED Requirements
 
-#### Scenario: Root-scoped gateway status does not misclassify managed services
-- **WHEN** an operator runs `hermes gateway status` from the root managed home in the image
-- **THEN** the command reports managed profile gateway state using the image's multi-profile topology
-- **AND** it does not describe a managed profile gateway process as a manual foreground gateway
+### Requirement: Managed gateway commands align with the repo-owned single-agent service
+The workstation SHALL align interactive gateway commands with the repo-owned single-agent managed gateway service instead of treating the image as an upstream user-service installation or a fleet of named profile services.
+
+#### Scenario: Managed gateway status reflects the repo-owned single-agent unit
+- **WHEN** an operator runs `hermes gateway status` inside the managed image
+- **THEN** the command reports the state of the repo-owned managed gateway service for the single agent
+- **AND** it does not claim the gateway is stopped solely because an upstream user-scoped Hermes service is absent
 
 #### Scenario: Managed control paths do not suggest upstream user-service recovery
-- **WHEN** an operator runs `hermes -p <profile> gateway start`, `stop`, or `restart` inside the managed image
+- **WHEN** an operator runs `hermes gateway start`, `stop`, or `restart` inside the managed image
 - **THEN** the command either targets the correct repo-owned managed service or exits with explicit managed-runtime guidance
-- **AND** it does not instruct the operator to use `systemctl --user`, `loginctl enable-linger`, or upstream `hermes gateway install` flows for that managed profile
+- **AND** it does not instruct the operator to use `systemctl --user`, `loginctl enable-linger`, or upstream `hermes gateway install` flows

@@ -8,18 +8,22 @@ The Hermes image SHALL include upstream `feed` as a first-class packaged utility
 - **THEN** the resulting runtime MUST include the `feed` CLI on `PATH`
 - **THEN** the packaged tool MUST come from a pinned upstream `feed` release rather than an ad hoc runtime install
 
+## REMOVED Requirements
+
 ### Requirement: `feed` state SHALL persist under profile-scoped Hermes storage
-The `feed` SQLite database SHALL live under Hermes-managed profile storage so each Hermes profile has isolated feed state that survives container replacement.
+**Reason**: The supported image runtime no longer uses named profiles as the storage boundary for the managed agent.
+**Migration**: Persist `FEED_DB_PATH` under the single managed Hermes home at `/home/hermes/.hermes`.
 
-#### Scenario: default profile uses persistent Hermes storage
-- **WHEN** the default Hermes profile runs `feed`
+## ADDED Requirements
+
+### Requirement: `feed` state SHALL persist under the single managed Hermes home
+The `feed` SQLite database SHALL live under the single managed Hermes runtime storage so the agent keeps durable RSS state across container replacement without named-profile isolation rules.
+
+#### Scenario: Managed runtime uses persistent Hermes storage
+- **WHEN** the managed Hermes agent runs `feed`
 - **THEN** `FEED_DB_PATH` MUST resolve under `/home/hermes/.hermes`
-- **THEN** the database path MUST be stable across container replacement
-
-#### Scenario: named profile gets isolated feed state
-- **WHEN** a named Hermes profile runs `feed`
-- **THEN** `FEED_DB_PATH` MUST resolve under that profile’s `HERMES_HOME`
-- **THEN** its feed database MUST be isolated from other Hermes profiles
+- **AND** the database path MUST be stable across container replacement
+- **AND** the runtime does not require a named profile-specific storage path for the supported default workflow
 
 ### Requirement: Hermes SHALL have a repo-managed `feed` skill for RSS monitoring workflows
 The seeded Hermes skill pack SHALL include a repo-managed `feed` skill that teaches Hermes how to subscribe to feeds, fetch updates, search stored entries, and triage items as part of RSS monitoring workflows.

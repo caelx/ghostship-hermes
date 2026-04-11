@@ -352,7 +352,7 @@ Run the dashboard smoke test:
 ```fish
 # Run this from a shell where ../../.envrc has already exported
 # OPENROUTER_API_KEY and either OPENCODE_API_KEY or OPENCODE_GO_API_KEY for the local router.
-bash tests/hermes-image/profiles-dashboard.sh $image_bundle ghostship-hermes:single-agent
+bash tests/hermes-image/single-agent-dashboard.sh $image_bundle ghostship-hermes:single-agent
 ```
 
 The dashboard smoke test no longer bind-mounts `/nix` by default. If you need

@@ -16,4 +16,4 @@ The runtime entrypoint is:
 hermes-dashboard
 ```
 
-The home view is an environment console for the current runtime: declared profiles, provider metadata, and Hermes paths.
+The home view is an environment console for the current runtime: the managed single-agent surface, provider metadata, and Hermes paths.
