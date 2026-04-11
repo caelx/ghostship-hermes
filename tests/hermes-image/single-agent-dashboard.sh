@@ -262,6 +262,48 @@ sock.close()
 PY
 }
 
+find_browser_executable() {
+  if [ -n "${GHOSTSHIP_TEST_BROWSER_EXECUTABLE:-}" ]; then
+    printf '%s\n' "$GHOSTSHIP_TEST_BROWSER_EXECUTABLE"
+    return 0
+  fi
+
+  local candidate
+  for candidate in chromium chromium-browser google-chrome google-chrome-stable chrome; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+assert_dashboard_browser_open() {
+  local browser_executable
+  if ! browser_executable="$(find_browser_executable)"; then
+    echo "Skipping browser-driven dashboard validation: no browser executable found" >&2
+    return 0
+  fi
+
+  local browser_session="ghostship-dashboard-e2e-$$"
+  local browser_args=(
+    --session "$browser_session"
+    --executable-path "$browser_executable"
+    --allowed-domains 127.0.0.1,localhost
+    --json
+  )
+
+  agent-browser "${browser_args[@]}" open "${dashboard_base_url}/" >/tmp/ghostship-agent-browser-open.json
+  agent-browser "${browser_args[@]}" click "#open-terminal" >/tmp/ghostship-agent-browser-click.json
+  agent-browser "${browser_args[@]}" wait "iframe.terminal-frame" >/tmp/ghostship-agent-browser-wait-frame.json
+  agent-browser "${browser_args[@]}" wait 1500 >/tmp/ghostship-agent-browser-wait-time.json
+  agent-browser "${browser_args[@]}" is visible "iframe.terminal-frame" >/tmp/ghostship-agent-browser-visible.json
+  agent-browser "${browser_args[@]}" eval '(() => document.querySelector("iframe.terminal-frame")?.getAttribute("src") || "")()' >/tmp/ghostship-agent-browser-frame-src.json
+  jq -r '.data.result // empty' /tmp/ghostship-agent-browser-frame-src.json | grep -E '^/terminals/.+/$' >/dev/null
+  agent-browser --session "$browser_session" close --all >/dev/null 2>&1 || true
+}
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required for dashboard image testing" >&2
   exit 1
@@ -355,6 +397,7 @@ wait_for_http "${dashboard_base_url}${terminal_one_url}"
 wait_for_json_value "${dashboard_base_url}/api/status" ".sessions[] | select(.id == \"$terminal_one\") | .ready" "true"
 assert_http_contains "${dashboard_base_url}${terminal_one_url}" "ttyd"
 assert_websocket_proxy "$terminal_one_url"
+assert_dashboard_browser_open
 
 curl -fsS -X POST "${dashboard_base_url}/api/terminals/$terminal_one/close" >/tmp/ghostship-hermes-terminal-close-1.json
 wait_for_json_value "${dashboard_base_url}/api/status" '.sessions | length' "0"

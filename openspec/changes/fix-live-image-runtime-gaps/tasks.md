@@ -7,7 +7,7 @@
 
 - [x] 2.1 Extend dashboard status parsing to expose both primary and fallback agent config details from the managed Hermes config.
 - [x] 2.2 Update the dashboard UI and fixtures so operators can see the managed primary/fallback contract and liveness markers directly.
-- [ ] 2.3 Add end-to-end browser validation for opening an on-demand ttyd terminal from the dashboard surface.
+- [x] 2.3 Add end-to-end browser validation for opening an on-demand ttyd terminal from the dashboard surface.
 
 ## 3. Health And Liveness
 
