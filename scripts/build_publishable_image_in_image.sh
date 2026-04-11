@@ -5,13 +5,13 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 usage() {
-  cat >&2 <<'EOF'
+  cat >&2 <<'USAGE'
 usage: build_publishable_image_in_image.sh [local-build-image-ref] [flake-attr] [bundle-output-dir]
 
 Run the requested Nix image-bundle build inside a local ghostship-hermes image
 so the build can reuse that image's baked /nix/store closure, then stage the
 portable bundle directory back to the host.
-EOF
+USAGE
 }
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -48,29 +48,56 @@ bundle_output_dir="$(cd "$(dirname "$bundle_output_dir")" && pwd)/$(basename "$b
 rm -rf "$bundle_output_dir"
 mkdir -p "$bundle_output_dir"
 
-shell_candidates=(
-  /bin/sh
-  /run/current-system/sw/bin/sh
-  /nix/var/nix/profiles/default/bin/sh
-  /nix/var/nix/profiles/system/sw/bin/sh
-)
+temp_container="$(docker create "$build_image")"
+listing_file="$(mktemp)"
+cleanup() {
+  docker rm -f "$temp_container" >/dev/null 2>&1 || true
+  rm -f "$listing_file"
+}
+trap cleanup EXIT
 
-build_shell=""
-for candidate in "${shell_candidates[@]}"; do
-  if docker run --rm --entrypoint "$candidate" "$build_image" -lc 'exit 0' >/dev/null 2>&1; then
-    build_shell="$candidate"
-    break
-  fi
-done
+docker export "$temp_container" | tar -tf - > "$listing_file"
+
+normalize_listing_path() {
+  sed 's#^\./##; s#^#/#'
+}
+
+system_path_bin="$(
+  (
+    grep -E '^(\./)?nix/store/[^/]+-system-path/bin/bash$' "$listing_file" || true
+  ) | head -n 1 | normalize_listing_path | sed 's#/bash$##'
+)"
+
+build_shell="$(
+  {
+    grep -E '^(\./)?nix/store/[^/]+-system-path/bin/bash$' "$listing_file" || true
+    grep -E '^(\./)?nix/store/[^/]+-bash-interactive-[^/]+/bin/bash$' "$listing_file" || true
+    grep -E '^(\./)?nix/store/[^/]+-bash-[^/]+/bin/bash$' "$listing_file" || true
+    grep -E '^(\./)?nix/store/[^/]+-system-path/bin/sh$' "$listing_file" || true
+    grep -E '^(\./)?nix/store/[^/]+-busybox-[^/]+/bin/sh$' "$listing_file" || true
+    grep -E '^(\./)?bin/sh$' "$listing_file" || true
+  } | head -n 1 | normalize_listing_path
+)"
 
 if [ -z "$build_shell" ]; then
   echo "failed to find a working shell entrypoint inside $build_image" >&2
   exit 1
 fi
 
-docker run --rm   --entrypoint "$build_shell"   -v "$repo_root:/src:ro"   -v "$bundle_output_dir:/out"   -e FLAKE_ATTR="$flake_attr"   "$build_image"   -lc '
+if [ -z "$system_path_bin" ]; then
+  system_path_bin="$(dirname "$build_shell")"
+fi
+
+docker run --rm \
+  --entrypoint "$build_shell" \
+  -v "$repo_root:/src:ro" \
+  -v "$bundle_output_dir:/out" \
+  -e FLAKE_ATTR="$flake_attr" \
+  -e SYSTEM_PATH_BIN="$system_path_bin" \
+  "$build_image" \
+  -lc '
     set -euo pipefail
-    export PATH="/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/system/sw/bin:$PATH"
+    export PATH="$SYSTEM_PATH_BIN:$PATH"
     export HOME=/tmp/ghostship-build-home
     export NIX_CONFIG="experimental-features = nix-command flakes
 sandbox = false"
