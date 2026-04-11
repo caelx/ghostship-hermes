@@ -155,7 +155,7 @@ The image is declarative-first:
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image uses a dedicated managed profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed` to keep the baked `hermes` toolchain updateable on boot and during daily refreshes without colliding with the operator's default `~/.nix-profile`.
 - The default Hermes-user PATH includes `/home/hermes/.local/bin`, `/home/hermes/.local/state/nix/profiles/ghostship-managed/bin`, and `/home/hermes/.nix-profile/bin` ahead of the fallback system toolchain so login shells and Hermes runtime commands discover the persisted mutable tool layers by default.
-- The managed profile now also provides the repo-approved helper CLI set (`fd`, `uv`, `yq`, `tmux`) plus a shared Python environment where `python3`, `pip`, and `python3 -m pip` all work without extra activation.
+- The managed profile now also provides the repo-approved helper CLI set (`fd`, `uv`, `yq`, `tmux`) plus a shared Python environment where `python3`, `pip`, and `python3 -m pip` all work without extra activation. That Python environment is installed at a higher Nix profile priority than `hermes-agent-wrapped` so both packages can coexist even though they both ship `bin/python`.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The managed config sets `timezone = "Pacific/Honolulu"`, `agent.max_turns = 110`, `agent.reasoning_effort = "high"`, `agent.verbose = false`, `memory.provider = holographic`, transcript compression, checkpoints, compact streaming display defaults, and `approvals.mode = "off"`.
 - Browser defaults remain `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.
@@ -164,7 +164,7 @@ The image is declarative-first:
 - The managed gateway always writes `/home/hermes/.hermes/gateway.pid`, and `hermes gateway status` is wired to the repo-owned `ghostship-hermes-gateway.service`.
 - The managed env file is `/home/hermes/.hermes/.env`. Bootstrap writes only the approved runtime allowlist into that file, omits unset values, always writes `WEBHOOK_ENABLED=true`, `WEBHOOK_PORT=8644`, and `TERMINAL_CWD=/workspace`, and intentionally excludes router/container plumbing plus the fixed Chaptarr and n8n path/version selectors.
 - The full managed env contract, including every copied key and the intentionally excluded keys, is documented in [docs/runtime-env.md](docs/runtime-env.md).
-- Seeded skills come from `/home/hermes/seeds/skills`, and the seeded prompt comes from `/home/hermes/seeds/SOUL.md`. Bootstrap copies missing skill directories only into `/home/hermes/.hermes/skills`, normalizes the copied skill tree to writable Hermes-owned runtime permissions, does not seed any `~/.hermes/profiles/...` tree, and only refreshes `SOUL.md` while the live file still matches the last seeded hash.
+- Seeded skills come from `/home/hermes/seeds/skills`, and the seeded prompt comes from `/home/hermes/seeds/SOUL.md`. Bootstrap copies missing skill directories only into `/home/hermes/.hermes/skills`, runs `hermes skills list` once to materialize the runtime skills hub, normalizes the full live skills tree to writable Hermes-owned runtime permissions, does not seed any `~/.hermes/profiles/...` tree, replaces the known unmanaged upstream default `SOUL.md` during single-agent migration, and only refreshes later seeded updates while the live file still matches the last seeded hash.
 
 ### Codex OAuth
 
@@ -172,7 +172,7 @@ The `openai-codex` provider path relies on Codex OAuth (device-code flow) instea
 
 ### Skills Initialization
 
-Hermes does not fully materialize its skills hub state until you exercise it once. Run `hermes skills list` under the Hermes runtime user after first boot to create the runtime skills directories and lockfile.
+Bootstrap runs `hermes skills list` under the managed runtime user during startup so the skills hub directories and lockfile exist before the image begins serving traffic.
 
 ## Manual Provider Configuration
 

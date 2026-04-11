@@ -61,6 +61,7 @@ def test_status_api_uses_single_agent_contract(monkeypatch, tmp_path: Path) -> N
     assert "default_profile" not in payload
     assert payload["environment"]["agent"]["service"] == "ghostship-hermes-gateway.service"
     assert payload["environment"]["model"] == "coding"
+    assert payload["environment"]["dashboard_bind"] == "0.0.0.0:7681"
 
 
 def test_home_page_uses_agent_label_not_profiles(monkeypatch, tmp_path: Path) -> None:

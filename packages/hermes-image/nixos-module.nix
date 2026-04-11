@@ -26,6 +26,7 @@ let
   managedSoulPath = "${managedHermesHome}/SOUL.md";
   managedSkillsPath = "${managedHermesHome}/skills";
   managedAuthPath = "${managedHermesHome}/auth.json";
+  unmanagedDefaultSoulHash = "2765a846e1bb371d78d3b93b403dfb0f8d1ba1a9895edb5f608367abfe81194d";
   managedWebhookPort = 8644;
   managedLayoutVersion = "single-agent-v1";
   auxiliaryModelDefault = "gemini-3.1-flash-lite-preview";
@@ -157,6 +158,7 @@ let
     {
       name = "python3";
       bootstrapRef = "${managedPythonWithPip}";
+      priority = 4;
     }
     {
       name = "uv";
@@ -488,6 +490,15 @@ EOF
       done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
     }
 
+    materialize_and_normalize_skills() {
+      target_root="$1"
+
+      mkdir -p "$target_root"
+      hermes skills list >/dev/null 2>&1 || true
+      [ -d "$target_root" ] || return 0
+      chmod -R u+rwX "$target_root"
+    }
+
     copy_file_if_missing() {
       source_path="$1"
       target_path="$2"
@@ -524,6 +535,13 @@ EOF
         return 0
       fi
 
+      if [ "$target_hash" = "${unmanagedDefaultSoulHash}" ]; then
+        install -D -m 0600 "$source_path" "$target_path"
+        printf '%s\n' "$source_hash" >"$marker_path"
+        chmod 0600 "$marker_path"
+        return 0
+      fi
+
       if [ "$target_hash" = "$source_hash" ]; then
         printf '%s\n' "$source_hash" >"$marker_path"
         chmod 0600 "$marker_path"
@@ -535,6 +553,7 @@ EOF
       soul_source="''${GHOSTSHIP_HERMES_SOUL_PATH:-${managedSoulSourcePath}}"
 
       copy_skill_tree_if_missing "$skill_source" "${managedSkillsPath}"
+      materialize_and_normalize_skills "${managedSkillsPath}"
       manage_seeded_soul "$soul_source" "${managedSoulPath}"
     }
 
@@ -641,7 +660,12 @@ for item in specs:
         ref = f"{runtime_flake_ref}#hermes-agent-wrapped"
     else:
         ref = item.get("bootstrapRef") or item["ref"]
-    subprocess.run(["nix", "profile", "add", "--profile", managed_profile, ref], check=True)
+    command = ["nix", "profile", "add", "--profile", managed_profile]
+    priority = item.get("priority")
+    if priority is not None:
+        command.extend(["--priority", str(priority)])
+    command.append(ref)
+    subprocess.run(command, check=True)
 
 package_json = project_root / "package.json"
 package_json.write_text(
@@ -697,6 +721,8 @@ PY2
     GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF = runtimeFlakeRefDefault;
     GHOSTSHIP_TERMINAL_CWD = "/workspace";
     GHOSTSHIP_DASHBOARD_HOST = "0.0.0.0";
+    GHOSTSHIP_DASHBOARD_PORT = "7681";
+    GHOSTSHIP_TTYD_PORT_BASE = "7682";
     GHOSTSHIP_HERMES_GATEWAY_SERVICE = "${managedGatewayServiceName}.service";
     GHOSTSHIP_ROUTER_HOST = "127.0.0.1";
     GHOSTSHIP_ROUTER_PORT = "8788";
