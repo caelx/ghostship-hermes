@@ -416,6 +416,7 @@ Free GitHub Actions acceleration:
 - The base image no longer depends on `ghostship-hermes-router`, `ghostship-hermes-runtime`, or `hermes-dashboard`, so overlay-only command changes do not invalidate the base derivation or force another native base rebuild.
 - Magic Nix Cache was removed from the heavy multi-arch publish job after GitHub Actions cache throttling started returning repeated `ResourceExhausted` errors.
 - The `ci` workflow now uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps, so warm-cache runs avoid recreating the same `uv` environment on every run.
+- Measure the current workflow behavior with `python3 scripts/github_actions_timings.py --include-latest-jobs`. As of 2026-04-11 UTC, the landed workflow measured approximately `34.97` minutes for a cold-content publish, `20.48` minutes for a base-reuse publish, and `1.17` minutes for an exact warm-repeat publish; only the exact-repeat path currently beats the approximately `10` minute stretch goal.
 
 - `hermes-dashboard` is the direct packaged MMX dashboard artifact used by the image runtime.
 - `ghostship-hermes-image` is the explicit publishable image bundle consumed by `scripts/export_publishable_image.sh`, the GHCR publish workflow, and the dashboard smoke test.

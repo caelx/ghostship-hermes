@@ -8,13 +8,13 @@
 
 - [x] 2.1 Implement conservative image-affecting path detection or equivalent workflow gating for automatic `publish-image` runs
 - [x] 2.2 Preserve `workflow_dispatch` and release-driven publication behavior while verifying that non-image pushes skip publication safely
-- [ ] 2.3 Measure the effect of publish gating on total publish frequency and end-to-end runner time consumption
+- [x] 2.3 Measure the effect of publish gating on total publish frequency and end-to-end runner time consumption
 
 ## 3. Round 2: Cache-Backed Reuse
 
 - [x] 3.1 Add a supported Nix binary cache or substituter strategy for GitHub Actions builds and document cache invalidation expectations
 - [x] 3.2 Add caching or an equivalent reuse strategy for the Python utility test environment used by `ci`
-- [ ] 3.3 Re-measure `ci` and `publish-image` under cold-cache and warm-cache conditions and compare against the baseline
+- [x] 3.3 Re-measure `ci` and `publish-image` under cold-cache and warm-cache conditions and compare against the baseline
 
 ## 4. Round 3: Reuse Logic And Architecture
 
@@ -34,13 +34,13 @@
 
 ## 6. Remaining Verification And Measurement
 
-- [ ] 6.1 Verify that the final `ghostship-hermes` image still satisfies the documented runtime and publication contract
-- [ ] 6.2 Trigger and measure an overlay-only publish on the same base content to confirm that the workflow reuses the published base image without rebuilding it
-- [ ] 6.3 Trigger and measure a warm-repeat publish on the same evaluated image content to confirm that the workflow retags immutable images without rebuilding them
-- [ ] 6.4 Compare the cold-content, base-reuse, and warm-repeat timing results and record the observed long pole, if any
+- [x] 6.1 Verify that the final `ghostship-hermes` image still satisfies the documented runtime and publication contract
+- [x] 6.2 Trigger and measure an overlay-only publish on the same base content to confirm that the workflow reuses the published base image without rebuilding it
+- [x] 6.3 Trigger and measure a warm-repeat publish on the same evaluated image content to confirm that the workflow retags immutable images without rebuilding them
+- [x] 6.4 Compare the cold-content, base-reuse, and warm-repeat timing results and record the observed long pole, if any
 
 ## 7. Finalization
 
-- [ ] 7.1 Compare all optimization rounds and keep the fastest correct configuration
+- [x] 7.1 Compare all optimization rounds and keep the fastest correct configuration
 - [x] 7.2 Update repository documentation and changelog to reflect the final GitHub Actions build and publish strategy
-- [ ] 7.3 Record the final measured timing outcome and whether the publish path met or missed the approximately 10-minute stretch goal
+- [x] 7.3 Record the final measured timing outcome and whether the publish path met or missed the approximately 10-minute stretch goal
