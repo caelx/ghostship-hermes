@@ -16,14 +16,31 @@
 - [x] 3.2 Add caching or an equivalent reuse strategy for the Python utility test environment used by `ci`
 - [ ] 3.3 Re-measure `ci` and `publish-image` under cold-cache and warm-cache conditions and compare against the baseline
 
-## 4. Round 3: Architectural Pipeline Changes
+## 4. Round 3: Reuse Logic And Architecture
 
 - [x] 4.1 Evaluate the remaining bottlenecks after gating and cache-backed reuse and identify whether the publish path still materially exceeds the target
 - [x] 4.2 Prototype and select an architectural image build or publish change if it offers a defensible speedup while preserving the explicit image contract
 - [x] 4.3 Implement the selected architectural change and verify multi-arch publication correctness plus runtime metadata compatibility
+- [x] 4.4 Add immutable per-architecture content-tag derivation so exact-repeat publishes can reuse previously published final images
+- [x] 4.5 Stabilize the reusable base-image boundary so overlay-only changes stop invalidating the base image unnecessarily
+- [x] 4.6 Split the image into a true Hermes base layer and a final repo-content layer, and move approved shared dependencies into base
 
-## 5. Finalization
+## 5. Boundary Verification
 
-- [ ] 5.1 Compare all optimization rounds and keep the fastest correct configuration
-- [x] 5.2 Update repository documentation and changelog to reflect the final GitHub Actions build and publish strategy
-- [ ] 5.3 Record the final measured timing outcome and whether the publish path met or missed the approximately 10-minute stretch goal
+- [x] 5.1 Audit which shared runtimes or dependency closures are reused broadly enough to belong in the base image
+- [x] 5.2 Keep repo-owned router/dashboard/runtime and utility wiring in the final image layer and verify the boundary is explicit in code
+- [x] 5.3 Inspect the built `ghostship-hermes-base` closure or image contents and confirm Ghostship-owned runtime packages are absent while approved shared dependencies remain present
+- [x] 5.4 Inspect the realized final overlay content against the built base image and pull any remaining shared non-Ghostship dependencies down into base until the overlay is limited to Ghostship-owned payloads plus unavoidable image-assembly metadata
+
+## 6. Remaining Verification And Measurement
+
+- [ ] 6.1 Verify that the final `ghostship-hermes` image still satisfies the documented runtime and publication contract
+- [ ] 6.2 Trigger and measure an overlay-only publish on the same base content to confirm that the workflow reuses the published base image without rebuilding it
+- [ ] 6.3 Trigger and measure a warm-repeat publish on the same evaluated image content to confirm that the workflow retags immutable images without rebuilding them
+- [ ] 6.4 Compare the cold-content, base-reuse, and warm-repeat timing results and record the observed long pole, if any
+
+## 7. Finalization
+
+- [ ] 7.1 Compare all optimization rounds and keep the fastest correct configuration
+- [x] 7.2 Update repository documentation and changelog to reflect the final GitHub Actions build and publish strategy
+- [ ] 7.3 Record the final measured timing outcome and whether the publish path met or missed the approximately 10-minute stretch goal
