@@ -13,7 +13,7 @@
 
 - [ ] 3.1 Verify the managed gateway pidfile fix is present in the shipped image and survives `hermes doctor` on the deployed host.
 - [x] 3.2 Remove the avoidable cold-start healthcheck race so the first failing probe reflects a real dashboard outage.
-- [ ] 3.3 Validate that the direct `opencode-go` path is healthy enough for the shipped primary model contract.
+- [x] 3.3 Validate that the direct `opencode-go` path is healthy enough for the shipped primary model contract.
 
 ## 4. Publish And Live Proof
 

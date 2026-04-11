@@ -47,6 +47,16 @@ doctor_text = doctor_text.replace(
 )
 doctor.write_text(doctor_text)
 
+doctor_text = doctor.read_text()
+doctor_text = doctor_text.replace(
+    '        ("MiniMax (China)",  ("MINIMAX_CN_API_KEY",),                         None,                                  "MINIMAX_CN_BASE_URL", False),\n',
+    '        ("MiniMax (China)",  ("MINIMAX_CN_API_KEY",),                         None,                                  "MINIMAX_CN_BASE_URL", False),\n        ("OpenCode Go",      ("OPENCODE_GO_API_KEY",),                        None,                                  "OPENCODE_GO_BASE_URL", False),\n',
+    1,
+)
+if '("OpenCode Go",      ("OPENCODE_GO_API_KEY",),                        None,                                  "OPENCODE_GO_BASE_URL", False),' not in doctor_text:
+    raise RuntimeError("failed to teach hermes doctor that OpenCode Go lacks /models health checks")
+doctor.write_text(doctor_text)
+
 tools_text = tools.read_text()
 tools_text = tools_text.replace(
     "        if not node_modules.exists() and shutil.which(\"npm\"):",
