@@ -4,8 +4,9 @@
 
 ## Workflow Contract
 
-- before `nix build`, `publish-image` tries to start a runner-local `nixcache-oci` proxy backed by `caelx/ghostship-cache`
-- if the proxy is unavailable before the build starts, the workflow continues with the normal uncached host-side build
+- before `nix build`, `publish-image` consumes the shared cache only when `caelx/ghostship-cache` already has a reachable `cache-index`
+- on a cold cache with no index yet, the workflow continues with the normal uncached host-side build and then publishes newly built paths into the shared cache
+- if the proxy is unavailable after an index is expected, the workflow continues with the normal uncached host-side build
 - if the proxy serves a signature mismatch, the Nix build fails; the workflow does not disable signature verification
 - after a successful build, the workflow signs and uploads only the store paths that were built locally and not already available from the configured caches
 
@@ -28,7 +29,7 @@ Actions secrets:
 1. Point `GHOSTSHIP_CACHE_REPO` at an empty backend or clear the existing `nix-cache` package index.
 2. Trigger `publish-image` on `main`.
 3. Expect the image build to complete successfully even though the cache has no reusable Ghostship paths yet.
-4. Expect the post-build cache publish step to upload new paths into `ghcr.io/caelx/ghostship-cache/nix-cache`.
+4. Expect the post-build cache planning and publish steps to upload new paths into `ghcr.io/caelx/ghostship-cache/nix-cache`.
 
 ### Warm repeat publish reuses cached paths
 

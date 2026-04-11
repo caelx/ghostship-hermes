@@ -55,6 +55,38 @@ cache_token() {
   fi
 }
 
+cache_has_index() {
+  require_cmd curl
+
+  local repo
+  repo="$(cache_repo)"
+  local registry="${GHOSTSHIP_CACHE_REGISTRY:-ghcr.io}"
+  local scope="repository:${repo}/nix-cache:pull"
+  local token_json token header http_code
+
+  token_json=$(curl -fsS --connect-timeout 5 --max-time 15 \
+    "https://${registry}/token?scope=${scope}&service=${registry}" 2>/dev/null || true)
+  token=$(python3 - <<'PYTOKEN' "$token_json"
+import json, sys
+try:
+    print(json.loads(sys.argv[1]).get('token', ''))
+except Exception:
+    print('')
+PYTOKEN
+)
+
+  header=( -H 'Accept: application/vnd.oci.image.manifest.v1+json' )
+  if [[ -n "$token" ]]; then
+    header+=( -H "Authorization: Bearer ${token}" )
+  fi
+
+  http_code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 \
+    "${header[@]}" \
+    "https://${registry}/v2/${repo}/nix-cache/manifests/cache-index" 2>/dev/null || true)
+
+  [[ "$http_code" == "200" ]]
+}
+
 bootstrap_cache() {
   require_cmd curl
   require_cmd python3
@@ -72,8 +104,10 @@ bootstrap_cache() {
   local port="${GHOSTSHIP_CACHE_PORT:-$DEFAULT_CACHE_PORT}"
   local listen="${GHOSTSHIP_CACHE_LISTEN:-127.0.0.1}"
   local upstream="${GHOSTSHIP_CACHE_UPSTREAM:-$DEFAULT_CACHE_UPSTREAM}"
-  local token
-  token="$(cache_token || true)"
+  if ! cache_has_index; then
+    log "cache index not present yet; skipping shared cache consumption for this run"
+    return 1
+  fi
 
   fetch_upstream_file proxy/main.py "$proxy_script"
   chmod +x "$proxy_script"
@@ -88,8 +122,6 @@ bootstrap_cache() {
     NIXCACHE_PORT="$port" \
     NIXCACHE_LISTEN="$listen" \
     NIXCACHE_UPSTREAM="$upstream" \
-    GITHUB_TOKEN="$token" \
-    GH_TOKEN="$token" \
     python3 "$proxy_script" >"$proxy_log" 2>&1 &
   local proxy_pid=$!
   printf '%s\n' "$proxy_pid" > "$proxy_pid_file"

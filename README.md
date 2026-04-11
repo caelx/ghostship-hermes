@@ -336,8 +336,8 @@ Image output contract:
 GitHub Actions publication behavior:
 
 - Every publish still rebuilds the explicit `ghostship-hermes-image` bundle on the runner host before export and GHCR publication.
-- `publish-image` now treats `caelx/ghostship-cache` as a signed shared Nix binary cache. Before `nix build`, the workflow starts a runner-local `nixcache-oci` proxy backed by that cache and adds it as a substituter with the documented public key.
-- If the shared cache is unavailable before the build starts, the workflow falls back to the normal uncached host-side build instead of switching to a different image-assembly path.
+- `publish-image` now treats `caelx/ghostship-cache` as a signed shared Nix binary cache. When a `cache-index` already exists, the workflow starts a runner-local `nixcache-oci` proxy before `nix build` and adds it as a substituter with the documented public key.
+- On a cold cache with no published index yet, the workflow skips cache consumption for that run, completes the normal uncached host-side build, and then publishes the newly built store paths so later runs can consume them.
 - If the shared cache serves a trust or signature mismatch, the Nix build fails; the workflow does not disable signature verification.
 - After a successful image build, `publish-image` signs and uploads the locally built store paths that were not already available from the configured caches into `ghcr.io/caelx/ghostship-cache/nix-cache`.
 - The `ci` workflow still uses the official `uv` setup action with dependency-aware cache keys for the Python utility steps.
