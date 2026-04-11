@@ -179,9 +179,14 @@ assert_router_inventory() {
 
 assert_model_config() {
   local target_container="$1"
-  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: auto" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "default: minimax-m2.7" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "fallback_model:" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: custom" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "model: coding" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "base_url: http://127.0.0.1:8788/v1" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "default: coding" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "api_key_env: OPENAI_API_KEY" >/dev/null'
+  run_in_container "$target_container" 'printenv GHOSTSHIP_ROUTER_DISABLED_MODELS | grep -Fx "openrouter/free" >/dev/null'
 }
 
 assert_gateway_pid_contract() {

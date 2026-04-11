@@ -204,9 +204,8 @@ let
     {
       display.personality = "assistant";
       model = {
-        provider = "auto";
-        default = "coding";
-        base_url = "http://127.0.0.1:8788/v1";
+        provider = "opencode-go";
+        default = "minimax-m2.7";
       };
       memory = {
         provider = "holographic";
@@ -221,8 +220,10 @@ let
         default_trust = 0.5;
       };
       fallback_model = {
-        provider = "opencode-go";
-        model = "minimax-m2.7";
+        provider = "custom";
+        model = "coding";
+        base_url = "http://127.0.0.1:8788/v1";
+        api_key_env = "OPENAI_API_KEY";
       };
       timezone = "Pacific/Honolulu";
       agent = {
@@ -732,6 +733,7 @@ PY2
     GHOSTSHIP_ROUTER_STATE_DIR = "/home/hermes/.local/state/ghostship-hermes/router";
     GHOSTSHIP_ROUTER_DB_PATH = "/home/hermes/.local/state/ghostship-hermes/router/router.db";
     GHOSTSHIP_ROUTER_REFRESH_INTERVAL = "300";
+    GHOSTSHIP_ROUTER_DISABLED_MODELS = "openrouter/free";
   };
 
   userServiceEnvironment = serviceEnvironment // {

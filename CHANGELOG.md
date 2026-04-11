@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Switched the managed single-agent Hermes scaffold to use `opencode-go/minimax-m2.7` as the primary model and the local Ghostship router `coding` alias as the configured fallback via the OpenAI-compatible endpoint, making `OPENAI_API_KEY` the router fallback bearer-token input, preserving the direct Gemini auxiliary path, and blocking the exact backend id `openrouter/free` from managed router selection.
 - Fixed the managed gateway pidfile contract so the wrapped Hermes runtime now recognizes the repo-managed `.hermes-wrapped gateway run --replace` process signature; this keeps `hermes doctor` and dashboard status from deleting `/home/hermes/.hermes/gateway.pid` while `ghostship-hermes-gateway.service` is still active.
 - Fixed the split-image GHCR publication path so `ghostship-hermes` is published from the explicit `ghostship-hermes-image` bundle again, while `ghostship-hermes-base` remains a separate reusable artifact; this prevents managed runtime and systemd-module changes from being dropped by the lightweight overlay-only assembly path.
 - Expanded the base image's shared Python runtime closure to include `ghostship-cli-contract` plus the log-proven shared FastAPI/Typer/HTTPX transitive dependency set, and unified the router, dashboard, CLI contract, and every `ghostship-*` Python utility onto the same overridden `python311Packages` scope so GitHub content publishes stop rebuilding duplicate Python dependency trees in overlay.
