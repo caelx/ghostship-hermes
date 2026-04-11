@@ -111,7 +111,9 @@ docker run --rm   --entrypoint "$build_shell"   -v "$repo_root:/src:ro"   -v "$b
     export CURL_CA_BUNDLE="$CERTIFICATE_BUNDLE"
     export GIT_SSL_CAINFO="$CERTIFICATE_BUNDLE"
     export NIX_CONFIG="experimental-features = nix-command flakes
-sandbox = false"
+sandbox = false
+build-users-group =
+"
     mkdir -p "$HOME" /out
     git config --global --add safe.directory /src
     cd /src
