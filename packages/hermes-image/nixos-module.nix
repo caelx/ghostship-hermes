@@ -169,6 +169,7 @@ let
   ];
   toolingProjectRoot = "/home/hermes/.hermes/hermes-agent";
   managedUserProfile = "/home/hermes/.local/state/nix/profiles/ghostship-managed";
+  managedPythonWithPip = pkgs.python3.withPackages (ps: [ ps.pip ]);
   managedUserPackages = [
     {
       name = "hermes-agent-wrapped";
@@ -193,6 +194,26 @@ let
     {
       name = "ripgrep";
       ref = "nixpkgs#ripgrep";
+    }
+    {
+      name = "fd";
+      ref = "nixpkgs#fd";
+    }
+    {
+      name = "python3";
+      bootstrapRef = "${managedPythonWithPip}";
+    }
+    {
+      name = "uv";
+      ref = "nixpkgs#uv";
+    }
+    {
+      name = "yq-go";
+      ref = "nixpkgs#yq-go";
+    }
+    {
+      name = "tmux";
+      ref = "nixpkgs#tmux";
     }
     {
       name = "nodejs_22";
@@ -370,13 +391,10 @@ let
 
   systemPackages = sharedDependencyPackages ++ repoCommandPackages;
   servicePath = sharedDependencyPackages ++ [ config.services.hermes-agent.package ] ++ repoCommandPackages;
-  fallbackCommandEnv = pkgs.buildEnv {
-    name = "ghostship-hermes-fallback-env";
-    paths = servicePath;
-  };
+  fallbackCommandPath = lib.makeBinPath servicePath;
   hermesUserPathPrefix = "/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin";
   overlayPathSegment = lib.optionalString (!includeRepoContent) "${repoOverlayBinDir}:";
-  hermesUserDefaultPath = "${hermesUserPathPrefix}:${overlayPathSegment}${fallbackCommandEnv}/bin";
+  hermesUserDefaultPath = "${hermesUserPathPrefix}:${overlayPathSegment}${fallbackCommandPath}";
   storagePreparationScript = pkgs.writeShellScript "ghostship-hermes-prepare-storage" ''
     set -euo pipefail
 
@@ -1264,7 +1282,7 @@ in
     requires = [ "ghostship-storage.service" ];
   };
 
-  system.extraDependencies = servicePath ++ [ fallbackCommandEnv storagePreparationScript ];
+  system.extraDependencies = servicePath ++ [ storagePreparationScript ];
 
   environment.etc."ghostship-hermes-release".text = hermesRelease + "\n";
 }

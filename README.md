@@ -35,7 +35,8 @@ This image intentionally does not ship the old Ghostship workstation layer. Goog
 
 The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence reconciles the repo-owned persisted user-layer runtime contract under `/home/hermes`, removing stale managed entries and reapplying the current image-owned toolchain/config state on replacement:
 
-- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, `node`, `npm`
+- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `python3`, `pip`, `node`, `npm`
+- managed Python contract: `python3`, `pip`, and `python3 -m pip` all resolve from the same managed Nix profile environment
 - npm-managed agent CLIs: `codex`, `opencode`
 - image-managed browser CLI: `agent-browser`
 
@@ -86,7 +87,7 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-user-tooling.service`
-  converges the repo-owned persisted user-layer runtime contract on boot, ensures the in-container Nix daemon is available first, removes stale managed entries from the dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile before re-adding the current image-owned toolchain, rewrites the managed npm project to the declared CLI set, refreshes the managed npm CLIs and symlinks under `/home/hermes/.local/bin`, and does not own the main gateway startup dependency chain
+  converges the repo-owned persisted user-layer runtime contract on boot, ensures the in-container Nix daemon is available first, removes stale managed entries from the dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile before re-adding the current image-owned toolchain, restores the managed helper CLI set plus the pip-capable Python environment, rewrites the managed npm project to the declared CLI set, refreshes the managed npm CLIs and symlinks under `/home/hermes/.local/bin`, and does not own the main gateway startup dependency chain
 - `ghostship-hermes-user-tooling-refresh.timer`
   runs the same mutable toolchain refresh flow daily and also once shortly after boot
 - `ghostship-hermes-bootstrap.service`
@@ -156,6 +157,7 @@ The image is intentionally declarative-first:
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image uses a dedicated managed profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed` to keep the baked `hermes` toolchain updateable on boot and during daily refreshes without colliding with the operator's default `~/.nix-profile`.
 - The default Hermes-user PATH includes `/home/hermes/.local/bin`, `/home/hermes/.local/state/nix/profiles/ghostship-managed/bin`, and `/home/hermes/.nix-profile/bin` ahead of the fallback system toolchain so login shells and Hermes runtime commands discover the persisted mutable tool layers by default.
+- The managed profile now also provides the repo-approved helper CLI set (`fd`, `uv`, `yq`, `tmux`) plus a shared Python environment where `python3`, `pip`, and `python3 -m pip` all work without extra activation.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The root Hermes config is intentionally minimal in the current scaffold.
 - The declared profiles are `assistant`, `operations`, and `supervisor`, and repo-owned assistant runtime calls use `hermes -p assistant` explicitly instead of a sticky active-profile file.
