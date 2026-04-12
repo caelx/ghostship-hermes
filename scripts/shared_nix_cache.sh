@@ -277,6 +277,54 @@ load_builder_lib() {
 }
 
 patch_cache_builder_for_large_indices() {
+  find_paths_to_cache() {
+    local refs=("$@")
+
+    local own_index_hashes=""
+    oci_get_token 2>/dev/null || true
+    local existing_manifest
+    existing_manifest=$(oci_get_manifest "cache-index" 2>/dev/null)
+    if [[ -n "$existing_manifest" ]]; then
+      local index_digest
+      index_digest=$(echo "$existing_manifest" | jq -r '.layers[0].digest // empty' 2>/dev/null)
+      if [[ -n "$index_digest" ]]; then
+        own_index_hashes=$(oci_get_blob "$index_digest" 2>/dev/null | \
+          jq -r '.entries | keys[]' 2>/dev/null || true)
+      fi
+    fi
+    local own_count=0
+    if [[ -n "$own_index_hashes" ]]; then
+      own_count=$(printf '%s\n' "$own_index_hashes" | wc -l)
+    fi
+    info "Own GHCR index has $own_count cached entries"
+
+    info "Running dry-run to determine what needs building..."
+    local dry_output
+    dry_output=$(mktemp)
+
+    for ref in "${refs[@]}"; do
+      nix build "$ref" --no-link --dry-run 2>"$dry_output" || true
+
+      local will_build
+      will_build=$(sed -n '/will be built:/,/^$/{ /\/nix\/store/p }' "$dry_output" | \
+        sed 's/^[[:space:]]*//' | sort -u)
+
+      if [[ -n "$will_build" ]]; then
+        while IFS= read -r path; do
+          [[ -n "$path" ]] || continue
+          local hash
+          hash=$(basename "$path" | cut -c1-32)
+          if [[ -n "$own_index_hashes" ]] && grep -qxF "$hash" <<< "$own_index_hashes"; then
+            continue
+          fi
+          printf '%s\n' "$path"
+        done <<< "$will_build"
+      fi
+    done | sort -u
+
+    rm -f "$dry_output"
+  }
+
   update_cache_index() {
     local existing_index_file="$1"
     local new_entries_file="$2"
