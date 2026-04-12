@@ -312,7 +312,19 @@ patch_cache_builder_for_large_indices() {
       if [[ -n "$will_build" ]]; then
         while IFS= read -r path; do
           [[ -n "$path" ]] || continue
-          local hash
+          local candidate hash
+          if [[ "$path" == *.drv ]]; then
+            while IFS= read -r candidate; do
+              [[ -n "$candidate" ]] || continue
+              hash=$(basename "$candidate" | cut -c1-32)
+              if [[ -n "$own_index_hashes" ]] && grep -qxF "$hash" <<< "$own_index_hashes"; then
+                continue
+              fi
+              printf '%s\n' "$candidate"
+            done < <(nix-store -q --outputs "$path" 2>/dev/null || true)
+            continue
+          fi
+
           hash=$(basename "$path" | cut -c1-32)
           if [[ -n "$own_index_hashes" ]] && grep -qxF "$hash" <<< "$own_index_hashes"; then
             continue
