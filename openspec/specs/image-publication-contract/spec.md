@@ -81,6 +81,16 @@ GitHub Actions image publication SHALL reuse supported cache or substituter-back
 - **THEN** the workflow reuses the supported cached output where available
 - **AND** the workflow still produces the same explicit publishable image contract
 
+#### Scenario: Publish workflow consumes the shared Ghostship cache
+- **WHEN** `publish-image` is configured to use `caelx/ghostship-cache`
+- **THEN** the workflow consumes cached Nix store paths through the supported shared-cache proxy/substituter path
+- **AND** it still builds the explicit `ghostship-hermes-image` bundle on the runner host before export/publication
+
+#### Scenario: Shared-cache miss falls back to the normal publish path
+- **WHEN** the shared Ghostship cache is empty or unavailable before the publish build starts
+- **THEN** `publish-image` continues with the normal full host-side build path
+- **AND** it does not switch to a different image assembly architecture or publish a different artifact contract
+
 ### Requirement: Image publication may use a faster internal assembly architecture while preserving the external contract
 The repo SHALL permit internal build and publication architecture changes that materially reduce wall-clock time, provided the resulting published image remains compatible with the explicit `ghostship-hermes-image` contract.
 
@@ -93,4 +103,28 @@ The repo SHALL permit internal build and publication architecture changes that m
 - **WHEN** the GitHub publish workflow publishes architecture images from the reusable `ghostship-hermes-base` tag plus `ghostship-hermes-overlay-bundle`
 - **THEN** the workflow still preserves the documented runtime metadata and multi-arch release semantics of the published image
 - **AND** local export and smoke-test flows continue to use the explicit `ghostship-hermes-image` bundle instead of guessing from the GitHub layering internals
+
+### Requirement: Cache upload planning happens before the real publish build when using a dry-run planner
+If `publish-image` uses a cache planner that identifies upload candidates from `nix build --dry-run`, the workflow SHALL run that planning step before the real image build and carry the resulting plan forward to later cache publication.
+
+#### Scenario: Cold run prepares upload candidates before build
+- **WHEN** `publish-image` is about to build `ghostship-hermes-image` on a runner without a usable shared-cache index
+- **THEN** the workflow computes the shared-cache upload plan before the real `nix build` starts
+- **AND** the later cache publication step uses that saved plan instead of recomputing candidates after the build
+
+### Requirement: Cache planning failure does not block image publication
+`publish-image` SHALL continue to publish the explicit `ghostship-hermes-image` artifact even when shared-cache planning fails before the build starts.
+
+#### Scenario: Pre-build cache planning fails
+- **WHEN** the pre-build shared-cache planning step errors or times out
+- **THEN** the workflow continues with the normal host-side image build and publication path
+- **AND** it skips only the affected cache publication leg rather than failing image publication
+
+### Requirement: Warm-cache reuse is observable in workflow evidence
+The image publication workflow or its runbook SHALL provide maintainers enough evidence to tell whether a repeat publish consumed the shared cache, rather than relying only on final duration comparisons.
+
+#### Scenario: Maintainer inspects a repeat publish run
+- **WHEN** a maintainer reviews a repeat `publish-image` run after a successful cache seed
+- **THEN** the run exposes whether shared-cache bootstrap succeeded before `nix build`
+- **AND** the run provides log evidence that cached store paths were reused or that the build fell back to uncached behavior
 
