@@ -405,14 +405,14 @@ with open(index_path, "w", encoding="utf-8") as handle:
 PYUPDATE
 
     local index_digest
-    index_digest=$(oci_push_blob "$index_file")
+    index_digest=$(oci_push_blob_with_retry "$index_file" "cache index")
     local index_size
     index_size=$(stat -c%s "$index_file")
 
     local config_file="$NIXCACHE_WORK_DIR/config.json"
     echo '{}' > "$config_file"
     local config_digest
-    config_digest=$(oci_push_blob "$config_file")
+    config_digest=$(oci_push_blob_with_retry "$config_file" "cache config")
     local config_size
     config_size=$(stat -c%s "$config_file")
 
@@ -438,6 +438,29 @@ PYUPDATE
       }')
 
     oci_push_manifest "cache-index" "$manifest"
+  }
+
+  oci_push_blob_with_retry() {
+    local blob_file="$1"
+    local description="${2:-blob}"
+    local attempts="${GHOSTSHIP_CACHE_UPLOAD_ATTEMPTS:-4}"
+    local delay="${GHOSTSHIP_CACHE_UPLOAD_RETRY_DELAY_SECONDS:-5}"
+    local attempt digest
+
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+      if digest=$(oci_push_blob "$blob_file"); then
+        printf '%s\n' "$digest"
+        return 0
+      fi
+
+      if (( attempt == attempts )); then
+        err "Giving up on ${description} upload after ${attempts} attempt(s)"
+        return 1
+      fi
+
+      err "Retrying ${description} upload after failed attempt ${attempt}/${attempts}"
+      sleep "$delay"
+    done
   }
 
   upload_to_oci() {
@@ -478,7 +501,7 @@ PYUPDATE
 
       nar_size=$(stat -c%s "$nar_file")
       info "  Uploading NAR for $hash ($(numfmt --to=iec "$nar_size" 2>/dev/null || echo "${nar_size}B"))"
-      nar_digest=$(oci_push_blob "$nar_file") || {
+      nar_digest=$(oci_push_blob_with_retry "$nar_file" "NAR for $hash") || {
         err "Failed to upload NAR for $hash"
         upload_failures=$((upload_failures + 1))
         continue
