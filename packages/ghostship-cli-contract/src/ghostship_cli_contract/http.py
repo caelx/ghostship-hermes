@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 from typing import Any
@@ -10,6 +11,13 @@ from .errors import HttpStatusError, ResponseDecodeError, TimeoutError, Transpor
 from .models import RequestSpec
 
 DEFAULT_TIMEOUT = 30.0
+TEXT_CONTENT_TYPES = {
+    "application/yaml",
+    "application/x-yaml",
+    "application/xml",
+    "text/yaml",
+    "text/xml",
+}
 
 
 def cloudflare_access_headers() -> dict[str, str]:
@@ -21,6 +29,32 @@ def cloudflare_access_headers() -> dict[str, str]:
     if client_secret:
         headers["CF-Access-Client-Secret"] = client_secret
     return headers
+
+
+def decode_response(response: httpx.Response) -> Any:
+    if not response.content:
+        return {"status": "success"}
+
+    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip() or None
+    if content_type == "application/json":
+        return response.json()
+    if content_type and (content_type.startswith("text/") or content_type in TEXT_CONTENT_TYPES):
+        return {"content_type": content_type, "body": response.text}
+    if content_type and content_type.startswith("image/"):
+        return {
+            "content_type": content_type,
+            "encoding": "base64",
+            "body_base64": base64.b64encode(response.content).decode("ascii"),
+        }
+
+    try:
+        return response.json()
+    except ValueError:
+        return {
+            "content_type": content_type,
+            "encoding": "base64",
+            "body_base64": base64.b64encode(response.content).decode("ascii"),
+        }
 
 
 class BaseHttpClient:
@@ -42,8 +76,16 @@ class BaseHttpClient:
         url = f"{self.base_url}{spec.path}"
         try:
             with self._client(spec.timeout) as client:
-                body = spec.content if spec.content is not None else spec.form_data
-                response = client.request(spec.method, url, params=spec.params, json=spec.json_body, content=body, files=spec.files, headers=spec.headers)
+                response = client.request(
+                    spec.method,
+                    url,
+                    params=spec.params,
+                    json=spec.json_body,
+                    content=spec.content,
+                    data=spec.form_data,
+                    files=spec.files,
+                    headers=spec.headers,
+                )
         except httpx.TimeoutException as exc:
             raise TimeoutError(f"request timed out after {spec.timeout} seconds", details={"method": spec.method, "path": spec.path, "timeout": spec.timeout}) from exc
         except httpx.HTTPError as exc:
@@ -56,6 +98,14 @@ class BaseHttpClient:
                 details = response.text or None
             raise HttpStatusError(f"remote service returned HTTP {response.status_code}", status_code=response.status_code, details=details)
         return response
+
+    def request_response(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_body: Any = None, content: str | bytes | None = None, form_data: dict[str, Any] | None = None, files: dict[str, Any] | list[Any] | None = None, headers: dict[str, Any] | None = None, timeout: float | None = None) -> httpx.Response:
+        spec = self.build_request_spec(method, path, params=params, json_body=json_body, content=content, form_data=form_data, files=files, headers=headers, timeout=timeout)
+        return BaseHttpClient.request(self, spec)
+
+    def request_decoded(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_body: Any = None, content: str | bytes | None = None, form_data: dict[str, Any] | None = None, files: dict[str, Any] | list[Any] | None = None, headers: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+        response = self.request_response(method, path, params=params, json_body=json_body, content=content, form_data=form_data, files=files, headers=headers, timeout=timeout)
+        return decode_response(response)
 
     def request_json(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_body: Any = None, content: str | bytes | None = None, form_data: dict[str, Any] | None = None, files: dict[str, Any] | list[Any] | None = None, headers: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
         spec = self.build_request_spec(method, path, params=params, json_body=json_body, content=content, form_data=form_data, files=files, headers=headers, timeout=timeout)
