@@ -501,11 +501,36 @@ publish_paths() {
   (( $# >= 1 )) || die "publish requires at least one GC root path"
   [[ -f "$paths_file" ]] || die "cache plan file not found: $paths_file"
 
-  mapfile -t paths < "$paths_file"
-  if (( ${#paths[@]} == 0 )); then
+  local planned_paths
+  mapfile -t planned_paths < "$paths_file"
+  if (( ${#planned_paths[@]} == 0 )); then
     log "no new local paths to publish"
     return 0
   fi
+
+  local paths=()
+  local path output
+  for path in "${planned_paths[@]}"; do
+    [[ -n "$path" ]] || continue
+    if [[ "$path" == *.drv ]]; then
+      while IFS= read -r output; do
+        [[ -n "$output" ]] || continue
+        [[ -e "$output" ]] || continue
+        paths+=("$output")
+      done < <(nix-store -q --outputs "$path" 2>/dev/null || true)
+    else
+      [[ -e "$path" ]] || continue
+      paths+=("$path")
+    fi
+  done
+
+  if (( ${#paths[@]} == 0 )); then
+    log "planned ${#planned_paths[@]} path(s), but none resolved to realized store outputs after the build"
+    return 0
+  fi
+
+  mapfile -t paths < <(printf '%s\n' "${paths[@]}" | sort -u)
+  log "expanded ${#planned_paths[@]} planned path(s) to ${#paths[@]} realized store output path(s)"
 
   local work_dir
   work_dir="$(mktemp -d)"
