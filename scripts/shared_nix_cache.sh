@@ -70,32 +70,68 @@ ghcr_manifest_http_code() {
   require_cmd curl
 
   local manifest_ref="$1"
-  local registry="${GHOSTSHIP_CACHE_REGISTRY:-ghcr.io}"
-  local repo
-  repo="$(cache_repo)"
+  local manifest_url
+  manifest_url="$(ghcr_manifest_url "$manifest_ref")"
 
   curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 \
     -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
-    "https://${registry}/v2/${repo}/nix-cache/manifests/${manifest_ref}" 2>/dev/null || true
+    "$manifest_url" 2>/dev/null || true
+}
+
+ghcr_manifest_url() {
+  local manifest_ref="$1"
+  local registry="${GHOSTSHIP_CACHE_REGISTRY:-ghcr.io}"
+  local repo
+  repo="$(cache_repo)"
+  printf 'https://%s/v2/%s/nix-cache/manifests/%s\n' "$registry" "$repo" "$manifest_ref"
+}
+
+ghcr_scope() {
+  local permissions="${1:-pull}"
+  local repo
+  repo="$(cache_repo)"
+  printf 'repository:%s/nix-cache:%s\n' "$repo" "$permissions"
+}
+
+ghcr_bearer_token() {
+  require_cmd curl
+
+  local registry="${GHOSTSHIP_CACHE_REGISTRY:-ghcr.io}"
+  local permissions="${1:-pull}"
+  local use_auth="${2:-false}"
+  local token user token_response registry_token
+  token="$(cache_token || true)"
+  user="$(cache_publish_user || true)"
+
+  if [[ "$use_auth" == "true" ]]; then
+    [[ -n "$token" ]] || return 1
+    [[ -n "$user" ]] || return 1
+    token_response=$(curl -sS --connect-timeout 5 --max-time 15 \
+      -u "token:${token}" \
+      "https://${registry}/token?scope=$(ghcr_scope "$permissions")&service=${registry}" 2>/dev/null || true)
+  else
+    token_response=$(curl -sS --connect-timeout 5 --max-time 15 \
+      "https://${registry}/token?scope=$(ghcr_scope "$permissions")&service=${registry}" 2>/dev/null || true)
+  fi
+
+  registry_token="$(printf '%s' "$token_response" | jq -r '.token // empty' 2>/dev/null || true)"
+  [[ -n "$registry_token" ]] || return 1
+  printf '%s\n' "$registry_token"
 }
 
 ghcr_manifest_http_code_auth() {
   require_cmd curl
 
   local manifest_ref="$1"
-  local registry="${GHOSTSHIP_CACHE_REGISTRY:-ghcr.io}"
-  local repo token user
-  repo="$(cache_repo)"
-  token="$(cache_token || true)"
-  user="$(cache_publish_user || true)"
-
-  [[ -n "$token" ]] || return 1
-  [[ -n "$user" ]] || return 1
+  local manifest_url bearer_token
+  manifest_url="$(ghcr_manifest_url "$manifest_ref")"
+  bearer_token="$(ghcr_bearer_token pull true || true)"
+  [[ -n "$bearer_token" ]] || return 1
 
   curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 \
-    -u "${user}:${token}" \
     -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
-    "https://${registry}/v2/${repo}/nix-cache/manifests/${manifest_ref}" 2>/dev/null || true
+    -H "Authorization: Bearer ${bearer_token}" \
+    "$manifest_url" 2>/dev/null || true
 }
 
 cache_can_publish() {
