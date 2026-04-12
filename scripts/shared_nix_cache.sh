@@ -66,6 +66,38 @@ cache_publish_user() {
   fi
 }
 
+ghcr_manifest_http_code() {
+  require_cmd curl
+
+  local manifest_ref="$1"
+  local registry="${GHOSTSHIP_CACHE_REGISTRY:-ghcr.io}"
+  local repo
+  repo="$(cache_repo)"
+
+  curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 \
+    -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+    "https://${registry}/v2/${repo}/nix-cache/manifests/${manifest_ref}" 2>/dev/null || true
+}
+
+ghcr_manifest_http_code_auth() {
+  require_cmd curl
+
+  local manifest_ref="$1"
+  local registry="${GHOSTSHIP_CACHE_REGISTRY:-ghcr.io}"
+  local repo token user
+  repo="$(cache_repo)"
+  token="$(cache_token || true)"
+  user="$(cache_publish_user || true)"
+
+  [[ -n "$token" ]] || return 1
+  [[ -n "$user" ]] || return 1
+
+  curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 \
+    -u "${user}:${token}" \
+    -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+    "https://${registry}/v2/${repo}/nix-cache/manifests/${manifest_ref}" 2>/dev/null || true
+}
+
 cache_can_publish() {
   require_cmd curl
 
@@ -87,34 +119,13 @@ cache_can_publish() {
 }
 
 cache_has_index() {
-  require_cmd curl
-
-  local repo
-  repo="$(cache_repo)"
-  local registry="${GHOSTSHIP_CACHE_REGISTRY:-ghcr.io}"
-  local scope="repository:${repo}/nix-cache:pull"
-  local token_json token header http_code
-
-  token_json=$(curl -fsS --connect-timeout 5 --max-time 15 \
-    "https://${registry}/token?scope=${scope}&service=${registry}" 2>/dev/null || true)
-  token=$(python3 - <<'PYTOKEN' "$token_json"
-import json, sys
-try:
-    print(json.loads(sys.argv[1]).get('token', ''))
-except Exception:
-    print('')
-PYTOKEN
-)
-
-  header=( -H 'Accept: application/vnd.oci.image.manifest.v1+json' )
-  if [[ -n "$token" ]]; then
-    header+=( -H "Authorization: Bearer ${token}" )
+  local http_code
+  http_code="$(ghcr_manifest_http_code cache-index)"
+  if [[ "$http_code" == "200" ]]; then
+    return 0
   fi
 
-  http_code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 \
-    "${header[@]}" \
-    "https://${registry}/v2/${repo}/nix-cache/manifests/cache-index" 2>/dev/null || true)
-
+  http_code="$(ghcr_manifest_http_code_auth cache-index || true)"
   [[ "$http_code" == "200" ]]
 }
 
@@ -153,6 +164,8 @@ bootstrap_cache() {
     NIXCACHE_PORT="$port" \
     NIXCACHE_LISTEN="$listen" \
     NIXCACHE_UPSTREAM="$upstream" \
+    GITHUB_TOKEN="$(cache_token || true)" \
+    GH_TOKEN="$(cache_token || true)" \
     python3 "$proxy_script" >"$proxy_log" 2>&1 &
   local proxy_pid=$!
   printf '%s\n' "$proxy_pid" > "$proxy_pid_file"
@@ -201,6 +214,193 @@ load_builder_lib() {
   export GH_TOKEN="$token"
   # shellcheck disable=SC1090
   source "$work_dir/cache-builder.sh"
+  patch_cache_builder_for_large_indices
+}
+
+patch_cache_builder_for_large_indices() {
+  update_cache_index() {
+    local existing_index_file="$1"
+    local new_entries_file="$2"
+    shift 2
+    local gc_root_paths=("$@")
+
+    local gc_roots_file="$NIXCACHE_WORK_DIR/cache-index-gc-roots.json"
+    jq -n '[]' > "$gc_roots_file"
+    local p h
+    for p in "${gc_root_paths[@]}"; do
+      h=$(basename "$p" | cut -c1-32)
+      jq --arg h "$h" '. + [$h]' "$gc_roots_file" > "${gc_roots_file}.tmp"
+      mv "${gc_roots_file}.tmp" "$gc_roots_file"
+    done
+
+    local public_key=""
+    if [[ -n "$NIXCACHE_SIGNING_KEY_FILE" ]] && [[ -f "${NIXCACHE_SIGNING_KEY_FILE}.pub" ]]; then
+      public_key=$(cat "${NIXCACHE_SIGNING_KEY_FILE}.pub")
+    fi
+
+    local index_file="$NIXCACHE_WORK_DIR/cache-index.json"
+    python3 - <<'PYUPDATE' "$existing_index_file" "$new_entries_file" "$gc_roots_file" "$public_key" "$NIXCACHE_REPO" "$NIXCACHE_REGISTRY" "$NIXCACHE_IMAGE" "$index_file"
+import json
+import sys
+from datetime import datetime, timezone
+
+existing_index_path, new_entries_path, gc_roots_path, public_key, repo, registry, image, index_path = sys.argv[1:9]
+
+def load_json(path, default):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError:
+        return default
+    except json.JSONDecodeError:
+        return default
+
+existing = load_json(existing_index_path, {})
+new_entries = load_json(new_entries_path, {})
+gc_roots = load_json(gc_roots_path, [])
+
+index = {
+    "version": 1,
+    "repo": repo,
+    "registry": registry,
+    "image": image,
+    "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "public_key": public_key,
+    "entries": {},
+    "gc_roots": [],
+}
+
+if isinstance(existing.get("entries"), dict):
+    index["entries"].update(existing["entries"])
+if isinstance(existing.get("gc_roots"), list):
+    index["gc_roots"] = existing["gc_roots"]
+
+index["entries"].update(new_entries)
+index["gc_roots"] = sorted(set(index["gc_roots"] + gc_roots))
+
+if not public_key and existing.get("public_key"):
+    index["public_key"] = existing["public_key"]
+
+with open(index_path, "w", encoding="utf-8") as handle:
+    json.dump(index, handle, indent=2, sort_keys=True)
+PYUPDATE
+
+    local index_digest
+    index_digest=$(oci_push_blob "$index_file")
+    local index_size
+    index_size=$(stat -c%s "$index_file")
+
+    local config_file="$NIXCACHE_WORK_DIR/config.json"
+    echo '{}' > "$config_file"
+    local config_digest
+    config_digest=$(oci_push_blob "$config_file")
+    local config_size
+    config_size=$(stat -c%s "$config_file")
+
+    local manifest
+    manifest=$(jq -n \
+      --arg config_digest "$config_digest" \
+      --argjson config_size "$config_size" \
+      --arg index_digest "$index_digest" \
+      --argjson index_size "$index_size" \
+      '{
+          schemaVersion: 2,
+          mediaType: "application/vnd.oci.image.manifest.v1+json",
+          config: {
+              mediaType: "application/vnd.oci.image.config.v1+json",
+              digest: $config_digest,
+              size: $config_size
+          },
+          layers: [{
+              mediaType: "application/vnd.nixcache.index.v1+json",
+              digest: $index_digest,
+              size: $index_size
+          }]
+      }')
+
+    oci_push_manifest "cache-index" "$manifest"
+  }
+
+  upload_to_oci() {
+    info "Uploading to GHCR: ${NIXCACHE_IMAGE}"
+
+    local existing_index_file="$NIXCACHE_WORK_DIR/cache-existing-index.json"
+    jq -n '{}' > "$existing_index_file"
+    local existing_manifest
+    existing_manifest=$(oci_get_manifest "cache-index")
+    if [[ -n "$existing_manifest" ]]; then
+      local index_digest
+      index_digest=$(echo "$existing_manifest" | jq -r '.layers[0].digest // empty' 2>/dev/null)
+      if [[ -n "$index_digest" ]]; then
+        if ! oci_get_blob "$index_digest" > "$existing_index_file" 2>/dev/null; then
+          jq -n '{}' > "$existing_index_file"
+        fi
+      fi
+    fi
+
+    local new_entries_file="$NIXCACHE_WORK_DIR/cache-new-entries.json"
+    jq -n '{}' > "$new_entries_file"
+    local uploaded=0
+    local upload_failures=0
+    local narinfo hash nar_url nar_file nar_size nar_digest store_path name
+    local added_at
+
+    for narinfo in "$CACHE_DIR"/*.narinfo; do
+      [[ -f "$narinfo" ]] || continue
+      hash=$(basename "$narinfo" .narinfo)
+
+      nar_url=$(grep '^URL: ' "$narinfo" | head -1 | cut -d' ' -f2)
+      nar_file="$CACHE_DIR/$nar_url"
+
+      if [[ ! -f "$nar_file" ]]; then
+        err "NAR file not found for $hash: $nar_url"
+        continue
+      fi
+
+      nar_size=$(stat -c%s "$nar_file")
+      info "  Uploading NAR for $hash ($(numfmt --to=iec "$nar_size" 2>/dev/null || echo "${nar_size}B"))"
+      nar_digest=$(oci_push_blob "$nar_file") || {
+        err "Failed to upload NAR for $hash"
+        upload_failures=$((upload_failures + 1))
+        continue
+      }
+
+      store_path=$(grep '^StorePath: ' "$narinfo" | head -1 | cut -d' ' -f2)
+      name=$(basename "$store_path" | sed 's/^[a-z0-9]*-//')
+      added_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      jq \
+        --arg hash "$hash" \
+        --arg name "$name" \
+        --rawfile narinfo "$narinfo" \
+        --arg nar_digest "$nar_digest" \
+        --argjson nar_size "$nar_size" \
+        --arg added "$added_at" \
+        '.[$hash] = {
+          name: $name,
+          narinfo: $narinfo,
+          nar_digest: $nar_digest,
+          nar_size: $nar_size,
+          added: $added
+        }' \
+        "$new_entries_file" > "${new_entries_file}.tmp"
+      mv "${new_entries_file}.tmp" "$new_entries_file"
+
+      uploaded=$((uploaded + 1))
+    done
+
+    if [[ "$uploaded" -eq 0 ]]; then
+      info "No new paths to upload"
+      return 0
+    fi
+
+    if [[ "$upload_failures" -gt 0 ]]; then
+      err "$upload_failures upload(s) failed. Updating index with $uploaded successful upload(s) only."
+    fi
+
+    info "Uploaded $uploaded NAR(s), updating index"
+    update_cache_index "$existing_index_file" "$new_entries_file" "$@"
+  }
 }
 
 plan_paths() {
