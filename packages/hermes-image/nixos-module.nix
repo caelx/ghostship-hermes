@@ -761,6 +761,45 @@ def desired_ref_for(item):
     return item.get("bootstrapRef") or item["ref"]
 
 
+def ref_matches_entry(desired_ref, current_entry):
+    current_refs = {
+        value
+        for value in (
+            current_entry.get("originalUrl"),
+            current_entry.get("originalURL"),
+            current_entry.get("url"),
+            current_entry.get("uri"),
+            current_entry.get("lockedUrl"),
+        )
+        if isinstance(value, str) and value
+    }
+    current_refs.update(
+        value
+        for value in current_entry.get("storePaths", [])
+        if isinstance(value, str) and value
+    )
+
+    if desired_ref in current_refs:
+        return True
+
+    if "#" not in desired_ref:
+        return False
+
+    desired_url, desired_attr = desired_ref.split("#", 1)
+    normalized_urls = set()
+    for value in current_refs:
+        normalized_urls.add(value)
+        if value.startswith("flake:"):
+            normalized_urls.add(value.removeprefix("flake:"))
+
+    desired_url = desired_url.removeprefix("flake:")
+    current_attr = current_entry.get("attrPath")
+    attr_matches = isinstance(current_attr, str) and (
+        current_attr == desired_attr or current_attr.endswith(f".{desired_attr}")
+    )
+    return desired_url in normalized_urls and attr_matches
+
+
 def normalize_priority(value):
     if value is None:
         return None
@@ -793,24 +832,8 @@ for item in specs:
     keep_existing = False
     if len(matching_entries) == 1 and matching_entries[0][0] == name:
         _, current_entry = matching_entries[0]
-        current_refs = {
-            value
-            for value in (
-                current_entry.get("originalUrl"),
-                current_entry.get("originalURL"),
-                current_entry.get("url"),
-                current_entry.get("uri"),
-                current_entry.get("lockedUrl"),
-            )
-            if isinstance(value, str) and value
-        }
-        current_refs.update(
-            value
-            for value in current_entry.get("storePaths", [])
-            if isinstance(value, str) and value
-        )
         current_priority = normalize_priority(current_entry.get("priority"))
-        keep_existing = desired_ref in current_refs and current_priority == desired_priority
+        keep_existing = ref_matches_entry(desired_ref, current_entry) and current_priority == desired_priority
 
     if not keep_existing:
         for entry_name, _ in matching_entries:
@@ -920,6 +943,12 @@ in
   # hook so the upstream module can evaluate without requiring an external secret
   # management module.
   system.activationScripts.setupSecrets = lib.mkDefault (lib.stringAfter [ "users" ] "");
+  system.activationScripts.removeStaleRootChannels = lib.stringBefore [ "no-nix-channel" ] ''
+    rm -f \
+      /root/.nix-defexpr/channels \
+      /nix/var/nix/profiles/per-user/root/channels \
+      /nix/var/nix/profiles/per-user/root/channels-*
+  '';
 
   imports = [
     "${modulesPath}/profiles/docker-container.nix"
@@ -936,6 +965,7 @@ in
   networking.useDHCP = lib.mkDefault true;
   networking.resolvconf.enable = false;
   networking.firewall.allowedTCPPorts = [ 7681 ];
+  system.installer.channel.enable = false;
   nix.channel.enable = false;
   environment.etc.hosts.enable = false;
   system.stateVersion = "25.11";
