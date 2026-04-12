@@ -128,11 +128,8 @@ jobs:
           elif [ -z "${GHOSTSHIP_CACHE_PUBLIC_KEY:-}" ] || [ -z "${GHOSTSHIP_CACHE_SIGNING_KEY:-}" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "shared cache signing or public-key configuration missing; skipping cache publication" >&2
-          elif scripts/shared_nix_cache.sh can-publish; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "shared cache publish token cannot open GHCR uploads for ${GHOSTSHIP_CACHE_REPO:-caelx/ghostship-cache}; skipping cache publication" >&2
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Plan shared cache publication (pre-build)
