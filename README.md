@@ -17,6 +17,7 @@ Canonical image references:
 - `/nix` should be persisted when mutable `nix profile install`, `nix shell`, or build outputs must survive container replacement.
 - The runtime user is `hermes` at `3000:3000`.
 - The public browser surface is a HUDUI-aligned dashboard on port `7681`.
+- The published image advertises `STOPSIGNAL SIGRTMIN+3` so container shutdown reaches the inner `systemd` PID 1 correctly.
 - The dashboard exposes HUDUI tabs for runtime inspection and adds one Ghostship-specific `Console` tab backed by on-demand same-origin `ttyd`.
 - Browser terminals start in `/workspace`.
 - The image now exposes one managed Hermes agent, not a repo-owned profile fleet.
@@ -87,13 +88,13 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-user-tooling.service`
-  converges the repo-owned persisted user-layer runtime contract on boot, ensures the in-container Nix daemon is available first, removes stale managed entries from the dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile before re-adding the current image-owned toolchain, restores the managed helper CLI set plus the pip-capable Python environment, rewrites the managed npm project to the declared CLI set, refreshes the managed npm CLIs and symlinks under `/home/hermes/.local/bin`, and does not own the main gateway startup dependency chain
+  converges the repo-owned persisted user-layer runtime contract on boot, ensures the in-container Nix daemon is available first, repairs only drifted entries in the dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile instead of removing and re-adding the full managed toolchain on every boot, reruns `npm install` only when the declared npm layer changed or required bins are missing, refreshes the managed npm CLIs and symlinks under `/home/hermes/.local/bin`, and does not own the main gateway startup dependency chain
 - `ghostship-hermes-user-tooling-refresh.timer`
   reruns the mutable tooling refresh flow daily and once shortly after boot
 - `ghostship-hermes-bootstrap.service`
   performs the single-agent managed-state convergence, deletes the old repo-owned profile tree during migration, rewrites `/home/hermes/.hermes/.env` atomically from the approved allowlist, seeds `/home/hermes/.hermes/skills` and `/home/hermes/.hermes/SOUL.md`, and mirrors `/etc/ghostship-hermes-release` into `/home/hermes/.ghostship-hermes-release`
 - `hermes-gateway.service`
-  is enabled as a real `systemd --user` service for `hermes`, auto-starts at boot without interactive login, and keeps the one managed Hermes gateway running with `hermes gateway run --replace`
+  is enabled as a real `systemd --user` service for `hermes`, auto-starts at boot without interactive login, keeps the one managed Hermes gateway running with `hermes gateway run --replace`, and now carries explicit upstream-aligned stop policy (`KillMode=mixed`, `KillSignal=SIGTERM`, `TimeoutStopSec=60s`)
 - `ghostship-hermes-gateway-restart.path`
   runs in the Hermes user manager, watches `/home/hermes/.hermes/config.yaml` plus `.env`, and triggers a managed gateway restart only when those managed runtime inputs change; `auth.json` and `SOUL.md` remain durable managed state but are intentionally not automatic restart triggers
 - `ghostship-hermes-startup.service`
@@ -124,6 +125,8 @@ docker run \
 
 Notes:
 
+- For Podman deployments that want the image-managed hostname and `/etc/hosts` contract, run the container with `--no-hostname --no-hosts` so Podman does not inject conflicting files into `/etc`.
+- For systemd-as-PID-1 container shutdown, set the runtime stop signal to `SIGRTMIN+3` and use a stop timeout that covers inner `systemd` shutdown work rather than Podman's default 10 seconds.
 - Reuse `/nix` only when it already contains compatible Nix state you want to keep. Do not hide a fresh Nix-built image behind a brand-new empty `/nix` volume.
 - If you mount `/nix` to a persistent volume, prepopulate that volume with the image's `/nix` contents before first boot.
 - Fix the per-user Nix ownership on the persisted volume before expecting mutable Nix workflows to work for `hermes`.
@@ -146,6 +149,8 @@ Dashboard contract:
 - The browser contract now follows HUDUI endpoints such as `/api/health`, `/api/profiles`, `/api/projects`, and `/api/console`.
 - The HUDUI `Projects` panel is rooted at `/workspace`, and the root managed profile is rendered as `Managed Agent`.
 - The published image now carries a store-stable container `HEALTHCHECK` that curls the dashboard with `curl` from its own store path instead of relying on `/run/current-system/sw/bin/curl` during early boot.
+- Container-mode activation now disables root channel seeding and leaves Podman-managed `/etc/hosts` alone. The hostname contract remains explicit in Nix, so `/etc/hostname` cleanup still belongs in the host/runtime configuration if Podman continues injecting that file.
+- OCI image metadata now includes `org.opencontainers.image.source` and `org.opencontainers.image.revision` in addition to the title, description, and version labels.
 
 ## Hermes Configuration
 

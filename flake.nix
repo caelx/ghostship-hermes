@@ -16,6 +16,8 @@
     }:
     let
       lib = nixpkgs.lib;
+      sourceUrl = "https://github.com/caelx/ghostship-hermes";
+      revision = self.shortRev or self.dirtyShortRev or self.rev or "dirty";
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -222,12 +224,16 @@
               system
               ghostshipHermesRootfs
               hermesRelease
+              sourceUrl
+              revision
               ;
           };
           ghostshipHermesBaseImage = pkgs.callPackage ./packages/hermes-image/image.nix {
             inherit
               system
               hermesRelease
+              sourceUrl
+              revision
               ;
             ghostshipHermesRootfs = ghostshipHermesBaseRootfs;
             defaultImageRef = "ghostship-hermes-base:${hermesRelease}";
