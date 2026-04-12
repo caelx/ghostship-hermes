@@ -1,12 +1,12 @@
 ## 1. Repair Cache Publication
 
-- [ ] 1.1 Patch the shared-cache helper integration so `cache-index` updates no longer pass large JSON payloads through shell arguments and large cache-refresh runs can complete successfully.
-- [ ] 1.2 Keep shared-cache publication fail-open for image publication while surfacing clear log output when cache upload or index update fails.
+- [x] 1.1 Patch the shared-cache helper integration so `cache-index` updates no longer pass large JSON payloads through shell arguments and large cache-refresh runs can complete successfully.
+- [x] 1.2 Keep shared-cache publication fail-open for image publication while surfacing clear log output when cache upload or index update fails.
 
 ## 2. Keep Cache Consumption Fast
 
-- [ ] 2.1 Update shared-cache bootstrap and proxy wiring so the public cache path remains the normal fast path and authenticated registry access is available as fallback when needed.
-- [ ] 2.2 Remove or simplify redundant cache-side publish probes that add workflow roundtrips without materially improving correctness.
+- [x] 2.1 Update shared-cache bootstrap and proxy wiring so the public cache path remains the normal fast path and authenticated registry access is available as fallback when needed.
+- [x] 2.2 Remove or simplify redundant cache-side publish probes that add workflow roundtrips without materially improving correctness.
 
 ## 3. Prove Reuse Manually
 
