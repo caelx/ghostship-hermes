@@ -215,6 +215,56 @@ assert_gateway_pid_contract() {
   run_as_hermes "$target_container" 'pid=$(jq -r ".pid" /home/hermes/.hermes/gateway.pid); ps -p "$pid" -o args= | grep -F "gateway run --replace" >/dev/null'
 }
 
+get_gateway_main_pid() {
+  local target_container="$1"
+  run_as_hermes "$target_container" 'pid=$(systemctl --user show -p MainPID --value hermes-gateway.service); test -n "$pid"; test "$pid" != "0"; printf "%s" "$pid"'
+}
+
+assert_gateway_restarts_after() {
+  local target_container="$1"
+  local mutate_command="$2"
+  local before_pid
+  local after_pid
+  local attempt
+
+  before_pid="$(get_gateway_main_pid "$target_container")"
+  run_as_hermes "$target_container" "$mutate_command"
+
+  for attempt in $(seq 1 20); do
+    after_pid="$(get_gateway_main_pid "$target_container")"
+    if [ "$after_pid" != "$before_pid" ]; then
+      assert_gateway_pid_contract "$target_container"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "expected gateway restart after mutation, but MainPID stayed at $before_pid" >&2
+  return 1
+}
+
+assert_gateway_does_not_restart_after() {
+  local target_container="$1"
+  local mutate_command="$2"
+  local before_pid
+  local after_pid
+  local attempt
+
+  before_pid="$(get_gateway_main_pid "$target_container")"
+  run_as_hermes "$target_container" "$mutate_command"
+
+  for attempt in $(seq 1 6); do
+    after_pid="$(get_gateway_main_pid "$target_container")"
+    if [ "$after_pid" != "$before_pid" ]; then
+      echo "unexpected gateway restart after non-runtime mutation: $before_pid -> $after_pid" >&2
+      return 1
+    fi
+    sleep 1
+  done
+
+  assert_gateway_pid_contract "$target_container"
+}
+
 assert_websocket_proxy() {
   local terminal_url="$1"
   python3 - "$terminal_url" "$dashboard_port" <<'PY'
@@ -461,6 +511,16 @@ run_as_hermes "$container_name" '! hermes --version 2>/dev/null | grep -F "legac
 assert_router_inventory "$container_name"
 assert_model_config "$container_name"
 assert_config_migration "$container_name"
+assert_gateway_restarts_after "$container_name" 'tmp=$(mktemp); printf "TERMINAL_CWD=/workspace\nGHOSTSHIP_RESTART_TEST=1\n" >"$tmp"; cat /home/hermes/.hermes/.env >>"$tmp"; mv "$tmp" /home/hermes/.hermes/.env'
+assert_gateway_restarts_after "$container_name" 'python3 - <<"PY2"
+from pathlib import Path
+path = Path("/home/hermes/.hermes/config.yaml")
+text = path.read_text()
+marker = "restart_test_marker: true\n"
+if marker in text:
+    raise SystemExit("restart marker already present")
+path.write_text(text + marker)
+PY2'
 assert_primary_execution "$container_name"
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}\" /home/hermes/.hermes/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_ALLOWED_USERS}\" /home/hermes/.hermes/.env >/dev/null"
@@ -493,7 +553,8 @@ run_as_hermes "$container_name" 'printf "%s" "You are Hermes Agent, an intellige
 run_in_container "$container_name" 'systemctl start ghostship-hermes-bootstrap.service'
 run_as_hermes "$container_name" 'grep -Fx "seed-soul-v1" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/SOUL.md.ghostship-seeded-sha256'
-run_as_hermes "$container_name" 'printf "agent-edited soul\n" >/home/hermes/.hermes/SOUL.md'
+assert_gateway_does_not_restart_after "$container_name" 'printf "{\"provider\":\"codex\",\"token\":\"runtime-refresh\"}\n" >/home/hermes/.hermes/auth.json'
+assert_gateway_does_not_restart_after "$container_name" 'printf "agent-edited soul\n" >/home/hermes/.hermes/SOUL.md'
 run_in_container "$container_name" 'systemctl start ghostship-hermes-bootstrap.service'
 run_as_hermes "$container_name" 'grep -Fx "agent-edited soul" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_name" 'hermes doctor >/dev/null'

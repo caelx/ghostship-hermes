@@ -95,7 +95,7 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-gateway.service`
   is enabled as a real `systemd --user` service for `hermes`, auto-starts at boot without interactive login, and keeps the one managed Hermes gateway running with `hermes gateway run --replace`
 - `ghostship-hermes-gateway-restart.path`
-  runs in the Hermes user manager, watches `/home/hermes/.hermes/config.yaml`, `.env`, `auth.json`, and `SOUL.md`, and triggers a managed gateway restart when those root-managed files change
+  runs in the Hermes user manager, watches `/home/hermes/.hermes/config.yaml` plus `.env`, and triggers a managed gateway restart only when those managed runtime inputs change; `auth.json` and `SOUL.md` remain durable managed state but are intentionally not automatic restart triggers
 - `ghostship-hermes-startup.service`
   starts the HUDUI browser, router, the Hermes user manager, and the enabled `hermes-gateway.service` after storage preparation and bootstrap; a failed mutable tooling refresh must not block the main runtime boot
 - `ghostship-hermes-hudui.service`

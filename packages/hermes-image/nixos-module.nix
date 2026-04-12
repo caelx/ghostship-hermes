@@ -1156,8 +1156,6 @@ in
       PathChanged = [
         "${managedHermesHome}/config.yaml"
         "${managedEnvPath}"
-        "${managedAuthPath}"
-        "${managedSoulPath}"
       ];
       Unit = "ghostship-hermes-gateway-restart.service";
     };
