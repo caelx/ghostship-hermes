@@ -41,6 +41,19 @@ def _parse_float_env(name: str, *, default: float) -> float:
     return float(raw)
 
 
+def _parse_int_csv_env(name: str, *, default: tuple[int, ...]) -> tuple[int, ...]:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    values: list[int] = []
+    for item in raw.split(","):
+        entry = item.strip()
+        if not entry:
+            continue
+        values.append(int(entry))
+    return tuple(values) or default
+
+
 _NumericT = TypeVar("_NumericT", int, float)
 
 
@@ -94,6 +107,11 @@ class RouterConfig:
     provider_rate_limit_threshold: float
     provider_timeout_threshold: float
     provider_exhaustion_threshold: float
+    exhaustion_cooldown_ladder_seconds: tuple[int, ...]
+    provider_suspect_window_seconds: int
+    provider_disable_seconds: int
+    provider_probe_escalation_factor: float
+    provider_max_disable_seconds: int
     openrouter_api_key: str | None
     openrouter_base_url: str
     openrouter_http_referer: str | None
@@ -139,6 +157,14 @@ class RouterConfig:
             provider_rate_limit_threshold=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_RATE_LIMIT_THRESHOLD", default=2.5),
             provider_timeout_threshold=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_TIMEOUT_THRESHOLD", default=2.5),
             provider_exhaustion_threshold=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_EXHAUSTION_THRESHOLD", default=3.0),
+            exhaustion_cooldown_ladder_seconds=_parse_int_csv_env(
+                "GHOSTSHIP_ROUTER_EXHAUSTION_COOLDOWN_LADDER_SECONDS",
+                default=(30, 60, 300, 600, 1200, 2400),
+            ),
+            provider_suspect_window_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_SUSPECT_WINDOW_SECONDS", "120")),
+            provider_disable_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_DISABLE_SECONDS", "21600")),
+            provider_probe_escalation_factor=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_PROBE_ESCALATION_FACTOR", default=2.0),
+            provider_max_disable_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_MAX_DISABLE_SECONDS", "86400")),
             openrouter_api_key=os.environ.get("OPENROUTER_API_KEY"),
             openrouter_base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             openrouter_http_referer=os.environ.get("OPENROUTER_HTTP_REFERER"),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 import uuid
 from collections.abc import Iterator
@@ -168,7 +169,11 @@ class PreparedResponsesRequest:
 class RouterService:
     def __init__(self, config: RouterConfig, *, providers: dict[str, ChatProvider] | None = None, state_store: StateStore | None = None):
         self.config = config
-        self.state_store = state_store or SqliteStateStore(config.db_path, rolling_window_seconds=config.rolling_window_seconds)
+        self.state_store = state_store or SqliteStateStore(
+            config.db_path,
+            rolling_window_seconds=config.rolling_window_seconds,
+            exhaustion_cooldown_ladder_seconds=config.exhaustion_cooldown_ladder_seconds,
+        )
         self.providers = providers if providers is not None else self._build_providers()
         self._provider_names = tuple(sorted(self.providers.keys()))
         self._inventory = self._load_persisted_inventory()
@@ -180,6 +185,7 @@ class RouterService:
         self._last_ranking_at = 0.0
         self._last_ranking_error: dict[str, Any] | None = None
         self._last_ranking_worker: dict[str, str] | None = None
+        self._refresh_lock = threading.RLock()
 
     def _build_providers(self) -> dict[str, ChatProvider]:
         providers: dict[str, ChatProvider] = {}
@@ -213,6 +219,7 @@ class RouterService:
         return ReadinessResponse(ok=True, providers=sorted(self.providers.keys()), detail="Router is ready.")
 
     def list_models(self) -> ModelsResponse:
+        self._ensure_inventory_loaded_for_request()
         alias_cards: list[ModelCard] = []
         for alias in self.config.aliases:
             candidates = self.preview_routes(alias.name)
@@ -282,7 +289,14 @@ class RouterService:
                             saw_finish_reason = True
                         yield f"data: {json.dumps(payload)}\n\n"
             except NormalizedProviderError as exc:
-                self._record_failure(candidate, request_for_routing.model, exc, latency_ms=round((time.monotonic() - started_at) * 1000, 2), is_fallback=candidate.is_fallback)
+                self._record_failure(
+                    candidate,
+                    request_for_routing.model,
+                    exc,
+                    latency_ms=round((time.monotonic() - started_at) * 1000, 2),
+                    is_fallback=candidate.is_fallback,
+                    zero_output=not self._stream_state_has_output(stream_result.state),
+                )
                 raise
             latency_ms = round((time.monotonic() - started_at) * 1000, 2)
             first_text_latency_ms = stream_result.state.first_text_latency_ms or latency_ms
@@ -291,27 +305,13 @@ class RouterService:
                 stream_result.backend_model,
                 stream_result.state,
             )
-            self.state_store.apply_success(
-                candidate.provider_name,
-                candidate.backend_model,
+            self._record_success(
+                candidate,
+                request_for_routing.model,
                 latency_ms=latency_ms,
                 first_text_latency_ms=first_text_latency_ms,
-            )
-            self._apply_provider_health_guards(candidate.provider_name)
-            self.state_store.record_attempt(
-                RouteEvent(
-                    alias=request_for_routing.model,
-                    provider_name=candidate.provider_name,
-                    backend_model=candidate.backend_model,
-                    success=True,
-                    retryable=False,
-                    is_fallback=candidate.is_fallback,
-                    category=None,
-                    latency_ms=latency_ms,
-                    first_text_latency_ms=first_text_latency_ms,
-                    details={"score_breakdown": candidate.score_breakdown},
-                    created_at=time.time(),
-                )
+                is_fallback=candidate.is_fallback,
+                details={"score_breakdown": candidate.score_breakdown},
             )
             self.state_store.save_chat_session(active_session_id, self._chat_session_messages(request_for_routing, final_payload))
             if not saw_finish_reason:
@@ -518,6 +518,7 @@ class RouterService:
                     exc,
                     latency_ms=round((time.monotonic() - started_at) * 1000, 2),
                     is_fallback=candidate.is_fallback,
+                    zero_output=not self._stream_state_has_output(stream_result.state),
                 )
                 raise
 
@@ -529,27 +530,13 @@ class RouterService:
                 stream_result.state,
                 finish_reason=finish_reason,
             )
-            self.state_store.apply_success(
-                candidate.provider_name,
-                candidate.backend_model,
+            self._record_success(
+                candidate,
+                prepared.chat_request.model,
                 latency_ms=latency_ms,
                 first_text_latency_ms=first_text_latency_ms,
-            )
-            self._apply_provider_health_guards(candidate.provider_name)
-            self.state_store.record_attempt(
-                RouteEvent(
-                    alias=prepared.chat_request.model,
-                    provider_name=candidate.provider_name,
-                    backend_model=candidate.backend_model,
-                    success=True,
-                    retryable=False,
-                    is_fallback=candidate.is_fallback,
-                    category=None,
-                    latency_ms=latency_ms,
-                    first_text_latency_ms=first_text_latency_ms,
-                    details={"score_breakdown": candidate.score_breakdown},
-                    created_at=time.time(),
-                )
+                is_fallback=candidate.is_fallback,
+                details={"score_breakdown": candidate.score_breakdown},
             )
             final_response_payload = self._responses_payload(response_id, prepared, final_chat_payload)
             if prepared.request.store:
@@ -587,37 +574,34 @@ class RouterService:
         return {"id": response_id, "object": "response", "deleted": True}
 
     def _execute_chat_completion(self, request: ChatCompletionRequest) -> tuple[dict[str, Any], dict[str, str]]:
-        candidates = self._resolve_candidates(request.model)
+        self._ensure_inventory_loaded_for_request()
+        attempted: set[tuple[str, str]] = set()
+        candidates = self._resolve_remaining_candidates(request.model, attempted)
         if not candidates:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
         request_payload = request.model_dump(mode="json", exclude_none=True)
         request_payload.pop("timeout", None)
         errors: list[dict[str, Any]] = []
-        for index, candidate in enumerate(candidates):
+        while candidates:
+            index = len(attempted)
+            candidate = candidates[0]
+            attempted.add((candidate.provider_name, candidate.backend_model))
             provider = self.providers.get(candidate.provider_name)
             if provider is None:
+                candidates = self._resolve_remaining_candidates(request.model, attempted)
                 continue
             start = time.monotonic()
             try:
                 result = provider.chat_completions(candidate.backend_model, request_payload, timeout=request.timeout or self.config.default_timeout)
                 latency_ms = round((time.monotonic() - start) * 1000, 2)
                 first_text_latency_ms = result.first_text_latency_ms or latency_ms
-                self.state_store.apply_success(candidate.provider_name, candidate.backend_model, latency_ms=latency_ms, first_text_latency_ms=first_text_latency_ms)
-                self._apply_provider_health_guards(candidate.provider_name)
-                self.state_store.record_attempt(
-                    RouteEvent(
-                        alias=request.model,
-                        provider_name=candidate.provider_name,
-                        backend_model=candidate.backend_model,
-                        success=True,
-                        retryable=False,
-                        is_fallback=(index > 0),
-                        category=None,
-                        latency_ms=latency_ms,
-                        first_text_latency_ms=first_text_latency_ms,
-                        details={"result_provider": result.provider, "score_breakdown": candidate.score_breakdown},
-                        created_at=time.time(),
-                    )
+                self._record_success(
+                    candidate,
+                    request.model,
+                    latency_ms=latency_ms,
+                    first_text_latency_ms=first_text_latency_ms,
+                    is_fallback=(index > 0),
+                    details={"result_provider": result.provider, "score_breakdown": candidate.score_breakdown},
                 )
                 headers = {
                     "X-Ghostship-Router-Backend-Provider": result.provider,
@@ -628,7 +612,7 @@ class RouterService:
                 return result.payload, headers
             except NormalizedProviderError as exc:
                 latency_ms = round((time.monotonic() - start) * 1000, 2)
-                self._record_failure(candidate, request.model, exc, latency_ms=latency_ms, is_fallback=(index > 0))
+                self._record_failure(candidate, request.model, exc, latency_ms=latency_ms, is_fallback=(index > 0), zero_output=True)
                 errors.append(
                     {
                         "provider": exc.provider,
@@ -640,24 +624,29 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                if not exc.retryable:
-                    continue
+                candidates = self._resolve_remaining_candidates(request.model, attempted)
         raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors})
 
     def _open_chat_stream(
         self,
         request: ChatCompletionRequest,
     ) -> tuple[RouteCandidate, ProviderChatStreamResult, ProviderChatStreamEvent | None, Iterator[ProviderChatStreamEvent]]:
-        candidates = self._resolve_candidates(request.model)
+        self._ensure_inventory_loaded_for_request()
+        attempted: set[tuple[str, str]] = set()
+        candidates = self._resolve_remaining_candidates(request.model, attempted)
         if not candidates:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
 
         request_payload = request.model_dump(mode="json", exclude_none=True)
         request_payload.pop("timeout", None)
         attempt_errors: list[dict[str, Any]] = []
-        for index, candidate in enumerate(candidates):
+        while candidates:
+            index = len(attempted)
+            candidate = candidates[0]
+            attempted.add((candidate.provider_name, candidate.backend_model))
             provider = self.providers.get(candidate.provider_name)
             if provider is None:
+                candidates = self._resolve_remaining_candidates(request.model, attempted)
                 continue
             try:
                 stream_result = provider.chat_completions_stream(
@@ -672,7 +661,7 @@ class RouterService:
                     first_chunk = None
                 return candidate, stream_result, first_chunk, chunk_iter
             except NormalizedProviderError as exc:
-                self._record_failure(candidate, request.model, exc, latency_ms=None, is_fallback=(index > 0))
+                self._record_failure(candidate, request.model, exc, latency_ms=None, is_fallback=(index > 0), zero_output=True)
                 attempt_errors.append(
                     {
                         "provider": exc.provider,
@@ -684,9 +673,13 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                if not exc.retryable:
-                    continue
+                candidates = self._resolve_remaining_candidates(request.model, attempted)
         raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors})
+
+    def _ensure_inventory_loaded_for_request(self) -> None:
+        if self._inventory or not self.providers:
+            return
+        self.refresh_inventory(reason="request")
 
     def _prepare_chat_request(self, request: ChatCompletionRequest, *, session_id: str | None) -> tuple[str, ChatCompletionRequest]:
         active_session_id = session_id or str(uuid.uuid4())
@@ -846,6 +839,7 @@ class RouterService:
         *,
         latency_ms: float | None,
         is_fallback: bool,
+        zero_output: bool,
     ) -> None:
         logger.warning(
             "router candidate failed: provider=%s backend_model=%s category=%s retryable=%s",
@@ -855,6 +849,16 @@ class RouterService:
             exc.retryable,
         )
         self.state_store.apply_failure(candidate.provider_name, candidate.backend_model, category=exc.category, retryable=exc.retryable)
+        provider_exhaustion = self.state_store.record_provider_exhaustion(
+            candidate.provider_name,
+            backend_model=candidate.backend_model,
+            category=exc.category,
+            zero_output=zero_output,
+            suspect_window_seconds=self.config.provider_suspect_window_seconds,
+            disable_seconds=self.config.provider_disable_seconds,
+            probe_escalation_factor=self.config.provider_probe_escalation_factor,
+            max_disable_seconds=self.config.provider_max_disable_seconds,
+        )
         self._apply_provider_health_guards(candidate.provider_name)
         self.state_store.record_attempt(
             RouteEvent(
@@ -867,7 +871,45 @@ class RouterService:
                 category=exc.category,
                 latency_ms=latency_ms,
                 first_text_latency_ms=None,
-                details={"provider_error": exc.details, "score_breakdown": candidate.score_breakdown},
+                details={
+                    "provider_error": exc.details,
+                    "score_breakdown": candidate.score_breakdown,
+                    "zero_output": zero_output,
+                    "provider_exhaustion": provider_exhaustion,
+                },
+                created_at=time.time(),
+            )
+        )
+
+    def _record_success(
+        self,
+        candidate: RouteCandidate,
+        alias: str,
+        *,
+        latency_ms: float | None,
+        first_text_latency_ms: float | None,
+        is_fallback: bool,
+        details: dict[str, Any],
+    ) -> None:
+        self.state_store.apply_success(
+            candidate.provider_name,
+            candidate.backend_model,
+            latency_ms=latency_ms,
+            first_text_latency_ms=first_text_latency_ms,
+        )
+        self._apply_provider_health_guards(candidate.provider_name)
+        self.state_store.record_attempt(
+            RouteEvent(
+                alias=alias,
+                provider_name=candidate.provider_name,
+                backend_model=candidate.backend_model,
+                success=True,
+                retryable=False,
+                is_fallback=is_fallback,
+                category=None,
+                latency_ms=latency_ms,
+                first_text_latency_ms=first_text_latency_ms,
+                details=details,
                 created_at=time.time(),
             )
         )
@@ -928,6 +970,19 @@ class RouterService:
                 content = "\n".join(part for part in parts if part)
             messages.append({"role": role, "content": content})
         return messages
+
+    @staticmethod
+    def _stream_state_has_output(state: Any) -> bool:
+        if getattr(state, "emitted_text", ""):
+            return True
+        if getattr(state, "emitted_reasoning", ""):
+            return True
+        final_payload = getattr(state, "final_payload", None)
+        if isinstance(final_payload, dict):
+            message = ((final_payload.get("choices") or [{}])[0].get("message") or {})
+            if message.get("content") or message.get("reasoning_content") or message.get("tool_calls"):
+                return True
+        return False
 
     def _prepare_responses_request(self, request: ResponsesRequest) -> PreparedResponsesRequest:
         if request.conversation and request.previous_response_id:
@@ -1078,38 +1133,39 @@ class RouterService:
         return f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
 
     def refresh_inventory(self, *, reason: str) -> list[ProviderModel]:
-        refreshed: list[ProviderModel] = []
-        errors: dict[str, Any] = {}
-        for provider_name, provider in self.providers.items():
-            try:
-                models = provider.list_models(timeout=self.config.default_timeout)
-                refreshed.extend(models)
-                self.state_store.save_inventory(provider_name, models, reason=reason)
-                self.state_store.record_refresh(provider_name, reason=reason, success=True, model_count=len(models))
-            except NormalizedProviderError as exc:
-                errors[provider_name] = {"category": exc.category, "details": exc.details}
-                self.state_store.record_refresh(
-                    provider_name,
-                    reason=reason,
-                    success=False,
-                    category=exc.category,
-                    details=exc.details,
-                )
-                self._apply_provider_health_guards(provider_name)
-        self._inventory = []
-        for provider_name in self.providers:
-            self._inventory.extend(self.state_store.load_inventory(provider_name))
-        self._inventory_loaded_at = time.time()
-        self._last_refresh_reason = reason
-        self._last_refresh_at = self._inventory_loaded_at
-        self._last_refresh_error = errors or None
-        if self.config.ranking_enabled and self._ranking_due():
-            self._refresh_rankings(self._inventory)
-        if errors:
-            self._log_event("refresh_partial", reason=reason, model_count=len(self._inventory), errors=errors)
-        else:
-            self._log_event("refresh_complete", reason=reason, model_count=len(self._inventory))
-        return self._inventory
+        with self._refresh_lock:
+            refreshed: list[ProviderModel] = []
+            errors: dict[str, Any] = {}
+            for provider_name, provider in self.providers.items():
+                try:
+                    models = provider.list_models(timeout=self.config.default_timeout)
+                    refreshed.extend(models)
+                    self.state_store.save_inventory(provider_name, models, reason=reason)
+                    self.state_store.record_refresh(provider_name, reason=reason, success=True, model_count=len(models))
+                except NormalizedProviderError as exc:
+                    errors[provider_name] = {"category": exc.category, "details": exc.details}
+                    self.state_store.record_refresh(
+                        provider_name,
+                        reason=reason,
+                        success=False,
+                        category=exc.category,
+                        details=exc.details,
+                    )
+                    self._apply_provider_health_guards(provider_name)
+            self._inventory = []
+            for provider_name in self.providers:
+                self._inventory.extend(self.state_store.load_inventory(provider_name))
+            self._inventory_loaded_at = time.time()
+            self._last_refresh_reason = reason
+            self._last_refresh_at = self._inventory_loaded_at
+            self._last_refresh_error = errors or None
+            if self.config.ranking_enabled and self._ranking_due():
+                self._refresh_rankings(self._inventory)
+            if errors:
+                self._log_event("refresh_partial", reason=reason, model_count=len(self._inventory), errors=errors)
+            else:
+                self._log_event("refresh_complete", reason=reason, model_count=len(self._inventory))
+            return self._inventory
 
     def debug_state(self) -> dict[str, Any]:
         return {
@@ -1142,6 +1198,12 @@ class RouterService:
                     "provider_name": provider_name,
                     "enabled": self._provider_enabled(provider_name, overrides=overrides),
                     "cooldown_until": state.get("cooldown_until", 0),
+                    "disable_reason": state.get("disable_reason"),
+                    "breaker_level": state.get("breaker_level", 0),
+                    "probe_mode": self._provider_in_probe_mode(provider_name, state=state),
+                    "suspect_backend_model": state.get("suspect_backend_model"),
+                    "suspect_category": state.get("suspect_category"),
+                    "suspect_at": state.get("suspect_at"),
                     "recent_failure": state.get("recent_failure", 0),
                     "recent_rate_limit": state.get("recent_rate_limit", 0),
                     "recent_timeout": state.get("recent_timeout", 0),
@@ -1259,6 +1321,36 @@ class RouterService:
             )
         lines.extend(
             [
+                "# HELP ghostship_router_provider_probe_mode Whether a provider is in probe recovery mode.",
+                "# TYPE ghostship_router_provider_probe_mode gauge",
+            ]
+        )
+        for provider_name in self._provider_names:
+            state = provider_state.get(provider_name, {})
+            lines.append(
+                self._prom_metric(
+                    "ghostship_router_provider_probe_mode",
+                    1 if self._provider_in_probe_mode(provider_name, state=state) else 0,
+                    provider=provider_name,
+                )
+            )
+        lines.extend(
+            [
+                "# HELP ghostship_router_provider_breaker_level Current provider exhaustion breaker level.",
+                "# TYPE ghostship_router_provider_breaker_level gauge",
+            ]
+        )
+        for provider_name in self._provider_names:
+            state = provider_state.get(provider_name, {})
+            lines.append(
+                self._prom_metric(
+                    "ghostship_router_provider_breaker_level",
+                    state.get("breaker_level", 0) or 0,
+                    provider=provider_name,
+                )
+            )
+        lines.extend(
+            [
                 "# HELP ghostship_router_model_cooldown_active Whether a backend model is currently cooling down.",
                 "# TYPE ghostship_router_model_cooldown_active gauge",
             ]
@@ -1269,6 +1361,22 @@ class RouterService:
                 self._prom_metric(
                     "ghostship_router_model_cooldown_active",
                     1 if self._is_cooling_down(provider_name, backend_model, state=state) else 0,
+                    provider=provider_name,
+                    backend_model=backend_model,
+                )
+            )
+        lines.extend(
+            [
+                "# HELP ghostship_router_model_exhaustion_streak Current consecutive exhaustion streak for a backend model.",
+                "# TYPE ghostship_router_model_exhaustion_streak gauge",
+            ]
+        )
+        for key, state in model_state.items():
+            provider_name, backend_model = key.split("::", 1)
+            lines.append(
+                self._prom_metric(
+                    "ghostship_router_model_exhaustion_streak",
+                    state.get("exhaustion_streak", 0) or 0,
                     provider=provider_name,
                     backend_model=backend_model,
                 )
@@ -1443,6 +1551,13 @@ class RouterService:
             ]
         return [RouteCandidate(**{**candidate.__dict__, "is_fallback": index > 0}) for index, candidate in enumerate(candidates)]
 
+    def _resolve_remaining_candidates(self, alias: str, attempted: set[tuple[str, str]]) -> list[RouteCandidate]:
+        return [
+            candidate
+            for candidate in self._resolve_candidates(alias)
+            if (candidate.provider_name, candidate.backend_model) not in attempted
+        ]
+
     def _resolve_direct_model(self, model_name: str) -> list[RouteCandidate]:
         if not self.config.allow_direct_models:
             return []
@@ -1451,6 +1566,7 @@ class RouterService:
     def _preferred_candidates(self, model_ids: tuple[str, ...], *, alias: str | None = None, inventory: list[ProviderModel] | None = None) -> list[RouteCandidate]:
         candidates: list[RouteCandidate] = []
         known_inventory = inventory if inventory is not None else self._inventory_for_all()
+        probe_selected: set[str] = set()
         for model_id in model_ids:
             normalized = model_id
             if normalized.startswith("opencode/"):
@@ -1472,6 +1588,10 @@ class RouterService:
                     continue
                 if self._is_cooling_down(model.provider, model.id):
                     continue
+                if self._provider_in_probe_mode(model.provider):
+                    if model.provider in probe_selected:
+                        continue
+                    probe_selected.add(model.provider)
                 breakdown = self._score_breakdown(alias_name, model)
                 candidate = RouteCandidate(
                     provider_name=model.provider,
@@ -1495,11 +1615,16 @@ class RouterService:
         scored = sorted(filtered, key=lambda model: self._score_breakdown(alias.name, model)["total_score"], reverse=True)
         selected: list[ProviderModel] = []
         selected_keys: set[tuple[str, str]] = set()
+        probe_selected: set[str] = set()
 
         def append_candidates(models: list[ProviderModel]) -> None:
             for model in models:
                 if self._score_breakdown(alias.name, model)["total_score"] <= 0:
                     continue
+                if self._provider_in_probe_mode(model.provider):
+                    if model.provider in probe_selected:
+                        continue
+                    probe_selected.add(model.provider)
                 key = (model.provider, model.id)
                 if key in selected_keys:
                     continue
@@ -1645,6 +1770,19 @@ class RouterService:
         provider_state = state or self.state_store.get_provider_state().get(provider_name, {})
         return float(provider_state.get("cooldown_until", 0) or 0) > time.time()
 
+    def _provider_in_probe_mode(self, provider_name: str, *, state: dict[str, Any] | None = None) -> bool:
+        provider_state = state or self.state_store.get_provider_state().get(provider_name, {})
+        now = time.time()
+        if float(provider_state.get("cooldown_until", 0) or 0) > now:
+            return False
+        if not int(provider_state.get("breaker_level", 0) or 0):
+            return False
+        if int(provider_state.get("probe_mode", 0) or 0):
+            return True
+        self.state_store.activate_provider_probe(provider_name)
+        provider_state = self.state_store.get_provider_state().get(provider_name, {})
+        return bool(int(provider_state.get("probe_mode", 0) or 0))
+
     def _provider_enabled(self, provider_name: str, *, overrides: dict[str, Any] | None = None) -> bool:
         merged = overrides or self._effective_overrides()
         provider_override = merged["provider_map"].get(provider_name)
@@ -1693,13 +1831,9 @@ class RouterService:
         category: str | None = None
         if float(provider_state.get("recent_auth_failure", 0)) >= 1.0:
             category = "unauthorized"
-        elif float(provider_state.get("recent_exhaustion", 0)) >= self.config.provider_exhaustion_threshold:
-            category = "quota_exhausted"
-        elif float(provider_state.get("recent_rate_limit", 0)) >= self.config.provider_rate_limit_threshold:
-            category = "rate_limited"
         elif float(provider_state.get("recent_timeout", 0)) >= self.config.provider_timeout_threshold:
             category = "timeout"
-        elif float(provider_state.get("recent_failure", 0)) >= self.config.provider_failure_threshold:
+        elif float(provider_state.get("recent_server_error", 0)) >= self.config.provider_failure_threshold:
             category = "server_error"
         if category is None:
             return
