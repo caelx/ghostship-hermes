@@ -35,6 +35,28 @@ fetch_upstream_file() {
   curl -fsSL "$url" -o "$dest"
 }
 
+patch_proxy_for_parallel_requests() {
+  local proxy_script="$1"
+  python3 - "$proxy_script" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+old = '    server = http.server.HTTPServer((LISTEN_ADDR, PORT), CacheHandler)\n'
+new = (
+    '    server = http.server.ThreadingHTTPServer((LISTEN_ADDR, PORT), CacheHandler)\n'
+    '    server.daemon_threads = True\n'
+)
+
+if old not in text:
+    raise SystemExit("proxy server bootstrap pattern not found")
+
+path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY
+}
+
 append_nix_conf_line() {
   local line="$1"
   local nix_conf="${HOME}/.config/nix/nix.conf"
@@ -188,6 +210,7 @@ bootstrap_cache() {
   fi
 
   fetch_upstream_file proxy/main.py "$proxy_script"
+  patch_proxy_for_parallel_requests "$proxy_script"
   chmod +x "$proxy_script"
 
   if [[ -f "$proxy_pid_file" ]] && kill -0 "$(cat "$proxy_pid_file")" 2>/dev/null; then
