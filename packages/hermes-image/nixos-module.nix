@@ -26,7 +26,9 @@ let
   managedGatewayPidPath = "${managedHermesHome}/gateway.pid";
   managedSoulPath = "${managedHermesHome}/SOUL.md";
   managedSkillsPath = "${managedHermesHome}/skills";
+  managedHooksPath = "${managedHermesHome}/hooks";
   managedAuthPath = "${managedHermesHome}/auth.json";
+  managedHookSourceDir = "${./hooks}";
   unmanagedDefaultSoulHash = "2765a846e1bb371d78d3b93b403dfb0f8d1ba1a9895edb5f608367abfe81194d";
   managedWebhookPort = 8644;
   managedLayoutVersion = "single-agent-v1";
@@ -115,7 +117,7 @@ let
   managedDiscordEnvKeys = [
     "DISCORD_BOT_TOKEN"
     "DISCORD_ALLOWED_USERS"
-    "DISCORD_FREE_RESPONSE_CHANNELS"
+    "GHOSTSHIP_ROUTER_CHANNEL"
     "DISCORD_HOME_CHANNEL"
   ];
   managedBrowserEnvKeys = [
@@ -223,11 +225,16 @@ let
         default_trust = 0.5;
       };
       fallback_model = {
-        provider = "custom";
-        model = "agentic";
-        base_url = "http://127.0.0.1:8788/v1";
-        api_key_env = "OPENAI_API_KEY";
+        provider = "openai-codex";
+        model = "gpt-5.4-mini";
       };
+      custom_providers = [
+        {
+          name = "ghostship-router";
+          base_url = "http://127.0.0.1:8788/v1";
+          api_key = "\${OPENAI_API_KEY}";
+        }
+      ];
       timezone = "Pacific/Honolulu";
       agent = {
         max_turns = 110;
@@ -516,6 +523,26 @@ EOF
       chmod -R u+rwX "$target_root"
     }
 
+    reconcile_managed_hooks() {
+      source_root="$1"
+      target_root="$2"
+
+      [ -d "$source_root" ] || return 0
+      mkdir -p "$target_root"
+
+      while IFS= read -r hook_dir; do
+        [ -f "$hook_dir/HOOK.yaml" ] || continue
+        [ -f "$hook_dir/handler.py" ] || continue
+        hook_name="$(basename "$hook_dir")"
+        rm -rf "$target_root/$hook_name"
+        cp -R "$hook_dir" "$target_root/$hook_name"
+        chmod -R u+rwX "$target_root/$hook_name"
+      done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
+
+      [ -d "$target_root" ] || return 0
+      chmod -R u+rwX "$target_root"
+    }
+
     copy_file_if_missing() {
       source_path="$1"
       target_path="$2"
@@ -568,10 +595,12 @@ EOF
     reconcile_seed_content() {
       skill_source="''${GHOSTSHIP_HERMES_SKILLS_DIR:-${managedSkillsSourceDir}}"
       soul_source="''${GHOSTSHIP_HERMES_SOUL_PATH:-${managedSoulSourcePath}}"
+      hook_source="''${GHOSTSHIP_HERMES_HOOKS_DIR:-${managedHookSourceDir}}"
 
       copy_skill_tree_if_missing "$skill_source" "${managedSkillsPath}"
       materialize_and_normalize_skills "${managedSkillsPath}"
       manage_seeded_soul "$soul_source" "${managedSoulPath}"
+      reconcile_managed_hooks "$hook_source" "${managedHooksPath}"
     }
 
     reconcile_managed_config() {
@@ -580,16 +609,27 @@ EOF
 
       tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
       ${pkgs.gawk}/bin/awk '
-        BEGIN { in_model = 0 }
+        BEGIN { in_model = 0; in_fallback_model = 0 }
         /^model:[[:space:]]*$/ {
           in_model = 1
+          in_fallback_model = 0
           print
           next
         }
-        in_model && /^[^[:space:]]/ {
+        /^fallback_model:[[:space:]]*$/ {
           in_model = 0
+          in_fallback_model = 1
+          print
+          next
+        }
+        (in_model || in_fallback_model) && /^[^[:space:]]/ {
+          in_model = 0
+          in_fallback_model = 0
         }
         in_model && $0 == "  base_url: http://127.0.0.1:8788/v1" {
+          next
+        }
+        in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
           next
         }
         { print }

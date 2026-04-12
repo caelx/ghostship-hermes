@@ -23,7 +23,9 @@ Canonical image references:
 - The image now exposes one managed Hermes agent, not a repo-owned profile fleet.
 - The managed config lives at `/home/hermes/.hermes/config.yaml`, the managed env file at `/home/hermes/.hermes/.env`, the managed auth file at `/home/hermes/.hermes/auth.json`, the managed skill tree at `/home/hermes/.hermes/skills`, the managed prompt at `/home/hermes/.hermes/SOUL.md`, and the managed gateway liveness marker at `/home/hermes/.hermes/gateway.pid`.
 - The primary model path is direct MiniMax on OpenCode Go: `provider = opencode-go`, `default = minimax-m2.7`.
-- The fallback model is the local Ghostship router free-model lane: `provider = custom`, `model = agentic`, `base_url = http://127.0.0.1:8788/v1`, `api_key_env = OPENAI_API_KEY`; the managed router also blocks the exact backend id `openrouter/free` from route selection while auxiliary tasks still use Gemini 3.1 Flash-Lite Preview through the Google OpenAI-compatible endpoint.
+- The fallback model is Codex OAuth on `openai-codex/gpt-5.4-mini`.
+- The local router is exposed separately as one named Hermes custom provider, `ghostship-router`, pointing at `http://127.0.0.1:8788/v1` with `OPENAI_API_KEY` as the router bearer token.
+- Auxiliary and compression tasks still use Gemini 3.1 Flash-Lite Preview through the Google OpenAI-compatible endpoint, and the managed router still blocks the exact backend id `openrouter/free` from route selection.
 
 Upstream note:
 
@@ -133,8 +135,8 @@ Notes:
 - Persisting `/home/hermes` directly is the intended way to keep Hermes managed state, XDG state, and later-installed agent tooling across container replacement.
 - The dashboard is the intended browser entrypoint.
 - The full managed env allowlist is documented in [docs/runtime-env.md](docs/runtime-env.md).
-- The single-agent inputs are `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `DISCORD_FREE_RESPONSE_CHANNELS`, `DISCORD_HOME_CHANNEL`, `WEBHOOK_SECRET`, and `BROWSER_CDP_URL`.
-- The required provider inputs are `OPENCODE_GO_API_KEY` for the primary MiniMax path, `OPENAI_API_KEY` for the local router fallback bearer token, and `GOOGLE_AI_STUDIO_API_KEY` for the direct auxiliary tasks.
+- The single-agent inputs are `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `GHOSTSHIP_ROUTER_CHANNEL`, `DISCORD_HOME_CHANNEL`, `WEBHOOK_SECRET`, and `BROWSER_CDP_URL`.
+- The required provider inputs are `OPENCODE_GO_API_KEY` for the primary MiniMax path, Codex OAuth in `/home/hermes/.hermes/auth.json` for the `openai-codex` fallback path, `OPENAI_API_KEY` for manual `ghostship-router` calls, and `GOOGLE_AI_STUDIO_API_KEY` for the direct auxiliary tasks.
 - If you are validating the local router, source the repo `.envrc` before `docker run` so the router can use `OPENROUTER_API_KEY` plus either `OPENCODE_API_KEY` or `OPENCODE_GO_API_KEY`.
 
 After startup:
@@ -175,6 +177,10 @@ The image is declarative-first:
 
 The `openai-codex` provider path relies on Codex OAuth (device-code flow) instead of a static API key. Run `hermes model`, choose `OpenAI Codex`, and complete the login flow. Hermes stores that state in `/home/hermes/.hermes/auth.json`.
 
+### Router Channel Guidance
+
+If `GHOSTSHIP_ROUTER_CHANNEL` is set to a Discord channel ID, the managed gateway stages a supported advisory hook in `/home/hermes/.hermes/hooks/ghostship-router-channel-guidance`. That hook warns in the configured channel on normal message start and after `/reset` whenever the current session is not using a `ghostship-router` model selected through `/model`. The warning is advisory only, uses a bold heading, and includes one copy-paste `/model custom:ghostship-router:<model>` command for every model currently exposed by the local router.
+
 ### Skills Initialization
 
 Bootstrap runs `hermes skills list` under the managed runtime user during startup so the skills hub directories and lockfile exist before the image begins serving traffic.
@@ -186,7 +192,7 @@ To change the managed agent provider defaults after the server/container is runn
 1. Edit `packages/hermes-image/nixos-module.nix`.
 2. Update `managedAgentConfig.model` for the primary router or direct-provider path.
 3. Update the surrounding auxiliary and fallback values when the change needs a different direct endpoint or fallback model.
-4. Add any new supported secret names to `managedRuntimeEnvKeys` so bootstrap can project them into `/home/hermes/.hermes/.env`.
+4. Add any new supported runtime env names to the managed allowlists so bootstrap can project them into `/home/hermes/.hermes/.env`.
 5. Rebuild the image and restart the container. The root-managed runtime contract is re-applied on boot; do not rely on manual edits inside `/home/hermes/.hermes/config.yaml`.
 
 This keeps the provider wiring in Nix so every redeploy regenerates the same config and the services stay in sync.
@@ -379,7 +385,7 @@ The persistence suite validates:
 - `hermes` runs as `3000:3000`
 - the root Hermes config uses `provider = opencode-go` with `default = minimax-m2.7`
 - one managed agent is rooted at `~/.hermes`
-- the managed config uses `provider = opencode-go`, `default = minimax-m2.7`, and a `fallback_model` that points at `http://127.0.0.1:8788/v1` with router alias `agentic`; the managed router disables the exact backend id `openrouter/free`
+- the managed config uses `provider = opencode-go`, `default = minimax-m2.7`, `fallback_model.provider = openai-codex`, and `fallback_model.model = gpt-5.4-mini`; the named `ghostship-router` custom provider points at `http://127.0.0.1:8788/v1` and the managed router disables the exact backend id `openrouter/free`
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, managed bootstrap, the router, the managed gateway, and the dashboard
  - no repo-managed default skills are seeded by default

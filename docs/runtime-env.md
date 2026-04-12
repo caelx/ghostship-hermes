@@ -15,16 +15,18 @@ Rules:
 - `TERMINAL_CWD=/workspace` is always written.
 - `WEBHOOK_ENABLED=true` and `WEBHOOK_PORT=8644` are always written.
 - If `OPENCODE_API_KEY` is unset but `OPENCODE_GO_API_KEY` is set, bootstrap also writes `OPENCODE_API_KEY` with the same value.
-- The managed scaffold uses `OPENAI_API_KEY` as the bearer token input for the local Ghostship router `agentic` fallback path.
+- The managed scaffold uses Codex OAuth for the `openai-codex` fallback path and uses `OPENAI_API_KEY` as the bearer token input for manual `ghostship-router` calls.
 
 ## Single-Agent Inputs
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
-- `DISCORD_FREE_RESPONSE_CHANNELS`
+- `GHOSTSHIP_ROUTER_CHANNEL`
 - `DISCORD_HOME_CHANNEL`
 - `BROWSER_CDP_URL`
 - `WEBHOOK_SECRET`
+
+When `GHOSTSHIP_ROUTER_CHANNEL` is set, the managed advisory hook treats that Discord channel as a Ghostship Router guidance lane. It does not block replies or modify gateway dispatch; it only warns users to switch with `/model custom:ghostship-router:<model>` when the session is not already tracked as a router-backed model.
 
 ## Provider, Auth, And Integration Inputs
 
