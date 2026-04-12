@@ -86,7 +86,7 @@ jobs:
       GHOSTSHIP_CACHE_SIGNING_KEY: ${{ secrets.GHOSTSHIP_CACHE_SIGNING_KEY }}
       GHOSTSHIP_CACHE_GHCR_USER: ${{ github.repository_owner }}
       GITHUB_CACHE_FALLBACK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CACHE_REFRESH_REQUESTED: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_shared_cache == 'true') }}
+      CACHE_REFRESH_REQUESTED: ${{ github.event_name == 'schedule' || inputs.publish_shared_cache }}
     steps:
       - uses: actions/checkout@v6
 
