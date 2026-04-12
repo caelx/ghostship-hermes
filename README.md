@@ -39,7 +39,7 @@ The immutable image no longer tries to be the full operator workstation layer. I
 
 - user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `blog`, `python3`, `pip`, `node`, `npm`
 - managed Python contract: `python3`, `pip`, and `python3 -m pip` all resolve from the same managed Nix profile environment
-- npm-managed agent CLIs: `codex`, `opencode`
+- npm-managed agent CLIs: `codex`, `gemini`, `opencode`
 - image-managed browser CLI: `agent-browser`
 
 The immutable image stays focused on boot, supervision, and the repo-owned runtime surface:
@@ -55,7 +55,7 @@ Boot-time runtime convergence re-applies the repo-owned mutable toolchain and co
 
 - user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `blog`, `python3`, `pip`, `node`, `npm`
 - managed Python contract: `python3`, `pip`, and `python3 -m pip` all resolve from the same managed Nix profile environment
-- npm-managed agent CLIs: `codex`, `opencode`
+- npm-managed agent CLIs: `codex`, `gemini`, `opencode`
 - image-managed browser CLI: `agent-browser`
 
 ## Persistent Paths
@@ -136,7 +136,7 @@ Notes:
 - The dashboard is the intended browser entrypoint.
 - The full managed env allowlist is documented in [docs/runtime-env.md](docs/runtime-env.md).
 - The single-agent inputs are `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `GHOSTSHIP_ROUTER_CHANNEL`, `DISCORD_HOME_CHANNEL`, `WEBHOOK_SECRET`, and `BROWSER_CDP_URL`.
-- The required provider inputs are `OPENCODE_GO_API_KEY` for the primary MiniMax path, Codex OAuth in `/home/hermes/.hermes/auth.json` for the `openai-codex` fallback path, `OPENAI_API_KEY` for manual `ghostship-router` calls, and `GOOGLE_AI_STUDIO_API_KEY` for the direct auxiliary tasks.
+- The required provider inputs are `OPENCODE_GO_API_KEY` for the primary MiniMax path, Codex OAuth in `/home/hermes/.hermes/auth.json` for the `openai-codex` fallback path, `OPENAI_API_KEY` for manual `ghostship-router` calls, and `GOOGLE_AI_STUDIO_API_KEY` for the direct auxiliary tasks. Gemini CLI is a separate npm-managed runtime tool and does not replace or configure that auxiliary provider path.
 - If you are validating the local router, source the repo `.envrc` before `docker run` so the router can use `OPENROUTER_API_KEY` plus either `OPENCODE_API_KEY` or `OPENCODE_GO_API_KEY`.
 
 After startup:
@@ -163,6 +163,7 @@ The image is declarative-first:
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image uses a dedicated managed profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed` to keep the baked `hermes` toolchain updateable on boot and during daily refreshes without colliding with the operator's default `~/.nix-profile`.
 - The default Hermes-user PATH includes `/home/hermes/.local/bin`, `/home/hermes/.local/state/nix/profiles/ghostship-managed/bin`, and `/home/hermes/.nix-profile/bin` ahead of the fallback system toolchain so login shells and Hermes runtime commands discover the persisted mutable tool layers by default.
 - The managed profile now also provides the repo-approved helper CLI set (`fd`, `uv`, `yq`, `tmux`, `blog`) plus a shared Python environment where `python3`, `pip`, and `python3 -m pip` all work without extra activation. That Python environment is installed at a higher Nix profile priority than `hermes-agent-wrapped` so both packages can coexist even though they both ship `bin/python`.
+- Fast-moving agent CLIs continue to come from the persisted npm tooling project under `/home/hermes/.hermes/hermes-agent`; the supported set is `codex`, `gemini`, and `opencode`, while `agent-browser` remains the image-managed exception.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The managed config sets `timezone = "Pacific/Honolulu"`, `agent.max_turns = 110`, `agent.reasoning_effort = "high"`, `agent.verbose = false`, `memory.provider = holographic`, transcript compression, checkpoints, compact streaming display defaults, and `approvals.mode = "off"`.
 - Browser defaults remain `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.
