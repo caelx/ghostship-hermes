@@ -12,6 +12,7 @@
   includeManagedRuntime ? false,
   hermesAgentPackage,
   sharedGhostshipDependencyPackages ? [ ],
+  blogtatoPackage ? null,
   ...
 }:
 let
@@ -177,6 +178,13 @@ let
       name = "tmux";
       ref = "nixpkgs#tmux";
     }
+  ] ++ lib.optionals (blogtatoPackage != null) [
+    {
+      name = "blogtato";
+      bootstrapRef = "${blogtatoPackage}";
+      ref = "${runtimeFlakeRefDefault}#blogtato";
+    }
+  ] ++ [
     {
       name = "nodejs_22";
       ref = "nixpkgs#nodejs_22";

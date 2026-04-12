@@ -33,11 +33,11 @@ Upstream note:
 - Upstream normally keeps managed state under `${stateDir}/.hermes` with a separate home directory.
 - Here, the repo sets `stateDir = "/home/hermes"`, so the managed Hermes home lives inside the persisted home mount.
 
-This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support stays CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills. The default image also preinstalls `gcloud`, `gh`, `ssh`, `scp`, and `ssh-keygen` from `nixpkgs`.
+This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support stays CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills. The default image also preinstalls `gcloud`, `gh`, `ssh`, `scp`, and `ssh-keygen` from `nixpkgs`. `blog` is not part of that baked image CLI exception set; it is installed through the managed Hermes-user profile.
 
 The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence reconciles the repo-owned persisted user-layer runtime contract under `/home/hermes`, removing stale managed entries and reapplying the current image-owned toolchain/config state on replacement:
 
-- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `python3`, `pip`, `node`, `npm`
+- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `blog`, `python3`, `pip`, `node`, `npm`
 - managed Python contract: `python3`, `pip`, and `python3 -m pip` all resolve from the same managed Nix profile environment
 - npm-managed agent CLIs: `codex`, `opencode`
 - image-managed browser CLI: `agent-browser`
@@ -53,7 +53,7 @@ The immutable image stays focused on boot, supervision, and the repo-owned runti
 
 Boot-time runtime convergence re-applies the repo-owned mutable toolchain and config surface under `/home/hermes` on replacement:
 
-- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `python3`, `pip`, `node`, `npm`
+- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `blog`, `python3`, `pip`, `node`, `npm`
 - managed Python contract: `python3`, `pip`, and `python3 -m pip` all resolve from the same managed Nix profile environment
 - npm-managed agent CLIs: `codex`, `opencode`
 - image-managed browser CLI: `agent-browser`
@@ -162,7 +162,7 @@ The image is declarative-first:
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image uses a dedicated managed profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed` to keep the baked `hermes` toolchain updateable on boot and during daily refreshes without colliding with the operator's default `~/.nix-profile`.
 - The default Hermes-user PATH includes `/home/hermes/.local/bin`, `/home/hermes/.local/state/nix/profiles/ghostship-managed/bin`, and `/home/hermes/.nix-profile/bin` ahead of the fallback system toolchain so login shells and Hermes runtime commands discover the persisted mutable tool layers by default.
-- The managed profile now also provides the repo-approved helper CLI set (`fd`, `uv`, `yq`, `tmux`) plus a shared Python environment where `python3`, `pip`, and `python3 -m pip` all work without extra activation. That Python environment is installed at a higher Nix profile priority than `hermes-agent-wrapped` so both packages can coexist even though they both ship `bin/python`.
+- The managed profile now also provides the repo-approved helper CLI set (`fd`, `uv`, `yq`, `tmux`, `blog`) plus a shared Python environment where `python3`, `pip`, and `python3 -m pip` all work without extra activation. That Python environment is installed at a higher Nix profile priority than `hermes-agent-wrapped` so both packages can coexist even though they both ship `bin/python`.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The managed config sets `timezone = "Pacific/Honolulu"`, `agent.max_turns = 110`, `agent.reasoning_effort = "high"`, `agent.verbose = false`, `memory.provider = holographic`, transcript compression, checkpoints, compact streaming display defaults, and `approvals.mode = "off"`.
 - Browser defaults remain `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.

@@ -82,6 +82,7 @@
           ghostshipN8n = mkGhostshipPythonUtility ./packages/n8n-cli/package.nix;
           ghostshipChaptarr = mkGhostshipPythonUtility ./packages/chaptarr-cli/package.nix;
           agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
+          blogtato = pkgs.callPackage ./packages/blogtato/package.nix { };
           upstreamHermesAgent = hermes-agent.packages.${system}.default;
           wrappedHermesAgent = pkgs.callPackage ./packages/hermes-agent-wrapped/package.nix {
             hermesAgentPackage = upstreamHermesAgent;
@@ -206,10 +207,12 @@
             modulePath = ./packages/hermes-image/nixos-final-module.nix;
             extraSpecialArgs = {
               inherit
+                blogtato
                 ghostshipHermesRouter
                 ghostshipHermesRuntime
                 hermesDashboard
                 ;
+              blogtatoPackage = blogtato;
               hermesAgentPackage = wrappedHermesAgent;
               ghostshipUtilities = allUtilities;
               sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseUtilityPackages;
@@ -245,6 +248,7 @@
           bws = pkgs.bws;
           gcloud = pkgs.google-cloud-sdk;
           agent-browser = agentBrowser;
+          blogtato = blogtato;
           gws = googleWorkspaceCli;
           hermes-dashboard = hermesDashboard;
           ghostship-cli-contract = ghostshipCliContract;
@@ -293,6 +297,7 @@
             bws
             gcloud
             agent-browser
+            blogtato
             gws
             hermes-dashboard
             ghostship-cli-contract
