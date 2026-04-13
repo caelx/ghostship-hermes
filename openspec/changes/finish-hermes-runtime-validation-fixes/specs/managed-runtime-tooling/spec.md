@@ -8,6 +8,13 @@ The managed user-tooling refresh SHALL leave an already-converged managed profil
 - **THEN** it does not remove and re-add the same managed Nix profile entries
 - **AND** it does not perform npm dependency installation work solely because the service ran again
 
+#### Scenario: Live default priority does not count as drift when the declaration omits priority
+- **WHEN** a managed Nix profile entry already matches the declared source identity
+- **AND** the declaration omits an explicit priority
+- **AND** the installed profile entry reports the runtime's default installed priority
+- **THEN** the next managed user-tooling convergence leaves that entry in place
+- **AND** it does not remove and re-add the entry solely to restate the default priority
+
 ### Requirement: Managed tooling refresh repairs only actual drift
 The managed user-tooling refresh SHALL mutate only the managed entries or shims that are missing, stale, or no longer match the declared runtime contract.
 
