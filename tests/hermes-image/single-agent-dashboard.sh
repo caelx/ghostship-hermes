@@ -389,6 +389,8 @@ assert_no_known_activation_warnings() {
   run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/root/.nix-defexpr/channels exists, but channels have been disabled."'
   run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/nix/var/nix/profiles/per-user/root/channels exists, but channels have been disabled."'
   run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/root/.nix-defexpr/channels/channels"'
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "could not create symlink /etc/hostname"'
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "could not create symlink /etc/hosts"'
 }
 
 assert_managed_tooling_noop_rerun() {
