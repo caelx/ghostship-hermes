@@ -1,6 +1,0 @@
-name: ghostship-router-channel-guidance
-description: Advise Discord users in the configured Ghostship router channel to switch to a router-backed model.
-events:
-  - agent:start
-  - session:reset
-  - command:model

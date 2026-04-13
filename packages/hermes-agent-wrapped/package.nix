@@ -120,6 +120,118 @@ if 'cfg.get("providers") or cfg.get("custom_providers")' not in gateway_run_text
     raise RuntimeError("failed to teach Discord model picker to use custom_providers")
 if 'user_providers=_user_provs' not in gateway_run_text:
     raise RuntimeError("failed to pass custom_providers into Discord model switches")
+
+turn_route_marker = """    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:
+        from agent.smart_model_routing import resolve_turn_route
+
+        primary = {
+            "model": model,
+            "api_key": runtime_kwargs.get("api_key"),
+            "base_url": runtime_kwargs.get("base_url"),
+            "provider": runtime_kwargs.get("provider"),
+            "api_mode": runtime_kwargs.get("api_mode"),
+            "command": runtime_kwargs.get("command"),
+            "args": list(runtime_kwargs.get("args") or []),
+            "credential_pool": runtime_kwargs.get("credential_pool"),
+        }
+        return resolve_turn_route(user_message, getattr(self, "_smart_model_routing", {}), primary)
+"""
+turn_route_replacement = """    @staticmethod
+    def _ghostship_is_discord_router_channel(source) -> bool:
+        if source is None:
+            return False
+        platform = getattr(source, "platform", None)
+        platform_value = getattr(platform, "value", platform)
+        if platform_value != "discord":
+            return False
+        if getattr(source, "chat_type", None) in {"dm", "thread"}:
+            return False
+        return getattr(source, "chat_id", None) == os.getenv("GHOSTSHIP_ROUTER_CHANNEL", "").strip()
+
+    @staticmethod
+    def _ghostship_force_discord_router_channel_route(runtime_kwargs: dict) -> dict:
+        forced_runtime = dict(runtime_kwargs)
+        forced_runtime["base_url"] = "http://127.0.0.1:8788/v1"
+        forced_runtime["provider"] = "custom"
+        forced_runtime["api_mode"] = "chat_completions"
+        forced_runtime["command"] = None
+        forced_runtime["args"] = []
+        forced_runtime["credential_pool"] = None
+        return forced_runtime
+
+    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:
+        from agent.smart_model_routing import resolve_turn_route
+
+        if self._ghostship_is_discord_router_channel(source):
+            primary = {
+                "model": "coding",
+                "base_url": "http://127.0.0.1:8788/v1",
+                "provider": "custom",
+                "api_mode": "chat_completions",
+                "command": None,
+                "args": [],
+                "credential_pool": None,
+            }
+            resolved = resolve_turn_route(user_message, getattr(self, "_smart_model_routing", {}), primary)
+            resolved["model"] = "coding"
+            resolved["runtime"] = self._ghostship_force_discord_router_channel_route(resolved.get("runtime", {}))
+            resolved["label"] = "ghostship discord router channel pin"
+            resolved["signature"] = (
+                resolved["model"],
+                resolved["runtime"].get("provider"),
+                resolved["runtime"].get("base_url"),
+                resolved["runtime"].get("api_mode"),
+                resolved["runtime"].get("command"),
+                tuple(resolved["runtime"].get("args") or ()),
+            )
+            return resolved
+
+        primary = {
+            "model": model,
+            "api_key": runtime_kwargs.get("api_key"),
+            "base_url": runtime_kwargs.get("base_url"),
+            "provider": runtime_kwargs.get("provider"),
+            "api_mode": runtime_kwargs.get("api_mode"),
+            "command": runtime_kwargs.get("command"),
+            "args": list(runtime_kwargs.get("args") or []),
+            "credential_pool": runtime_kwargs.get("credential_pool"),
+        }
+        return resolve_turn_route(user_message, getattr(self, "_smart_model_routing", {}), primary)
+"""
+gateway_run_text = gateway_run_text.replace(turn_route_marker, turn_route_replacement, 1)
+if turn_route_replacement not in gateway_run_text:
+    raise RuntimeError("failed to inject ghostship discord router channel pin into gateway.run")
+
+gateway_run_text = gateway_run_text.replace(
+    '            turn_route = self._resolve_turn_agent_config(prompt, model, runtime_kwargs)\n',
+    '            turn_route = self._resolve_turn_agent_config(prompt, model, runtime_kwargs, source)\n',
+    1,
+)
+gateway_run_text = gateway_run_text.replace(
+    '            turn_route = self._resolve_turn_agent_config(question, model, runtime_kwargs)\n',
+    '            turn_route = self._resolve_turn_agent_config(question, model, runtime_kwargs, source)\n',
+    1,
+)
+gateway_run_text = gateway_run_text.replace(
+    '            turn_route = self._resolve_turn_agent_config(message, model, runtime_kwargs)\n',
+    '            turn_route = self._resolve_turn_agent_config(message, model, runtime_kwargs, source)\n',
+    1,
+)
+
+model_guard_marker = """        # No args: show interactive picker (Telegram/Discord) or text list
+        if not model_input and not explicit_provider:
+"""
+model_guard_replacement = """        if self._ghostship_is_discord_router_channel(source):
+            self._session_model_overrides.pop(session_key, None)
+            return "This Discord router channel is pinned to ghostship-router (`coding`)."
+
+        # No args: show interactive picker (Telegram/Discord) or text list
+        if not model_input and not explicit_provider:
+"""
+gateway_run_text = gateway_run_text.replace(model_guard_marker, model_guard_replacement, 1)
+if model_guard_replacement not in gateway_run_text:
+    raise RuntimeError("failed to block /model in pinned discord router channels")
+
 gateway_run.write_text(gateway_run_text)
 
 providers_text = providers.read_text()

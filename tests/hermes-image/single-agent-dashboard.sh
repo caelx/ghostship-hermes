@@ -575,6 +575,9 @@ run_as_hermes_default_path "$container_name" 'pip --version >/tmp/ghostship-pip-
 run_as_hermes_default_path "$container_name" 'python3 -m pip --version >/tmp/ghostship-python-module-pip-version.txt && grep -F "pip " /tmp/ghostship-python-module-pip-version.txt >/dev/null'
 run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'
 run_as_hermes "$container_name" 'test "$(command -v hermes)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/hermes"'
+run_as_hermes "$container_name" 'wrapper_root="$(dirname "$(dirname "$(readlink -f "$(command -v hermes)")")")"; grep -F "def _ghostship_is_discord_router_channel(source) -> bool:" "$wrapper_root/lib/python3.11/site-packages/gateway/run.py" >/dev/null'
+run_as_hermes "$container_name" 'wrapper_root="$(dirname "$(dirname "$(readlink -f "$(command -v hermes)")")")"; grep -F "\"base_url\": \"http://127.0.0.1:8788/v1\"" "$wrapper_root/lib/python3.11/site-packages/gateway/run.py" >/dev/null'
+run_as_hermes "$container_name" 'wrapper_root="$(dirname "$(dirname "$(readlink -f "$(command -v hermes)")")")"; grep -F "This Discord router channel is pinned to ghostship-router (\`coding\`)." "$wrapper_root/lib/python3.11/site-packages/gateway/run.py" >/dev/null'
 run_as_hermes "$container_name" '! hermes --version 2>/dev/null | grep -F "legacy-default-hermes" >/dev/null'
 assert_router_inventory "$container_name"
 assert_model_config "$container_name"
@@ -616,8 +619,8 @@ run_in_container "$container_name" 'systemctl start ghostship-hermes-bootstrap.s
 run_as_hermes "$container_name" 'grep -Fx "built-in skill" /home/hermes/.hermes/skills/autonomous-ai-agents/codex/SKILL.md >/dev/null'
 run_as_hermes "$container_name" 'test -w /home/hermes/.hermes/skills/autonomous-ai-agents/codex'
 run_as_hermes "$container_name" 'test -w /home/hermes/.hermes/skills/autonomous-ai-agents/codex/SKILL.md'
-run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/hooks/ghostship-router-channel-guidance/HOOK.yaml'
-run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/hooks/ghostship-router-channel-guidance/handler.py'
+run_as_hermes "$container_name" '! test -e /home/hermes/.hermes/hooks/ghostship-router-channel-guidance/HOOK.yaml'
+run_as_hermes "$container_name" '! test -e /home/hermes/.hermes/hooks/ghostship-router-channel-guidance/handler.py'
 run_as_hermes "$container_name" 'grep -Fx "seed-soul-v1" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/SOUL.md.ghostship-seeded-sha256'
 run_as_hermes "$container_name" 'printf "%s" "You are Hermes Agent, an intelligent AI assistant created by Nous Research. You are helpful, knowledgeable, and direct. You assist users with a wide range of tasks including answering questions, writing and editing code, analyzing information, creative work, and executing actions via your tools. You communicate clearly, admit uncertainty when appropriate, and prioritize being genuinely useful over being verbose unless otherwise directed below. Be targeted and efficient in your exploration and investigations." >/home/hermes/.hermes/SOUL.md && rm -f /home/hermes/.hermes/SOUL.md.ghostship-seeded-sha256'
