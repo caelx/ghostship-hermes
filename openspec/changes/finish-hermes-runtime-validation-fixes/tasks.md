@@ -14,5 +14,5 @@
 
 - [x] 3.1 Replace the destructive managed user-tooling refresh loop with actual-state diffing for managed Nix profile entries, npm install state, and managed shims.
 - [x] 3.2 Add verification coverage for both a steady-state no-op rerun and a targeted single-drift repair.
-- [ ] 3.3 Normalize default Nix profile priority handling so omitted declared priorities do not force a remove-and-readd cycle against live entries that report the default installed priority.
+- [x] 3.3 Normalize default Nix profile priority handling so omitted declared priorities do not force a remove-and-readd cycle against live entries that report the default installed priority.
 - [ ] 3.4 Validate on `chill-penguin` that an immediate rerun of `ghostship-hermes-user-tooling.service` no longer removes and re-adds the full managed profile and skips unnecessary npm work.

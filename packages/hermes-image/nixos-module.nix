@@ -800,6 +800,9 @@ def ref_matches_entry(desired_ref, current_entry):
     return desired_url in normalized_urls and attr_matches
 
 
+DEFAULT_NIX_PROFILE_PRIORITY = 5
+
+
 def normalize_priority(value):
     if value is None:
         return None
@@ -807,6 +810,13 @@ def normalize_priority(value):
         return int(value)
     except (TypeError, ValueError):
         return value
+
+
+def priority_matches_entry(desired_priority, current_entry):
+    current_priority = normalize_priority(current_entry.get("priority"))
+    if desired_priority is None:
+        return current_priority in (None, DEFAULT_NIX_PROFILE_PRIORITY)
+    return current_priority == desired_priority
 
 
 result = run(
@@ -832,8 +842,7 @@ for item in specs:
     keep_existing = False
     if len(matching_entries) == 1 and matching_entries[0][0] == name:
         _, current_entry = matching_entries[0]
-        current_priority = normalize_priority(current_entry.get("priority"))
-        keep_existing = ref_matches_entry(desired_ref, current_entry) and current_priority == desired_priority
+        keep_existing = ref_matches_entry(desired_ref, current_entry) and priority_matches_entry(desired_priority, current_entry)
 
     if not keep_existing:
         for entry_name, _ in matching_entries:
