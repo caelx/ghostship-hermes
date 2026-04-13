@@ -196,8 +196,10 @@ assert_model_config() {
   run_as_hermes "$target_container" 'hermes config show | grep -F "provider: opencode-go" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "default: minimax-m2.7" >/dev/null'
   run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: agentic" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: gpt-5.4-mini" >/dev/null'
+  run_as_hermes "$target_container" '! sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "api_key:" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
 }
 
 assert_config_migration() {

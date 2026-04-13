@@ -14,13 +14,12 @@ def _load_app_module(monkeypatch, tmp_path: Path):
   provider: opencode-go
   default: minimax-m2.7
 fallback_model:
-  provider: custom
-  model: agentic
-  base_url: http://127.0.0.1:8788/v1
+  provider: openai-codex
+  model: gpt-5.4-mini
 """,
         encoding='utf-8',
     )
-    (managed_home / '.env').write_text('OPENAI_API_KEY=test-token\nOPENCODE_GO_API_KEY=test-go\n', encoding='utf-8')
+    (managed_home / '.env').write_text('OPENCODE_GO_API_KEY=test-go\n', encoding='utf-8')
     (managed_home / 'SOUL.md').write_text('seeded soul\n', encoding='utf-8')
     (managed_home / 'gateway.pid').write_text('{"pid":123,"kind":"hermes-gateway"}\n', encoding='utf-8')
     projects_dir = tmp_path / 'workspace'

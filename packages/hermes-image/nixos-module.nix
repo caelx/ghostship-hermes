@@ -241,7 +241,6 @@ let
         {
           name = "ghostship-router";
           base_url = "http://127.0.0.1:8788/v1";
-          api_key = "\${OPENAI_API_KEY}";
         }
       ];
       timezone = "Pacific/Honolulu";
@@ -618,27 +617,56 @@ EOF
 
       tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
       ${pkgs.gawk}/bin/awk '
-        BEGIN { in_model = 0; in_fallback_model = 0 }
+        BEGIN { in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0 }
         /^model:[[:space:]]*$/ {
           in_model = 1
           in_fallback_model = 0
+          in_discord = 0
+          in_custom = 0
           print
           next
         }
         /^fallback_model:[[:space:]]*$/ {
           in_model = 0
           in_fallback_model = 1
+          in_discord = 0
+          in_custom = 0
           print
           next
         }
-        (in_model || in_fallback_model) && /^[^[:space:]]/ {
+        /^discord:[[:space:]]*$/ {
           in_model = 0
           in_fallback_model = 0
+          in_discord = 1
+          in_custom = 0
+          print
+          next
+        }
+        /^custom_providers:[[:space:]]*$/ {
+          in_model = 0
+          in_fallback_model = 0
+          in_discord = 0
+          in_custom = 1
+          print
+          next
+        }
+        (in_model || in_fallback_model || in_discord || in_custom) && /^[^[:space:]]/ {
+          in_model = 0
+          in_fallback_model = 0
+          in_discord = 0
+          in_custom = 0
         }
         in_model && $0 == "  base_url: http://127.0.0.1:8788/v1" {
           next
         }
         in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
+          next
+        }
+        in_discord && $0 ~ /^  require_mention:[[:space:]]/ {
+          print "  require_mention: false"
+          next
+        }
+        in_custom && $0 ~ /^[[:space:]]+api_key:[[:space:]]/ {
           next
         }
         { print }

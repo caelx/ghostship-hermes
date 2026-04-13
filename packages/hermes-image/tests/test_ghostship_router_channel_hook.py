@@ -58,7 +58,7 @@ def test_agent_start_warns_with_full_commands(monkeypatch: pytest.MonkeyPatch, t
     _write_sessions(tmp_path, _base_session('session-1'))
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(module, '_fetch_router_models', lambda force_refresh=False: ['agentic', 'coding'])
-    monkeypatch.setattr(module, '_post_discord_message', lambda channel_id, content: sent.append((channel_id, content)))
+    monkeypatch.setattr(module, '_post_discord_message', lambda channel_id, content: sent.append((channel_id, content)) or True)
 
     asyncio.run(module.handle('agent:start', {'platform': 'discord', 'session_id': 'session-1', 'message': 'hi'}))
 
@@ -75,7 +75,7 @@ def test_router_model_selection_suppresses_warning_until_reset(monkeypatch: pyte
     _write_sessions(tmp_path, sessions)
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(module, '_fetch_router_models', lambda force_refresh=False: ['agentic', 'coding'])
-    monkeypatch.setattr(module, '_post_discord_message', lambda channel_id, content: sent.append((channel_id, content)))
+    monkeypatch.setattr(module, '_post_discord_message', lambda channel_id, content: sent.append((channel_id, content)) or True)
 
     asyncio.run(module.handle('command:model', {
         'platform': 'discord',
@@ -100,7 +100,7 @@ def test_router_model_selection_suppresses_warning_until_reset(monkeypatch: pyte
 def test_non_router_model_command_clears_tracked_router_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _write_sessions(tmp_path, _base_session('session-1'))
     monkeypatch.setattr(module, '_fetch_router_models', lambda force_refresh=False: ['agentic', 'coding'])
-    monkeypatch.setattr(module, '_post_discord_message', lambda channel_id, content: None)
+    monkeypatch.setattr(module, '_post_discord_message', lambda channel_id, content: True)
 
     asyncio.run(module.handle('command:model', {
         'platform': 'discord',
@@ -116,3 +116,41 @@ def test_non_router_model_command_clears_tracked_router_session(monkeypatch: pyt
     }))
 
     assert module._session_uses_router_model('session-1', ['agentic', 'coding']) is False
+
+
+def test_failed_post_does_not_suppress_retry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _write_sessions(tmp_path, _base_session('session-1'))
+    monkeypatch.setattr(module, '_fetch_router_models', lambda force_refresh=False: ['agentic'])
+
+    calls: list[tuple[str, str]] = []
+    outcomes = iter([False, True])
+
+    def post(channel_id: str, content: str) -> bool:
+        calls.append((channel_id, content))
+        return next(outcomes)
+
+    monkeypatch.setattr(module, '_post_discord_message', post)
+
+    asyncio.run(module.handle('agent:start', {'platform': 'discord', 'session_id': 'session-1', 'message': 'hi'}))
+    asyncio.run(module.handle('agent:start', {'platform': 'discord', 'session_id': 'session-1', 'message': 'again'}))
+
+    assert len(calls) == 2
+    assert module._last_warned_at('session-1') > 0
+
+
+def test_agent_start_rewarns_after_one_minute(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _write_sessions(tmp_path, _base_session('session-1'))
+    sent: list[tuple[str, str]] = []
+    now = {'value': 1000.0}
+
+    monkeypatch.setattr(module, '_fetch_router_models', lambda force_refresh=False: ['agentic'])
+    monkeypatch.setattr(module.time, 'time', lambda: now['value'])
+    monkeypatch.setattr(module, '_post_discord_message', lambda channel_id, content: sent.append((channel_id, content)) or True)
+
+    asyncio.run(module.handle('agent:start', {'platform': 'discord', 'session_id': 'session-1', 'message': 'first'}))
+    now['value'] += 30.0
+    asyncio.run(module.handle('agent:start', {'platform': 'discord', 'session_id': 'session-1', 'message': 'second'}))
+    now['value'] += 31.0
+    asyncio.run(module.handle('agent:start', {'platform': 'discord', 'session_id': 'session-1', 'message': 'third'}))
+
+    assert len(sent) == 2
