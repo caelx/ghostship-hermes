@@ -34,34 +34,12 @@ from pathlib import Path
 import os
 
 site = Path(os.environ["SITE_PACKAGES"])
-doctor = site / "hermes_cli" / "doctor.py"
 tools = site / "hermes_cli" / "tools_config.py"
 gateway_cli = site / "hermes_cli" / "gateway.py"
 gateway_status = site / "gateway" / "status.py"
 gateway_run = site / "gateway" / "run.py"
 model_switch = site / "hermes_cli" / "model_switch.py"
 providers = site / "hermes_cli" / "providers.py"
-
-doctor_text = doctor.read_text()
-doctor_text = doctor_text.replace(
-    "        if agent_browser_path.exists():",
-    "        if shutil.which(\"agent-browser\") or agent_browser_path.exists():",
-    1,
-)
-doctor.write_text(doctor_text)
-
-doctor_text = doctor.read_text()
-if '("OpenCode Go",' not in doctor_text:
-    doctor_provider_list_marker = '    _apikey_providers = [\n'
-    doctor_opencode_go_entry = '        ("OpenCode Go",      ("OPENCODE_GO_API_KEY",),                        None,                                  "OPENCODE_GO_BASE_URL", False),\n'
-    if doctor_provider_list_marker not in doctor_text:
-        raise RuntimeError("failed to locate hermes doctor auth provider list")
-    doctor_text = doctor_text.replace(
-        doctor_provider_list_marker,
-        doctor_provider_list_marker + doctor_opencode_go_entry,
-        1,
-    )
-doctor.write_text(doctor_text)
 
 tools_text = tools.read_text()
 tools_text = tools_text.replace(

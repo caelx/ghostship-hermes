@@ -1,8 +1,10 @@
 ## Context
 
-The managed Hermes image currently projects Discord free-response channels into each profile `.env`, but the active managed profile model path still defaults to direct Codex runtime settings. Upstream Hermes also carries session-scoped model switching inside the gateway, and that upstream path is currently unreliable for Discord sessions when a custom endpoint should stay in effect. The repo therefore needs a narrow, repo-owned guard in its existing Hermes wrapper layer so Discord free-response sessions always execute against the local router without introducing new runtime env or auth contracts.
+The managed Hermes image currently projects Discord free-response channels into each profile `.env`, but the active managed profile model path still defaults to direct Codex runtime settings. Upstream Hermes also carries session-scoped model switching inside the gateway, and that upstream path is currently unreliable for Discord sessions when a custom endpoint should stay in effect. Hermes 0.9 improves upstream custom-provider support, but it still leaves the Discord channel-pinning problem unsolved because the gateway still owns session overrides and still exposes no declarative per-channel router pin. The repo therefore needs a narrow, repo-owned guard in its existing Hermes wrapper layer so Discord free-response sessions always execute against the local router without introducing new runtime env or auth contracts.
 
 The repo already patches upstream Hermes through `packages/hermes-agent-wrapped/package.nix`, which is the smallest supported seam for this behavior. That same seam is also the right place to remove any leftover repo-owned Discord plugin logic that tried to influence model selection but never became part of the supported runtime behavior.
+
+Hermes 0.9 also upstreams the OpenCode Go doctor handling and the custom-provider plumbing that older repo wrapper patches used to compensate for. That means the supported repo delta should stay focused on the Discord routing guard itself, not on carrying forward old doctor rewrites that upstream no longer needs.
 
 ## Goals / Non-Goals
 
@@ -26,6 +28,9 @@ The repo already carries targeted upstream Hermes shims in `packages/hermes-agen
 
 Alternative considered: express this declaratively in managed profile config.
 Rejected because the upstream gateway currently exposes no declarative Discord free-channel model override that would reliably beat session-scoped switches.
+
+Additional Hermes 0.9 conclusion: keep the gateway patch, drop the old doctor patch.
+Reason: Hermes 0.9 still lacks the per-channel routing control this repo needs, but it now ships the OpenCode Go doctor behavior upstream, so the doctor shim is no longer part of the minimum supported delta.
 
 ### Detect Discord free-response sessions from the existing source and env contract
 
