@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+
 from typer.testing import CliRunner
 
 from ghostship_pyload_ng import cli
@@ -25,6 +28,14 @@ class DummyClient:
     def add_package(self, name, links, *, timeout=None):
         self.calls.append(('add_package', name, links, timeout))
         return {'ok': True}
+
+
+def test_get_client_reads_api_key(monkeypatch):
+    monkeypatch.setenv('PYLOAD_URL', 'https://pyload.example')
+    monkeypatch.setenv('PYLOAD_API_KEY', 'pl_demo')
+    client = cli.get_client()
+    assert client.base_url == 'https://pyload.example'
+    assert client.default_headers['X-API-Key'] == 'pl_demo'
 
 
 def test_timeout_applies(monkeypatch):

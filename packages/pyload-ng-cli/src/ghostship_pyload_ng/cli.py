@@ -19,7 +19,7 @@ def app_callback(timeout: float = typer.Option(DEFAULT_TIMEOUT, '--timeout', hel
 
 
 def get_client() -> PyLoadClient:
-    return PyLoadClient(require_env('PYLOAD_URL', os.getenv('PYLOAD_URL')), os.getenv('PYLOAD_USER'), os.getenv('PYLOAD_PASS'), default_timeout=APP_STATE['timeout'])
+    return PyLoadClient(require_env('PYLOAD_URL', os.getenv('PYLOAD_URL')), os.getenv('PYLOAD_API_KEY'), default_timeout=APP_STATE['timeout'])
 
 
 def _emit(data: Any, pretty: bool) -> None:

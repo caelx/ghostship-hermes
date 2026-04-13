@@ -10,3 +10,8 @@ def test_system_status_command_exists() -> None:
     operation = catalog.OPERATIONS_BY_COMMAND.get('get_api_v1_system_status')
     assert operation is not None
     assert operation.path == '/api/v1/system/status'
+
+
+def test_ping_command_is_absent() -> None:
+    assert catalog.OPERATIONS_BY_COMMAND.get('get_ping') is None
+    assert catalog.OPERATIONS_BY_COMMAND.get('head_ping') is None
