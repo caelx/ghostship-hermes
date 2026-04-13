@@ -373,6 +373,28 @@ assert_dashboard_browser_open() {
   agent-browser --session "$browser_session" close --all >/dev/null 2>&1 || true
 }
 
+assert_image_metadata() {
+  docker inspect "$image_tag" | jq -e '
+    .[0].Config.StopSignal == "SIGRTMIN+3"
+    and .[0].Config.Labels["org.opencontainers.image.source"] == "https://github.com/caelx/ghostship-hermes"
+    and (.[0].Config.Labels["org.opencontainers.image.revision"] | type) == "string"
+    and (.[0].Config.Labels["org.opencontainers.image.revision"] | length) > 0
+  ' >/dev/null
+}
+
+assert_no_known_activation_warnings() {
+  local target_container="$1"
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/root/.nix-defexpr/channels/channels"'
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "could not create symlink /etc/hostname"'
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "could not create symlink /etc/hosts"'
+}
+
+assert_clean_stop() {
+  local target_container="$1"
+  docker stop -t 45 "$target_container" >/dev/null
+  test "$(docker inspect -f '{{.State.ExitCode}}' "$target_container")" = "0"
+}
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required for dashboard image testing" >&2
   exit 1
@@ -386,6 +408,8 @@ fi
 if [ "${SKIP_IMAGE_IMPORT:-0}" != "1" ]; then
   "$repo_root/scripts/export_publishable_image.sh" "$image_bundle" "$image_tag" >/dev/null
 fi
+
+assert_image_metadata
 
 mkdir -p "$home_dir/.nix-profile/bin" "$home_dir/seeds/skills/workflow-single" "$workspace_dir" "$home_dir/.hermes/profiles/assistant"
 cat > "$home_dir/.nix-profile/bin/hermes" <<'EOF'
@@ -466,6 +490,7 @@ wait_for_json_value "${dashboard_base_url}/api/console" ' .session.ready' "true"
 assert_http_contains "${dashboard_base_url}${terminal_one_url}" "ttyd"
 assert_websocket_proxy "$terminal_one_url"
 assert_dashboard_browser_open
+assert_no_known_activation_warnings "$container_name"
 
 curl -fsS -X POST "${dashboard_base_url}/api/console/sessions/$terminal_one/close" >/tmp/ghostship-hermes-terminal-close-1.json
 wait_for_json_value "${dashboard_base_url}/api/console" ' .session == null' "true"
@@ -563,5 +588,6 @@ run_as_hermes "$container_name" 'hermes gateway status | grep -F "User gateway s
 run_as_hermes "$container_name" 'hermes gateway status | grep -F "hermes-gateway.service" >/dev/null'
 run_as_hermes "$container_name" '! hermes gateway status | grep -F "Installed gateway service definition is outdated" >/dev/null'
 run_as_hermes "$container_name" 'hermes gateway restart | grep -F "User service restarted" >/dev/null'
+assert_clean_stop "$container_name"
 
 printf 'validated ghostship-hermes dashboard smoke test with %s\n' "$image_tag"

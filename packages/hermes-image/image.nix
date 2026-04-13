@@ -5,6 +5,8 @@
   ghostshipHermesRootfs,
   hermesRelease,
   defaultImageRef ? "ghostship-hermes:${hermesRelease}",
+  sourceUrl ? "https://github.com/caelx/ghostship-hermes",
+  revision ? "dirty",
 }:
 let
   platform =
@@ -19,6 +21,7 @@ let
     ENTRYPOINT ["/init"]
     ENV HOME=/home/hermes
     ENV HERMES_HOME=/home/hermes/.hermes
+    STOPSIGNAL SIGRTMIN+3
     HEALTHCHECK CMD ["/bin/sh", "-lc", "${pkgs.curl}/bin/curl -fsS http://127.0.0.1:7681/ >/dev/null || exit 1"]
     EXPOSE 7681/tcp
     VOLUME /home/hermes
@@ -26,6 +29,8 @@ let
     LABEL org.opencontainers.image.title="ghostship-hermes"
     LABEL org.opencontainers.image.description="Lean Hermes container with a minimal dashboard, whole-home persistence, and ghostship utilities"
     LABEL org.opencontainers.image.version="${hermesRelease}"
+    LABEL org.opencontainers.image.source="${sourceUrl}"
+    LABEL org.opencontainers.image.revision="${revision}"
   '';
 in
 pkgs.runCommand "ghostship-hermes-image" { } ''

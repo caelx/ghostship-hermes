@@ -693,11 +693,37 @@ home = Path(os.environ["HOME"])
 specs = json.loads(r"""${builtins.toJSON managedUserPackages}""")
 managed_npm_packages = json.loads(r"""${builtins.toJSON managedNpmPackages}""")
 managed_npm_bins = json.loads(r"""${builtins.toJSON managedNpmBins}""")
-result = subprocess.run(
+
+
+def run(command, *, cwd=None, check=True, capture_output=False):
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        check=check,
+        capture_output=capture_output,
+        text=True,
+    )
+
+
+def desired_ref_for(item):
+    if mode == "refresh" and item["name"] == "hermes-agent-wrapped":
+        return f"{runtime_flake_ref}#hermes-agent-wrapped"
+    return item.get("bootstrapRef") or item["ref"]
+
+
+def normalize_priority(value):
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
+result = run(
     ["nix", "profile", "list", "--profile", managed_profile, "--json"],
     check=False,
     capture_output=True,
-    text=True,
 )
 if result.returncode == 0:
     elements = json.loads(result.stdout).get("elements", {})
@@ -706,26 +732,49 @@ else:
 
 for item in specs:
     name = item["name"]
-    for entry_name in sorted(
-        key for key in elements if key == name or key.startswith(f"{name}-")
-    ):
-        subprocess.run(
-            ["nix", "profile", "remove", "--profile", managed_profile, entry_name],
-            check=True,
+    desired_ref = desired_ref_for(item)
+    desired_priority = normalize_priority(item.get("priority"))
+    matching_entries = sorted(
+        (entry_name, elements[entry_name])
+        for entry_name in elements
+        if entry_name == name or entry_name.startswith(f"{name}-")
+    )
+
+    keep_existing = False
+    if len(matching_entries) == 1 and matching_entries[0][0] == name:
+        _, current_entry = matching_entries[0]
+        current_refs = {
+            value
+            for value in (
+                current_entry.get("originalUrl"),
+                current_entry.get("originalURL"),
+                current_entry.get("url"),
+                current_entry.get("uri"),
+                current_entry.get("lockedUrl"),
+            )
+            if isinstance(value, str) and value
+        }
+        current_refs.update(
+            value
+            for value in current_entry.get("storePaths", [])
+            if isinstance(value, str) and value
         )
-    if mode == "refresh" and name == "hermes-agent-wrapped":
-        ref = f"{runtime_flake_ref}#hermes-agent-wrapped"
-    else:
-        ref = item.get("bootstrapRef") or item["ref"]
-    command = ["nix", "profile", "add", "--profile", managed_profile]
-    priority = item.get("priority")
-    if priority is not None:
-        command.extend(["--priority", str(priority)])
-    command.append(ref)
-    subprocess.run(command, check=True)
+        current_priority = normalize_priority(current_entry.get("priority"))
+        keep_existing = desired_ref in current_refs and current_priority == desired_priority
+
+    if not keep_existing:
+        for entry_name, _ in matching_entries:
+            run(["nix", "profile", "remove", "--profile", managed_profile, entry_name])
+        command = ["nix", "profile", "add", "--profile", managed_profile]
+        if desired_priority is not None:
+            command.extend(["--priority", str(desired_priority)])
+        command.append(desired_ref)
+        run(command)
 
 package_json = project_root / "package.json"
-package_json.write_text(
+package_lock = project_root / "package-lock.json"
+project_bin_root = project_root / "node_modules" / ".bin"
+desired_package_json = (
     json.dumps(
         {
             "name": "ghostship-hermes-runtime-tools",
@@ -736,10 +785,23 @@ package_json.write_text(
     )
     + "\n"
 )
-subprocess.run(["npm", "install", "--silent"], cwd=project_root, check=True)
+package_json_changed = True
+if package_json.exists():
+    package_json_changed = package_json.read_text() != desired_package_json
+if package_json_changed:
+    package_json.write_text(desired_package_json)
+
+needs_npm_install = package_json_changed or not package_lock.exists()
+if not needs_npm_install:
+    for bin_name in managed_npm_bins:
+        if not (project_bin_root / bin_name).exists():
+            needs_npm_install = True
+            break
+
+if needs_npm_install:
+    run(["npm", "install", "--silent"], cwd=project_root)
 
 local_bin = home / ".local" / "bin"
-project_bin_root = project_root / "node_modules" / ".bin"
 agent_browser_link = local_bin / "agent-browser"
 for entry in local_bin.iterdir():
     if not entry.is_symlink():
@@ -824,6 +886,8 @@ in
   networking.useDHCP = lib.mkDefault true;
   networking.resolvconf.enable = false;
   networking.firewall.allowedTCPPorts = [ 7681 ];
+  nix.channel.enable = false;
+  environment.etc.hosts.enable = false;
   system.stateVersion = "25.11";
 
   users.mutableUsers = false;
@@ -1135,7 +1199,10 @@ in
       ExecStartPre = managedGatewayPreStartScript;
       ExecStart = managedGatewayScript;
       ExecStopPost = managedGatewayPostStopScript;
-      Restart = "always";
+      KillMode = "mixed";
+      KillSignal = "SIGTERM";
+      TimeoutStopSec = "60s";
+      Restart = "on-failure";
       RestartSec = "2s";
     };
   };

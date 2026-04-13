@@ -49,7 +49,7 @@ Alternative considered: fix only the host by increasing the Podman stop timeout.
 
 The `/root/.nix-defexpr` warning comes from inherited NixOS channel setup behavior that does not fit this image. The image should disable that root channel seeding path rather than tolerate a known read-only write failure on every boot.
 
-The `/etc/hostname` and `/etc/hosts` warnings should likewise be addressed in the image module’s container-mode behavior, because the published runtime is expected to boot under Podman without known activation defects. The design should prefer declarative suppression or compatible container-mode ownership over ad hoc post-boot cleanup.
+The `/etc/hostname` and `/etc/hosts` warnings split by ownership. Root channel seeding is still an image defect and should be disabled in the image module. The `/etc` warnings come from Podman injecting those files into the container while NixOS stage-2 still tries to materialize its own copies. Because the runtime contract keeps an explicit Nix hostname, the clean fix is a compatible container-mode ownership split: the image keeps `networking.hostName`, while the supported Podman deployment should pass `--no-hostname --no-hosts` so Podman uses the image-managed files instead of injecting conflicting ones.
 
 Alternative considered: document the warnings as harmless and leave them in place. Rejected because they create noisy false signals during every boot and make real activation regressions harder to identify.
 
@@ -84,10 +84,10 @@ Alternative considered: leave the current destructive reconciliation in place an
 
 1. Update the image module so the managed gateway service renders explicit graceful-stop settings, the container-mode activation path no longer attempts the known invalid writes, and the tooling reconciler avoids unnecessary full-profile churn on boot.
 2. Extend image-focused validation to assert:
-   - the image boots without the current activation warnings
-   - the image avoids destructive no-op tooling convergence on a steady-state boot
    - the image exposes the new OCI provenance labels
-   - a supported stop/restart flow exits without Podman `SIGKILL`
+   - the image avoids destructive no-op tooling convergence on a steady-state boot
+   - the image exits cleanly under the supported stop signal contract
+   - the supported Podman runtime contract (`--no-hostname --no-hosts`) removes the known `/etc` activation warnings while preserving the image-managed hostname
 3. Rebuild and publish the image.
 4. Re-test the live host with a controlled `podman-hermes.service` restart and a direct `podman stop` flow.
 5. If graceful stop still requires a larger host budget after the image fixes, update the host Podman deployment to use the measured stop timeout instead of the current 10-second container setting.
