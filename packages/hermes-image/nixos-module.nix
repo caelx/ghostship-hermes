@@ -942,12 +942,13 @@ in
   # hook so the upstream module can evaluate without requiring an external secret
   # management module.
   system.activationScripts.setupSecrets = lib.mkDefault (lib.stringAfter [ "users" ] "");
-  system.activationScripts.removeStaleRootChannels = lib.stringBefore [ "no-nix-channel" ] ''
+  system.activationScripts.removeStaleRootChannels = lib.stringAfter [ "etc" "users" ] ''
     rm -f \
       /root/.nix-defexpr/channels \
       /nix/var/nix/profiles/per-user/root/channels \
       /nix/var/nix/profiles/per-user/root/channels-*
   '';
+  system.activationScripts.no-nix-channel.deps = lib.mkIf (!config.nix.channel.enable) [ "removeStaleRootChannels" ];
 
   imports = [
     "${modulesPath}/profiles/docker-container.nix"
