@@ -10,6 +10,6 @@
 
 ## 3. Prove Reuse Manually
 
-- [ ] 3.1 Run a manual cache-refresh `workflow_dispatch` from the implementation branch and confirm that cache publication finishes with a consumable `cache-index`.
-- [ ] 3.2 Run an unchanged follow-up `workflow_dispatch` from the same branch and confirm shared-cache bootstrap succeeds before `nix build`.
-- [ ] 3.3 Compare the seeded and repeat run logs to verify meaningful warm-cache reuse without adding new workflow proof steps.
+- [x] 3.1 Run a manual cache-refresh `workflow_dispatch` from the implementation branch and confirm that cache publication finishes with a consumable `cache-index`.
+- [x] 3.2 Run an unchanged follow-up `workflow_dispatch` from the same branch and confirm shared-cache bootstrap succeeds before `nix build`.
+- [x] 3.3 Compare the seeded and repeat run logs to verify meaningful warm-cache reuse without adding new workflow proof steps.
