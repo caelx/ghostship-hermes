@@ -22,10 +22,15 @@ The router SHALL prefer eligible free backends for each logical alias, track hea
 - **WHEN** all eligible backend-model candidates for the requested alias are unusable
 - **THEN** the router returns an error that indicates the alias pool is currently exhausted or unavailable
 
-#### Scenario: Candidate ordering uses persisted ranking and recent health
-- **WHEN** the router orders eligible candidates for a logical alias
-- **THEN** it combines free-model preference, alias fit, rolling live health data, and persisted ranking outputs
-- **AND** it does not rely only on static name heuristics once ranking data is available
+#### Scenario: Startup routing uses deterministic ordering without assisted ranking calls
+- **WHEN** the router starts and performs its initial inventory refresh
+- **THEN** it orders candidates with deterministic heuristic scoring plus any persisted ranking data already stored in router state
+- **AND** it does not send worker-assisted ranking calls during the startup refresh path
+
+#### Scenario: Candidate ordering uses persisted ranking and recent health when available
+- **WHEN** the router orders eligible candidates for a logical alias after startup
+- **THEN** it combines free-model preference, alias fit, rolling live health data, deterministic heuristics, and any persisted ranking outputs
+- **AND** it does not require a fresh assisted ranking pass before requests can route
 
 #### Scenario: Provider-wide suppression affects candidate selection
 - **WHEN** a provider enters temporary cooldown or disablement because of broad auth, timeout, rate-limit, or exhaustion signals
@@ -39,26 +44,27 @@ The router SHALL track provider-wide health independently from concrete-model he
 - **WHEN** repeated recent failures indicate that many requests or refreshes against a provider are failing for the same systemic reason
 - **THEN** the router records provider-wide degraded state and applies a temporary cooldown or disablement to that provider
 
-#### Scenario: Distinct-model zero-output exhaustion trips provider disablement
-- **WHEN** two distinct backend models on the same provider fail within the provider suspect window with exhaustion-class signals
-- **AND** neither failure returns output to the caller
-- **THEN** the router treats the provider as broadly exhausted
+#### Scenario: Temporary throttle uses provider pacing before provider disablement
+- **WHEN** a provider returns a temporary throttle signal such as a `429` with `Retry-After` or an explicit upstream temporary rate-limit message
+- **THEN** the router applies provider-scoped pacing to that provider lane using the retry guidance when available
+- **AND** it uses a base minimum spacing of `3 seconds` for OpenRouter and `2 seconds` for OpenCode Zen between requests to the same provider
+- **AND** it does not immediately convert that signal into a six-hour provider disablement unless stronger provider-wide evidence appears
+
+#### Scenario: Explicit balance or hard quota exhaustion triggers long provider disablement
+- **WHEN** a provider returns explicit balance exhaustion, hard quota exhaustion, or another non-temporary exhaustion signal
+- **THEN** the router treats the provider as broadly unavailable
 - **AND** it disables that provider for at least six hours
 
 #### Scenario: Provider exhaustion evidence survives cross-provider attempts
-- **WHEN** one backend model on a provider records a recent zero-output exhaustion failure
-- **AND** a later attempt within the suspect window reaches a different backend model on that same provider after trying another provider in between
-- **AND** the later backend model also fails with a zero-output exhaustion signal
-- **THEN** the router still disables the original provider for the broad exhaustion window
-
-#### Scenario: Provider recovers automatically after cooldown or refresh
-- **WHEN** a provider cooldown expires or a later refresh succeeds
-- **THEN** the router allows that provider to compete for routing again without manual intervention
+- **WHEN** one backend model on a provider records a recent exhaustion failure
+- **AND** a later attempt within the suspect window reaches another backend model on that same provider after trying another provider in between
+- **AND** the later backend model also fails with a qualifying exhaustion signal
+- **THEN** the router still applies provider-wide exhaustion logic to that original provider
 
 #### Scenario: Provider recovery uses probe admission
 - **WHEN** a provider-wide exhaustion disablement expires
 - **THEN** the router re-admits that provider through a probe-style recovery path
-- **AND** one immediate exhaustion probe failure can re-disable the provider with a longer cooldown
+- **AND** only a failed recovery probe or another strong exhaustion signal may re-disable it for a longer window
 
 ### Requirement: Router stores rolling health and performance windows
 The router SHALL maintain recent health and timing data that is suitable for ranking volatile free-model inventories.
@@ -75,6 +81,11 @@ The router SHALL maintain recent health and timing data that is suitable for ran
 - **WHEN** the same provider-model pair records repeated consecutive exhaustion failures without an intervening success
 - **THEN** the router increases that model's cooldown through an escalating ladder
 - **AND** the ladder includes at least `30 seconds`, `1 minute`, `5 minutes`, and `10 minutes` before later capped escalation
+
+#### Scenario: Retry guidance influences provider pacing and cooldown
+- **WHEN** an exhaustion response includes provider retry guidance such as `Retry-After`
+- **THEN** the router uses that guidance as an input to the next pacing or cooldown decision for the affected provider lane
+- **AND** it does not shorten the delay below the configured provider spacing floor for that provider
 
 #### Scenario: Successful model call resets exhaustion escalation
 - **WHEN** a provider-model pair succeeds after an exhaustion-driven cooldown period
@@ -104,9 +115,9 @@ The router SHALL preserve the state needed for unattended operation and expose e
 - **WHEN** an operator inspects a candidate list or ranking debug surface
 - **THEN** the router exposes the current ranking score, health-derived score inputs, and any active override or cooldown state for each candidate
 
-#### Scenario: Observability exposes exhaustion breaker state
-- **WHEN** an operator inspects router debug or metrics surfaces after exhaustion-driven failover
-- **THEN** the router exposes model exhaustion cooldown state, provider disablement state, and the current recovery or probe mode for affected providers
+#### Scenario: Observability exposes suppression source
+- **WHEN** an operator inspects router debug or metrics surfaces after throttling or exhaustion-driven failover
+- **THEN** the router exposes whether the affected backend is unavailable because of provider pacing, model cooldown, temporary provider throttle handling, or hard provider disablement
 
 ### Requirement: Router behavior is configurable without code changes
 The router SHALL support operator configuration for providers, alias buckets, refresh behavior, cooldown thresholds, routing weights, fallback policy, and allow or block controls without requiring source edits.
@@ -120,6 +131,16 @@ The router SHALL support operator configuration for providers, alias buckets, re
 - **THEN** future routing and ranking decisions reflect that override
 - **AND** the override remains visible and durable across service restarts
 
-#### Scenario: Exhaustion cooldown and provider breaker policy is configurable
-- **WHEN** the operator updates exhaustion ladder, suspect-window, provider-disable, or probe-recovery configuration
+#### Scenario: Provider credential precedence is explicit
+- **WHEN** the router loads provider credentials from environment variables
+- **THEN** OpenRouter uses `OPENROUTER_API_KEY`
+- **AND** OpenCode Zen prefers `OPENCODE_GO_API_KEY` over `OPENCODE_API_KEY` when both are present
+
+#### Scenario: Exhaustion cooldown, provider pacing, and provider breaker policy is configurable
+- **WHEN** the operator updates exhaustion ladder, provider spacing, suspect-window, provider-disable, or probe-recovery configuration
 - **THEN** future exhaustion handling follows the updated policy without changing application code
+
+#### Scenario: Router alternates ranked provider lanes
+- **WHEN** the router builds candidates for a logical alias
+- **THEN** it ranks the top three eligible models for each provider separately
+- **AND** transparent failover alternates between provider lanes before revisiting lower-ranked models on the same provider

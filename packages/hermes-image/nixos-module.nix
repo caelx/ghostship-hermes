@@ -101,8 +101,7 @@ let
     "SYNOLOGY_VERIFY_SSL"
     "FLARESOLVERR_URL"
     "PYLOAD_URL"
-    "PYLOAD_USER"
-    "PYLOAD_PASS"
+    "PYLOAD_API_KEY"
     "CLOAKBROWSER_URL"
     "CLOAKBROWSER_TOKEN"
     "PRICEBUDDY_URL"
@@ -801,8 +800,6 @@ def ref_matches_entry(desired_ref, current_entry):
 
 
 DEFAULT_NIX_PROFILE_PRIORITY = 5
-
-
 def normalize_priority(value):
     if value is None:
         return None
@@ -952,12 +949,13 @@ in
   # hook so the upstream module can evaluate without requiring an external secret
   # management module.
   system.activationScripts.setupSecrets = lib.mkDefault (lib.stringAfter [ "users" ] "");
-  system.activationScripts.removeStaleRootChannels = lib.stringBefore [ "no-nix-channel" ] ''
+  system.activationScripts.removeStaleRootChannels = lib.stringAfter [ "etc" "users" ] ''
     rm -f \
       /root/.nix-defexpr/channels \
       /nix/var/nix/profiles/per-user/root/channels \
       /nix/var/nix/profiles/per-user/root/channels-*
   '';
+  system.activationScripts.no-nix-channel.deps = lib.mkIf (!config.nix.channel.enable) [ "removeStaleRootChannels" ];
 
   imports = [
     "${modulesPath}/profiles/docker-container.nix"

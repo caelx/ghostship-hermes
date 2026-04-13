@@ -13,6 +13,11 @@ class DummyPyLoadClient(PyLoadClient):
         return {'ok': True}
 
 
+def test_client_sets_api_key_header() -> None:
+    client = PyLoadClient('https://pyload.example', api_key='pl_demo')
+    assert client.default_headers['X-API-Key'] == 'pl_demo'
+
+
 def test_wrappers_delegate_to_request() -> None:
     client = DummyPyLoadClient()
     client.get_server_status(timeout=1)

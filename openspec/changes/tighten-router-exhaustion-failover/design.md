@@ -1,119 +1,114 @@
 ## Context
 
-The current router persists model-level and provider-level health in shared rolling counters, but its failure handling is not sequence-aware enough for free-model throttling and account exhaustion. A single retryable failure currently updates both model and provider cooldown state, which can suppress an entire provider after one noisy model response instead of proving that the provider is broadly exhausted.
+The current change tightened exhaustion failover, but live validation showed that the router still spends free-tier budget on startup ranking probes before any real traffic arrives. On `chill-penguin`, startup called provider inventory endpoints and then immediately made ranking-worker requests against free models, producing early Zen `429` responses before the first user request.
 
-This change targets the local router in `packages/hermes-router` and the existing `model-router-service` capability. The new behavior must remain transparent to callers within a single request, continue to use the existing ranked priority list, and work across both OpenRouter and OpenCode Zen despite their different exhaustion semantics.
+The same validation also showed that provider disablement is too aggressive for temporary throttles. OpenRouter returned a temporary upstream `429` naming the upstream provider, while OpenCode Zen returned `FreeUsageLimitError` with a `Retry-After` window of roughly 35 minutes. Those signals are different from explicit account exhaustion, and the router should not convert them into blanket six-hour provider disablement by default.
+
+Finally, the runtime currently needs an explicit credential rule for Zen. The router must prefer `OPENCODE_GO_API_KEY` over `OPENCODE_API_KEY` when both are set.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Preserve transparent in-request failover while tightening how exhaustion affects model and provider eligibility.
-- Introduce an escalating per-model exhaustion cooldown ladder instead of a flat retryable-failure cooldown.
-- Detect provider-wide exhaustion from recent distinct-model zero-output failures on the same provider, even when request attempts alternate between providers because of ranking.
-- Disable broadly exhausted providers for a longer floor of six hours and re-admit them through probe-style recovery.
-- Keep provider-specific rules for OpenRouter free-model throttling and OpenCode Zen balance or limit exhaustion explicit and testable.
+- Eliminate worker-assisted ranking calls during startup refresh.
+- Keep routing available on cold start by using deterministic heuristic ordering plus any persisted ranking data that already exists.
+- Make provider credential precedence explicit and testable.
+- Make provider-wide disablement less aggressive for temporary upstream throttles while preserving transparent ranked failover.
+- Preserve strong provider disablement for explicit balance or quota exhaustion and repeated failed recovery probes.
 
 **Non-Goals:**
 
-- Changing alias ranking strategy beyond the new cooldown and provider-suppression inputs.
-- Changing non-exhaustion failure handling such as plain timeouts, model removal refreshes, or endpoint-family mismatch recovery.
-- Exposing provider-specific billing state directly to callers.
+- Removing inventory refresh on startup.
+- Replacing the existing deterministic scoring model with a new ranking algorithm.
+- Surfacing provider credential source details to callers.
+- Changing non-exhaustion failure handling outside the provider-suppression tuning required here.
 
 ## Decisions
 
-### Use a two-layer circuit breaker: model ladder plus provider breaker
+### Do not run assisted ranking during startup
 
-The router will separate exhaustion handling into:
+Startup refresh will load provider inventory and persisted state only. It will not invoke worker-assisted ranking during the initial `startup` refresh path.
 
-- a per-model cooldown ladder for `(provider, backend_model)`
-- a provider-wide breaker keyed by recent exhaustion evidence for `provider`
+Cold-start candidate ordering will use the existing deterministic score breakdown and any persisted ranking rows already stored in the state database. If assisted ranking remains enabled, it must run later through a deferred path such as a scheduled refresh after the service is already healthy, or another explicit operator-controlled trigger.
 
-This avoids the current ambiguity where one model failure can effectively act like a provider outage. A model-level exhaustion event updates that model's ladder first, then candidate selection re-enters the normal ranked pool. The provider breaker trips only after stronger evidence of broad provider exhaustion appears.
+This avoids burning free-lane requests before the first user request while still preserving stable routing order.
 
-Alternative considered: continue using only decayed provider counters and thresholds. Rejected because the desired trigger is sequence-sensitive, not just volume-sensitive. The router needs to recognize "distinct models failed with zero output on the same provider inside a short window" as a stronger signal than a raw count of recent failures.
+### Keep deterministic ranking as the default readiness path
 
-### Recompute candidates from the ranked priority list after every retryable exhaustion failure
+The router already has a deterministic scoring model based on alias fit, provider and model weights, recency, capability metadata, and persisted health. That deterministic score becomes the default startup ranking path.
 
-After a retryable exhaustion-class failure, the router will:
+Persisted ranking data may still influence scoring when available, but lack of fresh assisted ranking data must not block startup or trigger outbound worker calls.
 
-1. update model or provider state
-2. recompute eligible candidates using the existing ranking logic
-3. continue with the highest-ranked remaining candidate
+### Make provider credential precedence explicit
 
-The router will not hardcode "same provider first" or "other provider first." This keeps the existing ranking and alias priority behavior intact while allowing cooldowns and provider suppression to influence selection naturally.
+Provider credential resolution will be:
 
-Alternative considered: force same-provider fallback before cross-provider fallback. Rejected because the user explicitly wants switching to keep honoring the priority list, and different aliases may legitimately prefer candidates on another provider after a single model cooldown.
+- OpenRouter: `OPENROUTER_API_KEY`
+- OpenCode Zen: prefer `OPENCODE_GO_API_KEY`, then fall back to `OPENCODE_API_KEY`
 
-### Trip provider-wide disablement only on recent distinct-model zero-output exhaustion evidence
+This precedence must be encoded in config loading and covered by tests so live runtime env files cannot silently select the wrong Zen credential when both names are present.
 
-The provider breaker will trip when all of these are true:
+### Use provider-scoped pacing and `Retry-After` before provider disablement
 
-- the provider has one recent exhaustion evidence record within a short suspect window
-- the current failed backend model is distinct from the previous failed model on that provider
-- both failures are exhaustion-class signals
-- both failures produced no output
+Temporary upstream throttles should first update provider-scoped pacing state, not immediately disable the whole provider for six hours.
 
-This evidence is provider-scoped, so the breaker still works if the request temporarily switched to another provider between the two failures.
+The router should maintain base provider spacing of `3 seconds` for OpenRouter and `2 seconds` for OpenCode Zen between requests to the same provider. Temporary throttle responses should raise those spacing windows through a short provider backoff ladder before any hard provider disablement is considered.
 
-Alternative considered: trip on any two failures from the same provider. Rejected because `model_missing`, endpoint-family mismatch, or partial-output failures do not prove provider-wide exhaustion and would over-disable healthy providers.
+The router should treat these as temporary throttle signals:
 
-### Use provider-specific exhaustion categories
+- OpenRouter `429` responses that explicitly describe temporary upstream rate limiting
+- OpenCode Zen `FreeUsageLimitError` responses with `Retry-After`
 
-The provider breaker and model ladder will treat these as exhaustion-class events:
+When those responses provide `Retry-After`, the router should apply that value as the cooldown input for the affected provider lane, and only escalate to provider-wide suppression if later evidence proves the whole provider is broadly unavailable.
 
-- OpenRouter: `429 rate_limited`
-- OpenCode Zen: `429 rate_limited`, explicit `insufficient_balance`, and other explicit spend-limit exhaustion if the adapter can classify it
+### Reserve long provider disablement for stronger signals
 
-`model_missing`, `endpoint_family_mismatch`, `bad_request`, and ordinary inventory refresh failures will not count toward provider exhaustion evidence.
+Six-hour provider disablement remains valid for stronger signals such as:
 
-Alternative considered: treat all retryable failures as exhaustion. Rejected because the resulting cooldown behavior would be too aggressive and would conflate transient transport issues with quota or capacity exhaustion.
+- explicit `insufficient_balance`
+- explicit quota exhaustion without a shorter retry window
+- repeated failed probe recovery after an earlier provider-wide disablement
+- stronger same-provider exhaustion evidence that persists beyond a temporary throttle window
 
-### Use an escalating model cooldown ladder and a longer provider disable floor
+Temporary free-lane `429` bursts on two models in one request are not enough by themselves when the provider response clearly says to retry shortly.
 
-The exhaustion ladder for each model will be:
+### Rank top-three provider lanes and alternate between providers
 
-- first consecutive exhaustion: `30s`
-- second: `1m`
-- third: `5m`
-- fourth: `10m`
-- later events continue escalating with a cap
+For each alias, the router should rank the top three eligible models for OpenRouter and the top three eligible models for OpenCode Zen separately. Request-time failover should then alternate between provider lanes instead of exhausting multiple models from the same provider in a row.
 
-When broad provider exhaustion is proven, provider disablement will use a minimum floor of `6h`. Recovery after provider disablement will enter probe mode, where one eligible model from that provider may compete again. A failed exhaustion probe re-disables the provider with a longer duration.
+This makes the retry path explicitly provider-aware, reduces burst pressure on a single provider, and still respects ranked ordering within each provider lane.
 
-Alternative considered: a fixed per-model cooldown or immediate provider disable on the first `429`. Rejected because free-model capacity noise is common enough that the router needs graduated model backoff before concluding the provider is broadly unavailable.
+### Keep observability explicit about suppression source and provider pacing
 
-### Make observability expose breaker state explicitly
+Debug and metrics surfaces should distinguish:
 
-Debug and metrics surfaces should expose:
+- provider pacing delay due to temporary throttle
+- model cooldown due to model-specific failures
+- provider suppression due to explicit exhaustion
+- provider suppression due to failed probe recovery
+- startup readiness without assisted ranking
 
-- model exhaustion streak and current cooldown
-- provider breaker state, disable reason, and cooldown expiry
-- whether the provider is in probe mode
-
-This is necessary so operators can distinguish "one hot free model is cooling down" from "OpenRouter was broadly rate-limited and is disabled for six hours."
-
-Alternative considered: infer everything from existing cooldown timestamps. Rejected because probe state and exhaustion evidence sequencing would be opaque and difficult to validate.
+Operators need to see why a provider or model is unavailable before deciding whether to wait, override, or change credentials.
 
 ## Risks / Trade-offs
 
-- [Provider disablement becomes too sticky for noisy free models] -> Keep the provider breaker dependent on distinct-model zero-output evidence and use probe recovery instead of immediate full re-admission.
-- [Ranking and failover become harder to reason about] -> Keep candidate reselection grounded in the existing priority list and expose breaker state in debug and metrics surfaces.
-- [Provider-specific parsing drifts from upstream behavior] -> Limit provider-specific branching to well-defined classified categories and cover it with provider adapter tests.
-- [Long provider disablement reduces capacity if classification is wrong] -> Exclude model-missing and partial-output failures from provider trip evidence and preserve operator override controls.
+- [Heuristic-only startup order may be weaker than fresh assisted ranking] -> Persist prior ranking outputs when available and keep deferred assisted ranking optional for later refinement.
+- [Temporary throttle detection may under-disable a truly unhealthy provider] -> Keep provider-wide suppression for explicit exhaustion and probe failures, and continue tracking provider evidence across requests.
+- [Credential precedence changes may alter current Zen traffic unexpectedly] -> Make the precedence explicit in config tests and document it in the spec delta.
+- [Deferred assisted ranking could still burn quota if left fully automatic later] -> Require the startup path to skip assisted ranking entirely and make any later ranking trigger explicit in the implementation tasks.
 
 ## Migration Plan
 
-1. Add the new requirement deltas for `model-router-service`.
-2. Refactor router state so model exhaustion cooldowns and provider-breaker state are stored separately.
-3. Update provider adapters to classify exhaustion signals precisely enough for the new state machine.
-4. Update routing flow so retries re-enter ranked candidate selection while honoring active cooldowns and provider disablement.
-5. Extend debug and metrics surfaces to expose the new state.
-6. Add unit and integration tests for model-ladder escalation, provider tripping, cross-provider retries, and probe recovery.
+1. Update the `model-router-service` change artifacts so startup ranking, credential precedence, and softer provider suppression are required behavior.
+2. Change router startup refresh so it does not invoke assisted ranking.
+3. Update credential resolution to prefer `OPENCODE_GO_API_KEY` for Zen.
+4. Update provider error normalization and cooldown handling to use `Retry-After` and classify temporary throttles separately from hard exhaustion.
+5. Retune provider suppression so six-hour disablement is reserved for strong exhaustion evidence.
+6. Extend tests for startup behavior, env precedence, and softened provider suppression.
 
-Rollback is straightforward: revert to the previous router failure-handling path and existing cooldown semantics if the new breaker proves too aggressive in live validation.
+Rollback is straightforward: restore startup assisted ranking and the prior suppression thresholds if live routing quality regresses more than the saved startup capacity is worth.
 
 ## Open Questions
 
-- Whether provider probe failures should escalate from `6h` to `12h` and `24h`, or use a configurable cap from the first implementation.
-- Whether explicit OpenRouter response-body parsing should distinguish quota exhaustion from transient peak-capacity throttling beyond the existing `429` classification.
+- Whether deferred assisted ranking should remain scheduled by default after startup or become opt-in only.
+- Whether Zen `FreeUsageLimitError` should apply provider-wide cooldown for the exact `Retry-After` window or remain model-scoped until repeated evidence proves provider-wide exhaustion.

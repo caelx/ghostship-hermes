@@ -50,6 +50,10 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         provider_disable_seconds=21600,
         provider_probe_escalation_factor=2.0,
         provider_max_disable_seconds=86400,
+        provider_lane_limit=3,
+        provider_throttle_ladder_seconds=(15, 30, 60, 300, 900),
+        openrouter_min_request_spacing_seconds=3.0,
+        opencode_min_request_spacing_seconds=2.0,
         openrouter_api_key="secret",
         openrouter_base_url="https://openrouter.example/api/v1",
         openrouter_http_referer=None,
@@ -143,6 +147,30 @@ def test_config_reads_hermes_api_server_aliases(tmp_path: Path, monkeypatch) -> 
         assert config.port == 9999
         assert config.api_key == "router-key"
         assert config.cors_origins == ("http://localhost:3000", "https://example.test")
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                monkeypatch.delenv(key, raising=False)
+            else:
+                monkeypatch.setenv(key, value)
+
+
+def test_config_prefers_opencode_go_api_key_when_both_are_set(tmp_path: Path, monkeypatch) -> None:
+    env_keys = (
+        "OPENCODE_API_KEY",
+        "OPENCODE_GO_API_KEY",
+        "GHOSTSHIP_ROUTER_STATE_DIR",
+        "GHOSTSHIP_ROUTER_DB_PATH",
+    )
+    saved = {key: os.environ.get(key) for key in env_keys}
+    try:
+        for key in env_keys:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("OPENCODE_API_KEY", "opencode-secret")
+        monkeypatch.setenv("OPENCODE_GO_API_KEY", "opencode-go-secret")
+        monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
+        config = RouterConfig.from_env()
+        assert config.opencode_api_key == "opencode-go-secret"
     finally:
         for key, value in saved.items():
             if value is None:
@@ -303,12 +331,23 @@ class DummyProvider:
         queued = self.failures.get(backend_model)
         if queued:
             failure = queued.pop(0)
+            if isinstance(failure, dict):
+                category = str(failure.get("category") or "bad_request")
+                message = str(failure.get("message") or category)
+                details = failure.get("details")
+                retryable = bool(failure.get("retryable", category not in {"bad_request", "insufficient_balance", "quota_exhausted"}))
+            else:
+                category = str(failure)
+                message = category
+                details = None
+                retryable = category not in {"bad_request", "insufficient_balance", "quota_exhausted"}
             raise NormalizedProviderError(
-                failure,
-                failure,
+                category,
+                message,
                 provider=self.name,
                 backend_model=backend_model,
-                retryable=(failure != "bad_request" and failure != "insufficient_balance"),
+                retryable=retryable,
+                details=details,
             )
         return ProviderChatResult(
             payload={
@@ -505,6 +544,8 @@ def test_chat_completion_fails_over_to_next_model(tmp_path: Path) -> None:
     provider = DummyProvider("openrouter", failures={"openrouter/code-1:free": ["rate_limited"]})
     config = make_config(
         tmp_path,
+        openrouter_min_request_spacing_seconds=0.0,
+        opencode_min_request_spacing_seconds=0.0,
         aliases=(
             AliasConfig(name="auxiliary", description="light", preferred_models=("openrouter/light-1:free",)),
             AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free", "openrouter/heavy-1:free")),
@@ -1175,7 +1216,7 @@ def test_refresh_persists_inventory_across_service_restart(tmp_path: Path) -> No
     assert restarted.debug_model("opencode-zen", "qwen3-coder")["inventory"]["is_free"] is False
 
 
-def test_ranking_prefers_opencode_worker_and_persists_rankings(tmp_path: Path) -> None:
+def test_startup_refresh_uses_persisted_rankings_without_assisted_calls(tmp_path: Path) -> None:
     openrouter = DummyProvider(
         "openrouter",
         models=[
@@ -1189,26 +1230,6 @@ def test_ranking_prefers_opencode_worker_and_persists_rankings(tmp_path: Path) -
             ProviderModel(id="gpt-5-nano", provider="opencode-zen", is_free=True, tags=("auxiliary",)),
             ProviderModel(id="qwen3-coder:free", provider="opencode-zen", is_free=True, tags=("coding",)),
         ],
-        classification_payload={
-            "models": [
-                {
-                    "provider": "openrouter",
-                    "id": "demo/code-1:free",
-                    "tags": ["coding"],
-                    "alias_scores": {"auxiliary": 1, "coding": 11, "vision": 0},
-                    "reason": "best coder model",
-                    "confidence": 0.94,
-                },
-                {
-                    "provider": "opencode-zen",
-                    "id": "qwen3-coder:free",
-                    "tags": ["coding"],
-                    "alias_scores": {"auxiliary": 1, "coding": 12, "vision": 0},
-                    "reason": "best opencode coder model",
-                    "confidence": 0.97,
-                },
-            ]
-        },
     )
     config = make_config(
         tmp_path,
@@ -1218,15 +1239,39 @@ def test_ranking_prefers_opencode_worker_and_persists_rankings(tmp_path: Path) -
             AliasConfig(name="vision", description="heavy", preferred_models=()),
         ),
     )
-    service = RouterService(config, providers={"openrouter": openrouter, "opencode-zen": opencode}, state_store=SqliteStateStore(config.db_path))
-    service.refresh_inventory(reason="manual")
+    store = SqliteStateStore(config.db_path)
+    store.save_rankings(
+        {
+            "openrouter::demo/code-1:free": {
+                "provider_name": "openrouter",
+                "backend_model": "demo/code-1:free",
+                "alias_scores": {"coding": 1.0},
+                "rerank_scores": {"coding": 0.0},
+                "reason": "persisted backup coder",
+                "confidence": 0.5,
+            },
+            "opencode-zen::qwen3-coder:free": {
+                "provider_name": "opencode-zen",
+                "backend_model": "qwen3-coder:free",
+                "alias_scores": {"coding": 4.0},
+                "rerank_scores": {"coding": 2.0},
+                "reason": "persisted top coder",
+                "confidence": 0.9,
+            },
+        },
+        source="persisted-test",
+        worker_provider_name=None,
+        worker_backend_model=None,
+    )
+    service = RouterService(config, providers={"openrouter": openrouter, "opencode-zen": opencode}, state_store=store)
+    service.refresh_inventory(reason="startup")
     state = service.debug_state()
-    assert state["last_ranking_worker"]["provider_name"] == "opencode-zen"
-    assert state["last_ranking_worker"]["backend_model"] == "gpt-5-nano"
-    assert "gpt-5-nano" in opencode.calls
-    assert state["state"]["ranking_count"] >= 2
+    assert state["last_ranking_worker"] is None
+    assert openrouter.calls == []
+    assert opencode.calls == []
     ranking = service.debug_rankings("coding")
-    assert any(candidate["backend_model"] == "qwen3-coder:free" and candidate["learned_ranking_score"] > 0 for candidate in ranking["candidates"])
+    assert ranking["candidates"][0]["backend_model"] == "qwen3-coder:free"
+    assert ranking["candidates"][0]["learned_ranking_score"] > ranking["candidates"][1]["learned_ranking_score"]
 
 
 def test_debug_endpoints_return_state_and_events(tmp_path: Path) -> None:
@@ -1277,6 +1322,7 @@ def test_single_rate_limit_only_cools_down_model_and_fails_over_by_priority(tmp_
     config = make_config(
         tmp_path,
         provider_rate_limit_threshold=1.0,
+        opencode_min_request_spacing_seconds=0.0,
         aliases=(
             AliasConfig(name="auxiliary", description="light", preferred_models=()),
             AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free", "opencode/qwen3-coder:free")),
@@ -1293,8 +1339,8 @@ def test_single_rate_limit_only_cools_down_model_and_fails_over_by_priority(tmp_
     assert openrouter_state["cooldown_until"] == 0
     assert model_state["cooldown_until"] > time.time()
     assert model_state["exhaustion_streak"] == 1
-    preview = service.preview_routes("coding")
-    assert preview[0]["provider_name"] == "opencode-zen"
+    provider_debug = next(item for item in service.debug_providers() if item["provider_name"] == "opencode-zen")
+    assert provider_debug["pacing_active"] is False
 
 
 def test_model_exhaustion_cooldown_ladder_escalates_and_resets_on_success(tmp_path: Path) -> None:
@@ -1305,6 +1351,8 @@ def test_model_exhaustion_cooldown_ladder_escalates_and_resets_on_success(tmp_pa
     )
     config = make_config(
         tmp_path,
+        openrouter_min_request_spacing_seconds=0.0,
+        opencode_min_request_spacing_seconds=0.0,
         aliases=(
             AliasConfig(name="auxiliary", description="light", preferred_models=()),
             AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free", "opencode/qwen3-coder:free")),
@@ -1343,12 +1391,17 @@ def test_model_exhaustion_cooldown_ladder_escalates_and_resets_on_success(tmp_pa
     assert service.state_store.get_model_state()["openrouter::openrouter/code-1:free"]["exhaustion_streak"] == 0
 
 
-def test_distinct_model_rate_limits_disable_provider_for_six_hours(tmp_path: Path) -> None:
+def test_temporary_throttle_updates_provider_pacing_without_six_hour_disable(tmp_path: Path) -> None:
     openrouter = DummyProvider(
         "openrouter",
         failures={
-            "openrouter/code-1:free": ["rate_limited"],
-            "openrouter/heavy-1:free": ["rate_limited"],
+            "openrouter/code-1:free": [
+                {
+                    "category": "rate_limited",
+                    "message": "temporarily rate-limited upstream",
+                    "details": {"temporary_throttle": True, "provider_pacing": True, "retry_after_seconds": 30},
+                }
+            ],
         },
         models=[
             ProviderModel(id="openrouter/code-1:free", provider="openrouter", is_free=True, tags=("coding",)),
@@ -1372,19 +1425,23 @@ def test_distinct_model_rate_limits_disable_provider_for_six_hours(tmp_path: Pat
     _, headers = service.chat_completions(ChatCompletionRequest.model_validate({"model": "coding", "messages": [{"role": "user", "content": "hello"}]}))
     assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
     openrouter_state = next(item for item in service.debug_providers() if item["provider_name"] == "openrouter")
-    assert openrouter_state["cooldown_until"] > time.time() + 20000
-    assert openrouter_state["breaker_level"] == 1
-    assert openrouter_state["disable_reason"] == "rate_limited"
-    preview = service.preview_routes("coding")
-    assert all(candidate["provider_name"] != "openrouter" for candidate in preview)
+    assert openrouter_state["cooldown_until"] == 0
+    assert openrouter_state["next_request_at"] > time.time() + 20
+    assert openrouter_state["suppression_source"] == "provider_pacing"
+    assert openrouter_state["throttle_reason"] == "rate_limited"
 
 
-def test_cross_provider_attempts_still_trip_original_provider(tmp_path: Path) -> None:
+def test_cross_provider_attempts_keep_temporary_throttle_provider_out_of_rotation(tmp_path: Path) -> None:
     openrouter = DummyProvider(
         "openrouter",
         failures={
-            "openrouter/code-1:free": ["rate_limited"],
-            "openrouter/heavy-1:free": ["rate_limited"],
+            "openrouter/code-1:free": [
+                {
+                    "category": "rate_limited",
+                    "message": "temporarily rate-limited upstream",
+                    "details": {"temporary_throttle": True, "provider_pacing": True, "retry_after_seconds": 20},
+                }
+            ],
         },
         models=[
             ProviderModel(id="openrouter/code-1:free", provider="openrouter", is_free=True, tags=("coding",)),
@@ -1422,16 +1479,15 @@ def test_cross_provider_attempts_still_trip_original_provider(tmp_path: Path) ->
     assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
     assert headers["X-Ghostship-Router-Backend-Model"] == "nemotron-3-super-free"
     openrouter_state = next(item for item in service.debug_providers() if item["provider_name"] == "openrouter")
-    assert openrouter_state["cooldown_until"] > time.time() + 20000
-    assert openrouter_state["breaker_level"] == 1
+    assert openrouter_state["cooldown_until"] == 0
+    assert openrouter_state["suppression_source"] == "provider_pacing"
 
 
 def test_provider_probe_mode_re_disables_with_longer_cooldown(tmp_path: Path) -> None:
     openrouter = DummyProvider(
         "openrouter",
         failures={
-            "openrouter/code-1:free": ["rate_limited", "rate_limited", "rate_limited"],
-            "openrouter/heavy-1:free": ["rate_limited"],
+            "openrouter/code-1:free": ["insufficient_balance", "rate_limited"],
         },
         models=[
             ProviderModel(id="openrouter/code-1:free", provider="openrouter", is_free=True, tags=("coding",)),
@@ -1444,6 +1500,7 @@ def test_provider_probe_mode_re_disables_with_longer_cooldown(tmp_path: Path) ->
     )
     config = make_config(
         tmp_path,
+        openrouter_min_request_spacing_seconds=0.0,
         aliases=(
             AliasConfig(name="auxiliary", description="light", preferred_models=()),
             AliasConfig(name="coding", description="code", preferred_models=("openrouter/code-1:free", "openrouter/heavy-1:free", "opencode/qwen3-coder:free")),

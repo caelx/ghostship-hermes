@@ -60,7 +60,13 @@ class StateStore:
     def apply_success(self, provider_name: str, backend_model: str, *, latency_ms: float | None, first_text_latency_ms: float | None) -> None:
         raise NotImplementedError
 
-    def apply_failure(self, provider_name: str, backend_model: str, *, category: str, retryable: bool) -> None:
+    def apply_failure(self, provider_name: str, backend_model: str, *, category: str, retryable: bool, cooldown_model: bool = True) -> None:
+        raise NotImplementedError
+
+    def note_provider_request(self, provider_name: str, *, next_request_at: float) -> None:
+        raise NotImplementedError
+
+    def apply_provider_throttle(self, provider_name: str, *, category: str, throttle_until: float, details: Any = None) -> dict[str, Any]:
         raise NotImplementedError
 
     def record_provider_exhaustion(
@@ -69,6 +75,7 @@ class StateStore:
         *,
         backend_model: str,
         category: str,
+        details: Any,
         zero_output: bool,
         suspect_window_seconds: float,
         disable_seconds: float,
@@ -268,6 +275,10 @@ class SqliteStateStore(StateStore):
                     suspect_zero_output INTEGER NOT NULL DEFAULT 0,
                     probe_mode INTEGER NOT NULL DEFAULT 0,
                     last_probe_at REAL,
+                    next_request_at REAL NOT NULL DEFAULT 0,
+                    throttle_streak INTEGER NOT NULL DEFAULT 0,
+                    last_throttle_at REAL,
+                    throttle_reason TEXT,
                     last_latency_ms REAL,
                     last_first_text_latency_ms REAL,
                     latency_avg_ms REAL,
@@ -385,6 +396,10 @@ class SqliteStateStore(StateStore):
             self._ensure_column(connection, "provider_state", "suspect_zero_output", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(connection, "provider_state", "probe_mode", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(connection, "provider_state", "last_probe_at", "REAL")
+            self._ensure_column(connection, "provider_state", "next_request_at", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "provider_state", "throttle_streak", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "provider_state", "last_throttle_at", "REAL")
+            self._ensure_column(connection, "provider_state", "throttle_reason", "TEXT")
 
     @staticmethod
     def _ensure_column(connection: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -679,14 +694,18 @@ class SqliteStateStore(StateStore):
                     suspect_at = NULL,
                     suspect_zero_output = 0,
                     probe_mode = 0,
-                    last_probe_at = NULL
+                    last_probe_at = NULL,
+                    throttle_streak = CASE
+                        WHEN throttle_streak > 0 THEN throttle_streak - 1
+                        ELSE 0
+                    END
                 WHERE provider_name = ?
                 """,
                 (provider_name,),
             )
         self._invalidate_read_caches("_model_state_cache", "_provider_state_cache")
 
-    def apply_failure(self, provider_name: str, backend_model: str, *, category: str, retryable: bool) -> None:
+    def apply_failure(self, provider_name: str, backend_model: str, *, category: str, retryable: bool, cooldown_model: bool = True) -> None:
         now = time.time()
         cooldown_until = now + self._model_cooldown_seconds(category, row=None)
         with self._connect() as connection:
@@ -694,7 +713,7 @@ class SqliteStateStore(StateStore):
             provider_row = self._fetch_provider_row(connection, provider_name)
             model_payload = self._failure_payload(model_row, now, category=category, retryable=retryable)
             provider_payload = self._failure_payload(provider_row, now, category=category, retryable=retryable, provider_level=True)
-            cooldown_until = now + self._model_cooldown_seconds(category, row=model_row)
+            cooldown_until = now + self._model_cooldown_seconds(category, row=model_row) if cooldown_model else float(model_row["cooldown_until"] or 0) if model_row else 0
             connection.execute(
                 """
                 INSERT INTO model_state (
@@ -821,12 +840,71 @@ class SqliteStateStore(StateStore):
                 (
                     self._next_exhaustion_streak(model_row, now, category=category),
                     (now if self._is_exhaustion_category(category) else None),
-                    (category if self._is_exhaustion_category(category) else None),
+                    (category if cooldown_model and self._is_exhaustion_category(category) else (model_row["cooldown_reason"] if model_row else None)),
                     provider_name,
                     backend_model,
                 ),
             )
         self._invalidate_read_caches("_model_state_cache", "_provider_state_cache")
+
+    def note_provider_request(self, provider_name: str, *, next_request_at: float) -> None:
+        now = time.time()
+        with self._connect() as connection:
+            row = self._fetch_provider_row(connection, provider_name)
+            if row is None:
+                connection.execute(
+                    "INSERT INTO provider_state (provider_name, next_request_at, updated_at) VALUES (?, ?, ?)",
+                    (provider_name, next_request_at, now),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE provider_state
+                    SET next_request_at = CASE
+                            WHEN ? > next_request_at THEN ?
+                            ELSE next_request_at
+                        END,
+                        updated_at = ?
+                    WHERE provider_name = ?
+                    """,
+                    (next_request_at, next_request_at, now, provider_name),
+                )
+        self._invalidate_read_caches("_provider_state_cache")
+
+    def apply_provider_throttle(self, provider_name: str, *, category: str, throttle_until: float, details: Any = None) -> dict[str, Any]:
+        now = time.time()
+        with self._connect() as connection:
+            row = self._fetch_provider_row(connection, provider_name)
+            if row is None:
+                connection.execute(
+                    "INSERT INTO provider_state (provider_name, updated_at) VALUES (?, ?)",
+                    (provider_name, now),
+                )
+                row = self._fetch_provider_row(connection, provider_name)
+            assert row is not None
+            last_throttle_at = float(row["last_throttle_at"] or 0)
+            streak = int(row["throttle_streak"] or 0)
+            if last_throttle_at and (now - last_throttle_at) <= max(self.rolling_window_seconds, 900.0):
+                streak += 1
+            else:
+                streak = 1
+            connection.execute(
+                """
+                UPDATE provider_state
+                SET next_request_at = CASE
+                        WHEN ? > next_request_at THEN ?
+                        ELSE next_request_at
+                    END,
+                    throttle_streak = ?,
+                    last_throttle_at = ?,
+                    throttle_reason = ?,
+                    updated_at = ?
+                WHERE provider_name = ?
+                """,
+                (throttle_until, throttle_until, streak, now, category, now, provider_name),
+            )
+        self._invalidate_read_caches("_provider_state_cache")
+        return {"throttled": True, "throttle_until": throttle_until, "throttle_streak": streak, "details": details}
 
     def record_provider_exhaustion(
         self,
@@ -834,6 +912,7 @@ class SqliteStateStore(StateStore):
         *,
         backend_model: str,
         category: str,
+        details: Any,
         zero_output: bool,
         suspect_window_seconds: float,
         disable_seconds: float,
@@ -842,7 +921,9 @@ class SqliteStateStore(StateStore):
     ) -> dict[str, Any]:
         now = time.time()
         if not zero_output or not self._is_exhaustion_category(category):
-            return {"disabled": False, "probe_failed": False}
+            return {"disabled": False, "probe_failed": False, "hard_exhaustion": False}
+        detail_map = details if isinstance(details, dict) else {}
+        hard_exhaustion = bool(detail_map.get("hard_exhaustion")) or category in {"insufficient_balance", "quota_exhausted"}
         with self._connect() as connection:
             row = self._fetch_provider_row(connection, provider_name)
             if row is None:
@@ -860,12 +941,10 @@ class SqliteStateStore(StateStore):
             disable = False
             probe_failed = False
 
-            if category == "insufficient_balance":
-                disable = True
-            elif probe_mode:
+            if probe_mode:
                 disable = True
                 probe_failed = True
-            elif suspect_model and suspect_model != backend_model and (now - suspect_at) <= suspect_window_seconds:
+            elif hard_exhaustion:
                 disable = True
 
             if disable:
@@ -888,19 +967,21 @@ class SqliteStateStore(StateStore):
                         suspect_at = NULL,
                         suspect_zero_output = 0,
                         probe_mode = 0,
-                        last_probe_at = ?
+                        last_probe_at = ?,
+                        throttle_reason = NULL
                     WHERE provider_name = ?
                     """,
                     (
                         now + duration,
                         now + duration,
-                        category if category == "insufficient_balance" else (disable_reason or category),
+                        category if hard_exhaustion else (disable_reason or category),
                         next_level,
                         (now if probe_failed else row["last_probe_at"]),
                         provider_name,
                     ),
                 )
             else:
+                keep_existing = bool(suspect_model and suspect_model != backend_model and (now - suspect_at) <= suspect_window_seconds)
                 connection.execute(
                     """
                     UPDATE provider_state
@@ -910,10 +991,10 @@ class SqliteStateStore(StateStore):
                         suspect_zero_output = 1
                     WHERE provider_name = ?
                     """,
-                    (backend_model, category, now, provider_name),
+                    (suspect_model if keep_existing else backend_model, category, suspect_at if keep_existing else now, provider_name),
                 )
         self._invalidate_read_caches("_provider_state_cache")
-        return {"disabled": disable, "probe_failed": probe_failed}
+        return {"disabled": disable, "probe_failed": probe_failed, "hard_exhaustion": hard_exhaustion}
 
     def clear_provider_exhaustion(self, provider_name: str) -> None:
         with self._connect() as connection:
@@ -962,7 +1043,7 @@ class SqliteStateStore(StateStore):
         with self._connect() as connection:
             provider_row = self._fetch_provider_row(connection, provider_name)
             payload = self._refresh_payload(provider_row, now, success=success, category=category)
-            cooldown_until = 0 if success else (provider_row["cooldown_until"] if provider_row else 0)
+            cooldown_until = float(provider_row["cooldown_until"] or 0) if provider_row else 0
             if not success and category == "unauthorized":
                 cooldown_until = max(cooldown_until or 0, now + self._cooldown_seconds(category))
             connection.execute(
@@ -1047,23 +1128,6 @@ class SqliteStateStore(StateStore):
                     now,
                 ),
             )
-            if success:
-                connection.execute(
-                    """
-                    UPDATE provider_state
-                    SET cooldown_until = 0,
-                        disable_reason = NULL,
-                        breaker_level = 0,
-                        suspect_backend_model = NULL,
-                        suspect_category = NULL,
-                        suspect_at = NULL,
-                        suspect_zero_output = 0,
-                        probe_mode = 0,
-                        last_probe_at = NULL
-                    WHERE provider_name = ?
-                    """,
-                    (provider_name,),
-                )
         self._invalidate_read_caches("_provider_state_cache")
 
     def get_model_state(self) -> dict[str, dict[str, Any]]:

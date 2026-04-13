@@ -112,6 +112,10 @@ class RouterConfig:
     provider_disable_seconds: int
     provider_probe_escalation_factor: float
     provider_max_disable_seconds: int
+    provider_lane_limit: int
+    provider_throttle_ladder_seconds: tuple[int, ...]
+    openrouter_min_request_spacing_seconds: float
+    opencode_min_request_spacing_seconds: float
     openrouter_api_key: str | None
     openrouter_base_url: str
     openrouter_http_referer: str | None
@@ -165,11 +169,24 @@ class RouterConfig:
             provider_disable_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_DISABLE_SECONDS", "21600")),
             provider_probe_escalation_factor=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_PROBE_ESCALATION_FACTOR", default=2.0),
             provider_max_disable_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_MAX_DISABLE_SECONDS", "86400")),
+            provider_lane_limit=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_LANE_LIMIT", "3")),
+            provider_throttle_ladder_seconds=_parse_int_csv_env(
+                "GHOSTSHIP_ROUTER_PROVIDER_THROTTLE_LADDER_SECONDS",
+                default=(15, 30, 60, 300, 900),
+            ),
+            openrouter_min_request_spacing_seconds=_parse_float_env(
+                "GHOSTSHIP_ROUTER_OPENROUTER_MIN_REQUEST_SPACING_SECONDS",
+                default=3.0,
+            ),
+            opencode_min_request_spacing_seconds=_parse_float_env(
+                "GHOSTSHIP_ROUTER_OPENCODE_MIN_REQUEST_SPACING_SECONDS",
+                default=2.0,
+            ),
             openrouter_api_key=os.environ.get("OPENROUTER_API_KEY"),
             openrouter_base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             openrouter_http_referer=os.environ.get("OPENROUTER_HTTP_REFERER"),
             openrouter_title=os.environ.get("OPENROUTER_TITLE"),
-            opencode_api_key=_first_env("OPENCODE_API_KEY", "OPENCODE_GO_API_KEY"),
+            opencode_api_key=_first_env("OPENCODE_GO_API_KEY", "OPENCODE_API_KEY"),
             opencode_base_url=os.environ.get("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1"),
             assisted_bucket_model=os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"),
             assisted_bucket_batch_size=int(os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE", "20")),

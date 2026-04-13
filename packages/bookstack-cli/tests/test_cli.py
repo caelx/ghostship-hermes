@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import httpx
 from typer.testing import CliRunner
 
 from ghostship_bookstack import cli
 from ghostship_bookstack.catalog import OPERATIONS
+from ghostship_bookstack.client import BookStackClient
 
 runner = CliRunner()
 
@@ -92,3 +94,31 @@ def test_cli_registers_every_catalog_command() -> None:
     registered = {command.name for command in cli.app.registered_commands}
     expected = {'request'} | {operation.command_name for operation in OPERATIONS}
     assert expected <= registered
+
+
+def test_request_command_executes_against_real_client(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == '/api/books'
+        return httpx.Response(200, request=request, json={'data': [], 'total': 0})
+
+    client = BookStackClient('https://bookstack.example', 'token-id', 'token-secret', transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+
+    result = runner.invoke(cli.app, ['--timeout', '30', 'request', 'GET', '/books', '--pretty'])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {'data': [], 'total': 0}
+
+
+def test_docs_display_command_executes_against_real_client(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == '/api/docs'
+        return httpx.Response(200, request=request, text='<html>docs</html>', headers={'content-type': 'text/html; charset=utf-8'})
+
+    client = BookStackClient('https://bookstack.example', 'token-id', 'token-secret', transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(cli, 'get_client', lambda: client)
+
+    result = runner.invoke(cli.app, ['--timeout', '30', 'docs_display', '--pretty'])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {'content_type': 'text/html', 'body': '<html>docs</html>'}

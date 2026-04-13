@@ -7,15 +7,22 @@ Canonical artifacts:
 ## Service Identity
 
 - Product: pyLoad-ng
-- Version mirrored in repo: `1.1.0`
+- Version mirrored in repo: `1.2.0`
 - Base API URL: `http(s)://<host>/api`
-- Primary auth: HTTP Basic auth
+- Primary auth: `X-API-Key` header on `/api/*`; basic auth only gates `/api` docs and the Swagger export
 
 ## Raw Spec Summary
 
 - Format: OpenAPI JSON
 - Path count: `84`
 - Canonical source quality: official OpenAPI plus repo summary
+
+## Live Validation Notes
+
+- Anonymous `/api/*` requests returned `401 Invalid API credentials` on the deployed instance.
+- HTTP Basic auth succeeded for `/api` and `/api/openapi.json`, but still returned `401 Invalid API credentials` for `/api/status_server`.
+- The deployed instance advertises `ApiKeyAuth` with header name `X-API-Key` and stores API credentials in the `apikeys` database table.
+- `ghostship-pyload-ng` therefore uses `PYLOAD_API_KEY` for authenticated API calls.
 
 ## Full Endpoint and Use-Case Inventory
 

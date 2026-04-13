@@ -33,7 +33,15 @@ def cloudflare_access_headers() -> dict[str, str]:
 
 def decode_response(response: httpx.Response) -> Any:
     if not response.content:
-        return {"status": "success"}
+        if response.is_success:
+            return {"status": "success"}
+        raise ResponseDecodeError(
+            'response did not contain content',
+            details={
+                "status_code": response.status_code,
+                "path": response.request.url.path,
+            },
+        )
 
     content_type = response.headers.get("content-type", "").split(";", 1)[0].strip() or None
     if content_type == "application/json":
@@ -55,6 +63,21 @@ def decode_response(response: httpx.Response) -> Any:
             "encoding": "base64",
             "body_base64": base64.b64encode(response.content).decode("ascii"),
         }
+
+
+def _response_error_details(response: httpx.Response) -> Any:
+    location = response.headers.get("location")
+    if not response.content:
+        return {"location": location} if location else None
+    try:
+        return response.json()
+    except Exception:
+        text = response.text or None
+        if location and text:
+            return {"location": location, "body": text}
+        if location:
+            return {"location": location}
+        return text
 
 
 class BaseHttpClient:
@@ -90,13 +113,13 @@ class BaseHttpClient:
             raise TimeoutError(f"request timed out after {spec.timeout} seconds", details={"method": spec.method, "path": spec.path, "timeout": spec.timeout}) from exc
         except httpx.HTTPError as exc:
             raise TransportError(str(exc), details={"method": spec.method, "path": spec.path}) from exc
-        if response.is_error:
-            details: Any = None
-            try:
-                details = response.json()
-            except Exception:
-                details = response.text or None
-            raise HttpStatusError(f"remote service returned HTTP {response.status_code}", status_code=response.status_code, details=details)
+        if not response.is_success:
+            raise HttpStatusError(
+                f"remote service returned HTTP {response.status_code}",
+                status_code=response.status_code,
+                details=_response_error_details(response),
+                headers=dict(response.headers),
+            )
         return response
 
     def request_response(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_body: Any = None, content: str | bytes | None = None, form_data: dict[str, Any] | None = None, files: dict[str, Any] | list[Any] | None = None, headers: dict[str, Any] | None = None, timeout: float | None = None) -> httpx.Response:
