@@ -40,6 +40,7 @@ gateway_cli = site / "hermes_cli" / "gateway.py"
 gateway_status = site / "gateway" / "status.py"
 gateway_run = site / "gateway" / "run.py"
 model_switch = site / "hermes_cli" / "model_switch.py"
+providers = site / "hermes_cli" / "providers.py"
 
 doctor_text = doctor.read_text()
 doctor_text = doctor_text.replace(
@@ -105,9 +106,99 @@ gateway_run_text = gateway_run_text.replace(
     '                user_provs = cfg.get("providers") or cfg.get("custom_providers")\n',
     1,
 )
+gateway_run_text = gateway_run_text.replace(
+    '                    _cur_api_key = current_api_key\n\n                    async def _on_model_selected(\n',
+    '                    _cur_api_key = current_api_key\n                    _user_provs = user_provs\n\n                    async def _on_model_selected(\n',
+    1,
+)
+gateway_run_text = gateway_run_text.replace(
+    '                            explicit_provider=provider_slug,\n',
+    '                            explicit_provider=provider_slug,\n                            user_providers=_user_provs,\n',
+    1,
+)
 if 'cfg.get("providers") or cfg.get("custom_providers")' not in gateway_run_text:
     raise RuntimeError("failed to teach Discord model picker to use custom_providers")
+if 'user_providers=_user_provs' not in gateway_run_text:
+    raise RuntimeError("failed to pass custom_providers into Discord model switches")
 gateway_run.write_text(gateway_run_text)
+
+providers_text = providers.read_text()
+providers_start = providers_text.index("def resolve_user_provider(")
+providers_end = providers_text.index("\ndef resolve_provider_full(")
+provider_lines = [
+    "def resolve_user_provider(name: str, user_config: Dict[str, Any]) -> Optional[ProviderDef]:",
+    "    \"\"\"Resolve a provider from the user's config.yaml custom provider surfaces.",
+    "",
+    "    Accepts both the legacy ``providers:`` dict and the modern",
+    "    ``custom_providers:`` list.",
+    "    \"\"\"",
+    "    if not user_config:",
+    "        return None",
+    "",
+    "    if isinstance(user_config, dict):",
+    "        entry = user_config.get(name)",
+    "        if not isinstance(entry, dict):",
+    "            return None",
+    "",
+    "        display_name = entry.get(\"name\", \"\") or name",
+    "        api_url = entry.get(\"api\", \"\") or entry.get(\"url\", \"\") or entry.get(\"base_url\", \"\") or \"\"",
+    "        key_env = entry.get(\"key_env\", \"\") or \"\"",
+    "        transport = entry.get(\"transport\", \"openai_chat\") or \"openai_chat\"",
+    "",
+    "        env_vars: List[str] = []",
+    "        if key_env:",
+    "            env_vars.append(key_env)",
+    "",
+    "        return ProviderDef(",
+    "            id=name,",
+    "            name=display_name,",
+    "            transport=transport,",
+    "            api_key_env_vars=tuple(env_vars),",
+    "            base_url=api_url,",
+    "            is_aggregator=False,",
+    "            auth_type=\"api_key\",",
+    "            source=\"user-config\",",
+    "        )",
+    "",
+    "    if not isinstance(user_config, list):",
+    "        return None",
+    "",
+    "    requested = name.strip().lower()",
+    "    requested_slug = requested.removeprefix(\"custom:\")",
+    "    for entry in user_config:",
+    "        if not isinstance(entry, dict):",
+    "            continue",
+    "        display_name = str(entry.get(\"name\", \"\") or \"\").strip()",
+    "        api_url = str(entry.get(\"base_url\", \"\") or entry.get(\"api\", \"\") or entry.get(\"url\", \"\") or \"\").strip()",
+    "        if not display_name or not api_url:",
+    "            continue",
+    "        slug = display_name.strip().lower().replace(\" \", \"-\")",
+    "        if requested_slug != slug:",
+    "            continue",
+    "",
+    "        transport = entry.get(\"transport\", \"openai_chat\") or \"openai_chat\"",
+    "        key_env = str(entry.get(\"key_env\", \"\") or \"\").strip()",
+    "        env_vars: List[str] = []",
+    "        if key_env:",
+    "            env_vars.append(key_env)",
+    "",
+    "        return ProviderDef(",
+    "            id=f\"custom:{slug}\",",
+    "            name=display_name,",
+    "            transport=transport,",
+    "            api_key_env_vars=tuple(env_vars),",
+    "            base_url=api_url,",
+    "            is_aggregator=False,",
+    "            auth_type=\"api_key\",",
+    "            source=\"custom-provider\",",
+    "        )",
+    "",
+    "    return None",
+]
+providers_text = providers_text[:providers_start] + "\n".join(provider_lines) + "\n" + providers_text[providers_end:]
+if 'source=\"custom-provider\"' not in providers_text:
+    raise RuntimeError("failed to add custom_providers support to resolve_user_provider")
+providers.write_text(providers_text)
 
 model_switch_text = model_switch.read_text()
 old_user_provider_block = """    # --- 3. User-defined endpoints from config ---\n    if user_providers and isinstance(user_providers, dict):\n        for ep_name, ep_cfg in user_providers.items():\n            if not isinstance(ep_cfg, dict):\n                continue\n            display_name = ep_cfg.get(\"name\", \"\") or ep_name\n            api_url = ep_cfg.get(\"api\", \"\") or ep_cfg.get(\"url\", \"\") or \"\"\n            default_model = ep_cfg.get(\"default_model\", \"\")\n\n            models_list = []\n            if default_model:\n                models_list.append(default_model)\n\n            # Try to probe /v1/models if URL is set (but don't block on it)\n            # For now just show what we know from config\n            results.append({\n                \"slug\": ep_name,\n                \"name\": display_name,\n                \"is_current\": ep_name == current_provider,\n                \"is_user_defined\": True,\n                \"models\": models_list,\n                \"total_models\": len(models_list) if models_list else 0,\n                \"source\": \"user-config\",\n                \"api_url\": api_url,\n            })\n"""
