@@ -800,8 +800,6 @@ def ref_matches_entry(desired_ref, current_entry):
 
 
 DEFAULT_NIX_PROFILE_PRIORITY = 5
-
-
 def normalize_priority(value):
     if value is None:
         return None
