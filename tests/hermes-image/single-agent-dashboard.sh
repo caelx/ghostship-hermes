@@ -18,6 +18,18 @@ nix_volume_root="${GHOSTSHIP_NIX_VOLUME_ROOT:-}"
 dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-7681}"
 dashboard_base_url="http://127.0.0.1:${dashboard_port}"
 router_base_url="http://127.0.0.1:8788"
+container_engine="${CONTAINER_ENGINE:-}"
+
+if [ -z "$container_engine" ]; then
+  if command -v docker >/dev/null 2>&1; then
+    container_engine="docker"
+  elif command -v podman >/dev/null 2>&1; then
+    container_engine="podman"
+  else
+    echo "docker or podman is required for dashboard image testing" >&2
+    exit 1
+  fi
+fi
 
 : "${DISCORD_BOT_TOKEN:=single-agent-bot-token}"
 : "${DISCORD_ALLOWED_USERS:=single-agent-user}"
@@ -53,14 +65,14 @@ if [ "$bind_nix" = "1" ]; then
 fi
 
 cleanup() {
-  docker rm -f "$container_name" >/dev/null 2>&1 || true
-  if docker image inspect "$image_tag" >/dev/null 2>&1; then
-    docker run --rm --entrypoint /bin/sh -u 0:0 -v "$tmp_root:/cleanup" "$image_tag" -lc '
+  "$container_engine" rm -f "$container_name" >/dev/null 2>&1 || true
+  if "$container_engine" image inspect "$image_tag" >/dev/null 2>&1; then
+    "$container_engine" run --rm --entrypoint /bin/sh -u 0:0 -v "$tmp_root:/cleanup" "$image_tag" -lc '
       chown -R '"$host_uid:$host_gid"' /cleanup >/dev/null 2>&1 || true
       chmod -R u+w /cleanup >/dev/null 2>&1 || true
     ' >/dev/null 2>&1 || true
   fi
-  docker image rm -f "$image_tag" >/dev/null 2>&1 || true
+  "$container_engine" image rm -f "$image_tag" >/dev/null 2>&1 || true
   rm -rf "$tmp_root" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -124,7 +136,7 @@ assert_http_not_contains() {
 run_in_container() {
   local target_container="$1"
   shift
-  docker exec \
+  "$container_engine" exec \
     -e PATH="$container_path" \
     "$target_container" \
     "$container_shell" -lc "$*"
@@ -133,7 +145,7 @@ run_in_container() {
 run_as_hermes() {
   local target_container="$1"
   shift
-  docker exec \
+  "$container_engine" exec \
     -u 3000:3000 \
     -e HOME=/home/hermes \
     -e HERMES_HOME=/home/hermes/.hermes \
@@ -148,7 +160,7 @@ run_as_hermes() {
 run_as_hermes_default_path() {
   local target_container="$1"
   shift
-  docker exec \
+  "$container_engine" exec \
     -u 3000:3000 \
     -e HOME=/home/hermes \
     -e HERMES_HOME=/home/hermes/.hermes \
@@ -377,11 +389,13 @@ assert_dashboard_browser_open() {
 }
 
 assert_image_metadata() {
-  docker inspect "$image_tag" | jq -e '
-    .[0].Config.StopSignal == "SIGRTMIN+3"
-    and .[0].Config.Labels["org.opencontainers.image.source"] == "https://github.com/caelx/ghostship-hermes"
-    and (.[0].Config.Labels["org.opencontainers.image.revision"] | type) == "string"
-    and (.[0].Config.Labels["org.opencontainers.image.revision"] | length) > 0
+  "$container_engine" inspect "$image_tag" | jq -e '
+    .[0] as $image
+    | (((($image.Config.StopSignal // $image.StopSignal // "") | tostring) == "SIGRTMIN+3")
+      or ((($image.Config.StopSignal // $image.StopSignal // "") | tostring) == "37"))
+    and ((($image.Config.Labels // $image.Labels // $image.Annotations // {})["org.opencontainers.image.source"]) == "https://github.com/caelx/ghostship-hermes")
+    and ((((($image.Config.Labels // $image.Labels // $image.Annotations // {})["org.opencontainers.image.revision"]) // "") | type) == "string")
+    and ((((($image.Config.Labels // $image.Labels // $image.Annotations // {})["org.opencontainers.image.revision"]) // "") | length) > 0)
   ' >/dev/null
 }
 
@@ -429,21 +443,17 @@ assert_managed_tooling_repairs_single_drift() {
 
 assert_clean_stop() {
   local target_container="$1"
-  docker stop -t 45 "$target_container" >/dev/null
-  test "$(docker inspect -f '{{.State.ExitCode}}' "$target_container")" = "0"
+  "$container_engine" stop -t 45 "$target_container" >/dev/null
+  test "$("$container_engine" inspect -f '{{.State.ExitCode}}' "$target_container")" = "0"
 }
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "docker is required for dashboard image testing" >&2
-  exit 1
-fi
-
-if ! docker version >/dev/null 2>&1; then
-  echo "docker is installed but not reachable from this shell" >&2
+if ! "$container_engine" version >/dev/null 2>&1; then
+  echo "$container_engine is installed but not reachable from this shell" >&2
   exit 1
 fi
 
 if [ "${SKIP_IMAGE_IMPORT:-0}" != "1" ]; then
+  export CONTAINER_ENGINE="$container_engine"
   "$repo_root/scripts/export_publishable_image.sh" "$image_bundle" "$image_tag" >/dev/null
 fi
 
@@ -461,14 +471,14 @@ chmod 0555 "$home_dir/seeds/skills/workflow-single"
 chmod 0444 "$home_dir/seeds/skills/workflow-single/SKILL.md"
 printf 'legacy-profile\n' > "$home_dir/.hermes/profiles/assistant/.managed"
 printf 'assistant\n' > "$home_dir/.hermes/active_profile"
-docker rm -f "$container_name" >/dev/null 2>&1 || true
+"$container_engine" rm -f "$container_name" >/dev/null 2>&1 || true
 
 nix_mount_args=()
 if [ "$bind_nix" = "1" ]; then
   nix_mount_args=(-v "$nix_volume_root:/nix")
 fi
 
-docker run -d \
+"$container_engine" run -d \
   --name "$container_name" \
   --privileged \
   --cgroupns=host \

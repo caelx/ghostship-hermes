@@ -6,11 +6,11 @@ cd "$repo_root"
 
 usage() {
   cat >&2 <<'EOF'
-usage: export_publishable_image.sh [image-bundle-path] [image-ref] [docker-archive-path]
+usage: export_publishable_image.sh [image-bundle-path] [image-ref] [image-archive-path]
 
 Build or reuse the explicit ghostship-hermes image bundle, import its rootfs into
-the local Docker daemon with the repo-managed metadata contract, and optionally
-save the resulting image as a docker-archive tar.
+the local container engine with the repo-managed metadata contract, and optionally
+save the resulting image as an archive tar.
 EOF
 }
 
@@ -19,13 +19,20 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   exit 0
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "docker is required to materialize a publishable ghostship-hermes image" >&2
-  exit 1
+container_engine="${CONTAINER_ENGINE:-}"
+if [ -z "$container_engine" ]; then
+  if command -v docker >/dev/null 2>&1; then
+    container_engine="docker"
+  elif command -v podman >/dev/null 2>&1; then
+    container_engine="podman"
+  else
+    echo "docker or podman is required to materialize a publishable ghostship-hermes image" >&2
+    exit 1
+  fi
 fi
 
-if ! docker version >/dev/null 2>&1; then
-  echo "docker is installed but not reachable from this shell; start a local Docker daemon or enable WSL integration before exporting a publishable image" >&2
+if ! "$container_engine" version >/dev/null 2>&1; then
+  echo "$container_engine is installed but not reachable from this shell" >&2
   exit 1
 fi
 
@@ -67,21 +74,33 @@ if [ -z "$rootfs_tar" ]; then
   exit 1
 fi
 
-if docker image inspect "$image_ref" >/dev/null 2>&1; then
-  docker image rm -f "$image_ref" >/dev/null
+if "$container_engine" image inspect "$image_ref" >/dev/null 2>&1; then
+  "$container_engine" image rm -f "$image_ref" >/dev/null
 fi
 
 change_args=()
 while IFS= read -r change; do
   [ -n "$change" ] || continue
+  if [ "$container_engine" = "podman" ] && [[ "$change" == HEALTHCHECK* ]]; then
+    continue
+  fi
   change_args+=(--change "$change")
 done < "$changes_file"
 
-xz -dc "$rootfs_tar" | docker import --platform "$platform" "${change_args[@]}" - "$image_ref" >/dev/null
+import_args=("${change_args[@]}")
+if [ "$container_engine" = "docker" ]; then
+  import_args=(--platform "$platform" "${import_args[@]}")
+fi
+
+xz -dc "$rootfs_tar" | "$container_engine" import "${import_args[@]}" - "$image_ref" >/dev/null
 
 if [ -n "$archive_path" ]; then
   mkdir -p "$(dirname "$archive_path")"
-  docker image save --platform "$platform" -o "$archive_path" "$image_ref"
+  save_args=(-o "$archive_path")
+  if [ "$container_engine" = "docker" ]; then
+    save_args=(--platform "$platform" "${save_args[@]}")
+  fi
+  "$container_engine" image save "${save_args[@]}" "$image_ref"
 fi
 
 printf '%s\n' "$image_ref"
