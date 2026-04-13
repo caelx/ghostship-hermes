@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Repaired the Hermes container runtime contract by publishing `STOPSIGNAL SIGRTMIN+3`, aligning the managed `hermes-gateway.service` stop policy with upstream Hermes (`KillMode=mixed`, `KillSignal=SIGTERM`, `TimeoutStopSec=60s`, `Restart=on-failure`), disabling container-incompatible `/etc/hosts` and root channel activation writes while keeping the explicit hostname contract, making `ghostship-hermes-user-tooling` reconcile only drifted Nix/npm state instead of rebuilding it on every boot, and adding OCI source/revision labels plus smoke coverage for the new runtime metadata and stop path.
+
+- Narrowed the managed gateway restart surface so `ghostship-hermes-gateway-restart.path` now watches only `/home/hermes/.hermes/config.yaml` and `.env`; `auth.json` OAuth refreshes and `SOUL.md` edits remain durable managed state but no longer trigger avoidable `hermes-gateway.service` restarts, and the image smoke test now proves both the positive and negative restart cases.
+
 - Fixed shared-cache seeding in `publish-image` by moving the dry-run cache planning step ahead of the real image build, so cold runs can create `ghcr.io/caelx/ghostship-cache/nix-cache:cache-index` and later unchanged runs can actually consume the signed Ghostship cache.
 - Gated shared-cache publication so normal push builds only try to consume `caelx/ghostship-cache`; only the daily scheduled `publish-image` run at `14:00 UTC` or a manual `workflow_dispatch` with `publish_shared_cache=true` attempts cache uploads, which keeps routine image publishes from paying the broken or redundant cache-seeding cost.
 

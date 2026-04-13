@@ -12,6 +12,7 @@
   includeManagedRuntime ? false,
   hermesAgentPackage,
   sharedGhostshipDependencyPackages ? [ ],
+  blogtatoPackage ? null,
   ...
 }:
 let
@@ -26,7 +27,9 @@ let
   managedGatewayPidPath = "${managedHermesHome}/gateway.pid";
   managedSoulPath = "${managedHermesHome}/SOUL.md";
   managedSkillsPath = "${managedHermesHome}/skills";
+  managedHooksPath = "${managedHermesHome}/hooks";
   managedAuthPath = "${managedHermesHome}/auth.json";
+  managedHookSourceDir = "${./hooks}";
   unmanagedDefaultSoulHash = "2765a846e1bb371d78d3b93b403dfb0f8d1ba1a9895edb5f608367abfe81194d";
   managedWebhookPort = 8644;
   managedLayoutVersion = "single-agent-v1";
@@ -98,8 +101,7 @@ let
     "SYNOLOGY_VERIFY_SSL"
     "FLARESOLVERR_URL"
     "PYLOAD_URL"
-    "PYLOAD_USER"
-    "PYLOAD_PASS"
+    "PYLOAD_API_KEY"
     "CLOAKBROWSER_URL"
     "CLOAKBROWSER_TOKEN"
     "PRICEBUDDY_URL"
@@ -115,7 +117,7 @@ let
   managedDiscordEnvKeys = [
     "DISCORD_BOT_TOKEN"
     "DISCORD_ALLOWED_USERS"
-    "DISCORD_FREE_RESPONSE_CHANNELS"
+    "GHOSTSHIP_ROUTER_CHANNEL"
     "DISCORD_HOME_CHANNEL"
   ];
   managedBrowserEnvKeys = [
@@ -175,6 +177,13 @@ let
       name = "tmux";
       ref = "nixpkgs#tmux";
     }
+  ] ++ lib.optionals (blogtatoPackage != null) [
+    {
+      name = "blogtato";
+      bootstrapRef = "${blogtatoPackage}";
+      ref = "${runtimeFlakeRefDefault}#blogtato";
+    }
+  ] ++ [
     {
       name = "nodejs_22";
       ref = "nixpkgs#nodejs_22";
@@ -190,10 +199,12 @@ let
   ];
   managedNpmPackages = [
     "@openai/codex"
+    "@google/gemini-cli"
     "opencode-ai"
   ];
   managedNpmBins = [
     "codex"
+    "gemini"
     "opencode"
   ];
   managedAgentConfig =
@@ -223,11 +234,16 @@ let
         default_trust = 0.5;
       };
       fallback_model = {
-        provider = "custom";
-        model = "agentic";
-        base_url = "http://127.0.0.1:8788/v1";
-        api_key_env = "OPENAI_API_KEY";
+        provider = "openai-codex";
+        model = "gpt-5.4-mini";
       };
+      custom_providers = [
+        {
+          name = "ghostship-router";
+          base_url = "http://127.0.0.1:8788/v1";
+          api_key = "\${OPENAI_API_KEY}";
+        }
+      ];
       timezone = "Pacific/Honolulu";
       agent = {
         max_turns = 110;
@@ -516,6 +532,26 @@ EOF
       chmod -R u+rwX "$target_root"
     }
 
+    reconcile_managed_hooks() {
+      source_root="$1"
+      target_root="$2"
+
+      [ -d "$source_root" ] || return 0
+      mkdir -p "$target_root"
+
+      while IFS= read -r hook_dir; do
+        [ -f "$hook_dir/HOOK.yaml" ] || continue
+        [ -f "$hook_dir/handler.py" ] || continue
+        hook_name="$(basename "$hook_dir")"
+        rm -rf "$target_root/$hook_name"
+        cp -R "$hook_dir" "$target_root/$hook_name"
+        chmod -R u+rwX "$target_root/$hook_name"
+      done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
+
+      [ -d "$target_root" ] || return 0
+      chmod -R u+rwX "$target_root"
+    }
+
     copy_file_if_missing() {
       source_path="$1"
       target_path="$2"
@@ -568,10 +604,12 @@ EOF
     reconcile_seed_content() {
       skill_source="''${GHOSTSHIP_HERMES_SKILLS_DIR:-${managedSkillsSourceDir}}"
       soul_source="''${GHOSTSHIP_HERMES_SOUL_PATH:-${managedSoulSourcePath}}"
+      hook_source="''${GHOSTSHIP_HERMES_HOOKS_DIR:-${managedHookSourceDir}}"
 
       copy_skill_tree_if_missing "$skill_source" "${managedSkillsPath}"
       materialize_and_normalize_skills "${managedSkillsPath}"
       manage_seeded_soul "$soul_source" "${managedSoulPath}"
+      reconcile_managed_hooks "$hook_source" "${managedHooksPath}"
     }
 
     reconcile_managed_config() {
@@ -580,16 +618,27 @@ EOF
 
       tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
       ${pkgs.gawk}/bin/awk '
-        BEGIN { in_model = 0 }
+        BEGIN { in_model = 0; in_fallback_model = 0 }
         /^model:[[:space:]]*$/ {
           in_model = 1
+          in_fallback_model = 0
           print
           next
         }
-        in_model && /^[^[:space:]]/ {
+        /^fallback_model:[[:space:]]*$/ {
           in_model = 0
+          in_fallback_model = 1
+          print
+          next
+        }
+        (in_model || in_fallback_model) && /^[^[:space:]]/ {
+          in_model = 0
+          in_fallback_model = 0
         }
         in_model && $0 == "  base_url: http://127.0.0.1:8788/v1" {
+          next
+        }
+        in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
           next
         }
         { print }
@@ -693,11 +742,76 @@ home = Path(os.environ["HOME"])
 specs = json.loads(r"""${builtins.toJSON managedUserPackages}""")
 managed_npm_packages = json.loads(r"""${builtins.toJSON managedNpmPackages}""")
 managed_npm_bins = json.loads(r"""${builtins.toJSON managedNpmBins}""")
-result = subprocess.run(
+
+
+def run(command, *, cwd=None, check=True, capture_output=False):
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        check=check,
+        capture_output=capture_output,
+        text=True,
+    )
+
+
+def desired_ref_for(item):
+    if mode == "refresh" and item["name"] == "hermes-agent-wrapped":
+        return f"{runtime_flake_ref}#hermes-agent-wrapped"
+    return item.get("bootstrapRef") or item["ref"]
+
+
+def ref_matches_entry(desired_ref, current_entry):
+    current_refs = {
+        value
+        for value in (
+            current_entry.get("originalUrl"),
+            current_entry.get("originalURL"),
+            current_entry.get("url"),
+            current_entry.get("uri"),
+            current_entry.get("lockedUrl"),
+        )
+        if isinstance(value, str) and value
+    }
+    current_refs.update(
+        value
+        for value in current_entry.get("storePaths", [])
+        if isinstance(value, str) and value
+    )
+
+    if desired_ref in current_refs:
+        return True
+
+    if "#" not in desired_ref:
+        return False
+
+    desired_url, desired_attr = desired_ref.split("#", 1)
+    normalized_urls = set()
+    for value in current_refs:
+        normalized_urls.add(value)
+        if value.startswith("flake:"):
+            normalized_urls.add(value.removeprefix("flake:"))
+
+    desired_url = desired_url.removeprefix("flake:")
+    current_attr = current_entry.get("attrPath")
+    attr_matches = isinstance(current_attr, str) and (
+        current_attr == desired_attr or current_attr.endswith(f".{desired_attr}")
+    )
+    return desired_url in normalized_urls and attr_matches
+
+
+def normalize_priority(value):
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
+result = run(
     ["nix", "profile", "list", "--profile", managed_profile, "--json"],
     check=False,
     capture_output=True,
-    text=True,
 )
 if result.returncode == 0:
     elements = json.loads(result.stdout).get("elements", {})
@@ -706,26 +820,33 @@ else:
 
 for item in specs:
     name = item["name"]
-    for entry_name in sorted(
-        key for key in elements if key == name or key.startswith(f"{name}-")
-    ):
-        subprocess.run(
-            ["nix", "profile", "remove", "--profile", managed_profile, entry_name],
-            check=True,
-        )
-    if mode == "refresh" and name == "hermes-agent-wrapped":
-        ref = f"{runtime_flake_ref}#hermes-agent-wrapped"
-    else:
-        ref = item.get("bootstrapRef") or item["ref"]
-    command = ["nix", "profile", "add", "--profile", managed_profile]
-    priority = item.get("priority")
-    if priority is not None:
-        command.extend(["--priority", str(priority)])
-    command.append(ref)
-    subprocess.run(command, check=True)
+    desired_ref = desired_ref_for(item)
+    desired_priority = normalize_priority(item.get("priority"))
+    matching_entries = sorted(
+        (entry_name, elements[entry_name])
+        for entry_name in elements
+        if entry_name == name or entry_name.startswith(f"{name}-")
+    )
+
+    keep_existing = False
+    if len(matching_entries) == 1 and matching_entries[0][0] == name:
+        _, current_entry = matching_entries[0]
+        current_priority = normalize_priority(current_entry.get("priority"))
+        keep_existing = ref_matches_entry(desired_ref, current_entry) and current_priority == desired_priority
+
+    if not keep_existing:
+        for entry_name, _ in matching_entries:
+            run(["nix", "profile", "remove", "--profile", managed_profile, entry_name])
+        command = ["nix", "profile", "add", "--profile", managed_profile]
+        if desired_priority is not None:
+            command.extend(["--priority", str(desired_priority)])
+        command.append(desired_ref)
+        run(command)
 
 package_json = project_root / "package.json"
-package_json.write_text(
+package_lock = project_root / "package-lock.json"
+project_bin_root = project_root / "node_modules" / ".bin"
+desired_package_json = (
     json.dumps(
         {
             "name": "ghostship-hermes-runtime-tools",
@@ -736,10 +857,23 @@ package_json.write_text(
     )
     + "\n"
 )
-subprocess.run(["npm", "install", "--silent"], cwd=project_root, check=True)
+package_json_changed = True
+if package_json.exists():
+    package_json_changed = package_json.read_text() != desired_package_json
+if package_json_changed:
+    package_json.write_text(desired_package_json)
+
+needs_npm_install = package_json_changed or not package_lock.exists()
+if not needs_npm_install:
+    for bin_name in managed_npm_bins:
+        if not (project_bin_root / bin_name).exists():
+            needs_npm_install = True
+            break
+
+if needs_npm_install:
+    run(["npm", "install", "--silent"], cwd=project_root)
 
 local_bin = home / ".local" / "bin"
-project_bin_root = project_root / "node_modules" / ".bin"
 agent_browser_link = local_bin / "agent-browser"
 for entry in local_bin.iterdir():
     if not entry.is_symlink():
@@ -808,6 +942,13 @@ in
   # hook so the upstream module can evaluate without requiring an external secret
   # management module.
   system.activationScripts.setupSecrets = lib.mkDefault (lib.stringAfter [ "users" ] "");
+  system.activationScripts.removeStaleRootChannels = lib.stringAfter [ "etc" "users" ] ''
+    rm -f \
+      /root/.nix-defexpr/channels \
+      /nix/var/nix/profiles/per-user/root/channels \
+      /nix/var/nix/profiles/per-user/root/channels-*
+  '';
+  system.activationScripts.no-nix-channel.deps = lib.mkIf (!config.nix.channel.enable) [ "removeStaleRootChannels" ];
 
   imports = [
     "${modulesPath}/profiles/docker-container.nix"
@@ -824,6 +965,9 @@ in
   networking.useDHCP = lib.mkDefault true;
   networking.resolvconf.enable = false;
   networking.firewall.allowedTCPPorts = [ 7681 ];
+  system.installer.channel.enable = false;
+  nix.channel.enable = false;
+  environment.etc.hosts.enable = false;
   system.stateVersion = "25.11";
 
   users.mutableUsers = false;
@@ -1135,7 +1279,10 @@ in
       ExecStartPre = managedGatewayPreStartScript;
       ExecStart = managedGatewayScript;
       ExecStopPost = managedGatewayPostStopScript;
-      Restart = "always";
+      KillMode = "mixed";
+      KillSignal = "SIGTERM";
+      TimeoutStopSec = "60s";
+      Restart = "on-failure";
       RestartSec = "2s";
     };
   };
@@ -1156,8 +1303,6 @@ in
       PathChanged = [
         "${managedHermesHome}/config.yaml"
         "${managedEnvPath}"
-        "${managedAuthPath}"
-        "${managedSoulPath}"
       ];
       Unit = "ghostship-hermes-gateway-restart.service";
     };

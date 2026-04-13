@@ -16,6 +16,8 @@
     }:
     let
       lib = nixpkgs.lib;
+      sourceUrl = "https://github.com/caelx/ghostship-hermes";
+      revision = self.shortRev or self.dirtyShortRev or self.rev or "dirty";
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -76,9 +78,11 @@
           ghostshipPricebuddy = mkGhostshipPythonUtility ./packages/pricebuddy-cli/package.nix;
           ghostshipRssBridge = mkGhostshipPythonUtility ./packages/rss-bridge-cli/package.nix;
           ghostshipChangedetection = mkGhostshipPythonUtility ./packages/changedetection-cli/package.nix;
+          ghostshipBookStack = mkGhostshipPythonUtility ./packages/bookstack-cli/package.nix;
           ghostshipN8n = mkGhostshipPythonUtility ./packages/n8n-cli/package.nix;
           ghostshipChaptarr = mkGhostshipPythonUtility ./packages/chaptarr-cli/package.nix;
           agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
+          blogtato = pkgs.callPackage ./packages/blogtato/package.nix { };
           upstreamHermesAgent = hermes-agent.packages.${system}.default;
           wrappedHermesAgent = pkgs.callPackage ./packages/hermes-agent-wrapped/package.nix {
             hermesAgentPackage = upstreamHermesAgent;
@@ -157,6 +161,7 @@
             ghostshipPricebuddy
             ghostshipRssBridge
             ghostshipChangedetection
+            ghostshipBookStack
             ghostshipChaptarr
             ghostshipN8n
           ];
@@ -202,10 +207,12 @@
             modulePath = ./packages/hermes-image/nixos-final-module.nix;
             extraSpecialArgs = {
               inherit
+                blogtato
                 ghostshipHermesRouter
                 ghostshipHermesRuntime
                 hermesDashboard
                 ;
+              blogtatoPackage = blogtato;
               hermesAgentPackage = wrappedHermesAgent;
               ghostshipUtilities = allUtilities;
               sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseUtilityPackages;
@@ -222,12 +229,16 @@
               system
               ghostshipHermesRootfs
               hermesRelease
+              sourceUrl
+              revision
               ;
           };
           ghostshipHermesBaseImage = pkgs.callPackage ./packages/hermes-image/image.nix {
             inherit
               system
               hermesRelease
+              sourceUrl
+              revision
               ;
             ghostshipHermesRootfs = ghostshipHermesBaseRootfs;
             defaultImageRef = "ghostship-hermes-base:${hermesRelease}";
@@ -237,6 +248,7 @@
           bws = pkgs.bws;
           gcloud = pkgs.google-cloud-sdk;
           agent-browser = agentBrowser;
+          blogtato = blogtato;
           gws = googleWorkspaceCli;
           hermes-dashboard = hermesDashboard;
           ghostship-cli-contract = ghostshipCliContract;
@@ -258,6 +270,7 @@
           ghostship-pricebuddy = ghostshipPricebuddy;
           ghostship-rss-bridge = ghostshipRssBridge;
           ghostship-changedetection = ghostshipChangedetection;
+          ghostship-bookstack = ghostshipBookStack;
           ghostship-chaptarr = ghostshipChaptarr;
           ghostship-n8n = ghostshipN8n;
           ghostship-hermes-router = ghostshipHermesRouter;
@@ -284,6 +297,7 @@
             bws
             gcloud
             agent-browser
+            blogtato
             gws
             hermes-dashboard
             ghostship-cli-contract
@@ -305,6 +319,7 @@
             ghostship-pricebuddy
             ghostship-rss-bridge
             ghostship-changedetection
+            ghostship-bookstack
             ghostship-chaptarr
             ghostship-n8n
             ghostship-hermes-router
@@ -372,7 +387,7 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src:$PWD/packages/changedetection-cli/src:$PWD/packages/hermes-router/src${PYTHONPATH:+:$PYTHONPATH}"
+              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src:$PWD/packages/changedetection-cli/src:$PWD/packages/bookstack-cli/src:$PWD/packages/hermes-router/src${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }

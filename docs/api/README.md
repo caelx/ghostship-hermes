@@ -13,6 +13,7 @@ The repo uses a hybrid model:
 | Utility | Canonical docs | Raw spec mirror | Source quality |
 | --- | --- | --- | --- |
 | `ghostship-bazarr` | `docs/api/bazarr.md` | `docs/api/bazarr-swagger.json` | Official Swagger + repo summary |
+| `ghostship-bookstack` | `docs/api/bookstack.md` | `docs/api/bookstack-docs.json` | Official docs plus repo-owned normalized snapshot |
 | `ghostship-cloakbrowser` | `docs/api/cloakbrowser.md` | None | Official README and source code |
 | `ghostship-changedetection` | `docs/api/changedetection.md` | `docs/api/changedetection-openapi.json` | Official OpenAPI + repo summary |
 | `ghostship-flaresolverr` | `docs/api/flaresolverr.md` | None | Official README |
@@ -57,3 +58,4 @@ The repo uses a hybrid model:
 - `Official docs and source code`: upstream publishes narrative documentation, and the repo confirmed the callable surface directly from the implementation.
 - `Official docs plus upstream tests/source code`: upstream publishes narrative docs, but the practical endpoint contract and field shapes had to be confirmed from upstream tests and implementation.
 - `Official docs plus upstream/community verification`: no raw spec exists and the repo had to confirm the live auth or response shape from additional material.
+- `Official docs plus repo-owned normalized snapshot`: upstream publishes an official docs surface, but the repo commits a normalized machine-readable snapshot derived from that docs output when a directly consumable raw schema is not available for capture.

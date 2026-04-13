@@ -77,6 +77,42 @@ def _extract_error_message(details: Any) -> str:
             return message
     return ""
 
+def _retry_after_seconds(headers: dict[str, str] | None) -> float | None:
+    if not headers:
+        return None
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        value = float(str(raw).strip())
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def _normalized_http_details(exc: HttpStatusError) -> dict[str, Any]:
+    payload: dict[str, Any]
+    if isinstance(exc.details, dict):
+        payload = dict(exc.details)
+    elif exc.details is None:
+        payload = {}
+    else:
+        payload = {"message": str(exc.details)}
+    message = _extract_error_message(payload) or exc.message
+    if message:
+        payload.setdefault("message", message)
+    retry_after = _retry_after_seconds(exc.headers)
+    if retry_after is not None:
+        payload["retry_after_seconds"] = retry_after
+    lowered = message.lower()
+    if "freeusagelimiterror" in lowered or retry_after is not None:
+        payload["temporary_throttle"] = True
+        payload["provider_pacing"] = True
+    if "quota" in lowered or ("monthly" in lowered and "limit" in lowered):
+        payload["hard_exhaustion"] = True
+    return payload
+
+
 
 class OpencodeZenProvider:
     name = "opencode-zen"
@@ -546,20 +582,23 @@ class OpencodeZenProvider:
         return tuple(dict.fromkeys(tags))
 
     def _normalize_http_error(self, exc: HttpStatusError, *, backend_model: str) -> NormalizedProviderError:
-        message = _extract_error_message(exc.details)
+        details = _normalized_http_details(exc)
+        message = _extract_error_message(details) or exc.message
         lowered = message.lower()
         if "not supported for format" in lowered:
-            return NormalizedProviderError("endpoint_family_mismatch", message, provider=self.name, backend_model=backend_model, retryable=True, details=exc.details)
+            return NormalizedProviderError("endpoint_family_mismatch", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
         if "missing api key" in lowered:
-            return NormalizedProviderError("endpoint_family_mismatch", message, provider=self.name, backend_model=backend_model, retryable=True, details=exc.details)
+            return NormalizedProviderError("endpoint_family_mismatch", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
         if "insufficient balance" in lowered:
-            return NormalizedProviderError("insufficient_balance", message, provider=self.name, backend_model=backend_model, retryable=False, details=exc.details)
+            details["hard_exhaustion"] = True
+            return NormalizedProviderError("insufficient_balance", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if exc.status_code in {401, 403}:
-            return NormalizedProviderError("unauthorized", message or exc.message, provider=self.name, backend_model=backend_model, retryable=False, details=exc.details)
+            return NormalizedProviderError("unauthorized", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if exc.status_code == 404:
-            return NormalizedProviderError("model_missing", message or exc.message, provider=self.name, backend_model=backend_model, retryable=True, details=exc.details)
+            return NormalizedProviderError("model_missing", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
         if exc.status_code == 429:
-            return NormalizedProviderError("rate_limited", message or exc.message, provider=self.name, backend_model=backend_model, retryable=True, details=exc.details)
+            category = "quota_exhausted" if details.get("hard_exhaustion") else "rate_limited"
+            return NormalizedProviderError(category, message, provider=self.name, backend_model=backend_model, retryable=(category == "rate_limited"), details=details)
         if exc.status_code >= 500:
-            return NormalizedProviderError("server_error", message or exc.message, provider=self.name, backend_model=backend_model, retryable=True, details=exc.details)
-        return NormalizedProviderError("bad_request", message or exc.message, provider=self.name, backend_model=backend_model, retryable=False, details=exc.details)
+            return NormalizedProviderError("server_error", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
+        return NormalizedProviderError("bad_request", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)

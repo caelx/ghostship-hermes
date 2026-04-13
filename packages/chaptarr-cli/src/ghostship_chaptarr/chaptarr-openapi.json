@@ -6012,42 +6012,6 @@
         }
       }
     },
-    "/ping": {
-      "get": {
-        "tags": [
-          "Ping"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PingResource"
-                }
-              }
-            }
-          }
-        }
-      },
-      "head": {
-        "tags": [
-          "Ping"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PingResource"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/qualitydefinition/{id}": {
       "put": {
         "tags": [

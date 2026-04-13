@@ -462,7 +462,6 @@ PYUPDATE
       sleep "$delay"
     done
   }
-
   upload_to_oci() {
     info "Uploading to GHCR: ${NIXCACHE_IMAGE}"
 

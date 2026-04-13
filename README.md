@@ -17,12 +17,15 @@ Canonical image references:
 - `/nix` should be persisted when mutable `nix profile install`, `nix shell`, or build outputs must survive container replacement.
 - The runtime user is `hermes` at `3000:3000`.
 - The public browser surface is a HUDUI-aligned dashboard on port `7681`.
+- The published image advertises `STOPSIGNAL SIGRTMIN+3` so container shutdown reaches the inner `systemd` PID 1 correctly.
 - The dashboard exposes HUDUI tabs for runtime inspection and adds one Ghostship-specific `Console` tab backed by on-demand same-origin `ttyd`.
 - Browser terminals start in `/workspace`.
 - The image now exposes one managed Hermes agent, not a repo-owned profile fleet.
 - The managed config lives at `/home/hermes/.hermes/config.yaml`, the managed env file at `/home/hermes/.hermes/.env`, the managed auth file at `/home/hermes/.hermes/auth.json`, the managed skill tree at `/home/hermes/.hermes/skills`, the managed prompt at `/home/hermes/.hermes/SOUL.md`, and the managed gateway liveness marker at `/home/hermes/.hermes/gateway.pid`.
 - The primary model path is direct MiniMax on OpenCode Go: `provider = opencode-go`, `default = minimax-m2.7`.
-- The fallback model is the local Ghostship router free-model lane: `provider = custom`, `model = agentic`, `base_url = http://127.0.0.1:8788/v1`, `api_key_env = OPENAI_API_KEY`; the managed router also blocks the exact backend id `openrouter/free` from route selection while auxiliary tasks still use Gemini 3.1 Flash-Lite Preview through the Google OpenAI-compatible endpoint.
+- The fallback model is Codex OAuth on `openai-codex/gpt-5.4-mini`.
+- The local router is exposed separately as one named Hermes custom provider, `ghostship-router`, pointing at `http://127.0.0.1:8788/v1` with `OPENAI_API_KEY` as the router bearer token.
+- Auxiliary and compression tasks still use Gemini 3.1 Flash-Lite Preview through the Google OpenAI-compatible endpoint, and the managed router still blocks the exact backend id `openrouter/free` from route selection.
 
 Upstream note:
 
@@ -30,13 +33,13 @@ Upstream note:
 - Upstream normally keeps managed state under `${stateDir}/.hermes` with a separate home directory.
 - Here, the repo sets `stateDir = "/home/hermes"`, so the managed Hermes home lives inside the persisted home mount.
 
-This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support stays CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills. The default image also preinstalls `gcloud`, `gh`, `ssh`, `scp`, and `ssh-keygen` from `nixpkgs`.
+This image intentionally does not ship the old Ghostship workstation layer. Google Workspace support stays CLI-only: `gws` is preinstalled on `PATH`, but the image does not vendor or seed Google Workspace skills. The default image also preinstalls `gcloud`, `gh`, `ssh`, `scp`, and `ssh-keygen` from `nixpkgs`. `blog` is not part of that baked image CLI exception set; it is installed through the managed Hermes-user profile.
 
 The immutable image no longer tries to be the full operator workstation layer. Instead, boot-time runtime convergence reconciles the repo-owned persisted user-layer runtime contract under `/home/hermes`, removing stale managed entries and reapplying the current image-owned toolchain/config state on replacement:
 
-- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `python3`, `pip`, `node`, `npm`
+- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `blog`, `python3`, `pip`, `node`, `npm`
 - managed Python contract: `python3`, `pip`, and `python3 -m pip` all resolve from the same managed Nix profile environment
-- npm-managed agent CLIs: `codex`, `opencode`
+- npm-managed agent CLIs: `codex`, `gemini`, `opencode`
 - image-managed browser CLI: `agent-browser`
 
 The immutable image stays focused on boot, supervision, and the repo-owned runtime surface:
@@ -50,9 +53,9 @@ The immutable image stays focused on boot, supervision, and the repo-owned runti
 
 Boot-time runtime convergence re-applies the repo-owned mutable toolchain and config surface under `/home/hermes` on replacement:
 
-- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `python3`, `pip`, `node`, `npm`
+- user Nix profile tools: `hermes`, `git`, `gh`, `ssh`, `scp`, `ssh-keygen`, `curl`, `jq`, `nix`, `ripgrep`, `fd`, `uv`, `yq`, `tmux`, `blog`, `python3`, `pip`, `node`, `npm`
 - managed Python contract: `python3`, `pip`, and `python3 -m pip` all resolve from the same managed Nix profile environment
-- npm-managed agent CLIs: `codex`, `opencode`
+- npm-managed agent CLIs: `codex`, `gemini`, `opencode`
 - image-managed browser CLI: `agent-browser`
 
 ## Persistent Paths
@@ -87,15 +90,15 @@ The container uses a small NixOS-managed unit graph:
 - `hermes-agent.service`
   remains installed from the upstream Hermes NixOS module but is not started by default
 - `ghostship-hermes-user-tooling.service`
-  converges the repo-owned persisted user-layer runtime contract on boot, ensures the in-container Nix daemon is available first, removes stale managed entries from the dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile before re-adding the current image-owned toolchain, restores the managed helper CLI set plus the pip-capable Python environment, rewrites the managed npm project to the declared CLI set, refreshes the managed npm CLIs and symlinks under `/home/hermes/.local/bin`, and does not own the main gateway startup dependency chain
+  converges the repo-owned persisted user-layer runtime contract on boot, ensures the in-container Nix daemon is available first, repairs only drifted entries in the dedicated `/home/hermes/.local/state/nix/profiles/ghostship-managed` profile instead of removing and re-adding the full managed toolchain on every boot, reruns `npm install` only when the declared npm layer changed or required bins are missing, refreshes the managed npm CLIs and symlinks under `/home/hermes/.local/bin`, and does not own the main gateway startup dependency chain
 - `ghostship-hermes-user-tooling-refresh.timer`
   reruns the mutable tooling refresh flow daily and once shortly after boot
 - `ghostship-hermes-bootstrap.service`
   performs the single-agent managed-state convergence, deletes the old repo-owned profile tree during migration, rewrites `/home/hermes/.hermes/.env` atomically from the approved allowlist, seeds `/home/hermes/.hermes/skills` and `/home/hermes/.hermes/SOUL.md`, and mirrors `/etc/ghostship-hermes-release` into `/home/hermes/.ghostship-hermes-release`
 - `hermes-gateway.service`
-  is enabled as a real `systemd --user` service for `hermes`, auto-starts at boot without interactive login, and keeps the one managed Hermes gateway running with `hermes gateway run --replace`
+  is enabled as a real `systemd --user` service for `hermes`, auto-starts at boot without interactive login, keeps the one managed Hermes gateway running with `hermes gateway run --replace`, and now carries explicit upstream-aligned stop policy (`KillMode=mixed`, `KillSignal=SIGTERM`, `TimeoutStopSec=60s`)
 - `ghostship-hermes-gateway-restart.path`
-  runs in the Hermes user manager, watches `/home/hermes/.hermes/config.yaml`, `.env`, `auth.json`, and `SOUL.md`, and triggers a managed gateway restart when those root-managed files change
+  runs in the Hermes user manager, watches `/home/hermes/.hermes/config.yaml` plus `.env`, and triggers a managed gateway restart only when those managed runtime inputs change; `auth.json` and `SOUL.md` remain durable managed state but are intentionally not automatic restart triggers
 - `ghostship-hermes-startup.service`
   starts the HUDUI browser, router, the Hermes user manager, and the enabled `hermes-gateway.service` after storage preparation and bootstrap; a failed mutable tooling refresh must not block the main runtime boot
 - `ghostship-hermes-hudui.service`
@@ -124,14 +127,16 @@ docker run \
 
 Notes:
 
+- For Podman deployments that want the image-managed hostname and `/etc/hosts` contract, run the container with `--no-hostname --no-hosts` so Podman does not inject conflicting files into `/etc`.
+- For systemd-as-PID-1 container shutdown, set the runtime stop signal to `SIGRTMIN+3` and use a stop timeout that covers inner `systemd` shutdown work rather than Podman's default 10 seconds.
 - Reuse `/nix` only when it already contains compatible Nix state you want to keep. Do not hide a fresh Nix-built image behind a brand-new empty `/nix` volume.
 - If you mount `/nix` to a persistent volume, prepopulate that volume with the image's `/nix` contents before first boot.
 - Fix the per-user Nix ownership on the persisted volume before expecting mutable Nix workflows to work for `hermes`.
 - Persisting `/home/hermes` directly is the intended way to keep Hermes managed state, XDG state, and later-installed agent tooling across container replacement.
 - The dashboard is the intended browser entrypoint.
 - The full managed env allowlist is documented in [docs/runtime-env.md](docs/runtime-env.md).
-- The single-agent inputs are `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `DISCORD_FREE_RESPONSE_CHANNELS`, `DISCORD_HOME_CHANNEL`, `WEBHOOK_SECRET`, and `BROWSER_CDP_URL`.
-- The required provider inputs are `OPENCODE_GO_API_KEY` for the primary MiniMax path, `OPENAI_API_KEY` for the local router fallback bearer token, and `GOOGLE_AI_STUDIO_API_KEY` for the direct auxiliary tasks.
+- The single-agent inputs are `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `GHOSTSHIP_ROUTER_CHANNEL`, `DISCORD_HOME_CHANNEL`, `WEBHOOK_SECRET`, and `BROWSER_CDP_URL`.
+- The required provider inputs are `OPENCODE_GO_API_KEY` for the primary MiniMax path, Codex OAuth in `/home/hermes/.hermes/auth.json` for the `openai-codex` fallback path, `OPENAI_API_KEY` for manual `ghostship-router` calls, and `GOOGLE_AI_STUDIO_API_KEY` for the direct auxiliary tasks. Gemini CLI is a separate npm-managed runtime tool and does not replace or configure that auxiliary provider path.
 - If you are validating the local router, source the repo `.envrc` before `docker run` so the router can use `OPENROUTER_API_KEY` plus either `OPENCODE_API_KEY` or `OPENCODE_GO_API_KEY`.
 
 After startup:
@@ -146,6 +151,8 @@ Dashboard contract:
 - The browser contract now follows HUDUI endpoints such as `/api/health`, `/api/profiles`, `/api/projects`, and `/api/console`.
 - The HUDUI `Projects` panel is rooted at `/workspace`, and the root managed profile is rendered as `Managed Agent`.
 - The published image now carries a store-stable container `HEALTHCHECK` that curls the dashboard with `curl` from its own store path instead of relying on `/run/current-system/sw/bin/curl` during early boot.
+- Container-mode activation now disables root channel seeding and leaves Podman-managed `/etc/hosts` alone. The hostname contract remains explicit in Nix, so `/etc/hostname` cleanup still belongs in the host/runtime configuration if Podman continues injecting that file.
+- OCI image metadata now includes `org.opencontainers.image.source` and `org.opencontainers.image.revision` in addition to the title, description, and version labels.
 
 ## Hermes Configuration
 
@@ -155,7 +162,8 @@ The image is declarative-first:
 - The default runtime does not let Hermes self-apply the system flake.
 - User-level Nix remains available for mutable runtime installs such as `nix profile install`, and the image uses a dedicated managed profile at `/home/hermes/.local/state/nix/profiles/ghostship-managed` to keep the baked `hermes` toolchain updateable on boot and during daily refreshes without colliding with the operator's default `~/.nix-profile`.
 - The default Hermes-user PATH includes `/home/hermes/.local/bin`, `/home/hermes/.local/state/nix/profiles/ghostship-managed/bin`, and `/home/hermes/.nix-profile/bin` ahead of the fallback system toolchain so login shells and Hermes runtime commands discover the persisted mutable tool layers by default.
-- The managed profile now also provides the repo-approved helper CLI set (`fd`, `uv`, `yq`, `tmux`) plus a shared Python environment where `python3`, `pip`, and `python3 -m pip` all work without extra activation. That Python environment is installed at a higher Nix profile priority than `hermes-agent-wrapped` so both packages can coexist even though they both ship `bin/python`.
+- The managed profile now also provides the repo-approved helper CLI set (`fd`, `uv`, `yq`, `tmux`, `blog`) plus a shared Python environment where `python3`, `pip`, and `python3 -m pip` all work without extra activation. That Python environment is installed at a higher Nix profile priority than `hermes-agent-wrapped` so both packages can coexist even though they both ship `bin/python`.
+- Fast-moving agent CLIs continue to come from the persisted npm tooling project under `/home/hermes/.hermes/hermes-agent`; the supported set is `codex`, `gemini`, and `opencode`, while `agent-browser` remains the image-managed exception.
 - The image keeps package docs, man pages, info pages, and NixOS docs available locally so Hermes can inspect in-image reference material.
 - The managed config sets `timezone = "Pacific/Honolulu"`, `agent.max_turns = 110`, `agent.reasoning_effort = "high"`, `agent.verbose = false`, `memory.provider = holographic`, transcript compression, checkpoints, compact streaming display defaults, and `approvals.mode = "off"`.
 - Browser defaults remain `cloud_provider = "local"`, `inactivity_timeout = 120`, `command_timeout = 30`, and `record_sessions = false`.
@@ -170,6 +178,10 @@ The image is declarative-first:
 
 The `openai-codex` provider path relies on Codex OAuth (device-code flow) instead of a static API key. Run `hermes model`, choose `OpenAI Codex`, and complete the login flow. Hermes stores that state in `/home/hermes/.hermes/auth.json`.
 
+### Router Channel Guidance
+
+If `GHOSTSHIP_ROUTER_CHANNEL` is set to a Discord channel ID, the managed gateway stages a supported advisory hook in `/home/hermes/.hermes/hooks/ghostship-router-channel-guidance`. That hook warns in the configured channel on normal message start and after `/reset` whenever the current session is not using a `ghostship-router` model selected through `/model`. The warning is advisory only, uses a bold heading, and includes one copy-paste `/model custom:ghostship-router:<model>` command for every model currently exposed by the local router.
+
 ### Skills Initialization
 
 Bootstrap runs `hermes skills list` under the managed runtime user during startup so the skills hub directories and lockfile exist before the image begins serving traffic.
@@ -181,7 +193,7 @@ To change the managed agent provider defaults after the server/container is runn
 1. Edit `packages/hermes-image/nixos-module.nix`.
 2. Update `managedAgentConfig.model` for the primary router or direct-provider path.
 3. Update the surrounding auxiliary and fallback values when the change needs a different direct endpoint or fallback model.
-4. Add any new supported secret names to `managedRuntimeEnvKeys` so bootstrap can project them into `/home/hermes/.hermes/.env`.
+4. Add any new supported runtime env names to the managed allowlists so bootstrap can project them into `/home/hermes/.hermes/.env`.
 5. Rebuild the image and restart the container. The root-managed runtime contract is re-applied on boot; do not rely on manual edits inside `/home/hermes/.hermes/config.yaml`.
 
 This keeps the provider wiring in Nix so every redeploy regenerates the same config and the services stay in sync.
@@ -374,7 +386,7 @@ The persistence suite validates:
 - `hermes` runs as `3000:3000`
 - the root Hermes config uses `provider = opencode-go` with `default = minimax-m2.7`
 - one managed agent is rooted at `~/.hermes`
-- the managed config uses `provider = opencode-go`, `default = minimax-m2.7`, and a `fallback_model` that points at `http://127.0.0.1:8788/v1` with router alias `agentic`; the managed router disables the exact backend id `openrouter/free`
+- the managed config uses `provider = opencode-go`, `default = minimax-m2.7`, `fallback_model.provider = openai-codex`, and `fallback_model.model = gpt-5.4-mini`; the named `ghostship-router` custom provider points at `http://127.0.0.1:8788/v1` and the managed router disables the exact backend id `openrouter/free`
 - `/home/hermes` itself is the persisted home volume
 - the NixOS unit graph comes up in the expected order for storage, managed bootstrap, the router, the managed gateway, and the dashboard
  - no repo-managed default skills are seeded by default

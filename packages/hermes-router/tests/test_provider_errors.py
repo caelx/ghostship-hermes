@@ -1,0 +1,51 @@
+from __future__ import annotations
+
+import pytest
+import httpx
+
+from hermes_router.providers.base import NormalizedProviderError
+from hermes_router.providers.openrouter import OpenRouterProvider
+from hermes_router.providers.opencode_zen import OpencodeZenProvider
+
+
+def make_transport(handler):
+    return httpx.MockTransport(handler)
+
+
+def test_openrouter_temporary_upstream_rate_limit_marks_provider_pacing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/chat/completions"
+        return httpx.Response(
+            429,
+            headers={"Retry-After": "11"},
+            json={"error": {"message": "This model is temporarily rate-limited upstream. Please retry shortly."}},
+        )
+
+    provider = OpenRouterProvider("secret", base_url="https://openrouter.example/api/v1", transport=make_transport(handler))
+    with pytest.raises(NormalizedProviderError) as excinfo:
+        provider.chat_completions("qwen/qwen3-coder:free", {"messages": [{"role": "user", "content": "hello"}]})
+    exc = excinfo.value
+    assert exc.category == "rate_limited"
+    assert exc.details["temporary_throttle"] is True
+    assert exc.details["provider_pacing"] is True
+    assert exc.details["retry_after_seconds"] == 11
+
+
+def test_opencode_zen_free_usage_limit_captures_retry_after() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/chat/completions", "/v1/chat/completions"}
+        return httpx.Response(
+            429,
+            headers={"Retry-After": "35"},
+            json={"type": "FreeUsageLimitError", "message": "Rate limit exceeded. Please try again later."},
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/v1", transport=make_transport(handler))
+    provider._family_cache["minimax-m2.5-free"] = "chat_completions"
+    with pytest.raises(NormalizedProviderError) as excinfo:
+        provider.chat_completions("minimax-m2.5-free", {"messages": [{"role": "user", "content": "hello"}]})
+    exc = excinfo.value
+    assert exc.category == "rate_limited"
+    assert exc.details["temporary_throttle"] is True
+    assert exc.details["provider_pacing"] is True
+    assert exc.details["retry_after_seconds"] == 35

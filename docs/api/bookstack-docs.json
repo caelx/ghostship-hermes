@@ -1,0 +1,2367 @@
+{
+  "source": {
+    "type": "official-docs-html",
+    "url": "https://demo.bookstackapp.com/api/docs",
+    "captured_on": "2026-04-12",
+    "note": "BookStack exposes an official docs page and a docs.json endpoint, but the docs.json export returned HTTP 401 during repo capture; this normalized snapshot is derived from the official HTML docs page."
+  },
+  "groups": [
+    {
+      "name": "docs",
+      "operations": [
+        {
+          "operation_id": "docs_display",
+          "html_id": "docs-display",
+          "method": "GET",
+          "group": "docs",
+          "action": "display",
+          "path": "/docs",
+          "summary": "Load the docs page for the API.",
+          "description": [
+            "Load the docs page for the API."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "text"
+        },
+        {
+          "operation_id": "docs_json",
+          "html_id": "docs-json",
+          "method": "GET",
+          "group": "docs",
+          "action": "json",
+          "path": "/docs.json",
+          "summary": "Show a JSON view of the API docs data.",
+          "description": [
+            "Show a JSON view of the API docs data."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "pages",
+      "operations": [
+        {
+          "operation_id": "pages_list",
+          "html_id": "pages-list",
+          "method": "GET",
+          "group": "pages",
+          "action": "list",
+          "path": "/pages",
+          "summary": "Get a listing of pages visible to the user.",
+          "description": [
+            "Get a listing of pages visible to the user."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "pages_create",
+          "html_id": "pages-create",
+          "method": "POST",
+          "group": "pages",
+          "action": "create",
+          "path": "/pages",
+          "summary": "Create a new page in the system.",
+          "description": [
+            "Create a new page in the system.",
+            "The ID of a parent book or chapter is required to indicate where this page should be located.",
+            "Any HTML content provided should be kept to a single-block depth of plain HTML elements to remain compatible with the BookStack front-end and editors. Any images included via base64 data URIs will be extracted and saved as gallery images against the page during upload."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "book_id",
+              "rules": [
+                "required_without:chapter_id",
+                "integer"
+              ]
+            },
+            {
+              "name": "chapter_id",
+              "rules": [
+                "required_without:book_id",
+                "integer"
+              ]
+            },
+            {
+              "name": "name",
+              "rules": [
+                "required",
+                "string",
+                "max:255"
+              ]
+            },
+            {
+              "name": "html",
+              "rules": [
+                "required_without:markdown",
+                "string"
+              ]
+            },
+            {
+              "name": "markdown",
+              "rules": [
+                "required_without:html",
+                "string"
+              ]
+            },
+            {
+              "name": "tags",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "priority",
+              "rules": [
+                "integer"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "pages_read",
+          "html_id": "pages-read",
+          "method": "GET",
+          "group": "pages",
+          "action": "read",
+          "path": "/pages/{id}",
+          "summary": "View the details of a single page. Pages will always have HTML content. They may have markdown content if the Markdown editor was used to last update the page.",
+          "description": [
+            "View the details of a single page. Pages will always have HTML content. They may have markdown content if the Markdown editor was used to last update the page.",
+            "The 'html' property is the fully rendered and escaped HTML content that BookStack would show on page view, with page includes handled. The 'raw_html' property is the direct database stored HTML content, which would be what BookStack shows on page edit.",
+            "See the \"Content Security\" section of these docs for security considerations when using the page content returned from this endpoint.",
+            "Comments for the page are provided in a tree-structure representing the hierarchy of top-level comments and replies, for both archived and active comments."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "pages_update",
+          "html_id": "pages-update",
+          "method": "PUT",
+          "group": "pages",
+          "action": "update",
+          "path": "/pages/{id}",
+          "summary": "Update the details of a single page.",
+          "description": [
+            "Update the details of a single page.",
+            "See the 'create' action for details on the provided HTML/Markdown. Providing a 'book_id' or 'chapter_id' property will essentially move the page into that parent element if you have permissions to do so."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "book_id",
+              "rules": [
+                "integer"
+              ]
+            },
+            {
+              "name": "chapter_id",
+              "rules": [
+                "integer"
+              ]
+            },
+            {
+              "name": "name",
+              "rules": [
+                "string",
+                "min:1",
+                "max:255"
+              ]
+            },
+            {
+              "name": "html",
+              "rules": [
+                "string"
+              ]
+            },
+            {
+              "name": "markdown",
+              "rules": [
+                "string"
+              ]
+            },
+            {
+              "name": "tags",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "priority",
+              "rules": [
+                "integer"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "pages_delete",
+          "html_id": "pages-delete",
+          "method": "DELETE",
+          "group": "pages",
+          "action": "delete",
+          "path": "/pages/{id}",
+          "summary": "Delete a page. This will typically send the page to the recycle bin.",
+          "description": [
+            "Delete a page. This will typically send the page to the recycle bin."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "pages_exportHtml",
+          "html_id": "pages-exportHtml",
+          "method": "GET",
+          "group": "pages",
+          "action": "export-html",
+          "path": "/pages/{id}/export/html",
+          "summary": "Export a page as a contained HTML file.",
+          "description": [
+            "Export a page as a contained HTML file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "pages_exportPdf",
+          "html_id": "pages-exportPdf",
+          "method": "GET",
+          "group": "pages",
+          "action": "export-pdf",
+          "path": "/pages/{id}/export/pdf",
+          "summary": "Export a page as a PDF file.",
+          "description": [
+            "Export a page as a PDF file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "pages_exportPlainText",
+          "html_id": "pages-exportPlainText",
+          "method": "GET",
+          "group": "pages",
+          "action": "export-plain-text",
+          "path": "/pages/{id}/export/plaintext",
+          "summary": "Export a page as a plain text file.",
+          "description": [
+            "Export a page as a plain text file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "pages_exportMarkdown",
+          "html_id": "pages-exportMarkdown",
+          "method": "GET",
+          "group": "pages",
+          "action": "export-markdown",
+          "path": "/pages/{id}/export/markdown",
+          "summary": "Export a page as a markdown file.",
+          "description": [
+            "Export a page as a markdown file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "pages_exportZip",
+          "html_id": "pages-exportZip",
+          "method": "GET",
+          "group": "pages",
+          "action": "export-zip",
+          "path": "/pages/{id}/export/zip",
+          "summary": "Export a page as a contained ZIP file.",
+          "description": [
+            "Export a page as a contained ZIP file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        }
+      ]
+    },
+    {
+      "name": "chapters",
+      "operations": [
+        {
+          "operation_id": "chapters_list",
+          "html_id": "chapters-list",
+          "method": "GET",
+          "group": "chapters",
+          "action": "list",
+          "path": "/chapters",
+          "summary": "Get a listing of chapters visible to the user.",
+          "description": [
+            "Get a listing of chapters visible to the user."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "chapters_create",
+          "html_id": "chapters-create",
+          "method": "POST",
+          "group": "chapters",
+          "action": "create",
+          "path": "/chapters",
+          "summary": "Create a new chapter in the system.",
+          "description": [
+            "Create a new chapter in the system."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "book_id",
+              "rules": [
+                "required",
+                "integer"
+              ]
+            },
+            {
+              "name": "name",
+              "rules": [
+                "required",
+                "string",
+                "max:255"
+              ]
+            },
+            {
+              "name": "description",
+              "rules": [
+                "string",
+                "max:1900"
+              ]
+            },
+            {
+              "name": "description_html",
+              "rules": [
+                "string",
+                "max:2000"
+              ]
+            },
+            {
+              "name": "tags",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "priority",
+              "rules": [
+                "integer"
+              ]
+            },
+            {
+              "name": "default_template_id",
+              "rules": [
+                "nullable",
+                "integer"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "chapters_read",
+          "html_id": "chapters-read",
+          "method": "GET",
+          "group": "chapters",
+          "action": "read",
+          "path": "/chapters/{id}",
+          "summary": "View the details of a single chapter.",
+          "description": [
+            "View the details of a single chapter."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "chapters_update",
+          "html_id": "chapters-update",
+          "method": "PUT",
+          "group": "chapters",
+          "action": "update",
+          "path": "/chapters/{id}",
+          "summary": "Update the details of a single chapter. Providing a 'book_id' property will essentially move the chapter into that parent element if you have permissions to do so.",
+          "description": [
+            "Update the details of a single chapter. Providing a 'book_id' property will essentially move the chapter into that parent element if you have permissions to do so."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "book_id",
+              "rules": [
+                "integer"
+              ]
+            },
+            {
+              "name": "name",
+              "rules": [
+                "string",
+                "min:1",
+                "max:255"
+              ]
+            },
+            {
+              "name": "description",
+              "rules": [
+                "string",
+                "max:1900"
+              ]
+            },
+            {
+              "name": "description_html",
+              "rules": [
+                "string",
+                "max:2000"
+              ]
+            },
+            {
+              "name": "tags",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "priority",
+              "rules": [
+                "integer"
+              ]
+            },
+            {
+              "name": "default_template_id",
+              "rules": [
+                "nullable",
+                "integer"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "chapters_delete",
+          "html_id": "chapters-delete",
+          "method": "DELETE",
+          "group": "chapters",
+          "action": "delete",
+          "path": "/chapters/{id}",
+          "summary": "Delete a chapter. This will typically send the chapter to the recycle bin.",
+          "description": [
+            "Delete a chapter. This will typically send the chapter to the recycle bin."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "chapters_exportHtml",
+          "html_id": "chapters-exportHtml",
+          "method": "GET",
+          "group": "chapters",
+          "action": "export-html",
+          "path": "/chapters/{id}/export/html",
+          "summary": "Export a chapter as a contained HTML file.",
+          "description": [
+            "Export a chapter as a contained HTML file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "chapters_exportPdf",
+          "html_id": "chapters-exportPdf",
+          "method": "GET",
+          "group": "chapters",
+          "action": "export-pdf",
+          "path": "/chapters/{id}/export/pdf",
+          "summary": "Export a chapter as a PDF file.",
+          "description": [
+            "Export a chapter as a PDF file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "chapters_exportPlainText",
+          "html_id": "chapters-exportPlainText",
+          "method": "GET",
+          "group": "chapters",
+          "action": "export-plain-text",
+          "path": "/chapters/{id}/export/plaintext",
+          "summary": "Export a chapter as a plain text file.",
+          "description": [
+            "Export a chapter as a plain text file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "chapters_exportMarkdown",
+          "html_id": "chapters-exportMarkdown",
+          "method": "GET",
+          "group": "chapters",
+          "action": "export-markdown",
+          "path": "/chapters/{id}/export/markdown",
+          "summary": "Export a chapter as a markdown file.",
+          "description": [
+            "Export a chapter as a markdown file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "chapters_exportZip",
+          "html_id": "chapters-exportZip",
+          "method": "GET",
+          "group": "chapters",
+          "action": "export-zip",
+          "path": "/chapters/{id}/export/zip",
+          "summary": "Export a chapter as a contained ZIP file.",
+          "description": [
+            "Export a chapter as a contained ZIP file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        }
+      ]
+    },
+    {
+      "name": "books",
+      "operations": [
+        {
+          "operation_id": "books_list",
+          "html_id": "books-list",
+          "method": "GET",
+          "group": "books",
+          "action": "list",
+          "path": "/books",
+          "summary": "Get a listing of books visible to the user.",
+          "description": [
+            "Get a listing of books visible to the user."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "books_create",
+          "html_id": "books-create",
+          "method": "POST",
+          "group": "books",
+          "action": "create",
+          "path": "/books",
+          "summary": "Create a new book in the system. The cover image of a book can be set by sending a file via an 'image' property within a 'multipart/form-data' request. If the 'image' property is null then the book cover image will be removed.",
+          "description": [
+            "Create a new book in the system. The cover image of a book can be set by sending a file via an 'image' property within a 'multipart/form-data' request. If the 'image' property is null then the book cover image will be removed."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "name",
+              "rules": [
+                "required",
+                "string",
+                "max:255"
+              ]
+            },
+            {
+              "name": "description",
+              "rules": [
+                "string",
+                "max:1900"
+              ]
+            },
+            {
+              "name": "description_html",
+              "rules": [
+                "string",
+                "max:2000"
+              ]
+            },
+            {
+              "name": "tags",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "image",
+              "rules": [
+                "nullable",
+                "image_extension",
+                "mimes:jpeg,png,gif,webp,avif",
+                "max:50000"
+              ]
+            },
+            {
+              "name": "default_template_id",
+              "rules": [
+                "nullable",
+                "integer"
+              ]
+            }
+          ],
+          "multipart": true,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "books_read",
+          "html_id": "books-read",
+          "method": "GET",
+          "group": "books",
+          "action": "read",
+          "path": "/books/{id}",
+          "summary": "View the details of a single book. The response data will contain a 'content' property listing the chapter and pages directly within, in the same structure as you'd see within the BookStack interface when viewing a book. Top-level contents will have a 'type' property to distinguish between pages and chapters.",
+          "description": [
+            "View the details of a single book. The response data will contain a 'content' property listing the chapter and pages directly within, in the same structure as you'd see within the BookStack interface when viewing a book. Top-level contents will have a 'type' property to distinguish between pages and chapters."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "books_update",
+          "html_id": "books-update",
+          "method": "PUT",
+          "group": "books",
+          "action": "update",
+          "path": "/books/{id}",
+          "summary": "Update the details of a single book. The cover image of a book can be set by sending a file via an 'image' property within a 'multipart/form-data' request. If the 'image' property is null then the book cover image will be removed.",
+          "description": [
+            "Update the details of a single book. The cover image of a book can be set by sending a file via an 'image' property within a 'multipart/form-data' request. If the 'image' property is null then the book cover image will be removed."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "name",
+              "rules": [
+                "string",
+                "min:1",
+                "max:255"
+              ]
+            },
+            {
+              "name": "description",
+              "rules": [
+                "string",
+                "max:1900"
+              ]
+            },
+            {
+              "name": "description_html",
+              "rules": [
+                "string",
+                "max:2000"
+              ]
+            },
+            {
+              "name": "tags",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "image",
+              "rules": [
+                "nullable",
+                "image_extension",
+                "mimes:jpeg,png,gif,webp,avif",
+                "max:50000"
+              ]
+            },
+            {
+              "name": "default_template_id",
+              "rules": [
+                "nullable",
+                "integer"
+              ]
+            }
+          ],
+          "multipart": true,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "books_delete",
+          "html_id": "books-delete",
+          "method": "DELETE",
+          "group": "books",
+          "action": "delete",
+          "path": "/books/{id}",
+          "summary": "Delete a single book. This will typically send the book to the recycle bin.",
+          "description": [
+            "Delete a single book. This will typically send the book to the recycle bin."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "books_exportHtml",
+          "html_id": "books-exportHtml",
+          "method": "GET",
+          "group": "books",
+          "action": "export-html",
+          "path": "/books/{id}/export/html",
+          "summary": "Export a book as a contained HTML file.",
+          "description": [
+            "Export a book as a contained HTML file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "books_exportPdf",
+          "html_id": "books-exportPdf",
+          "method": "GET",
+          "group": "books",
+          "action": "export-pdf",
+          "path": "/books/{id}/export/pdf",
+          "summary": "Export a book as a PDF file.",
+          "description": [
+            "Export a book as a PDF file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "books_exportPlainText",
+          "html_id": "books-exportPlainText",
+          "method": "GET",
+          "group": "books",
+          "action": "export-plain-text",
+          "path": "/books/{id}/export/plaintext",
+          "summary": "Export a book as a plain text file.",
+          "description": [
+            "Export a book as a plain text file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "books_exportMarkdown",
+          "html_id": "books-exportMarkdown",
+          "method": "GET",
+          "group": "books",
+          "action": "export-markdown",
+          "path": "/books/{id}/export/markdown",
+          "summary": "Export a book as a markdown file.",
+          "description": [
+            "Export a book as a markdown file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "books_exportZip",
+          "html_id": "books-exportZip",
+          "method": "GET",
+          "group": "books",
+          "action": "export-zip",
+          "path": "/books/{id}/export/zip",
+          "summary": "Export a book as a contained ZIP export file.",
+          "description": [
+            "Export a book as a contained ZIP export file."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        }
+      ]
+    },
+    {
+      "name": "shelves",
+      "operations": [
+        {
+          "operation_id": "shelves_list",
+          "html_id": "shelves-list",
+          "method": "GET",
+          "group": "shelves",
+          "action": "list",
+          "path": "/shelves",
+          "summary": "Get a listing of shelves visible to the user.",
+          "description": [
+            "Get a listing of shelves visible to the user."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "shelves_create",
+          "html_id": "shelves-create",
+          "method": "POST",
+          "group": "shelves",
+          "action": "create",
+          "path": "/shelves",
+          "summary": "Create a new shelf in the system. An array of books IDs can be provided in the request. These will be added to the shelf in the same order as provided. The cover image of a shelf can be set by sending a file via an 'image' property within a 'multipart/form-data' request. If the 'image' property is null then the shelf cover image will be removed.",
+          "description": [
+            "Create a new shelf in the system. An array of books IDs can be provided in the request. These will be added to the shelf in the same order as provided. The cover image of a shelf can be set by sending a file via an 'image' property within a 'multipart/form-data' request. If the 'image' property is null then the shelf cover image will be removed."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "name",
+              "rules": [
+                "required",
+                "string",
+                "max:255"
+              ]
+            },
+            {
+              "name": "description",
+              "rules": [
+                "string",
+                "max:1900"
+              ]
+            },
+            {
+              "name": "description_html",
+              "rules": [
+                "string",
+                "max:2000"
+              ]
+            },
+            {
+              "name": "books",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "tags",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "image",
+              "rules": [
+                "nullable",
+                "image_extension",
+                "mimes:jpeg,png,gif,webp,avif",
+                "max:50000"
+              ]
+            }
+          ],
+          "multipart": true,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "shelves_read",
+          "html_id": "shelves-read",
+          "method": "GET",
+          "group": "shelves",
+          "action": "read",
+          "path": "/shelves/{id}",
+          "summary": "View the details of a single shelf.",
+          "description": [
+            "View the details of a single shelf."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "shelves_update",
+          "html_id": "shelves-update",
+          "method": "PUT",
+          "group": "shelves",
+          "action": "update",
+          "path": "/shelves/{id}",
+          "summary": "Update the details of a single shelf. An array of books IDs can be provided in the request. These will be added to the shelf in the same order as provided and overwrite any existing book assignments. The cover image of a shelf can be set by sending a file via an 'image' property within a 'multipart/form-data' request. If the 'image' property is null then the shelf cover image will be removed.",
+          "description": [
+            "Update the details of a single shelf. An array of books IDs can be provided in the request. These will be added to the shelf in the same order as provided and overwrite any existing book assignments. The cover image of a shelf can be set by sending a file via an 'image' property within a 'multipart/form-data' request. If the 'image' property is null then the shelf cover image will be removed."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "name",
+              "rules": [
+                "string",
+                "min:1",
+                "max:255"
+              ]
+            },
+            {
+              "name": "description",
+              "rules": [
+                "string",
+                "max:1900"
+              ]
+            },
+            {
+              "name": "description_html",
+              "rules": [
+                "string",
+                "max:2000"
+              ]
+            },
+            {
+              "name": "books",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "tags",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "image",
+              "rules": [
+                "nullable",
+                "image_extension",
+                "mimes:jpeg,png,gif,webp,avif",
+                "max:50000"
+              ]
+            }
+          ],
+          "multipart": true,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "shelves_delete",
+          "html_id": "shelves-delete",
+          "method": "DELETE",
+          "group": "shelves",
+          "action": "delete",
+          "path": "/shelves/{id}",
+          "summary": "Delete a single shelf. This will typically send the shelf to the recycle bin.",
+          "description": [
+            "Delete a single shelf. This will typically send the shelf to the recycle bin."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "attachments",
+      "operations": [
+        {
+          "operation_id": "attachments_list",
+          "html_id": "attachments-list",
+          "method": "GET",
+          "group": "attachments",
+          "action": "list",
+          "path": "/attachments",
+          "summary": "Get a listing of attachments visible to the user. The external property indicates whether the attachment is simple a link. A false value for the external property would indicate a file upload.",
+          "description": [
+            "Get a listing of attachments visible to the user. The external property indicates whether the attachment is simple a link. A false value for the external property would indicate a file upload."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "attachments_create",
+          "html_id": "attachments-create",
+          "method": "POST",
+          "group": "attachments",
+          "action": "create",
+          "path": "/attachments",
+          "summary": "Create a new attachment in the system. An uploaded_to value must be provided containing an ID of the page that this upload will be related to.",
+          "description": [
+            "Create a new attachment in the system. An uploaded_to value must be provided containing an ID of the page that this upload will be related to.",
+            "If you're uploading a file the POST data should be provided via a multipart/form-data type request instead of JSON."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "name",
+              "rules": [
+                "required",
+                "string",
+                "min:1",
+                "max:255"
+              ]
+            },
+            {
+              "name": "uploaded_to",
+              "rules": [
+                "required",
+                "integer",
+                "exists:entities,id,type,\"page\""
+              ]
+            },
+            {
+              "name": "file",
+              "rules": [
+                "required_without:link",
+                "file",
+                "max:50000"
+              ]
+            },
+            {
+              "name": "link",
+              "rules": [
+                "required_without:file",
+                "string",
+                "min:1",
+                "max:2000",
+                "safe_url"
+              ]
+            }
+          ],
+          "multipart": true,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "attachments_read",
+          "html_id": "attachments-read",
+          "method": "GET",
+          "group": "attachments",
+          "action": "read",
+          "path": "/attachments/{id}",
+          "summary": "Get the details & content of a single attachment of the given ID. The attachment link or file content is provided via a 'content' property. For files the content will be base64 encoded.",
+          "description": [
+            "Get the details & content of a single attachment of the given ID. The attachment link or file content is provided via a 'content' property. For files the content will be base64 encoded."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "attachments_update",
+          "html_id": "attachments-update",
+          "method": "PUT",
+          "group": "attachments",
+          "action": "update",
+          "path": "/attachments/{id}",
+          "summary": "Update the details of a single attachment. As per the create endpoint, if a file is being provided as the attachment content the request should be formatted as a multipart/form-data request instead of JSON.",
+          "description": [
+            "Update the details of a single attachment. As per the create endpoint, if a file is being provided as the attachment content the request should be formatted as a multipart/form-data request instead of JSON."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "name",
+              "rules": [
+                "string",
+                "min:1",
+                "max:255"
+              ]
+            },
+            {
+              "name": "uploaded_to",
+              "rules": [
+                "integer",
+                "exists:entities,id,type,\"page\""
+              ]
+            },
+            {
+              "name": "file",
+              "rules": [
+                "file",
+                "max:50000"
+              ]
+            },
+            {
+              "name": "link",
+              "rules": [
+                "string",
+                "min:1",
+                "max:2000",
+                "safe_url"
+              ]
+            }
+          ],
+          "multipart": true,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "attachments_delete",
+          "html_id": "attachments-delete",
+          "method": "DELETE",
+          "group": "attachments",
+          "action": "delete",
+          "path": "/attachments/{id}",
+          "summary": "Delete an attachment of the given ID.",
+          "description": [
+            "Delete an attachment of the given ID."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "audit-log",
+      "operations": [
+        {
+          "operation_id": "audit_log_list",
+          "html_id": "audit-log-list",
+          "method": "GET",
+          "group": "audit-log",
+          "action": "list",
+          "path": "/audit-log",
+          "summary": "Get a listing of audit log events in the system. The loggable relation fields currently only relates to core content types (page, book, bookshelf, chapter) but this may be used more in the future across other types. Requires permission to manage both users and system settings.",
+          "description": [
+            "Get a listing of audit log events in the system. The loggable relation fields currently only relates to core content types (page, book, bookshelf, chapter) but this may be used more in the future across other types. Requires permission to manage both users and system settings."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "comments",
+      "operations": [
+        {
+          "operation_id": "comments_list",
+          "html_id": "comments-list",
+          "method": "GET",
+          "group": "comments",
+          "action": "list",
+          "path": "/comments",
+          "summary": "Get a listing of comments visible to the user.",
+          "description": [
+            "Get a listing of comments visible to the user."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "comments_create",
+          "html_id": "comments-create",
+          "method": "POST",
+          "group": "comments",
+          "action": "create",
+          "path": "/comments",
+          "summary": "Create a new comment on a page. If commenting as a reply to an existing comment, the 'reply_to' parameter should be provided, set to the 'local_id' of the comment being replied to.",
+          "description": [
+            "Create a new comment on a page. If commenting as a reply to an existing comment, the 'reply_to' parameter should be provided, set to the 'local_id' of the comment being replied to."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "page_id",
+              "rules": [
+                "required",
+                "integer"
+              ]
+            },
+            {
+              "name": "reply_to",
+              "rules": [
+                "nullable",
+                "integer"
+              ]
+            },
+            {
+              "name": "html",
+              "rules": [
+                "required",
+                "string"
+              ]
+            },
+            {
+              "name": "content_ref",
+              "rules": [
+                "string"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "comments_read",
+          "html_id": "comments-read",
+          "method": "GET",
+          "group": "comments",
+          "action": "read",
+          "path": "/comments/{id}",
+          "summary": "Read the details of a single comment, along with its direct replies.",
+          "description": [
+            "Read the details of a single comment, along with its direct replies."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "comments_update",
+          "html_id": "comments-update",
+          "method": "PUT",
+          "group": "comments",
+          "action": "update",
+          "path": "/comments/{id}",
+          "summary": "Update the content or archived status of an existing comment.",
+          "description": [
+            "Update the content or archived status of an existing comment.",
+            "Only provide a new archived status if needing to actively change the archive state. Only top-level comments (non-replies) can be archived or unarchived."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "html",
+              "rules": [
+                "string"
+              ]
+            },
+            {
+              "name": "archived",
+              "rules": [
+                "boolean"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "comments_delete",
+          "html_id": "comments-delete",
+          "method": "DELETE",
+          "group": "comments",
+          "action": "delete",
+          "path": "/comments/{id}",
+          "summary": "Delete a single comment from the system.",
+          "description": [
+            "Delete a single comment from the system."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "content-permissions",
+      "operations": [
+        {
+          "operation_id": "content_permissions_read",
+          "html_id": "content-permissions-read",
+          "method": "GET",
+          "group": "content-permissions",
+          "action": "read",
+          "path": "/content-permissions/{contentType}/{contentId}",
+          "summary": "Read the configured content-level permissions for the item of the given type and ID.",
+          "description": [
+            "Read the configured content-level permissions for the item of the given type and ID.",
+            "'contentType' should be one of: page, book, chapter, bookshelf. 'contentId' should be the relevant ID of that item type you'd like to handle permissions for.",
+            "The permissions shown are those that override the default for just the specified item, they do not show the full evaluated permission for a role, nor do they reflect permissions inherited from other items in the hierarchy. Fallback permission values may be `null` when inheriting is active."
+          ],
+          "path_params": [
+            "contentType",
+            "contentId"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "content_permissions_update",
+          "html_id": "content-permissions-update",
+          "method": "PUT",
+          "group": "content-permissions",
+          "action": "update",
+          "path": "/content-permissions/{contentType}/{contentId}",
+          "summary": "Update the configured content-level permission overrides for the item of the given type and ID. 'contentType' should be one of: page, book, chapter, bookshelf.",
+          "description": [
+            "Update the configured content-level permission overrides for the item of the given type and ID. 'contentType' should be one of: page, book, chapter, bookshelf.",
+            "'contentId' should be the relevant ID of that item type you'd like to handle permissions for. Providing an empty `role_permissions` array will remove any existing configured role permissions, so you may want to fetch existing permissions beforehand if just adding/removing a single item. You should completely omit the `owner_id`, `role_permissions` and/or the `fallback_permissions` properties from your request data if you don't wish to update details within those categories."
+          ],
+          "path_params": [
+            "contentType",
+            "contentId"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "owner_id",
+              "rules": [
+                "int"
+              ]
+            },
+            {
+              "name": "role_permissions",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "role_permissions.*.role_id",
+              "rules": [
+                "required",
+                "int",
+                "exists:roles,id"
+              ]
+            },
+            {
+              "name": "role_permissions.*.view",
+              "rules": [
+                "required",
+                "boolean"
+              ]
+            },
+            {
+              "name": "role_permissions.*.create",
+              "rules": [
+                "required",
+                "boolean"
+              ]
+            },
+            {
+              "name": "role_permissions.*.update",
+              "rules": [
+                "required",
+                "boolean"
+              ]
+            },
+            {
+              "name": "role_permissions.*.delete",
+              "rules": [
+                "required",
+                "boolean"
+              ]
+            },
+            {
+              "name": "fallback_permissions",
+              "rules": [
+                "nullable"
+              ]
+            },
+            {
+              "name": "fallback_permissions.inheriting",
+              "rules": [
+                "required_with:fallback_permissions",
+                "boolean"
+              ]
+            },
+            {
+              "name": "fallback_permissions.view",
+              "rules": [
+                "required_if:fallback_permissions.inheriting,false",
+                "boolean"
+              ]
+            },
+            {
+              "name": "fallback_permissions.create",
+              "rules": [
+                "required_if:fallback_permissions.inheriting,false",
+                "boolean"
+              ]
+            },
+            {
+              "name": "fallback_permissions.update",
+              "rules": [
+                "required_if:fallback_permissions.inheriting,false",
+                "boolean"
+              ]
+            },
+            {
+              "name": "fallback_permissions.delete",
+              "rules": [
+                "required_if:fallback_permissions.inheriting,false",
+                "boolean"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "image-gallery",
+      "operations": [
+        {
+          "operation_id": "image_gallery_list",
+          "html_id": "image-gallery-list",
+          "method": "GET",
+          "group": "image-gallery",
+          "action": "list",
+          "path": "/image-gallery",
+          "summary": "Get a listing of images in the system. Includes gallery (page content) images and drawings. Requires visibility of the page they're originally uploaded to.",
+          "description": [
+            "Get a listing of images in the system. Includes gallery (page content) images and drawings. Requires visibility of the page they're originally uploaded to."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "image_gallery_create",
+          "html_id": "image-gallery-create",
+          "method": "POST",
+          "group": "image-gallery",
+          "action": "create",
+          "path": "/image-gallery",
+          "summary": "Create a new image in the system.",
+          "description": [
+            "Create a new image in the system.",
+            "Since \"image\" is expected to be a file, this needs to be a 'multipart/form-data' type request. The provided \"uploaded_to\" should be an existing page ID in the system.",
+            "If the \"name\" parameter is omitted, the filename of the provided image file will be used instead. The \"type\" parameter should be 'gallery' for page content images, and 'drawio' should only be used when the file is a PNG file with diagrams.net image data embedded within."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "type",
+              "rules": [
+                "required",
+                "string",
+                "in:gallery,drawio"
+              ]
+            },
+            {
+              "name": "uploaded_to",
+              "rules": [
+                "required",
+                "integer"
+              ]
+            },
+            {
+              "name": "image",
+              "rules": [
+                "required",
+                "file",
+                "image_extension",
+                "mimes:jpeg,png,gif,webp,avif",
+                "max:50000"
+              ]
+            },
+            {
+              "name": "name",
+              "rules": [
+                "string",
+                "max:180"
+              ]
+            }
+          ],
+          "multipart": true,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "image_gallery_readDataForUrl",
+          "html_id": "image-gallery-readDataForUrl",
+          "method": "GET",
+          "group": "image-gallery",
+          "action": "read-data-for-url",
+          "path": "/image-gallery/url/data",
+          "summary": "Read the image file data for a single image in the system, using the provided URL to identify the image instead of its ID, which is provided as a \"URL\" query parameter. The returned response will be a stream of image data instead of a JSON response.",
+          "description": [
+            "Read the image file data for a single image in the system, using the provided URL to identify the image instead of its ID, which is provided as a \"URL\" query parameter. The returned response will be a stream of image data instead of a JSON response."
+          ],
+          "path_params": [],
+          "query_params": [
+            "url"
+          ],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "image_gallery_read",
+          "html_id": "image-gallery-read",
+          "method": "GET",
+          "group": "image-gallery",
+          "action": "read",
+          "path": "/image-gallery/{id}",
+          "summary": "View the details of a single image. The \"thumbs\" response property contains links to scaled variants that BookStack may use in its UI. The \"content\" response property provides HTML and Markdown content, in the format that BookStack would typically use by default to add the image in page content, as a convenience. Actual image file data is not provided but can be fetched via the \"url\" response property or by using the \"read-data\" endpoint.",
+          "description": [
+            "View the details of a single image. The \"thumbs\" response property contains links to scaled variants that BookStack may use in its UI. The \"content\" response property provides HTML and Markdown content, in the format that BookStack would typically use by default to add the image in page content, as a convenience. Actual image file data is not provided but can be fetched via the \"url\" response property or by using the \"read-data\" endpoint."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "image_gallery_readData",
+          "html_id": "image-gallery-readData",
+          "method": "GET",
+          "group": "image-gallery",
+          "action": "read-data",
+          "path": "/image-gallery/{id}/data",
+          "summary": "Read the image file data for a single image in the system. The returned response will be a stream of image data instead of a JSON response.",
+          "description": [
+            "Read the image file data for a single image in the system. The returned response will be a stream of image data instead of a JSON response."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "binary"
+        },
+        {
+          "operation_id": "image_gallery_update",
+          "html_id": "image-gallery-update",
+          "method": "PUT",
+          "group": "image-gallery",
+          "action": "update",
+          "path": "/image-gallery/{id}",
+          "summary": "Update the details of an existing image in the system. Since \"image\" is expected to be a file, this needs to be a 'multipart/form-data' type request if providing a new image file. Updated image files should be of the same file type as the original image.",
+          "description": [
+            "Update the details of an existing image in the system. Since \"image\" is expected to be a file, this needs to be a 'multipart/form-data' type request if providing a new image file. Updated image files should be of the same file type as the original image."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "name",
+              "rules": [
+                "string",
+                "max:180"
+              ]
+            },
+            {
+              "name": "image",
+              "rules": [
+                "file",
+                "image_extension",
+                "mimes:jpeg,png,gif,webp,avif",
+                "max:50000"
+              ]
+            }
+          ],
+          "multipart": true,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "image_gallery_delete",
+          "html_id": "image-gallery-delete",
+          "method": "DELETE",
+          "group": "image-gallery",
+          "action": "delete",
+          "path": "/image-gallery/{id}",
+          "summary": "Delete an image from the system. Will also delete thumbnails for the image. Does not check or handle image usage so this could leave pages with broken image references.",
+          "description": [
+            "Delete an image from the system. Will also delete thumbnails for the image. Does not check or handle image usage so this could leave pages with broken image references."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "imports",
+      "operations": [
+        {
+          "operation_id": "imports_list",
+          "html_id": "imports-list",
+          "method": "GET",
+          "group": "imports",
+          "action": "list",
+          "path": "/imports",
+          "summary": "List existing ZIP imports visible to the user. Requires permission to import content.",
+          "description": [
+            "List existing ZIP imports visible to the user. Requires permission to import content."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "imports_create",
+          "html_id": "imports-create",
+          "method": "POST",
+          "group": "imports",
+          "action": "create",
+          "path": "/imports",
+          "summary": "Start a new import from a ZIP file. This does not actually run the import since that is performed via the \"run\" endpoint. This uploads, validates and stores the ZIP file so it's ready to be imported.",
+          "description": [
+            "Start a new import from a ZIP file. This does not actually run the import since that is performed via the \"run\" endpoint. This uploads, validates and stores the ZIP file so it's ready to be imported.",
+            "This \"file\" parameter must be a BookStack-compatible ZIP file, and this must be sent via a 'multipart/form-data' type request.",
+            "Requires permission to import content."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "file",
+              "rules": [
+                "required",
+                "file",
+                "max:50000"
+              ]
+            }
+          ],
+          "multipart": true,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "imports_read",
+          "html_id": "imports-read",
+          "method": "GET",
+          "group": "imports",
+          "action": "read",
+          "path": "/imports/{id}",
+          "summary": "Read details of a pending ZIP import. The \"details\" property contains high-level metadata regarding the ZIP import content, and the structure of this will change depending on import \"type\". Requires permission to import content.",
+          "description": [
+            "Read details of a pending ZIP import. The \"details\" property contains high-level metadata regarding the ZIP import content, and the structure of this will change depending on import \"type\". Requires permission to import content."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "imports_run",
+          "html_id": "imports-run",
+          "method": "POST",
+          "group": "imports",
+          "action": "run",
+          "path": "/imports/{id}",
+          "summary": "Run the import process for an uploaded ZIP import. The \"parent_id\" and \"parent_type\" parameters are required when the import type is \"chapter\" or \"page\". On success, this endpoint returns the imported item. Requires permission to import content.",
+          "description": [
+            "Run the import process for an uploaded ZIP import. The \"parent_id\" and \"parent_type\" parameters are required when the import type is \"chapter\" or \"page\". On success, this endpoint returns the imported item. Requires permission to import content."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "parent_type",
+              "rules": [
+                "string",
+                "in:book,chapter"
+              ]
+            },
+            {
+              "name": "parent_id",
+              "rules": [
+                "int"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "imports_delete",
+          "html_id": "imports-delete",
+          "method": "DELETE",
+          "group": "imports",
+          "action": "delete",
+          "path": "/imports/{id}",
+          "summary": "Delete a pending ZIP import from the system. Requires permission to import content.",
+          "description": [
+            "Delete a pending ZIP import from the system. Requires permission to import content."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "recycle-bin",
+      "operations": [
+        {
+          "operation_id": "recycle_bin_list",
+          "html_id": "recycle-bin-list",
+          "method": "GET",
+          "group": "recycle-bin",
+          "action": "list",
+          "path": "/recycle-bin",
+          "summary": "Get a top-level listing of the items in the recycle bin. The \"deletable\" property will reflect the main item deleted. For books and chapters, counts of child pages/chapters will be loaded within this \"deletable\" data. For chapters & pages, the parent item will be loaded within this \"deletable\" data. Requires permission to manage both system settings and permissions.",
+          "description": [
+            "Get a top-level listing of the items in the recycle bin. The \"deletable\" property will reflect the main item deleted. For books and chapters, counts of child pages/chapters will be loaded within this \"deletable\" data. For chapters & pages, the parent item will be loaded within this \"deletable\" data. Requires permission to manage both system settings and permissions."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "recycle_bin_restore",
+          "html_id": "recycle-bin-restore",
+          "method": "PUT",
+          "group": "recycle-bin",
+          "action": "restore",
+          "path": "/recycle-bin/{deletionId}",
+          "summary": "Restore a single deletion from the recycle bin. Requires permission to manage both system settings and permissions.",
+          "description": [
+            "Restore a single deletion from the recycle bin. Requires permission to manage both system settings and permissions."
+          ],
+          "path_params": [
+            "deletionId"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "recycle_bin_destroy",
+          "html_id": "recycle-bin-destroy",
+          "method": "DELETE",
+          "group": "recycle-bin",
+          "action": "destroy",
+          "path": "/recycle-bin/{deletionId}",
+          "summary": "Remove a single deletion from the recycle bin. Use this endpoint carefully as it will entirely remove the underlying deleted items from the system. Requires permission to manage both system settings and permissions.",
+          "description": [
+            "Remove a single deletion from the recycle bin. Use this endpoint carefully as it will entirely remove the underlying deleted items from the system. Requires permission to manage both system settings and permissions."
+          ],
+          "path_params": [
+            "deletionId"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "roles",
+      "operations": [
+        {
+          "operation_id": "roles_list",
+          "html_id": "roles-list",
+          "method": "GET",
+          "group": "roles",
+          "action": "list",
+          "path": "/roles",
+          "summary": "Get a listing of roles in the system. Requires permission to manage roles.",
+          "description": [
+            "Get a listing of roles in the system. Requires permission to manage roles."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "roles_create",
+          "html_id": "roles-create",
+          "method": "POST",
+          "group": "roles",
+          "action": "create",
+          "path": "/roles",
+          "summary": "Create a new role in the system. Permissions should be provided as an array of permission name strings. Requires permission to manage roles.",
+          "description": [
+            "Create a new role in the system. Permissions should be provided as an array of permission name strings. Requires permission to manage roles."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "display_name",
+              "rules": [
+                "required",
+                "string",
+                "min:3",
+                "max:180"
+              ]
+            },
+            {
+              "name": "description",
+              "rules": [
+                "string",
+                "max:180"
+              ]
+            },
+            {
+              "name": "mfa_enforced",
+              "rules": [
+                "boolean"
+              ]
+            },
+            {
+              "name": "external_auth_id",
+              "rules": [
+                "string",
+                "max:180"
+              ]
+            },
+            {
+              "name": "permissions",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "permissions.*",
+              "rules": [
+                "string"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "roles_read",
+          "html_id": "roles-read",
+          "method": "GET",
+          "group": "roles",
+          "action": "read",
+          "path": "/roles/{id}",
+          "summary": "View the details of a single role. Provides the permissions and a high-level list of the users assigned. Requires permission to manage roles.",
+          "description": [
+            "View the details of a single role. Provides the permissions and a high-level list of the users assigned. Requires permission to manage roles."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "roles_update",
+          "html_id": "roles-update",
+          "method": "PUT",
+          "group": "roles",
+          "action": "update",
+          "path": "/roles/{id}",
+          "summary": "Update an existing role in the system. Permissions should be provided as an array of permission name strings. An empty \"permissions\" array would clear granted permissions. In many cases, where permissions are changed, you'll want to fetch the existing permissions and then modify before providing in your update request. Requires permission to manage roles.",
+          "description": [
+            "Update an existing role in the system. Permissions should be provided as an array of permission name strings. An empty \"permissions\" array would clear granted permissions. In many cases, where permissions are changed, you'll want to fetch the existing permissions and then modify before providing in your update request. Requires permission to manage roles."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "display_name",
+              "rules": [
+                "string",
+                "min:3",
+                "max:180"
+              ]
+            },
+            {
+              "name": "description",
+              "rules": [
+                "string",
+                "max:180"
+              ]
+            },
+            {
+              "name": "mfa_enforced",
+              "rules": [
+                "boolean"
+              ]
+            },
+            {
+              "name": "external_auth_id",
+              "rules": [
+                "string",
+                "max:180"
+              ]
+            },
+            {
+              "name": "permissions",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "permissions.*",
+              "rules": [
+                "string"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "roles_delete",
+          "html_id": "roles-delete",
+          "method": "DELETE",
+          "group": "roles",
+          "action": "delete",
+          "path": "/roles/{id}",
+          "summary": "Delete a role from the system. Requires permission to manage roles.",
+          "description": [
+            "Delete a role from the system. Requires permission to manage roles."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "search",
+      "operations": [
+        {
+          "operation_id": "search_all",
+          "html_id": "search-all",
+          "method": "GET",
+          "group": "search",
+          "action": "all",
+          "path": "/search",
+          "summary": "Run a search query against all main content types (shelves, books, chapters & pages) in the system. Takes the same input as the main search bar within the BookStack interface as a 'query' parameter. See https://www.bookstackapp.com/docs/user/searching/ for a full list of search term options. Results contain a 'type' property to distinguish between: bookshelf, book, chapter & page.",
+          "description": [
+            "Run a search query against all main content types (shelves, books, chapters & pages) in the system. Takes the same input as the main search bar within the BookStack interface as a 'query' parameter. See https://www.bookstackapp.com/docs/user/searching/ for a full list of search term options. Results contain a 'type' property to distinguish between: bookshelf, book, chapter & page.",
+            "The paging parameters and response format emulates a standard listing endpoint but standard sorting and filtering cannot be done on this endpoint."
+          ],
+          "path_params": [],
+          "query_params": [
+            "query",
+            "page",
+            "count"
+          ],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "system",
+      "operations": [
+        {
+          "operation_id": "system_read",
+          "html_id": "system-read",
+          "method": "GET",
+          "group": "system",
+          "action": "read",
+          "path": "/system",
+          "summary": "Read details regarding the BookStack instance. Some details may be null where not set, like the app logo for example.",
+          "description": [
+            "Read details regarding the BookStack instance. Some details may be null where not set, like the app logo for example."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "operations": [
+        {
+          "operation_id": "users_list",
+          "html_id": "users-list",
+          "method": "GET",
+          "group": "users",
+          "action": "list",
+          "path": "/users",
+          "summary": "Get a listing of users in the system. Requires permission to manage users.",
+          "description": [
+            "Get a listing of users in the system. Requires permission to manage users."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "users_create",
+          "html_id": "users-create",
+          "method": "POST",
+          "group": "users",
+          "action": "create",
+          "path": "/users",
+          "summary": "Create a new user in the system. Requires permission to manage users.",
+          "description": [
+            "Create a new user in the system. Requires permission to manage users."
+          ],
+          "path_params": [],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "name",
+              "rules": [
+                "required",
+                "string",
+                "min:1",
+                "max:100"
+              ]
+            },
+            {
+              "name": "email",
+              "rules": [
+                "required",
+                "string",
+                "email",
+                "min:2",
+                "unique:users,email,NULL,id"
+              ]
+            },
+            {
+              "name": "external_auth_id",
+              "rules": [
+                "string"
+              ]
+            },
+            {
+              "name": "language",
+              "rules": [
+                "string",
+                "max:15",
+                "alpha_dash"
+              ]
+            },
+            {
+              "name": "password",
+              "rules": [
+                "string",
+                "min:8"
+              ]
+            },
+            {
+              "name": "roles",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "roles.*",
+              "rules": [
+                "integer"
+              ]
+            },
+            {
+              "name": "send_invite",
+              "rules": [
+                "boolean"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "users_read",
+          "html_id": "users-read",
+          "method": "GET",
+          "group": "users",
+          "action": "read",
+          "path": "/users/{id}",
+          "summary": "View the details of a single user. Requires permission to manage users.",
+          "description": [
+            "View the details of a single user. Requires permission to manage users."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "users_update",
+          "html_id": "users-update",
+          "method": "PUT",
+          "group": "users",
+          "action": "update",
+          "path": "/users/{id}",
+          "summary": "Update an existing user in the system. Requires permission to manage users.",
+          "description": [
+            "Update an existing user in the system. Requires permission to manage users."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "name",
+              "rules": [
+                "string",
+                "min:1",
+                "max:100"
+              ]
+            },
+            {
+              "name": "email",
+              "rules": [
+                "string",
+                "email",
+                "min:2",
+                "unique:users,email,NULL,id"
+              ]
+            },
+            {
+              "name": "external_auth_id",
+              "rules": [
+                "string"
+              ]
+            },
+            {
+              "name": "language",
+              "rules": [
+                "string",
+                "max:15",
+                "alpha_dash"
+              ]
+            },
+            {
+              "name": "password",
+              "rules": [
+                "string",
+                "min:8"
+              ]
+            },
+            {
+              "name": "roles",
+              "rules": [
+                "array"
+              ]
+            },
+            {
+              "name": "roles.*",
+              "rules": [
+                "integer"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        },
+        {
+          "operation_id": "users_delete",
+          "html_id": "users-delete",
+          "method": "DELETE",
+          "group": "users",
+          "action": "delete",
+          "path": "/users/{id}",
+          "summary": "Delete a user from the system. Can optionally accept a user id via `migrate_ownership_id` to indicate who should be the new owner of their related content. Requires permission to manage users.",
+          "description": [
+            "Delete a user from the system. Can optionally accept a user id via `migrate_ownership_id` to indicate who should be the new owner of their related content. Requires permission to manage users."
+          ],
+          "path_params": [
+            "id"
+          ],
+          "query_params": [],
+          "body_params": [
+            {
+              "name": "migrate_ownership_id",
+              "rules": [
+                "integer",
+                "exists:users,id"
+              ]
+            }
+          ],
+          "multipart": false,
+          "response_kind": "json"
+        }
+      ]
+    }
+  ],
+  "group_count": 16,
+  "operation_count": 77
+}

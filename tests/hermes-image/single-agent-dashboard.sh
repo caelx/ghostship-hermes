@@ -21,7 +21,7 @@ router_base_url="http://127.0.0.1:8788"
 
 : "${DISCORD_BOT_TOKEN:=single-agent-bot-token}"
 : "${DISCORD_ALLOWED_USERS:=single-agent-user}"
-: "${DISCORD_FREE_RESPONSE_CHANNELS:=single-agent-channel}"
+: "${GHOSTSHIP_ROUTER_CHANNEL:=single-agent-channel}"
 : "${DISCORD_HOME_CHANNEL:=single-agent-home}"
 : "${WEBHOOK_SECRET:=single-agent-webhook-secret}"
 : "${BROWSER_CDP_URL:=ws://single-agent-browser.example/ws}"
@@ -186,10 +186,11 @@ assert_model_config() {
   run_as_hermes "$target_container" 'hermes config show | grep -F "provider: opencode-go" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "default: minimax-m2.7" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "fallback_model:" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: custom" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "model: agentic" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: openai-codex" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "model: gpt-5.4-mini" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "custom_providers:" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "name: ghostship-router" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "base_url: http://127.0.0.1:8788/v1" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "api_key_env: OPENAI_API_KEY" >/dev/null'
   run_in_container "$target_container" 'printenv GHOSTSHIP_ROUTER_DISABLED_MODELS | grep -Fx "openrouter/free" >/dev/null'
   run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/health | jq -e '.config_model == \"minimax-m2.7\" and .config_provider == \"opencode-go\"' >/dev/null"
   run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/profiles | jq -e '.profiles[0].name == \"Managed Agent\" and .profiles[0].model == \"minimax-m2.7\" and .profiles[0].provider == \"opencode-go\"' >/dev/null"
@@ -213,6 +214,56 @@ assert_gateway_pid_contract() {
   local target_container="$1"
   run_as_hermes "$target_container" 'pid=$(jq -r ".pid" /home/hermes/.hermes/gateway.pid); kind=$(jq -r ".kind" /home/hermes/.hermes/gateway.pid); argv=$(jq -r ".argv | join(\" \")" /home/hermes/.hermes/gateway.pid); test -n "$pid"; test "$kind" = "hermes-gateway"; printf "%s" "$argv" | grep -F "hermes gateway run --replace" >/dev/null; kill -0 "$pid"'
   run_as_hermes "$target_container" 'pid=$(jq -r ".pid" /home/hermes/.hermes/gateway.pid); ps -p "$pid" -o args= | grep -F "gateway run --replace" >/dev/null'
+}
+
+get_gateway_main_pid() {
+  local target_container="$1"
+  run_as_hermes "$target_container" 'pid=$(systemctl --user show -p MainPID --value hermes-gateway.service); test -n "$pid"; test "$pid" != "0"; printf "%s" "$pid"'
+}
+
+assert_gateway_restarts_after() {
+  local target_container="$1"
+  local mutate_command="$2"
+  local before_pid
+  local after_pid
+  local attempt
+
+  before_pid="$(get_gateway_main_pid "$target_container")"
+  run_as_hermes "$target_container" "$mutate_command"
+
+  for attempt in $(seq 1 20); do
+    after_pid="$(get_gateway_main_pid "$target_container")"
+    if [ "$after_pid" != "$before_pid" ]; then
+      assert_gateway_pid_contract "$target_container"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "expected gateway restart after mutation, but MainPID stayed at $before_pid" >&2
+  return 1
+}
+
+assert_gateway_does_not_restart_after() {
+  local target_container="$1"
+  local mutate_command="$2"
+  local before_pid
+  local after_pid
+  local attempt
+
+  before_pid="$(get_gateway_main_pid "$target_container")"
+  run_as_hermes "$target_container" "$mutate_command"
+
+  for attempt in $(seq 1 6); do
+    after_pid="$(get_gateway_main_pid "$target_container")"
+    if [ "$after_pid" != "$before_pid" ]; then
+      echo "unexpected gateway restart after non-runtime mutation: $before_pid -> $after_pid" >&2
+      return 1
+    fi
+    sleep 1
+  done
+
+  assert_gateway_pid_contract "$target_container"
 }
 
 assert_websocket_proxy() {
@@ -323,6 +374,61 @@ assert_dashboard_browser_open() {
   agent-browser --session "$browser_session" close --all >/dev/null 2>&1 || true
 }
 
+assert_image_metadata() {
+  docker inspect "$image_tag" | jq -e '
+    .[0].Config.StopSignal == "SIGRTMIN+3"
+    and .[0].Config.Labels["org.opencontainers.image.source"] == "https://github.com/caelx/ghostship-hermes"
+    and (.[0].Config.Labels["org.opencontainers.image.revision"] | type) == "string"
+    and (.[0].Config.Labels["org.opencontainers.image.revision"] | length) > 0
+  ' >/dev/null
+}
+
+assert_no_known_activation_warnings() {
+  local target_container="$1"
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "unpacking the NixOS/Nixpkgs sources..."'
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/root/.nix-defexpr/channels exists, but channels have been disabled."'
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/nix/var/nix/profiles/per-user/root/channels exists, but channels have been disabled."'
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/root/.nix-defexpr/channels/channels"'
+}
+
+assert_managed_tooling_noop_rerun() {
+  local target_container="$1"
+  local start_time
+  local started_at
+  local finished_at
+  local removal_count
+
+  start_time="$(date -u +%FT%TZ)"
+  started_at="$(date +%s)"
+  run_in_container "$target_container" 'systemctl start ghostship-hermes-user-tooling.service'
+  finished_at="$(date +%s)"
+  test $((finished_at - started_at)) -lt 15
+  removal_count="$(run_in_container "$target_container" "journalctl -u ghostship-hermes-user-tooling.service --since '$start_time' --no-pager | grep -c 'removing ' || true")"
+  test "$removal_count" -eq 0
+}
+
+assert_managed_tooling_repairs_single_drift() {
+  local target_container="$1"
+  local start_time
+  local removal_count
+
+  run_as_hermes_default_path "$target_container" 'HOME=/home/hermes nix profile remove --profile /home/hermes/.local/state/nix/profiles/ghostship-managed fd'
+  run_as_hermes_default_path "$target_container" '! command -v fd >/dev/null'
+
+  start_time="$(date -u +%FT%TZ)"
+  run_in_container "$target_container" 'systemctl start ghostship-hermes-user-tooling.service'
+
+  run_as_hermes_default_path "$target_container" 'test "$(command -v fd)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/fd"'
+  removal_count="$(run_in_container "$target_container" "journalctl -u ghostship-hermes-user-tooling.service --since '$start_time' --no-pager | grep -c 'removing ' || true")"
+  test "$removal_count" -le 1
+}
+
+assert_clean_stop() {
+  local target_container="$1"
+  docker stop -t 45 "$target_container" >/dev/null
+  test "$(docker inspect -f '{{.State.ExitCode}}' "$target_container")" = "0"
+}
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required for dashboard image testing" >&2
   exit 1
@@ -336,6 +442,8 @@ fi
 if [ "${SKIP_IMAGE_IMPORT:-0}" != "1" ]; then
   "$repo_root/scripts/export_publishable_image.sh" "$image_bundle" "$image_tag" >/dev/null
 fi
+
+assert_image_metadata
 
 mkdir -p "$home_dir/.nix-profile/bin" "$home_dir/seeds/skills/workflow-single" "$workspace_dir" "$home_dir/.hermes/profiles/assistant"
 cat > "$home_dir/.nix-profile/bin/hermes" <<'EOF'
@@ -369,7 +477,7 @@ docker run -d \
   -e OPENCODE_GO_API_KEY \
   -e DISCORD_BOT_TOKEN \
   -e DISCORD_ALLOWED_USERS \
-  -e DISCORD_FREE_RESPONSE_CHANNELS \
+  -e GHOSTSHIP_ROUTER_CHANNEL \
   -e DISCORD_HOME_CHANNEL \
   -e WEBHOOK_SECRET \
   -e BROWSER_CDP_URL \
@@ -416,6 +524,9 @@ wait_for_json_value "${dashboard_base_url}/api/console" ' .session.ready' "true"
 assert_http_contains "${dashboard_base_url}${terminal_one_url}" "ttyd"
 assert_websocket_proxy "$terminal_one_url"
 assert_dashboard_browser_open
+assert_no_known_activation_warnings "$container_name"
+assert_managed_tooling_noop_rerun "$container_name"
+assert_managed_tooling_repairs_single_drift "$container_name"
 
 curl -fsS -X POST "${dashboard_base_url}/api/console/sessions/$terminal_one/close" >/tmp/ghostship-hermes-terminal-close-1.json
 wait_for_json_value "${dashboard_base_url}/api/console" ' .session == null' "true"
@@ -444,14 +555,17 @@ run_as_hermes_default_path "$container_name" 'test "$(command -v fd)" = "/home/h
 run_as_hermes_default_path "$container_name" 'test "$(command -v uv)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/uv"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v yq)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/yq"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v tmux)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/tmux"'
+run_as_hermes_default_path "$container_name" 'test "$(command -v blog)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/blog"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v python3)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/python3"'
 run_as_hermes_default_path "$container_name" 'test "$(command -v pip)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/pip"'
-run_as_hermes_default_path "$container_name" '! command -v gemini >/dev/null'
+run_as_hermes_default_path "$container_name" 'test "$(command -v gemini)" = "/home/hermes/.local/bin/gemini"'
 run_as_hermes_default_path "$container_name" 'agent-browser --help >/tmp/ghostship-agent-browser-help.txt 2>/tmp/ghostship-agent-browser-help.err && grep -F "agent-browser - fast browser automation CLI for AI agents" /tmp/ghostship-agent-browser-help.txt >/dev/null'
 run_as_hermes_default_path "$container_name" 'fd --version >/dev/null'
 run_as_hermes_default_path "$container_name" 'uv --version >/dev/null'
 run_as_hermes_default_path "$container_name" 'yq --version >/dev/null'
 run_as_hermes_default_path "$container_name" 'tmux -V >/dev/null'
+run_as_hermes_default_path "$container_name" 'blog --help >/tmp/ghostship-blog-help.txt 2>/tmp/ghostship-blog-help.err && grep -E "Usage: blog|Commands:" /tmp/ghostship-blog-help.txt >/dev/null'
+run_as_hermes_default_path "$container_name" 'gemini --help >/tmp/ghostship-gemini-help.txt 2>/tmp/ghostship-gemini-help.err && test -s /tmp/ghostship-gemini-help.txt'
 run_as_hermes_default_path "$container_name" 'python3 --version >/tmp/ghostship-python-version.txt && grep -F "Python 3." /tmp/ghostship-python-version.txt >/dev/null'
 run_as_hermes_default_path "$container_name" 'pip --version >/tmp/ghostship-pip-version.txt && grep -F "pip " /tmp/ghostship-pip-version.txt >/dev/null'
 run_as_hermes_default_path "$container_name" 'python3 -m pip --version >/tmp/ghostship-python-module-pip-version.txt && grep -F "pip " /tmp/ghostship-python-module-pip-version.txt >/dev/null'
@@ -461,10 +575,21 @@ run_as_hermes "$container_name" '! hermes --version 2>/dev/null | grep -F "legac
 assert_router_inventory "$container_name"
 assert_model_config "$container_name"
 assert_config_migration "$container_name"
+assert_gateway_restarts_after "$container_name" 'tmp=$(mktemp); printf "TERMINAL_CWD=/workspace\nGHOSTSHIP_RESTART_TEST=1\n" >"$tmp"; cat /home/hermes/.hermes/.env >>"$tmp"; mv "$tmp" /home/hermes/.hermes/.env'
+assert_gateway_restarts_after "$container_name" 'python3 - <<"PY2"
+from pathlib import Path
+path = Path("/home/hermes/.hermes/config.yaml")
+text = path.read_text()
+marker = "restart_test_marker: true\n"
+if marker in text:
+    raise SystemExit("restart marker already present")
+path.write_text(text + marker)
+PY2'
 assert_primary_execution "$container_name"
 run_as_hermes "$container_name" "grep -F \"DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}\" /home/hermes/.hermes/.env >/dev/null"
 run_as_hermes "$container_name" "grep -F \"DISCORD_ALLOWED_USERS=${DISCORD_ALLOWED_USERS}\" /home/hermes/.hermes/.env >/dev/null"
-run_as_hermes "$container_name" "grep -F \"DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_FREE_RESPONSE_CHANNELS}\" /home/hermes/.hermes/.env >/dev/null"
+run_as_hermes "$container_name" "grep -F \"GHOSTSHIP_ROUTER_CHANNEL=${GHOSTSHIP_ROUTER_CHANNEL}\" /home/hermes/.hermes/.env >/dev/null"
+run_as_hermes "$container_name" '! grep -F "DISCORD_FREE_RESPONSE_CHANNELS=" /home/hermes/.hermes/.env >/dev/null'
 run_as_hermes "$container_name" "grep -F \"DISCORD_HOME_CHANNEL=${DISCORD_HOME_CHANNEL}\" /home/hermes/.hermes/.env >/dev/null"
 run_as_hermes "$container_name" 'grep -F "WEBHOOK_ENABLED=true" /home/hermes/.hermes/.env >/dev/null'
 run_as_hermes "$container_name" 'grep -F "WEBHOOK_PORT=8644" /home/hermes/.hermes/.env >/dev/null'
@@ -487,13 +612,16 @@ run_in_container "$container_name" 'systemctl start ghostship-hermes-bootstrap.s
 run_as_hermes "$container_name" 'grep -Fx "built-in skill" /home/hermes/.hermes/skills/autonomous-ai-agents/codex/SKILL.md >/dev/null'
 run_as_hermes "$container_name" 'test -w /home/hermes/.hermes/skills/autonomous-ai-agents/codex'
 run_as_hermes "$container_name" 'test -w /home/hermes/.hermes/skills/autonomous-ai-agents/codex/SKILL.md'
+run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/hooks/ghostship-router-channel-guidance/HOOK.yaml'
+run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/hooks/ghostship-router-channel-guidance/handler.py'
 run_as_hermes "$container_name" 'grep -Fx "seed-soul-v1" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/SOUL.md.ghostship-seeded-sha256'
 run_as_hermes "$container_name" 'printf "%s" "You are Hermes Agent, an intelligent AI assistant created by Nous Research. You are helpful, knowledgeable, and direct. You assist users with a wide range of tasks including answering questions, writing and editing code, analyzing information, creative work, and executing actions via your tools. You communicate clearly, admit uncertainty when appropriate, and prioritize being genuinely useful over being verbose unless otherwise directed below. Be targeted and efficient in your exploration and investigations." >/home/hermes/.hermes/SOUL.md && rm -f /home/hermes/.hermes/SOUL.md.ghostship-seeded-sha256'
 run_in_container "$container_name" 'systemctl start ghostship-hermes-bootstrap.service'
 run_as_hermes "$container_name" 'grep -Fx "seed-soul-v1" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_name" 'test -f /home/hermes/.hermes/SOUL.md.ghostship-seeded-sha256'
-run_as_hermes "$container_name" 'printf "agent-edited soul\n" >/home/hermes/.hermes/SOUL.md'
+assert_gateway_does_not_restart_after "$container_name" 'printf "{\"provider\":\"codex\",\"token\":\"runtime-refresh\"}\n" >/home/hermes/.hermes/auth.json'
+assert_gateway_does_not_restart_after "$container_name" 'printf "agent-edited soul\n" >/home/hermes/.hermes/SOUL.md'
 run_in_container "$container_name" 'systemctl start ghostship-hermes-bootstrap.service'
 run_as_hermes "$container_name" 'grep -Fx "agent-edited soul" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_name" 'hermes doctor >/dev/null'
@@ -502,5 +630,6 @@ run_as_hermes "$container_name" 'hermes gateway status | grep -F "User gateway s
 run_as_hermes "$container_name" 'hermes gateway status | grep -F "hermes-gateway.service" >/dev/null'
 run_as_hermes "$container_name" '! hermes gateway status | grep -F "Installed gateway service definition is outdated" >/dev/null'
 run_as_hermes "$container_name" 'hermes gateway restart | grep -F "User service restarted" >/dev/null'
+assert_clean_stop "$container_name"
 
 printf 'validated ghostship-hermes dashboard smoke test with %s\n' "$image_tag"
