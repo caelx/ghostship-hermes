@@ -8,12 +8,12 @@ from ghostship_cli_contract import BaseHttpClient, RequestSpec
 
 
 class PyLoadClient(BaseHttpClient):
-    def __init__(self, base_url: str, username: str | None = None, password: str | None = None, *, default_timeout: float = 30.0):
-        super().__init__(base_url.rstrip('/'), default_timeout=default_timeout)
-        self.auth = (username, password) if username and password else None
+    def __init__(self, base_url: str, api_key: str | None = None, *, default_timeout: float = 30.0):
+        headers = {"X-API-Key": api_key} if api_key else None
+        super().__init__(base_url.rstrip('/'), default_headers=headers, default_timeout=default_timeout)
 
     def _client(self, timeout: float) -> httpx.Client:
-        return httpx.Client(headers=self.default_headers, timeout=timeout, auth=self.auth, transport=self.transport, follow_redirects=self.follow_redirects)
+        return httpx.Client(headers=self.default_headers, timeout=timeout, transport=self.transport, follow_redirects=self.follow_redirects)
 
     def build_request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_data: dict[str, Any] | list[Any] | None = None, timeout: float | None = None) -> RequestSpec:
         return self.build_request_spec(method, path, params=params, json_body=json_data, timeout=timeout)

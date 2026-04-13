@@ -2,10 +2,11 @@
 
 `ghostship-pyload-ng` is a JSON-first CLI for its service API. Commands mirror the client/API method names exactly. No compatibility aliases are provided.
 
+The current pyLoad REST surface expects an `X-API-Key` header for authenticated `/api/*` calls. UI login credentials alone are not enough for this CLI.
+
 ## Environment
 - `PYLOAD_URL`
-- `PYLOAD_USER (optional)`
-- `PYLOAD_PASS (optional)`
+- `PYLOAD_API_KEY (recommended for authenticated instances)`
 
 ## Command Contract
 - Primary commands use the exact snake_case client method names.

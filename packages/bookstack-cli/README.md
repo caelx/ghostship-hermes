@@ -95,6 +95,14 @@
 - `ghostship-bookstack users_update`
 - `ghostship-bookstack users_delete`
 
+## Runtime Topology
+- Prefer an internal BookStack API origin for Hermes runtime validation, such as `http://bookstack`, when the service is available on the container network.
+- If `BOOKSTACK_URL` points at an external Cloudflare-protected hostname, the runtime must also provide the required Cloudflare Access headers or the CLI will correctly surface the redirect/auth failure.
+- A minimal smoke check after deploy is:
+  - `ghostship-bookstack --timeout 30 books_list --pretty`
+  - `ghostship-bookstack --timeout 30 request GET /books --pretty`
+  - `ghostship-bookstack --timeout 30 docs_display --pretty`
+
 ## Examples
 ```fish
 ghostship-bookstack pages_list --pretty

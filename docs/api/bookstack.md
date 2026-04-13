@@ -96,6 +96,12 @@ Canonical artifacts:
 
 - `5` operations: list, create, read, update, delete.
 
+## Runtime Validation Topology
+
+- Preferred Hermes runtime origin: `http://bookstack` on the container network.
+- If `BOOKSTACK_URL` points at an external Cloudflare-protected hostname instead, the runtime must also provide the required Cloudflare Access headers or CLI calls will correctly fail on the redirect/auth boundary.
+- Post-deploy smoke validation should cover one typed JSON command, the generic `request` command, and one text-response command so the full BookStack call surface is exercised.
+
 ## Repo Utility Surface
 
 `ghostship-bookstack` is intended to expose:
