@@ -385,9 +385,42 @@ assert_image_metadata() {
 
 assert_no_known_activation_warnings() {
   local target_container="$1"
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "unpacking the NixOS/Nixpkgs sources..."'
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/root/.nix-defexpr/channels exists, but channels have been disabled."'
+  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/nix/var/nix/profiles/per-user/root/channels exists, but channels have been disabled."'
   run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "/root/.nix-defexpr/channels/channels"'
-  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "could not create symlink /etc/hostname"'
-  run_in_container "$target_container" 'journalctl -b --no-pager | ! grep -F "could not create symlink /etc/hosts"'
+}
+
+assert_managed_tooling_noop_rerun() {
+  local target_container="$1"
+  local start_time
+  local started_at
+  local finished_at
+  local removal_count
+
+  start_time="$(date -u +%FT%TZ)"
+  started_at="$(date +%s)"
+  run_in_container "$target_container" 'systemctl start ghostship-hermes-user-tooling.service'
+  finished_at="$(date +%s)"
+  test $((finished_at - started_at)) -lt 15
+  removal_count="$(run_in_container "$target_container" "journalctl -u ghostship-hermes-user-tooling.service --since '$start_time' --no-pager | grep -c 'removing ' || true")"
+  test "$removal_count" -eq 0
+}
+
+assert_managed_tooling_repairs_single_drift() {
+  local target_container="$1"
+  local start_time
+  local removal_count
+
+  run_as_hermes_default_path "$target_container" 'HOME=/home/hermes nix profile remove --profile /home/hermes/.local/state/nix/profiles/ghostship-managed fd'
+  run_as_hermes_default_path "$target_container" '! command -v fd >/dev/null'
+
+  start_time="$(date -u +%FT%TZ)"
+  run_in_container "$target_container" 'systemctl start ghostship-hermes-user-tooling.service'
+
+  run_as_hermes_default_path "$target_container" 'test "$(command -v fd)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/fd"'
+  removal_count="$(run_in_container "$target_container" "journalctl -u ghostship-hermes-user-tooling.service --since '$start_time' --no-pager | grep -c 'removing ' || true")"
+  test "$removal_count" -le 1
 }
 
 assert_clean_stop() {
@@ -492,6 +525,8 @@ assert_http_contains "${dashboard_base_url}${terminal_one_url}" "ttyd"
 assert_websocket_proxy "$terminal_one_url"
 assert_dashboard_browser_open
 assert_no_known_activation_warnings "$container_name"
+assert_managed_tooling_noop_rerun "$container_name"
+assert_managed_tooling_repairs_single_drift "$container_name"
 
 curl -fsS -X POST "${dashboard_base_url}/api/console/sessions/$terminal_one/close" >/tmp/ghostship-hermes-terminal-close-1.json
 wait_for_json_value "${dashboard_base_url}/api/console" ' .session == null' "true"

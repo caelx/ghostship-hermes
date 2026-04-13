@@ -118,6 +118,7 @@ class BaseHttpClient:
                 f"remote service returned HTTP {response.status_code}",
                 status_code=response.status_code,
                 details=_response_error_details(response),
+                headers=dict(response.headers),
             )
         return response
 
