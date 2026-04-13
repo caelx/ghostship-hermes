@@ -37,7 +37,7 @@ Rejected because it duplicates the existing Discord free-response contract and w
 ### Force the turn runtime directly instead of relying on upstream session switches
 
 For matched Discord free-response sessions, the wrapper should override the turn configuration before agent creation so the gateway uses:
-- router alias `coding`
+- router alias `agentic`
 - `base_url = http://127.0.0.1:8788/v1`
 
 This keeps the fix local to the affected Discord lane and avoids depending on the broken upstream session-switch mechanism to preserve a custom endpoint.
@@ -64,6 +64,7 @@ Rejected because it preserves dead code and obscures which runtime behavior is a
 - [Risk] The wrapper patch may miss one gateway-created execution path and leave an escape hatch around the router pin. → Mitigation: apply the guard anywhere the gateway resolves turn runtime for Discord sessions, and cover the expected command path in validation.
 - [Risk] Pinning the free-response channel to one router alias reduces flexibility for ad hoc model experimentation in that context. → Mitigation: limit the pin only to Discord free-response sessions and leave other managed contexts unchanged.
 - [Risk] The repo spec history currently describes router-primary behavior that does not match the live managed profile scaffold. → Mitigation: scope this change to the Discord free-channel guard and document the exact repo-owned runtime behavior being added now.
+- [Risk] Image rollout can still leave the live gateway on an older persisted `/home/hermes` managed profile generation even after the container updates. → Mitigation: track a follow-up change to force managed profile convergence and gateway restart on image replacement so the running Hermes wrapper always matches the booted image.
 
 ## Migration Plan
 
@@ -75,3 +76,4 @@ Rejected because it preserves dead code and obscures which runtime behavior is a
 ## Open Questions
 
 - Which exact dead Discord plugin code path still exists in the repo-owned runtime, if any, once implementation starts? The proposal keeps removal in scope, but implementation should confirm the concrete write set before deleting anything.
+- Which repo-owned boot or convergence path should become authoritative for refreshing `/home/hermes/.local/state/nix/profiles/ghostship-managed` and restarting the live gateway after image rollout? Live validation showed that updating the container image alone is not sufficient to move the active gateway onto the new wrapper generation.

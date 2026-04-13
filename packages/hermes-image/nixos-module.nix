@@ -535,17 +535,25 @@ EOF
       source_root="$1"
       target_root="$2"
 
-      [ -d "$source_root" ] || return 0
       mkdir -p "$target_root"
 
+      if [ -d "$source_root" ]; then
+        while IFS= read -r hook_dir; do
+          [ -f "$hook_dir/HOOK.yaml" ] || continue
+          [ -f "$hook_dir/handler.py" ] || continue
+          hook_name="$(basename "$hook_dir")"
+          rm -rf "$target_root/$hook_name"
+          cp -R "$hook_dir" "$target_root/$hook_name"
+          chmod -R u+rwX "$target_root/$hook_name"
+        done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
+      fi
+
       while IFS= read -r hook_dir; do
-        [ -f "$hook_dir/HOOK.yaml" ] || continue
-        [ -f "$hook_dir/handler.py" ] || continue
         hook_name="$(basename "$hook_dir")"
-        rm -rf "$target_root/$hook_name"
-        cp -R "$hook_dir" "$target_root/$hook_name"
-        chmod -R u+rwX "$target_root/$hook_name"
-      done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
+        if [ ! -f "$source_root/$hook_name/HOOK.yaml" ] || [ ! -f "$source_root/$hook_name/handler.py" ]; then
+          rm -rf "$hook_dir"
+        fi
+      done < <(find "$target_root" -mindepth 1 -maxdepth 1 -type d | sort)
 
       [ -d "$target_root" ] || return 0
       chmod -R u+rwX "$target_root"

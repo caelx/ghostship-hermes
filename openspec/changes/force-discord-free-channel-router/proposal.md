@@ -22,3 +22,7 @@ Upstream Hermes is currently failing to apply custom model switches reliably for
 - Affected code: Hermes wrapper patching in `packages/hermes-agent-wrapped/package.nix`, managed runtime behavior in the bundled upstream gateway code, and any runtime validation that asserts Discord channel behavior.
 - Affected systems: managed Discord gateway sessions, local router selection for Discord free-response traffic, and the supported managed Hermes runtime surface.
 - Dependencies: no new auth or API-key contract, no new operator-facing env vars, and no change to the existing unauthenticated local router endpoint assumption.
+
+## Follow-Up
+
+During live rollout on `chill-penguin`, the new image was pulled and started, but the persisted managed Nix profile under `/home/hermes/.local/state/nix/profiles/ghostship-managed` was still pointing at an older `hermes-agent-wrapped` generation. That left the running gateway on stale wrapper code until the managed user-tooling convergence service was run and the container was restarted. A follow-up change should make image rollout converge the managed profile and restart the live gateway path automatically so future deploys cannot leave `/home/hermes` on an older Hermes wrapper generation.

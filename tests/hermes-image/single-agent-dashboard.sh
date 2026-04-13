@@ -193,6 +193,11 @@ assert_router_inventory() {
   run_in_container "$target_container" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"agentic\") and index(\"vision\") and index(\"tts\")' >/dev/null"
 }
 
+assert_router_agentic_completion() {
+  local target_container="$1"
+  run_in_container "$target_container" "curl -fsS -X POST ${router_base_url}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"agentic\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly OK.\"}],\"stream\":false}' | jq -e '.choices[0].message.content == \"OK\"' >/dev/null"
+}
+
 assert_model_config() {
   local target_container="$1"
   run_as_hermes "$target_container" 'hermes config show | grep -F "provider: opencode-go" >/dev/null'
@@ -586,10 +591,13 @@ run_as_hermes_default_path "$container_name" 'python3 -m pip --version >/tmp/gho
 run_as_hermes "$container_name" 'hermes config show 2>/dev/null | grep -F "/home/hermes" >/dev/null'
 run_as_hermes "$container_name" 'test "$(command -v hermes)" = "/home/hermes/.local/state/nix/profiles/ghostship-managed/bin/hermes"'
 run_as_hermes "$container_name" 'wrapper_root="$(dirname "$(dirname "$(readlink -f "$(command -v hermes)")")")"; grep -F "def _ghostship_is_discord_router_channel(source) -> bool:" "$wrapper_root/lib/python3.11/site-packages/gateway/run.py" >/dev/null'
+run_as_hermes "$container_name" 'wrapper_root="$(dirname "$(dirname "$(readlink -f "$(command -v hermes)")")")"; grep -F "\"model\": \"agentic\"" "$wrapper_root/lib/python3.11/site-packages/gateway/run.py" >/dev/null'
+run_as_hermes "$container_name" 'wrapper_root="$(dirname "$(dirname "$(readlink -f "$(command -v hermes)")")")"; grep -F "resolved[\"model\"] = \"agentic\"" "$wrapper_root/lib/python3.11/site-packages/gateway/run.py" >/dev/null'
 run_as_hermes "$container_name" 'wrapper_root="$(dirname "$(dirname "$(readlink -f "$(command -v hermes)")")")"; grep -F "\"base_url\": \"http://127.0.0.1:8788/v1\"" "$wrapper_root/lib/python3.11/site-packages/gateway/run.py" >/dev/null'
-run_as_hermes "$container_name" 'wrapper_root="$(dirname "$(dirname "$(readlink -f "$(command -v hermes)")")")"; grep -F "This Discord router channel is pinned to ghostship-router (\`coding\`)." "$wrapper_root/lib/python3.11/site-packages/gateway/run.py" >/dev/null'
+run_as_hermes "$container_name" 'wrapper_root="$(dirname "$(dirname "$(readlink -f "$(command -v hermes)")")")"; grep -F "This Discord router channel is pinned to ghostship-router (\`agentic\`)." "$wrapper_root/lib/python3.11/site-packages/gateway/run.py" >/dev/null'
 run_as_hermes "$container_name" '! hermes --version 2>/dev/null | grep -F "legacy-default-hermes" >/dev/null'
 assert_router_inventory "$container_name"
+assert_router_agentic_completion "$container_name"
 assert_model_config "$container_name"
 assert_config_migration "$container_name"
 assert_gateway_restarts_after "$container_name" 'tmp=$(mktemp); printf "TERMINAL_CWD=/workspace\nGHOSTSHIP_RESTART_TEST=1\n" >"$tmp"; cat /home/hermes/.hermes/.env >>"$tmp"; mv "$tmp" /home/hermes/.hermes/.env'
