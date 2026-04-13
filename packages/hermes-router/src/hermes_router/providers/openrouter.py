@@ -29,6 +29,58 @@ def _is_zeroish(value: Any) -> bool:
         return False
 
 
+
+
+def _extract_error_message(details: Any) -> str:
+    if isinstance(details, str):
+        return details
+    if isinstance(details, dict):
+        error = details.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str):
+                return message
+        message = details.get("message")
+        if isinstance(message, str):
+            return message
+    return ""
+
+
+def _retry_after_seconds(headers: dict[str, str] | None) -> float | None:
+    if not headers:
+        return None
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        value = float(str(raw).strip())
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def _normalized_error_details(exc: HttpStatusError) -> dict[str, Any]:
+    payload: dict[str, Any]
+    if isinstance(exc.details, dict):
+        payload = dict(exc.details)
+    elif exc.details is None:
+        payload = {}
+    else:
+        payload = {"message": str(exc.details)}
+    message = _extract_error_message(payload) or exc.message
+    if message:
+        payload.setdefault("message", message)
+    retry_after = _retry_after_seconds(exc.headers)
+    if retry_after is not None:
+        payload["retry_after_seconds"] = retry_after
+    lowered = message.lower()
+    if "temporarily rate-limited upstream" in lowered or "retry shortly" in lowered or retry_after is not None:
+        payload["temporary_throttle"] = True
+        payload["provider_pacing"] = True
+    if "quota" in lowered or ("daily" in lowered and "limit" in lowered) or ("credits" in lowered and "required" in lowered):
+        payload["hard_exhaustion"] = True
+    return payload
+
 class OpenRouterProvider:
     name = "openrouter"
 
@@ -110,6 +162,7 @@ class OpenRouterProvider:
                                     f"remote service returned HTTP {response.status_code}",
                                     status_code=response.status_code,
                                     details=details,
+                                    headers=dict(response.headers),
                                 ),
                                 backend_model=backend_model,
                             )
@@ -243,12 +296,15 @@ class OpenRouterProvider:
 
     def _normalize_http_error(self, exc: HttpStatusError, *, backend_model: str) -> NormalizedProviderError:
         status = exc.status_code
+        details = _normalized_error_details(exc)
+        message = _extract_error_message(details) or exc.message
         if status in {401, 403}:
-            return NormalizedProviderError("unauthorized", exc.message, provider=self.name, backend_model=backend_model, retryable=False, details=exc.details)
+            return NormalizedProviderError("unauthorized", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if status == 404:
-            return NormalizedProviderError("model_missing", exc.message, provider=self.name, backend_model=backend_model, retryable=True, details=exc.details)
+            return NormalizedProviderError("model_missing", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
         if status == 429:
-            return NormalizedProviderError("rate_limited", exc.message, provider=self.name, backend_model=backend_model, retryable=True, details=exc.details)
+            category = "quota_exhausted" if details.get("hard_exhaustion") else "rate_limited"
+            return NormalizedProviderError(category, message, provider=self.name, backend_model=backend_model, retryable=(category == "rate_limited"), details=details)
         if status >= 500:
-            return NormalizedProviderError("server_error", exc.message, provider=self.name, backend_model=backend_model, retryable=True, details=exc.details)
-        return NormalizedProviderError("bad_request", exc.message, provider=self.name, backend_model=backend_model, retryable=False, details=exc.details)
+            return NormalizedProviderError("server_error", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
+        return NormalizedProviderError("bad_request", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)

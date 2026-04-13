@@ -96,7 +96,12 @@ class BaseHttpClient:
                 details = response.json()
             except Exception:
                 details = response.text or None
-            raise HttpStatusError(f"remote service returned HTTP {response.status_code}", status_code=response.status_code, details=details)
+            raise HttpStatusError(
+                f"remote service returned HTTP {response.status_code}",
+                status_code=response.status_code,
+                details=details,
+                headers=dict(response.headers),
+            )
         return response
 
     def request_response(self, method: str, path: str, *, params: dict[str, Any] | None = None, json_body: Any = None, content: str | bytes | None = None, form_data: dict[str, Any] | None = None, files: dict[str, Any] | list[Any] | None = None, headers: dict[str, Any] | None = None, timeout: float | None = None) -> httpx.Response:
