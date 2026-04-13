@@ -578,6 +578,16 @@ class RouterService:
         attempted: set[tuple[str, str]] = set()
         candidates = self._resolve_remaining_candidates(request.model, attempted)
         if not candidates:
+            wait_seconds = self._paced_wait_seconds(request.model, attempted)
+            if wait_seconds is not None:
+                time.sleep(wait_seconds)
+                candidates = self._resolve_remaining_candidates(request.model, attempted)
+        if not candidates:
+            wait_seconds = self._paced_wait_seconds(request.model, attempted)
+            if wait_seconds is not None:
+                time.sleep(wait_seconds)
+                candidates = self._resolve_remaining_candidates(request.model, attempted)
+        if not candidates:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
         request_payload = request.model_dump(mode="json", exclude_none=True)
         request_payload.pop("timeout", None)
@@ -590,6 +600,7 @@ class RouterService:
             if provider is None:
                 candidates = self._resolve_remaining_candidates(request.model, attempted)
                 continue
+            self.state_store.note_provider_request(candidate.provider_name, next_request_at=time.time() + self._provider_spacing_seconds(candidate.provider_name))
             start = time.monotonic()
             try:
                 result = provider.chat_completions(candidate.backend_model, request_payload, timeout=request.timeout or self.config.default_timeout)
@@ -625,6 +636,11 @@ class RouterService:
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
                 candidates = self._resolve_remaining_candidates(request.model, attempted)
+                if not candidates:
+                    wait_seconds = self._paced_wait_seconds(request.model, attempted)
+                    if wait_seconds is not None:
+                        time.sleep(wait_seconds)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted)
         raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors})
 
     def _open_chat_stream(
@@ -648,6 +664,7 @@ class RouterService:
             if provider is None:
                 candidates = self._resolve_remaining_candidates(request.model, attempted)
                 continue
+            self.state_store.note_provider_request(candidate.provider_name, next_request_at=time.time() + self._provider_spacing_seconds(candidate.provider_name))
             try:
                 stream_result = provider.chat_completions_stream(
                     candidate.backend_model,
@@ -674,6 +691,11 @@ class RouterService:
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
                 candidates = self._resolve_remaining_candidates(request.model, attempted)
+                if not candidates:
+                    wait_seconds = self._paced_wait_seconds(request.model, attempted)
+                    if wait_seconds is not None:
+                        time.sleep(wait_seconds)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted)
         raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors})
 
     def _ensure_inventory_loaded_for_request(self) -> None:
@@ -848,11 +870,27 @@ class RouterService:
             exc.category,
             exc.retryable,
         )
-        self.state_store.apply_failure(candidate.provider_name, candidate.backend_model, category=exc.category, retryable=exc.retryable)
+        self.state_store.apply_failure(
+            candidate.provider_name,
+            candidate.backend_model,
+            category=exc.category,
+            retryable=exc.retryable,
+            cooldown_model=self._should_apply_model_cooldown(exc),
+        )
+        provider_throttle: dict[str, Any] | None = None
+        throttle_until = self._provider_throttle_until(candidate.provider_name, exc)
+        if throttle_until is not None:
+            provider_throttle = self.state_store.apply_provider_throttle(
+                candidate.provider_name,
+                category=exc.category,
+                throttle_until=throttle_until,
+                details=exc.details,
+            )
         provider_exhaustion = self.state_store.record_provider_exhaustion(
             candidate.provider_name,
             backend_model=candidate.backend_model,
             category=exc.category,
+            details=exc.details,
             zero_output=zero_output,
             suspect_window_seconds=self.config.provider_suspect_window_seconds,
             disable_seconds=self.config.provider_disable_seconds,
@@ -876,6 +914,7 @@ class RouterService:
                     "score_breakdown": candidate.score_breakdown,
                     "zero_output": zero_output,
                     "provider_exhaustion": provider_exhaustion,
+                    "provider_throttle": provider_throttle,
                 },
                 created_at=time.time(),
             )
@@ -1159,7 +1198,7 @@ class RouterService:
             self._last_refresh_reason = reason
             self._last_refresh_at = self._inventory_loaded_at
             self._last_refresh_error = errors or None
-            if self.config.ranking_enabled and self._ranking_due():
+            if reason == "ranking" and self.config.ranking_enabled and self._ranking_due():
                 self._refresh_rankings(self._inventory)
             if errors:
                 self._log_event("refresh_partial", reason=reason, model_count=len(self._inventory), errors=errors)
@@ -1198,9 +1237,14 @@ class RouterService:
                     "provider_name": provider_name,
                     "enabled": self._provider_enabled(provider_name, overrides=overrides),
                     "cooldown_until": state.get("cooldown_until", 0),
+                    "next_request_at": state.get("next_request_at", 0),
                     "disable_reason": state.get("disable_reason"),
                     "breaker_level": state.get("breaker_level", 0),
                     "probe_mode": self._provider_in_probe_mode(provider_name, state=state),
+                    "pacing_active": self._provider_is_pacing(provider_name, state=state),
+                    "throttle_reason": state.get("throttle_reason"),
+                    "throttle_streak": state.get("throttle_streak", 0),
+                    "suppression_source": self._provider_suppression_source(provider_name, state=state),
                     "suspect_backend_model": state.get("suspect_backend_model"),
                     "suspect_category": state.get("suspect_category"),
                     "suspect_at": state.get("suspect_at"),
@@ -1316,6 +1360,21 @@ class RouterService:
                 self._prom_metric(
                     "ghostship_router_provider_cooldown_active",
                     1 if self._provider_is_cooling_down(provider_name, state=state) else 0,
+                    provider=provider_name,
+                )
+            )
+        lines.extend(
+            [
+                "# HELP ghostship_router_provider_pacing_active Whether a provider is currently delayed by pacing or temporary throttle.",
+                "# TYPE ghostship_router_provider_pacing_active gauge",
+            ]
+        )
+        for provider_name in self._provider_names:
+            state = provider_state.get(provider_name, {})
+            lines.append(
+                self._prom_metric(
+                    "ghostship_router_provider_pacing_active",
+                    1 if self._provider_is_pacing(provider_name, state=state) else 0,
                     provider=provider_name,
                 )
             )
@@ -1528,7 +1587,7 @@ class RouterService:
         music_tokens = ("lyria", "music", "song", "songs", "lyrics", "stereo", "clip", "instrumental", "vocals")
         return any(token in haystack for token in music_tokens)
 
-    def _resolve_candidates(self, alias: str) -> list[RouteCandidate]:
+    def _resolve_candidates(self, alias: str, *, ignore_provider_pacing: bool = False) -> list[RouteCandidate]:
         alias_config = self.config.alias_map().get(alias)
         if alias_config is None:
             direct_candidates = self._resolve_direct_model(alias)
@@ -1537,9 +1596,9 @@ class RouterService:
             raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
 
         pinned_models = self._alias_pins(alias, alias_config)
-        candidates = self._preferred_candidates(pinned_models, alias=alias)
+        candidates = self._preferred_candidates(pinned_models, alias=alias, ignore_provider_pacing=ignore_provider_pacing)
         if not candidates:
-            discovered = self._discover_alias_candidates(alias_config)
+            discovered = self._discover_alias_candidates(alias_config, ignore_provider_pacing=ignore_provider_pacing)
             candidates = [
                 RouteCandidate(
                     provider_name=model.provider,
@@ -1551,10 +1610,10 @@ class RouterService:
             ]
         return [RouteCandidate(**{**candidate.__dict__, "is_fallback": index > 0}) for index, candidate in enumerate(candidates)]
 
-    def _resolve_remaining_candidates(self, alias: str, attempted: set[tuple[str, str]]) -> list[RouteCandidate]:
+    def _resolve_remaining_candidates(self, alias: str, attempted: set[tuple[str, str]], *, ignore_provider_pacing: bool = False) -> list[RouteCandidate]:
         return [
             candidate
-            for candidate in self._resolve_candidates(alias)
+            for candidate in self._resolve_candidates(alias, ignore_provider_pacing=ignore_provider_pacing)
             if (candidate.provider_name, candidate.backend_model) not in attempted
         ]
 
@@ -1563,7 +1622,7 @@ class RouterService:
             return []
         return self._preferred_candidates((model_name,), alias=self._alias_for_model_id(model_name))
 
-    def _preferred_candidates(self, model_ids: tuple[str, ...], *, alias: str | None = None, inventory: list[ProviderModel] | None = None) -> list[RouteCandidate]:
+    def _preferred_candidates(self, model_ids: tuple[str, ...], *, alias: str | None = None, inventory: list[ProviderModel] | None = None, ignore_provider_pacing: bool = False) -> list[RouteCandidate]:
         candidates: list[RouteCandidate] = []
         known_inventory = inventory if inventory is not None else self._inventory_for_all()
         probe_selected: set[str] = set()
@@ -1584,7 +1643,7 @@ class RouterService:
                     continue
                 if not self._model_effectively_enabled(model.provider, model.id):
                     continue
-                if self._provider_is_cooling_down(model.provider):
+                if self._provider_is_cooling_down(model.provider) or (not ignore_provider_pacing and self._provider_is_pacing(model.provider)):
                     continue
                 if self._is_cooling_down(model.provider, model.id):
                     continue
@@ -1603,7 +1662,7 @@ class RouterService:
                     candidates.append(candidate)
         return candidates
 
-    def _discover_alias_candidates(self, alias: AliasConfig) -> list[ProviderModel]:
+    def _discover_alias_candidates(self, alias: AliasConfig, *, ignore_provider_pacing: bool = False) -> list[ProviderModel]:
         filtered = [
             model
             for model in self._inventory_for_all()
@@ -1611,32 +1670,43 @@ class RouterService:
             and self._model_effectively_enabled(model.provider, model.id)
             and not self._is_cooling_down(model.provider, model.id)
             and not self._provider_is_cooling_down(model.provider)
+            and (ignore_provider_pacing or not self._provider_is_pacing(model.provider))
         ]
-        scored = sorted(filtered, key=lambda model: self._score_breakdown(alias.name, model)["total_score"], reverse=True)
+        scored_by_provider: dict[str, list[tuple[ProviderModel, dict[str, Any]]]] = {}
+        lane_limit = max(1, self.config.provider_lane_limit)
+        for model in filtered:
+            breakdown = self._score_breakdown(alias.name, model)
+            if breakdown["total_score"] <= 0:
+                continue
+            scored_by_provider.setdefault(model.provider, []).append((model, breakdown))
+        lanes: dict[str, list[tuple[ProviderModel, dict[str, Any]]]] = {}
+        for provider_name, items in scored_by_provider.items():
+            ordered = sorted(items, key=lambda item: item[1]["total_score"], reverse=True)
+            limit = 1 if self._provider_in_probe_mode(provider_name) else lane_limit
+            lanes[provider_name] = ordered[:limit]
+        provider_order = [
+            provider_name
+            for provider_name, _ in sorted(
+                ((provider_name, items[0][1]["total_score"]) for provider_name, items in lanes.items() if items),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        ]
         selected: list[ProviderModel] = []
         selected_keys: set[tuple[str, str]] = set()
-        probe_selected: set[str] = set()
-
-        def append_candidates(models: list[ProviderModel]) -> None:
-            for model in models:
-                if self._score_breakdown(alias.name, model)["total_score"] <= 0:
+        for lane_index in range(lane_limit):
+            for provider_name in provider_order:
+                lane = lanes.get(provider_name, [])
+                if lane_index >= len(lane):
                     continue
-                if self._provider_in_probe_mode(model.provider):
-                    if model.provider in probe_selected:
-                        continue
-                    probe_selected.add(model.provider)
+                model, _ = lane[lane_index]
                 key = (model.provider, model.id)
                 if key in selected_keys:
                     continue
                 selected.append(model)
                 selected_keys.add(key)
                 if len(selected) >= self.config.alias_model_limit:
-                    return
-
-        primary = [model for model in scored if self._primary_alias_for_model(model) == alias.name]
-        append_candidates(primary)
-        if len(selected) < self.config.alias_model_limit:
-            append_candidates(scored)
+                    return selected
         return selected
 
     def _inventory_for_all(self) -> list[ProviderModel]:
@@ -1688,6 +1758,7 @@ class RouterService:
         model_weight = self._model_weight(model.provider, model.id, overrides=overrides)
         cooldown_penalty = -1000.0 if self._is_cooling_down(model.provider, model.id, state=model_state) else 0.0
         provider_cooldown_penalty = -500.0 if self._provider_is_cooling_down(model.provider, state=provider_state) else 0.0
+        provider_pacing_penalty = -250.0 if self._provider_is_pacing(model.provider, state=provider_state) else 0.0
         total_score = round(
             free_score
             + provider_bias
@@ -1703,7 +1774,8 @@ class RouterService:
             + provider_weight
             + model_weight
             + cooldown_penalty
-            + provider_cooldown_penalty,
+            + provider_cooldown_penalty
+            + provider_pacing_penalty,
             3,
         )
         return {
@@ -1727,10 +1799,12 @@ class RouterService:
             "model_weight": model_weight,
             "cooldown_penalty": cooldown_penalty,
             "provider_cooldown_penalty": provider_cooldown_penalty,
+            "provider_pacing_penalty": provider_pacing_penalty,
             "ranking_reason": ranking.get("reason"),
             "ranking_confidence": ranking.get("confidence"),
             "cooldown_until": model_state.get("cooldown_until", 0),
             "provider_cooldown_until": provider_state.get("cooldown_until", 0),
+            "provider_next_request_at": provider_state.get("next_request_at", 0),
             "last_latency_ms": model_state.get("last_latency_ms"),
             "last_first_text_latency_ms": model_state.get("last_first_text_latency_ms"),
         }
@@ -1769,6 +1843,87 @@ class RouterService:
     def _provider_is_cooling_down(self, provider_name: str, *, state: dict[str, Any] | None = None) -> bool:
         provider_state = state or self.state_store.get_provider_state().get(provider_name, {})
         return float(provider_state.get("cooldown_until", 0) or 0) > time.time()
+
+    def _provider_is_pacing(self, provider_name: str, *, state: dict[str, Any] | None = None) -> bool:
+        provider_state = state or self.state_store.get_provider_state().get(provider_name, {})
+        return float(provider_state.get("next_request_at", 0) or 0) > time.time()
+
+    def _provider_spacing_seconds(self, provider_name: str) -> float:
+        if provider_name == "openrouter":
+            return self.config.openrouter_min_request_spacing_seconds
+        if provider_name == "opencode-zen":
+            return self.config.opencode_min_request_spacing_seconds
+        return min(self.config.openrouter_min_request_spacing_seconds, self.config.opencode_min_request_spacing_seconds)
+
+    def _provider_suppression_source(self, provider_name: str, *, state: dict[str, Any] | None = None) -> str | None:
+        provider_state = state or self.state_store.get_provider_state().get(provider_name, {})
+        if self._provider_is_cooling_down(provider_name, state=provider_state):
+            return "hard_provider_disable"
+        if self._provider_is_pacing(provider_name, state=provider_state):
+            return "provider_pacing"
+        if self._provider_in_probe_mode(provider_name, state=provider_state):
+            return "probe_mode"
+        return None
+
+    def _provider_retry_after_seconds(self, details: Any) -> float | None:
+        if not isinstance(details, dict):
+            return None
+        raw = details.get("retry_after_seconds")
+        if raw is None:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    @staticmethod
+    def _is_temporary_provider_throttle(details: Any) -> bool:
+        return isinstance(details, dict) and bool(details.get("temporary_throttle") or details.get("provider_pacing") or details.get("retry_after_seconds"))
+
+    def _provider_throttle_until(self, provider_name: str, exc: NormalizedProviderError) -> float | None:
+        if exc.category != "rate_limited" or not self._is_temporary_provider_throttle(exc.details):
+            return None
+        provider_state = self.state_store.get_provider_state().get(provider_name, {})
+        ladder = self.config.provider_throttle_ladder_seconds or (15,)
+        streak = int(provider_state.get("throttle_streak", 0) or 0)
+        index = min(streak, len(ladder) - 1)
+        delay_seconds = float(ladder[index])
+        retry_after_seconds = self._provider_retry_after_seconds(exc.details)
+        if retry_after_seconds is not None:
+            delay_seconds = max(delay_seconds, retry_after_seconds)
+        delay_seconds = max(delay_seconds, self._provider_spacing_seconds(provider_name))
+        return time.time() + delay_seconds
+
+    @staticmethod
+    def _should_apply_model_cooldown(exc: NormalizedProviderError) -> bool:
+        if exc.category in {"quota_exhausted", "insufficient_balance"}:
+            return False
+        if exc.category == "rate_limited":
+            return not RouterService._is_temporary_provider_throttle(exc.details)
+        return True
+
+    def _paced_wait_seconds(self, alias: str, attempted: set[tuple[str, str]]) -> float | None:
+        provider_state = self.state_store.get_provider_state()
+        max_wait_seconds = max(self.config.openrouter_min_request_spacing_seconds, self.config.opencode_min_request_spacing_seconds)
+        waits: list[float] = []
+        for candidate in self._resolve_candidates(alias, ignore_provider_pacing=True):
+            if (candidate.provider_name, candidate.backend_model) in attempted:
+                continue
+            state = provider_state.get(candidate.provider_name, {})
+            if self._provider_is_cooling_down(candidate.provider_name, state=state):
+                continue
+            if not self._provider_is_pacing(candidate.provider_name, state=state):
+                continue
+            wait_seconds = float(state.get("next_request_at", 0) or 0) - time.time()
+            if wait_seconds > 0:
+                waits.append(wait_seconds)
+        if not waits:
+            return None
+        soonest = min(waits)
+        if soonest > max_wait_seconds:
+            return None
+        return soonest
 
     def _provider_in_probe_mode(self, provider_name: str, *, state: dict[str, Any] | None = None) -> bool:
         provider_state = state or self.state_store.get_provider_state().get(provider_name, {})
