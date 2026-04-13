@@ -9,6 +9,7 @@ from urllib import error, request
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
 MODEL_CACHE_TTL_SECONDS = 60.0
+WARNING_REPEAT_INTERVAL_SECONDS = 60.0
 WARNING_HEADER = "**🚨 ROUTER-ONLY CHANNEL 🚨**"
 STATE_FILENAME = "state.json"
 
@@ -113,10 +114,10 @@ def _is_router_channel_entry(entry: dict[str, Any] | None) -> bool:
     return str(origin.get('platform') or '') == 'discord' and str(origin.get('chat_id') or '') == _router_channel()
 
 
-def _post_discord_message(channel_id: str, content: str) -> None:
+def _post_discord_message(channel_id: str, content: str) -> bool:
     token = os.environ.get('DISCORD_BOT_TOKEN', '').strip()
     if not token or not channel_id:
-        return
+        return False
     payload = json.dumps({'content': content}).encode('utf-8')
     req = request.Request(
         f"{DISCORD_API_BASE}/channels/{channel_id}/messages",
@@ -129,9 +130,9 @@ def _post_discord_message(channel_id: str, content: str) -> None:
     )
     try:
         with request.urlopen(req, timeout=10):
-            return
+            return True
     except error.URLError:
-        return
+        return False
 
 
 def _fetch_router_models(force_refresh: bool = False) -> list[str]:
@@ -252,17 +253,21 @@ def _session_uses_router_model(session_id: str, models: list[str]) -> bool:
     return current.get('provider') == 'ghostship-router' and str(current.get('model') or '') in models
 
 
-def _mark_warned(session_id: str) -> None:
+def _mark_warned(session_id: str, warned_at: float | None = None) -> None:
     state = _load_state()
     warned_sessions = state.setdefault('warned_sessions', {})
-    warned_sessions[session_id] = time.time()
+    warned_sessions[session_id] = warned_at if warned_at is not None else time.time()
     _save_state(state)
 
 
-def _has_warned(session_id: str) -> bool:
+def _last_warned_at(session_id: str) -> float:
     state = _load_state()
     warned_sessions = state.get('warned_sessions') if isinstance(state.get('warned_sessions'), dict) else {}
-    return session_id in warned_sessions
+    value = warned_sessions.get(session_id)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _clear_session_tracking(session_id: str) -> None:
@@ -285,10 +290,11 @@ def _maybe_warn(session_id: str, *, force: bool = False) -> None:
         return
     if _session_uses_router_model(session_id, models):
         return
-    if not force and _has_warned(session_id):
+    now = time.time()
+    if not force and (now - _last_warned_at(session_id)) < WARNING_REPEAT_INTERVAL_SECONDS:
         return
-    _post_discord_message(_warning_target(entry), _warning_message(models))
-    _mark_warned(session_id)
+    if _post_discord_message(_warning_target(entry), _warning_message(models)):
+        _mark_warned(session_id, warned_at=now)
 
 
 async def handle(event_type: str, context: dict[str, Any] | None = None) -> None:

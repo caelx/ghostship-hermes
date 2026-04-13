@@ -1,25 +1,18 @@
 ## Why
 
-The router's current health logic is too coarse for free-model exhaustion and transient provider throttling. A single model-level `429` can currently suppress an entire provider for a short cooldown, while the router lacks an explicit sequence-aware rule for recognizing broader provider exhaustion and escalating cooldowns across repeated failures.
+Live validation on `chill-penguin` showed three runtime gaps in the managed Hermes image contract:
+
+- the Discord `/model` picker does not surface the named `ghostship-router` custom provider, even though the CLI picker does
+- the `ghostship-router-channel-guidance` hook can suppress all future warnings after one failed Discord post
+- the managed config still carries stale `ghostship-router` auth and Discord mention behavior that no longer matches the desired runtime contract
 
 ## What Changes
 
-- Tighten router failover so retryable exhaustion stays transparent within a request while still respecting the ranked candidate priority list.
-- Replace the current one-size-fits-all failure cooldown behavior with an escalating per-model exhaustion cooldown ladder.
-- Add explicit provider-wide exhaustion detection based on repeated zero-output exhaustion failures across distinct models on the same provider within a short window.
-- Add longer provider disablement and probe-style recovery behavior so repeated provider-wide exhaustion does not cause thrashing.
-- Distinguish provider-specific exhaustion semantics for OpenRouter free-model limits and OpenCode Zen balance or limit exhaustion.
-
-## Capabilities
-
-### New Capabilities
-
-### Modified Capabilities
-
-- `model-router-service`: Change failover, cooldown, and provider suppression requirements so exhaustion handling is sequence-aware, provider-aware, and transparent within the request path.
+- patch the wrapped Hermes gateway and model-switch helper so Discord model picking can enumerate named `custom_providers`, including `ghostship-router`
+- make router-channel warnings delivery-aware and repeat every 60 seconds during active non-router chats
+- align the managed image scaffold and config-convergence logic with the intended runtime contract: `ghostship-router` is a no-auth custom provider, `discord.require_mention` is false, and the configured fallback remains `openai-codex / gpt-5.4-mini`
 
 ## Impact
 
-- Affected code: `packages/hermes-router/src/hermes_router/{service,state,config}.py`, provider adapters, and router tests.
-- Affected systems: local router request routing, provider health state, debug and metrics surfaces, and runtime behavior for OpenRouter and OpenCode Zen failover.
-- External behavior: callers should continue to see one transparent request outcome while operators gain clearer exhaustion and provider-disable semantics.
+- Affected code: `packages/hermes-agent-wrapped/package.nix`, `packages/hermes-image/nixos-module.nix`, router-channel hook code, and image/runtime tests
+- Affected systems: Discord model selection, Ghostship router advisory warnings, and managed config convergence on boot/image replacement

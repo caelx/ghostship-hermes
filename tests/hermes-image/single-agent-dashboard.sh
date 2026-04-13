@@ -191,6 +191,8 @@ assert_model_config() {
   run_as_hermes "$target_container" 'hermes config show | grep -F "custom_providers:" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "name: ghostship-router" >/dev/null'
   run_as_hermes "$target_container" 'hermes config show | grep -F "base_url: http://127.0.0.1:8788/v1" >/dev/null'
+  run_as_hermes "$target_container" '! sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "api_key:" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
   run_in_container "$target_container" 'printenv GHOSTSHIP_ROUTER_DISABLED_MODELS | grep -Fx "openrouter/free" >/dev/null'
   run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/health | jq -e '.config_model == \"minimax-m2.7\" and .config_provider == \"opencode-go\"' >/dev/null"
   run_in_container "$target_container" "curl -fsS http://127.0.0.1:7681/api/profiles | jq -e '.profiles[0].name == \"Managed Agent\" and .profiles[0].model == \"minimax-m2.7\" and .profiles[0].provider == \"opencode-go\"' >/dev/null"

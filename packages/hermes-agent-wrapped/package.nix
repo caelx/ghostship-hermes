@@ -38,6 +38,8 @@ doctor = site / "hermes_cli" / "doctor.py"
 tools = site / "hermes_cli" / "tools_config.py"
 gateway_cli = site / "hermes_cli" / "gateway.py"
 gateway_status = site / "gateway" / "status.py"
+gateway_run = site / "gateway" / "run.py"
+model_switch = site / "hermes_cli" / "model_switch.py"
 
 doctor_text = doctor.read_text()
 doctor_text = doctor_text.replace(
@@ -96,6 +98,26 @@ status_text = status_text.replace(
 if status_text.count('".hermes-wrapped gateway"') != 2:
     raise RuntimeError("failed to expand gateway process signatures in gateway.status")
 gateway_status.write_text(status_text)
+
+gateway_run_text = gateway_run.read_text()
+gateway_run_text = gateway_run_text.replace(
+    '                user_provs = cfg.get("providers")\n',
+    '                user_provs = cfg.get("providers") or cfg.get("custom_providers")\n',
+    1,
+)
+if 'cfg.get("providers") or cfg.get("custom_providers")' not in gateway_run_text:
+    raise RuntimeError("failed to teach Discord model picker to use custom_providers")
+gateway_run.write_text(gateway_run_text)
+
+model_switch_text = model_switch.read_text()
+old_user_provider_block = """    # --- 3. User-defined endpoints from config ---\n    if user_providers and isinstance(user_providers, dict):\n        for ep_name, ep_cfg in user_providers.items():\n            if not isinstance(ep_cfg, dict):\n                continue\n            display_name = ep_cfg.get(\"name\", \"\") or ep_name\n            api_url = ep_cfg.get(\"api\", \"\") or ep_cfg.get(\"url\", \"\") or \"\"\n            default_model = ep_cfg.get(\"default_model\", \"\")\n\n            models_list = []\n            if default_model:\n                models_list.append(default_model)\n\n            # Try to probe /v1/models if URL is set (but don't block on it)\n            # For now just show what we know from config\n            results.append({\n                \"slug\": ep_name,\n                \"name\": display_name,\n                \"is_current\": ep_name == current_provider,\n                \"is_user_defined\": True,\n                \"models\": models_list,\n                \"total_models\": len(models_list) if models_list else 0,\n                \"source\": \"user-config\",\n                \"api_url\": api_url,\n            })\n"""
+new_user_provider_block = """    # --- 3. User-defined endpoints from config ---\n    if user_providers and isinstance(user_providers, dict):\n        for ep_name, ep_cfg in user_providers.items():\n            if not isinstance(ep_cfg, dict):\n                continue\n            display_name = ep_cfg.get(\"name\", \"\") or ep_name\n            api_url = ep_cfg.get(\"api\", \"\") or ep_cfg.get(\"url\", \"\") or \"\"\n            default_model = ep_cfg.get(\"default_model\", \"\")\n\n            models_list = []\n            if default_model:\n                models_list.append(default_model)\n\n            # Try to probe /v1/models if URL is set (but don't block on it)\n            # For now just show what we know from config\n            results.append({\n                \"slug\": ep_name,\n                \"name\": display_name,\n                \"is_current\": ep_name == current_provider,\n                \"is_user_defined\": True,\n                \"models\": models_list,\n                \"total_models\": len(models_list) if models_list else 0,\n                \"source\": \"user-config\",\n                \"api_url\": api_url,\n            })\n    elif user_providers and isinstance(user_providers, list):\n        from hermes_cli.models import fetch_api_models\n\n        for entry in user_providers:\n            if not isinstance(entry, dict):\n                continue\n            display_name = (entry.get(\"name\", \"\") or \"\").strip()\n            api_url = (entry.get(\"base_url\", \"\") or entry.get(\"api\", \"\") or entry.get(\"url\", \"\") or \"\").strip()\n            if not display_name or not api_url:\n                continue\n\n            slug = \"custom:\" + display_name.lower().replace(\" \", \"-\")\n            saved_model = str(entry.get(\"model\", \"\") or \"\").strip()\n            api_key = str(entry.get(\"api_key\", \"\") or \"\").strip() or None\n\n            fetched_models = fetch_api_models(api_key, api_url, timeout=3.0) or []\n            if fetched_models:\n                models_list = fetched_models[:max_models]\n                total_models = len(fetched_models)\n            elif saved_model:\n                models_list = [saved_model]\n                total_models = 1\n            else:\n                models_list = []\n                total_models = 0\n\n            results.append({\n                \"slug\": slug,\n                \"name\": display_name,\n                \"is_current\": slug == current_provider or display_name == current_provider,\n                \"is_user_defined\": True,\n                \"models\": models_list,\n                \"total_models\": total_models,\n                \"source\": \"custom-provider\",\n                \"api_url\": api_url,\n            })\n"""
+if old_user_provider_block not in model_switch_text:
+    raise RuntimeError("failed to locate model_switch custom provider block")
+model_switch_text = model_switch_text.replace(old_user_provider_block, new_user_provider_block, 1)
+if '"source": "custom-provider"' not in model_switch_text:
+    raise RuntimeError("failed to add custom_providers support to list_authenticated_providers")
+model_switch.write_text(model_switch_text)
 PATCH
 
     for prog in hermes hermes-agent hermes-acp; do
