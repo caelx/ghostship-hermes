@@ -188,3 +188,36 @@ def test_base_http_client_request_json_bypasses_service_request_override() -> No
     client = DerivedClient('https://example.test', transport=transport)
 
     assert client.request_json('GET', '/health') == {'ok': True}
+
+
+def test_base_http_client_raises_http_status_error_on_redirect() -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(302, request=request, headers={'location': 'https://auth.example/login'}))
+    client = BaseHttpClient('https://example.test', transport=transport)
+
+    with pytest.raises(HttpStatusError) as exc:
+        client.request_decoded('GET', '/redirect')
+
+    assert exc.value.status_code == 302
+    assert exc.value.details == {'location': 'https://auth.example/login'}
+
+
+def test_base_http_client_follows_redirects_when_enabled() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == '/redirect':
+            return httpx.Response(302, request=request, headers={'location': '/final'})
+        return httpx.Response(200, request=request, json={'ok': True})
+
+    client = BaseHttpClient('https://example.test', transport=httpx.MockTransport(handler), follow_redirects=True)
+
+    assert client.request_json('GET', '/redirect') == {'ok': True}
+    assert seen == ['/redirect', '/final']
+
+
+def test_base_http_client_empty_204_response_reports_success() -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(204, request=request))
+    client = BaseHttpClient('https://example.test', transport=transport)
+
+    assert client.request_decoded('DELETE', '/resource') == {'status': 'success'}

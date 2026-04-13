@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import sys
+from pathlib import Path
 from typing import Any, Callable
 
 import click
+import httpx
 import typer
 
 from .errors import CliContractError, ConfigError, InvalidInputError, UnknownCliError, exit_code_for_error
@@ -45,6 +48,44 @@ def parse_params(values: list[str]) -> dict[str, str]:
         key, raw = value.split('=', 1)
         params[key] = raw
     return params
+
+
+def parse_file_params(values: list[str]) -> dict[str, tuple[str, bytes, str]]:
+    files: dict[str, tuple[str, bytes, str]] = {}
+    for value in values:
+        if '=' not in value:
+            raise InvalidInputError(f"file parameter must use key=path form: {value}")
+        key, raw_path = value.split('=', 1)
+        path = Path(raw_path).expanduser()
+        if not path.is_file():
+            raise InvalidInputError(f"file parameter path must exist and be a file: {raw_path}")
+        content_type = mimetypes.guess_type(path.name)[0] or 'application/octet-stream'
+        files[key] = (path.name, path.read_bytes(), content_type)
+    return files
+
+
+def write_response_output(response: httpx.Response, output: str | Path) -> dict[str, Any]:
+    output_path = Path(output)
+    content_disposition = response.headers.get('content-disposition', '')
+    suggested_name = None
+    for part in content_disposition.split(';'):
+        part = part.strip()
+        if part.startswith('filename='):
+            suggested_name = part.split('=', 1)[1].strip('"')
+            break
+    if output_path.exists() and output_path.is_dir():
+        target = output_path / (suggested_name or Path(response.request.url.path).name or 'response.bin')
+    else:
+        target = output_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(response.content)
+    return {
+        'status': 'success',
+        'output': str(target),
+        'status_code': response.status_code,
+        'content_type': response.headers.get('content-type'),
+        'bytes_written': len(response.content),
+    }
 
 
 def render_dry_run(spec: RequestSpec) -> dict[str, Any]:

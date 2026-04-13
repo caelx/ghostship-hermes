@@ -44,10 +44,12 @@ class TimeoutError(CliContractError):
 @dataclass
 class HttpStatusError(CliContractError):
     status_code: int = 0
+    headers: dict[str, str] | None = None
 
-    def __init__(self, message: str, *, status_code: int, details: Any = None):
+    def __init__(self, message: str, *, status_code: int, details: Any = None, headers: dict[str, str] | None = None):
         super().__init__(message, details=details)
         self.status_code = status_code
+        self.headers = headers or None
         self.exit_code = 5
 
     def to_dict(self) -> dict[str, Any]:

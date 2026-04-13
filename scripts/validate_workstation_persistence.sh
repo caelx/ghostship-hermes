@@ -238,7 +238,7 @@ docker run -d \
   -e OPENROUTER_TITLE \
   -e DISCORD_BOT_TOKEN=single-agent-bot-token \
   -e DISCORD_ALLOWED_USERS=single-agent-user \
-  -e DISCORD_FREE_RESPONSE_CHANNELS=single-agent-channel \
+  -e GHOSTSHIP_ROUTER_CHANNEL=single-agent-channel \
   -e DISCORD_HOME_CHANNEL=single-agent-home \
   -e WEBHOOK_SECRET=single-agent-webhook-secret \
   -e BROWSER_CDP_URL=ws://single-agent-browser.example/ws \
@@ -365,7 +365,7 @@ docker run -d \
   -e OPENROUTER_TITLE \
   -e DISCORD_BOT_TOKEN=single-agent-bot-token \
   -e DISCORD_ALLOWED_USERS=single-agent-user \
-  -e DISCORD_FREE_RESPONSE_CHANNELS=single-agent-channel \
+  -e GHOSTSHIP_ROUTER_CHANNEL=single-agent-channel \
   -e DISCORD_HOME_CHANNEL=single-agent-home \
   -e WEBHOOK_SECRET=single-agent-webhook-secret \
   -e BROWSER_CDP_URL=ws://single-agent-browser.example/ws \
