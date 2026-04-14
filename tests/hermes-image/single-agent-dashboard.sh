@@ -86,7 +86,7 @@ run_in_container() {
 run_as_hermes() {
   local target_container="$1"
   shift
-  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
+  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
 }
 
 mkdir -p "$home_dir" "$workspace_dir" "$nix_dir"
@@ -137,7 +137,13 @@ do
   command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }
 done
 '
-run_in_container "$container_name" 'find /home/hermes \! -user hermes -print -quit | grep -q "^$"'
+run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogtato; do command -v "$cmd" >/dev/null || exit 1; done'
+run_as_hermes "$container_name" 'bws --help >/dev/null'
+run_as_hermes "$container_name" 'gws --help >/dev/null'
+run_as_hermes "$container_name" 'gh --help >/dev/null'
+run_as_hermes "$container_name" 'gcloud --help >/dev/null'
+run_as_hermes "$container_name" 'blogtato --help >/dev/null'
+run_in_container "$container_name" 'test -z "$(find /home/hermes \! -user hermes -print -quit)"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.memory.holographic"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
 run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
@@ -171,6 +177,12 @@ run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 wait_for_http "http://127.0.0.1:${dashboard_port}/api/status"
 run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-home.txt >/dev/null && grep -Fx "smoke-workspace" /workspace/persist-workspace.txt >/dev/null'
 run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
+run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogtato; do command -v "$cmd" >/dev/null || exit 1; done'
+run_as_hermes "$container_name" 'bws --help >/dev/null'
+run_as_hermes "$container_name" 'gws --help >/dev/null'
+run_as_hermes "$container_name" 'gh --help >/dev/null'
+run_as_hermes "$container_name" 'gcloud --help >/dev/null'
+run_as_hermes "$container_name" 'blogtato --help >/dev/null'
 
 "$container_engine" rm -f "$container_name" >/dev/null
 "$container_engine" run -d \

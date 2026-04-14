@@ -134,6 +134,23 @@
           );
           ghostshipHermesRuntime = pkgs.callPackage ./packages/hermes-image/runtime.nix { inherit hermesDashboard; };
           googleWorkspaceCli = googleworkspace-cli.packages.${system}.gws;
+          ghostshipDefaultTools = pkgs.buildEnv {
+            name = "ghostship-default-tools";
+            paths = [
+              pkgs.bws
+              pkgs.gh
+              pkgs.google-cloud-sdk
+              blogtato
+              googleWorkspaceCli
+            ];
+            pathsToLink = [ "/bin" ];
+            ignoreCollisions = true;
+            postBuild = ''
+              if [ -x "$out/bin/blog" ] && [ ! -e "$out/bin/blogtato" ]; then
+                ln -s blog "$out/bin/blogtato"
+              fi
+            '';
+          };
 
           baseUtilityPackages = [
             pkgs.bws
@@ -245,6 +262,7 @@
           };
         in
         {
+          ghostship-default-tools = ghostshipDefaultTools;
           bws = pkgs.bws;
           gcloud = pkgs.google-cloud-sdk;
           agent-browser = agentBrowser;

@@ -28,6 +28,7 @@ These are internal image-owned variables. They are already set in the image, and
 - `GHOSTSHIP_ROUTER_HOST=127.0.0.1`
 - `GHOSTSHIP_ROUTER_PORT=8788`
 - `GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1`
+- `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
 - `DISCORD_REACTIONS=false`
 - `DISCORD_REQUIRE_MENTION=false`
 - `DISCORD_AUTO_THREAD=false`
@@ -49,6 +50,7 @@ The image also bakes a PATH that prefers:
 - `/home/hermes/.local/bin`
 - `/home/hermes/.cargo/bin`
 - `/home/hermes/.nix-profile/bin`
+- `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin`
 - `/opt/ghostship-utils/venv/bin`
 - `/opt/ghostship/bin`
 - `/opt/hermes/venv/bin`
@@ -57,6 +59,7 @@ The image also bakes a PATH that prefers:
 Notes:
 
 - `/home/hermes/.nix-profile/bin` may be empty on first boot until the operator or Hermes installs something through Nix.
+- `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin` is the image-managed Nix baseline. Boot reconciles it for reused non-empty `/nix` mounts without touching the user profile.
 - Node-native CLIs that ship by default are installed with npm under `/home/hermes/.local/bin`.
 
 Do not set these in downstream runtime env:
@@ -78,6 +81,7 @@ Do not set these in downstream runtime env:
 - `GHOSTSHIP_ROUTER_HOST`
 - `GHOSTSHIP_ROUTER_PORT`
 - `GHOSTSHIP_ROUTER_URL`
+- `GHOSTSHIP_NIX_DEFAULT_PROFILE`
 - `GHOSTSHIP_TTYD_SOCKET`
 - `GHOSTSHIP_TTYD_BASE_PATH`
 - `GHOSTSHIP_TERMINAL_CWD`
@@ -231,3 +235,5 @@ These commands are expected to exist in the image without downstream installatio
 - `ttyd`
 - `uv`
 - `yq`
+
+For the Nix-backed defaults, the image guarantees them through the managed profile at `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin`, not through raw `/opt/ghostship/bin -> /nix/store/...` symlinks.

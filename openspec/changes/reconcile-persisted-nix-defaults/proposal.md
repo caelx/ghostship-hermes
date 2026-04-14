@@ -7,6 +7,7 @@ The current workstation image ships image-managed helper utilities from Nix by w
 - Add a managed Nix default-tool profile that the image exports and the boot sequence reconciles into persisted `/nix` on every start.
 - Replace direct `/opt/ghostship/bin -> /nix/store/...` helper symlinks for Nix-backed defaults with a managed per-image Nix profile path that survives reused `/nix` mounts.
 - Define the baseline image-managed Nix helper set as part of the workstation contract for tools such as `bws`, `gws`, `gh`, `gcloud`, and `blogtato`.
+- Keep the repo-owned dashboard `Terminal` tab injected after `Keys`, as the final upstream web UI tab.
 - Document and validate upgrade behavior for reused non-empty `/nix` mounts so downstream operators understand how image updates refresh the managed default tool set without deleting user-installed Nix packages.
 - **BREAKING**: Existing runtime/tooling docs and specs that describe these utilities as downstream-only optional installs will be updated to match the current image-managed utility contract.
 

@@ -30,13 +30,14 @@ ENV HOME=/home/hermes \
     GHOSTSHIP_ROUTER_HOST=127.0.0.1 \
     GHOSTSHIP_ROUTER_PORT=8788 \
     GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1 \
+    GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults \
     DISCORD_REACTIONS=false \
     DISCORD_REQUIRE_MENTION=false \
     DISCORD_AUTO_THREAD=false \
     GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock \
     GHOSTSHIP_TTYD_BASE_PATH=/terminal \
     GHOSTSHIP_TERMINAL_CWD=/workspace \
-    PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -90,6 +91,7 @@ RUN mkdir -p /nix \
     && chown 3000:3000 /nix \
     && runuser -u hermes -- env HOME=/home/hermes sh -c 'curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon --yes --no-modify-profile' \
     && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix)" /usr/local/bin/nix \
+    && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix-store)" /usr/local/bin/nix-store \
     && tirith_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths nixpkgs#tirith)" \
     && ln -s "${tirith_path}/bin/tirith" /usr/local/bin/tirith
 
@@ -123,6 +125,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship /opt/ghostship-router /opt/ghostship-utils
 COPY flake.nix /src/
+COPY flake.lock /src/
 COPY packages /src/packages
 
 RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/${HERMES_REF}.tar.gz" -o /tmp/hermes-agent.tar.gz \
@@ -145,16 +148,10 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && /opt/ghostship-utils/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/ghostship-utils/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/*-cli uv \
     && cd /src \
-    && tool_paths="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features 'nix-command flakes' build --impure --no-write-lock-file --no-link --print-out-paths .#blogtato .#gws nixpkgs#bws nixpkgs#gh nixpkgs#google-cloud-sdk)" \
-    && for tool_path in $tool_paths; do \
-         if [ -d "$tool_path/bin" ]; then \
-           for bin in "$tool_path"/bin/*; do \
-             [ -e "$bin" ] || continue; \
-             ln -sf "$bin" "/opt/ghostship/bin/$(basename "$bin")"; \
-           done; \
-         fi; \
-       done \
-    && if [ -x /opt/ghostship/bin/blog ] && [ ! -e /opt/ghostship/bin/blogtato ]; then ln -sf /opt/ghostship/bin/blog /opt/ghostship/bin/blogtato; fi \
+    && default_tools_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features 'nix-command flakes' build --impure --no-write-lock-file --no-link --print-out-paths .#ghostship-default-tools)" \
+    && printf '%s\n' "$default_tools_path" > /opt/ghostship/nix-default-tools.out-path \
+    && runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin sh -lc 'closure_paths="$(nix-store -qR "'"$default_tools_path"'")"; nix-store --export $closure_paths' \
+      | zstd -19 -T0 -o /opt/ghostship/nix-default-tools.export.zst \
     && ln -sf /usr/bin/fdfind /opt/ghostship/bin/fd \
     && cp /src/packages/hermes-image/build/init_home.py /opt/ghostship/bin/init_home.py \
     && apt-get purge -y build-essential pkg-config libffi-dev libssl-dev \
@@ -190,6 +187,7 @@ RUN chmod +x /etc/cont-init.d/10-ghostship-prepare \
     /etc/services.d/ttyd/run \
     /etc/services.d/ghostship-router/run \
     /usr/local/bin/nix \
+    /usr/local/bin/nix-store \
     /usr/local/bin/ps
 
 EXPOSE 7681
