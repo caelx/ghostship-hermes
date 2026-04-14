@@ -48,13 +48,11 @@ let
     "OPENROUTER_BASE_URL"
     "OPENROUTER_HTTP_REFERER"
     "OPENROUTER_TITLE"
-    "OPENAI_API_KEY"
     "OPENAI_BASE_URL"
     "OPENCODE_API_KEY"
     "OPENCODE_GO_API_KEY"
     "OPENCODE_BASE_URL"
     "GITHUB_TOKEN"
-    "GH_TOKEN"
     "HASS_TOKEN"
     "HASS_URL"
     "BWS_ACCESS_TOKEN"
@@ -216,7 +214,6 @@ let
       };
     in
     {
-      display.personality = "assistant";
       model = {
         provider = "opencode-go";
         default = "minimax-m2.7";
@@ -256,8 +253,8 @@ let
         protect_last_n = 20;
       };
       session_reset = {
-        mode = "none";
-        idle_minutes = 1440;
+        mode = "both";
+        idle_minutes = 240;
         at_hour = 4;
       };
       browser = {
@@ -287,7 +284,7 @@ let
       };
       streaming = {
         enabled = true;
-        transport = "edit";
+        transport = "off";
         edit_interval = 0.3;
         buffer_threshold = 40;
       };
@@ -308,12 +305,14 @@ let
         flush_memories = directGemini;
       };
       discord = {
-        require_mention = true;
+        require_mention = false;
         auto_thread = false;
-        reactions = true;
+        reactions = false;
       };
+      unauthorized_dm_behavior = "ignore";
       display = {
         compact = true;
+        interim_assistant_messages = true;
         streaming = true;
         tool_progress = "all";
         background_process_notifications = "result";
@@ -672,6 +671,10 @@ EOF
         }
         in_discord && $0 ~ /^  require_mention:[[:space:]]/ {
           print "  require_mention: false"
+          next
+        }
+        in_discord && $0 ~ /^  reactions:[[:space:]]/ {
+          print "  reactions: false"
           next
         }
         in_custom && $0 ~ /^[[:space:]]+api_key:[[:space:]]/ {
@@ -1246,9 +1249,8 @@ in
         "OPENCODE_API_KEY"
         "OPENCODE_GO_API_KEY"
         "OPENCODE_BASE_URL"
-        "GHOSTSHIP_ROUTER_API_KEY"
         "GHOSTSHIP_ROUTER_CORS_ORIGINS"
-        "API_SERVER_KEY"
+        "_GHOSTSHIP_ROUTER_API_KEY"
         "API_SERVER_CORS_ORIGINS"
         "GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"
         "GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE"

@@ -8,7 +8,7 @@ The current NixOS-managed image owns too much of Hermes itself: runtime config p
 - **BREAKING** Stop treating bootstrap-generated managed config and `.env` rewrites as the source of truth for Hermes runtime configuration; downstream-owned persisted home state becomes authoritative instead.
 - Keep Hermes core immutable and image-owned under `/opt/hermes`, while persisting `/home/hermes`, `/workspace`, and `/nix` across restarts and container replacement.
 - Use the upstream Hermes dashboard as the main browser surface, but keep a small repo-owned frontend patch that adds a `Terminal` entry while `ttyd` runs as a separate supervised sidecar behind the published `/terminal/` path.
-- Keep the local router as a mandatory core service in the image, and preserve the repo-owned Discord forced-channel patch set: the router-pinned free-response channel plus a `#deepthink` channel pinned to Codex `gpt-5.4` with high reasoning.
+- Keep the local router as a mandatory core service in the image, and preserve the repo-owned Discord forced-channel patch set: the router-pinned free-response channel plus a Codex channel pinned to Codex `gpt-5.4` with high reasoning.
 - Split the old utility bundle into three layers: minimal immutable core utilities, native-package-manager tooling such as npm-installed agent CLIs, and optional persisted Nix tooling for downstream or Hermes-installed extras.
 - Rewrite downstream docs, examples, and GitHub Actions build/publication flows around the new workstation image, including explicit guidance for persisting `/home/hermes`, seeding and reusing `/nix`, and supplying operator-facing environment variables.
 
@@ -16,7 +16,7 @@ The current NixOS-managed image owns too much of Hermes itself: runtime config p
 
 ### New Capabilities
 
-- `discord-free-channel-router`: Preserve the repo-owned Discord forced-channel contract as a first-class requirement in the new host-native workstation runtime, including the router-pinned free-response channel and the `#deepthink` Codex lane.
+- `discord-free-channel-router`: Preserve the repo-owned Discord forced-channel contract as a first-class requirement in the new host-native workstation runtime, including the router-pinned free-response channel and the Codex lane selected by `GHOSTSHIP_CODEX_CHANNEL`.
 
 ### Modified Capabilities
 

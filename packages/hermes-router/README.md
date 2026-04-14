@@ -30,7 +30,7 @@ Current scope:
 - tracks rolling model and provider health so broad provider failures can temporarily suppress a provider without losing model-level failover
 - uses a healthy free text model for background ranking and selective reranking outside the request hot path
 - supports durable provider and model overrides plus alias pinning
-- supports optional bearer auth through `GHOSTSHIP_ROUTER_API_KEY`, `API_SERVER_KEY`, or `OPENAI_API_KEY`
+- supports optional internal bearer auth through `_GHOSTSHIP_ROUTER_API_KEY`
 - supports optional browser CORS allowlists through `GHOSTSHIP_ROUTER_CORS_ORIGINS` or `API_SERVER_CORS_ORIGINS`
 
 The package is intentionally standalone first so it can be built and tested before Hermes image integration.
@@ -46,7 +46,6 @@ Optional router-specific inputs:
 
 - `GHOSTSHIP_ROUTER_HOST`
 - `GHOSTSHIP_ROUTER_PORT`
-- `GHOSTSHIP_ROUTER_API_KEY`
 - `GHOSTSHIP_ROUTER_CORS_ORIGINS`
 - `GHOSTSHIP_ROUTER_STATE_DIR`
 - `GHOSTSHIP_ROUTER_DB_PATH`
@@ -78,13 +77,11 @@ Optional router-specific inputs:
 - `GHOSTSHIP_ROUTER_VISION_MODELS`
 - `GHOSTSHIP_ROUTER_TTS_MODELS`
 
-Hermes-compatible aliases and client auth inputs:
+Hermes-compatible aliases:
 
 - `API_SERVER_HOST`
 - `API_SERVER_PORT`
-- `API_SERVER_KEY`
 - `API_SERVER_CORS_ORIGINS`
-- `OPENAI_API_KEY`
 
 Compatibility note:
 
@@ -95,7 +92,7 @@ Compatibility note:
 - OpenCode Zen mixed endpoint families still normalize back to the local `chat/completions` surface before the router builds the `responses` envelope
 - Hermes can use `base_url` `http://127.0.0.1:8788/v1` directly as a generic OpenAI-compatible endpoint
 - Hermes also works with bare `http://127.0.0.1:8788`; the router exposes both `/v1/...` and bare OpenAI endpoint aliases
-- Hermes can reuse `OPENAI_API_KEY` as the router bearer token when router auth is enabled
+- The workstation image auto-generates `_GHOSTSHIP_ROUTER_API_KEY` at boot and shares it internally between Hermes and the local router
 - The router also accepts `OPENCODE_GO_API_KEY` as an alias for `OPENCODE_API_KEY` so the Hermes Minimax fallback credential name can be shared without a second env var
 - `GOOGLE_AI_STUDIO_API_KEY` remains Hermes-direct only for now; the router does not consume it until a native Google provider exists
 

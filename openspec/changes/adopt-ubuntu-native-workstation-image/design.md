@@ -6,7 +6,7 @@
 - Hermes state must survive container restart and replacement
 - user-installed tooling must persist, especially Nix-installed userland tools under `/nix`
 - the browser surface should be upstream Hermes, not a separate repo dashboard
-- the repo must still keep its product deltas: the local router, the Discord forced-channel patch set (`ghostship-router` free-response lane plus `#deepthink` on Codex `gpt-5.4` high reasoning), and a small browser terminal entry backed by `ttyd`
+- the repo must still keep its product deltas: the local router, the Discord forced-channel patch set (`ghostship-router` free-response lane plus the Codex channel on `gpt-5.4` high reasoning), and a small browser terminal entry backed by `ttyd`
 
 This is a cross-cutting change. It alters the OS base, service supervision, persistence model, environment-variable ownership, utility packaging, browser contract, build pipeline, smoke tests, and downstream operator documentation.
 
@@ -21,7 +21,7 @@ This is a cross-cutting change. It alters the OS base, service supervision, pers
 - Keep Hermes management host-native at the config/state level: operators manage Hermes through the CLI, dashboard, and files in persisted home state rather than through image rebuilds.
 - Use the upstream Hermes dashboard, with only a small repo-owned frontend patch for a `ttyd`-backed terminal entry while `ttyd` itself runs as a separate supervised sidecar behind the published `/terminal/` path.
 - Keep the router mandatory and preserve the Discord free-channel router-pinning patch.
-- Keep the Discord forced-channel patch surface narrow: only the router-pinned free-response channel and the `#deepthink` Codex lane are repo-owned gateway behavior overrides, and the migration must not add extra compatibility patches for service management, `doctor`, or other upstream runtime surfaces.
+- Keep the Discord forced-channel patch surface narrow: only the router-pinned free-response channel and the Codex lane selected by `GHOSTSHIP_CODEX_CHANNEL` are repo-owned gateway behavior overrides, and the migration must not add extra compatibility patches for service management, `doctor`, or other upstream runtime surfaces.
 - Split the old utility set into minimal immutable core tools, native-package-manager userland tools, and optional persisted Nix tooling for downstream or Hermes-installed extras.
 - Ship explicit downstream documentation for persistence, `/nix` reuse, home-directory persistence, and operator-facing environment variables.
 - Rework GitHub Actions and release docs around the new image.
@@ -218,7 +218,7 @@ Alternatives considered:
 The local router remains a mandatory core service in the final image, and the repo continues to patch Hermes so configured Discord forced-response channels stay pinned to repo-owned execution paths:
 
 - the existing router-managed Discord free-response lane stays pinned to the local router alias
-- a new Discord `#deepthink` lane is pinned to `openai-codex` / `gpt-5.4` with high reasoning effort
+- a new Discord Codex lane is pinned to `openai-codex` / `gpt-5.4` with high reasoning effort
 
 Why:
 

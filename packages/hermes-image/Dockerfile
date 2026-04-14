@@ -1,9 +1,12 @@
-FROM ubuntu:24.04
+ARG HERMES_REF=v2026.4.13
+ARG S6_OVERLAY_VERSION=3.2.1.0
+
+FROM ubuntu:24.04 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
-ARG HERMES_REF=v2026.4.13
-ARG S6_OVERLAY_VERSION=3.2.1.0
+ARG HERMES_REF
+ARG S6_OVERLAY_VERSION
 
 ENV HOME=/home/hermes \
     HERMES_HOME=/home/hermes/.hermes \
@@ -73,9 +76,39 @@ RUN case "$TARGETARCH" in \
 RUN mkdir -p /nix \
     && chown 3000:3000 /nix \
     && runuser -u hermes -- env HOME=/home/hermes sh -c 'curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon --yes --no-modify-profile' \
-    && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix)" /usr/local/bin/nix
+    && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix)" /usr/local/bin/nix \
+    && tirith_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths nixpkgs#tirith)" \
+    && ln -s "${tirith_path}/bin/tirith" /usr/local/bin/tirith
 
-RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship /opt/ghostship-router /opt/hermes
+RUN mkdir -p /opt/hermes \
+    && curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/${HERMES_REF}.tar.gz" -o /tmp/hermes-agent.tar.gz \
+    && mkdir -p /tmp/hermes-agent \
+    && tar -xzf /tmp/hermes-agent.tar.gz -C /tmp/hermes-agent --strip-components=1 \
+    && rm -f /tmp/hermes-agent.tar.gz \
+    && cd /tmp/hermes-agent/web \
+    && npm install --include=optional \
+    && npm run build \
+    && python3 -m venv /opt/hermes/venv \
+    && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
+    && /opt/hermes/venv/bin/pip install "/tmp/hermes-agent[all]" \
+    && apt-get purge -y build-essential gnupg pkg-config libffi-dev libssl-dev \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent
+
+
+FROM base AS final
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG HERMES_REF
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    libffi-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship /opt/ghostship-router
 COPY packages/ghostship-cli-contract /src/packages/ghostship-cli-contract
 COPY packages/hermes-router /src/packages/hermes-router
 COPY packages/hermes-image/build /src/packages/hermes-image/build
@@ -88,6 +121,7 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && cd /tmp/hermes-agent/web \
     && npm install --include=optional \
     && npm run build \
+    && rm -rf /opt/hermes/venv \
     && python3 -m venv /opt/hermes/venv \
     && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/hermes/venv/bin/pip install "/tmp/hermes-agent[all]" \
@@ -95,10 +129,9 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && /opt/ghostship-router/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/ghostship-router/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/hermes-router \
     && cp /src/packages/hermes-image/build/init_home.py /opt/ghostship/bin/init_home.py \
-    && apt-get purge -y build-essential gnupg pkg-config libffi-dev libssl-dev \
+    && apt-get purge -y build-essential pkg-config libffi-dev libssl-dev \
     && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /tmp/hermes-agent
+    && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent
 
 RUN mkdir -p /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/nixpkgs \
     && printf '%s\n' '{ allowUnfreePredicate = pkg: builtins.elem (builtins.parseDrvName pkg.name).name [ "bws" ]; }' > /opt/ghostship/home-seed/.config/nixpkgs/config.nix \

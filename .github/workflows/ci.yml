@@ -38,6 +38,7 @@ jobs:
           set -euo pipefail
           docker buildx build \
             --load \
+            --target final \
             --build-arg HERMES_REF="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)" \
             --tag ghostship-hermes:ci \
             --file packages/hermes-image/Dockerfile \

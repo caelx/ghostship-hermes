@@ -31,7 +31,7 @@ The Hermes image SHALL project the full supported agent-facing runtime env inven
 The Hermes image SHALL project the documented single-agent Discord runtime inputs into `/home/hermes/.hermes/.env` on every managed bootstrap run, using the current container env as the source of truth for the rewritten file.
 
 #### Scenario: Generic Discord env are available during managed bootstrap
-- **WHEN** `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `DISCORD_FREE_RESPONSE_CHANNELS`, or `DISCORD_HOME_CHANNEL` are present on the container during managed bootstrap
+- **WHEN** `DISCORD_BOT_TOKEN`, `DISCORD_ALLOWED_USERS`, `DISCORD_FREE_RESPONSE_CHANNELS`, `GHOSTSHIP_ROUTER_CHANNEL`, or `GHOSTSHIP_CODEX_CHANNEL` are present on the container during managed bootstrap
 - **THEN** bootstrap rewrites the managed `.env` with the matching Hermes-facing Discord env names
 - **AND** the managed runtime does not perform any profile-specific Discord env translation
 

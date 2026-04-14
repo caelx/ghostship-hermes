@@ -9,7 +9,7 @@ Downstream should treat the fixed image defaults as part of the image contract. 
 
 ## Fixed Image Defaults
 
-These are already set in the image. Downstream normally should not override them.
+These are internal image-owned variables. They are already set in the image, and downstream must not set or override them.
 
 - `HOME=/home/hermes`
 - `HERMES_HOME=/home/hermes/.hermes`
@@ -30,6 +30,15 @@ These are already set in the image. Downstream normally should not override them
 - `GHOSTSHIP_TTYD_BASE_PATH=/terminal`
 - `GHOSTSHIP_TERMINAL_CWD=/workspace`
 
+These variables are internal because they define:
+
+- the canonical persisted home layout
+- the XDG layout under `/home/hermes`
+- where npm/cargo/rustup write mutable userland state
+- the internal dashboard/router/ttyd topology
+
+Downstream override of any of these values is unsupported.
+
 The image also bakes a PATH that prefers:
 
 - `/home/hermes/.local/bin`
@@ -43,50 +52,71 @@ Notes:
 - `/home/hermes/.nix-profile/bin` may be empty on first boot until the operator or Hermes installs something through Nix.
 - Node-native CLIs that ship by default are installed with npm under `/home/hermes/.local/bin`.
 
+Do not set these in downstream runtime env:
+
+- `HOME`
+- `HERMES_HOME`
+- `XDG_CONFIG_HOME`
+- `XDG_CACHE_HOME`
+- `XDG_DATA_HOME`
+- `NPM_CONFIG_PREFIX`
+- `CARGO_HOME`
+- `RUSTUP_HOME`
+- `GHOSTSHIP_WORKSPACE_ROOT`
+- `GHOSTSHIP_WEB_PORT`
+- `GHOSTSHIP_DASHBOARD_HOST`
+- `GHOSTSHIP_DASHBOARD_PORT`
+- `GHOSTSHIP_ROUTER_HOST`
+- `GHOSTSHIP_ROUTER_PORT`
+- `GHOSTSHIP_ROUTER_URL`
+- `GHOSTSHIP_TTYD_SOCKET`
+- `GHOSTSHIP_TTYD_BASE_PATH`
+- `GHOSTSHIP_TERMINAL_CWD`
+
 ## Downstream Operator Env
 
-These are the variables downstream should set when the deployment needs them.
+These are the variables downstream may set when the deployment needs them.
 
-### Core Runtime
+### Required For Useful Model Execution
 
-- `OPENAI_API_KEY`
+Both provider credentials should be present for the default Ghostship runtime lane:
+
+- `OPENCODE_GO_API_KEY`
 - `OPENROUTER_API_KEY`
+- `GOOGLE_AI_STUDIO_API_KEY`
 
 Notes:
 
-- `OPENAI_API_KEY` is the compatibility bearer token Hermes uses when talking to the local router through the OpenAI-compatible endpoint.
-- `OPENROUTER_API_KEY` lets the local router talk to OpenRouter-backed models.
+- `OPENCODE_GO_API_KEY` is the preferred direct credential for the default Ghostship lane.
+- `OPENROUTER_API_KEY` enables OpenRouter-backed candidates in the local router.
+- `GOOGLE_AI_STUDIO_API_KEY` is required because the runtime uses Gemini-backed supplemental tasks.
 
-### Direct Provider Lanes
-
-- `OPENCODE_GO_API_KEY`
-- `GOOGLE_AI_STUDIO_API_KEY`
-
-Use these when the runtime needs direct provider access outside the local router path.
-
-### Discord Gateway
+### Required When Discord Gateway Is Enabled
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
-- `DISCORD_HOME_CHANNEL`
+- `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
-- `GHOSTSHIP_DEEPTHINK_CHANNEL`
+- `GHOSTSHIP_CODEX_CHANNEL`
 
 Channel behavior:
 
+- `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
+- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned and Codex-pinned channels.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `agentic`.
-- `GHOSTSHIP_DEEPTHINK_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning.
+- `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning.
+- `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
+- `GHOSTSHIP_CODEX_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
 
-### Webhook / Workflow Secrets
+### Recommended Optional Operator Env
 
 - `WEBHOOK_SECRET`
 - `BWS_ACCESS_TOKEN`
-- `BWS_SERVER_URL`
 - `GITHUB_TOKEN`
-- `GH_TOKEN`
 
-### Browser / Remote Browser Options
+### Supported But Not Recommended For Downstream
 
+- `BWS_SERVER_URL`
 - `BROWSER_CDP_URL`
 - `BROWSERBASE_API_KEY`
 - `BROWSERBASE_PROJECT_ID`
@@ -141,6 +171,18 @@ Channel behavior:
 - `N8N_URL`
 - `N8N_API_KEY`
 
+### Internal Runtime Env
+
+These are internal image-owned or boot-generated variables. Downstream must not set them.
+
+- `_GHOSTSHIP_ROUTER_API_KEY`
+
+Notes:
+
+- `_GHOSTSHIP_ROUTER_API_KEY` is auto-generated at boot.
+- the image shares it between Hermes and the local router only
+- it is not a public/downstream credential and should never appear in deployment env files
+
 ## Codex Auth Is Not An Env Var
 
 Codex OAuth is persisted in:
@@ -149,7 +191,7 @@ Codex OAuth is persisted in:
 
 That file survives container replacement as long as `/home/hermes` is persisted.
 
-`#deepthink` depends on that persisted auth. It does not use `OPENAI_API_KEY`.
+The Discord Codex lane depends on that persisted auth. It does not use a downstream env key.
 
 ## No In-Container Auth Layer
 

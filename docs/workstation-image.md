@@ -48,20 +48,34 @@ Fixed image defaults are already baked into the image:
 - npm/cargo/rustup roots under `/home/hermes`
 - router/dashboard/ttyd internal ports and paths
 
+These are internal image-owned variables and paths. Downstream must not override them through runtime env.
+
 Downstream should pass only the operator-facing runtime env vars. The full list lives in [runtime-env.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/runtime-env.md).
 
 The common downstream set for the default Ghostship runtime is:
 
-- `OPENAI_API_KEY`
-- `OPENROUTER_API_KEY`
 - `OPENCODE_GO_API_KEY`
+- `OPENROUTER_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
-- `DISCORD_HOME_CHANNEL`
+- `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
-- `GHOSTSHIP_DEEPTHINK_CHANNEL`
+- `GHOSTSHIP_CODEX_CHANNEL`
 - `WEBHOOK_SECRET`
+
+Discord channel contract:
+
+- `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
+- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned and Codex-pinned channels.
+- `GHOSTSHIP_ROUTER_CHANNEL` pins one free-response channel to the local router `agentic` lane.
+- `GHOSTSHIP_CODEX_CHANNEL` pins one free-response channel to Codex `gpt-5.4` with high reasoning.
+- `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
+- `GHOSTSHIP_CODEX_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
+
+Internal-only runtime auth is auto-generated:
+
+- `_GHOSTSHIP_ROUTER_API_KEY`
 
 Codex OAuth is not set by env var. Authenticate once inside the persisted home:
 

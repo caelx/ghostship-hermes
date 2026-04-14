@@ -72,8 +72,6 @@ cache_token() {
     printf '%s\n' "$GITHUB_CACHE_FALLBACK_TOKEN"
   elif [[ -n "${GITHUB_TOKEN:-}" ]]; then
     printf '%s\n' "$GITHUB_TOKEN"
-  elif [[ -n "${GH_TOKEN:-}" ]]; then
-    printf '%s\n' "$GH_TOKEN"
   fi
 }
 
@@ -224,7 +222,6 @@ bootstrap_cache() {
     NIXCACHE_LISTEN="$listen" \
     NIXCACHE_UPSTREAM="$upstream" \
     GITHUB_TOKEN="$(cache_token || true)" \
-    GH_TOKEN="$(cache_token || true)" \
     python3 "$proxy_script" >"$proxy_log" 2>&1 &
   local proxy_pid=$!
   printf '%s\n' "$proxy_pid" > "$proxy_pid_file"
@@ -270,7 +267,6 @@ load_builder_lib() {
   local token
   token="$(cache_token || true)"
   export GITHUB_TOKEN="$token"
-  export GH_TOKEN="$token"
   # shellcheck disable=SC1090
   source "$work_dir/cache-builder.sh"
   patch_cache_builder_for_large_indices

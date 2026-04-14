@@ -22,7 +22,7 @@
 - Discord forced-channel routing is mandatory.
 - The only repo-owned Hermes patches are:
   - Discord router-pinned channel
-  - Discord `#deepthink` pinned to Codex `gpt-5.4` with high reasoning
+  - Discord Codex channel pinned to Codex `gpt-5.4` with high reasoning
   - dashboard `Terminal` entry
 - Do not add extra Hermes service/doctor compatibility patches unless upstream behavior changes and there is no cleaner workaround.
 - Do not use `hermes gateway install` inside the container runtime. `s6` owns service supervision.
@@ -60,6 +60,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Downstream persistence contract is `/home/hermes`, `/workspace`, and `/nix`.
 - Empty persisted `/nix` volumes are safe because the cont-init phase seeds `/nix` from `/opt/ghostship/nix-seed.tar.zst` on first boot.
 - Persisting `/home/hermes` preserves Hermes config, Codex auth, npm CLIs, XDG state, and other tool state in the way workstation users expect.
+- Treat `HOME`, `HERMES_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `NPM_CONFIG_PREFIX`, `CARGO_HOME`, `RUSTUP_HOME`, `GHOSTSHIP_WORKSPACE_ROOT`, `GHOSTSHIP_WEB_PORT`, `GHOSTSHIP_DASHBOARD_HOST`, `GHOSTSHIP_DASHBOARD_PORT`, `GHOSTSHIP_ROUTER_HOST`, `GHOSTSHIP_ROUTER_PORT`, `GHOSTSHIP_ROUTER_URL`, `GHOSTSHIP_TTYD_SOCKET`, `GHOSTSHIP_TTYD_BASE_PATH`, and `GHOSTSHIP_TERMINAL_CWD` as internal image-owned variables. Do not expose them as downstream-facing env knobs and do not override them from runtime env.
 - `nix` itself must stay reachable even when `/home/hermes` is replaced by a fresh persisted mount. Keep `/usr/local/bin/nix` symlinked to the installed binary.
 - Upstream `hermes gateway status` shells out to `ps eww -ax -o pid=,command=`. Ubuntu `procps` rejects that exact argument order in this container. Keep the narrow `/usr/local/bin/ps` wrapper that rewrites only that invocation to `ps axeww -o pid=,command=`.
 - `ttyd` should bind a unix socket under `/run/user/3000`, not `/run`, because the runtime service runs as `hermes`.
@@ -70,9 +71,13 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Discord Routing
 
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `agentic` lane.
-- `GHOSTSHIP_DEEPTHINK_CHANNEL` pins replies to Codex `gpt-5.4` with `reasoning.effort = high`.
+- `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with `reasoning.effort = high`.
+- `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the router-pinned and Codex-pinned channels.
 - Forced channels must ignore per-session `/model` overrides.
-- The `#deepthink` lane depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`, not on `OPENAI_API_KEY`.
+- Keep the managed Discord defaults at `require_mention = false` and `reactions = false`. Do not flip them back unless the user explicitly changes the contract.
+- The Discord Codex lane depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
+- Do not use `OPENAI_API_KEY` anywhere in this repo's active runtime contract.
+- Do not expose router auth as a downstream env knob. If the router needs a token for Hermes integration, it must be an internal auto-generated underscore-prefixed env such as `_GHOSTSHIP_ROUTER_API_KEY`.
 
 ### Packaging Split
 

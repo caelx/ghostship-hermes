@@ -40,6 +40,7 @@ archive_path="${2:-}"
 hermes_ref="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)"
 
 "$container_engine" build \
+  --target final \
   --build-arg "HERMES_REF=${hermes_ref}" \
   --tag "$image_ref" \
   --file packages/hermes-image/Dockerfile \

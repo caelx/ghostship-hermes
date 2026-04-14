@@ -25,7 +25,7 @@ The Hermes image SHALL configure the managed Hermes runtime to use direct `openc
 - **AND** the managed config sets `fallback_model.provider` to `custom`
 - **AND** the managed config sets `fallback_model.model` to `agentic`
 - **AND** the managed config sets `fallback_model.base_url` to `http://127.0.0.1:8788/v1`
-- **AND** the managed config sets `fallback_model.api_key_env` to `OPENAI_API_KEY`
+- **AND** the managed config sets `fallback_model.api_key_env` to `_GHOSTSHIP_ROUTER_API_KEY`
 
 ### Requirement: Managed config convergence removes retired router-primary drift
 The image SHALL reconcile repo-owned managed config on boot so stale router-primary fields from older image generations do not continue shadowing the current direct-primary contract.

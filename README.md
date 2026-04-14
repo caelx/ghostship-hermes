@@ -40,7 +40,7 @@ Immutable image-owned layer:
 - `s6`, `nginx`, `ttyd`
 - repo-owned Hermes patches:
   - Discord router-pinned channel
-  - Discord `#deepthink` pinned to Codex `gpt-5.4` with high reasoning
+  - Discord Codex channel pinned to Codex `gpt-5.4` with high reasoning
   - dashboard `Terminal` entry
 - baked fixed environment defaults
 
@@ -68,10 +68,16 @@ Package ownership split:
 
 ## Build
 
+The Dockerfile is intentionally split into two stages:
+
+- `base`: Ubuntu + Hermes core + system/runtime dependencies only, with no Ghostship-specific overlay content
+- `final`: Ghostship router, dashboard patch, runtime rootfs, seeded userland defaults, and other repo-owned overlay content
+
 Local image build:
 
 ```fish
 docker build \
+  --target final \
   --build-arg HERMES_REF=(string trim < packages/hermes-image/hermes-release.txt) \
   --tag ghostship-hermes:dev \
   --file packages/hermes-image/Dockerfile \
@@ -91,6 +97,28 @@ python3 scripts/python_utility.py lock packages/searxng-cli
 python3 scripts/python_utility.py test packages/searxng-cli
 python3 scripts/python_utility.py build packages/searxng-cli
 ```
+
+## How The Container Runs
+
+The container is intentionally not a single-process `CMD` wrapper. It is a workstation-style container with Docker/Podman owning the outer lifecycle and `s6` owning the in-container long-running services.
+
+Service topology:
+
+- `nginx` binds `0.0.0.0:7681`
+- upstream Hermes dashboard listens on `127.0.0.1:9119`
+- `ghostship-hermes-router` listens on `127.0.0.1:8788`
+- `ttyd` listens on unix socket `/run/user/3000/ttyd.sock`
+- `nginx` proxies:
+  - `/` -> upstream Hermes dashboard
+  - `/terminal/` -> same-origin `ttyd`
+- Hermes gateway runs in-container and is supervised by `s6`
+
+Operational consequences:
+
+- do not run `hermes gateway install` in the container
+- do not install systemd units in the container
+- use `terminal.backend: local`
+- protect `:7681` with Cloudflare Access or equivalent upstream auth; the image does not add its own auth layer
 
 ## Run
 
@@ -122,50 +150,169 @@ podman run -d \
   ghcr.io/caelx/ghostship-hermes:latest
 ```
 
-No built-in auth is added to the dashboard or ttyd. Put the container behind Cloudflare Access or an equivalent upstream access-control layer before exposing it publicly.
+Example `docker compose` service:
 
-Detailed downstream deployment guidance lives in [docs/workstation-image.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/workstation-image.md).
+```yaml
+services:
+  hermes:
+    image: ghcr.io/caelx/ghostship-hermes:latest
+    container_name: ghostship-hermes
+    restart: unless-stopped
+    ports:
+      - "7681:7681"
+    env_file:
+      - .env
+    volumes:
+      - ghostship-hermes-home:/home/hermes
+      - ghostship-hermes-workspace:/workspace
+      - ghostship-hermes-nix:/nix
+
+volumes:
+  ghostship-hermes-home:
+  ghostship-hermes-workspace:
+  ghostship-hermes-nix:
+```
 
 ## Persistence
 
-Downstream must persist:
+Downstream must persist all three of these together:
 
 - `/home/hermes`
 - `/workspace`
 - `/nix`
 
-Behavior:
+What each mount owns:
 
-- `/home/hermes` preserves Hermes config, auth, sessions, memories, skills, npm-installed CLIs, and user config.
-- `/workspace` preserves projects and work products.
-- `/nix` preserves operator-installed or Hermes-installed Nix packages and build outputs across restart and container replacement.
+- `/home/hermes`
+  - Hermes config, sessions, memories, skills, logs
+  - `/home/hermes/.hermes/auth.json`
+  - npm-installed CLIs and user config under `.local`, `.config`, `.npm`, `.codex`, `.opencode`, `.ssh`, and similar
+- `/workspace`
+  - project checkouts and work products
+- `/nix`
+  - operator-installed or Hermes-installed Nix packages and build outputs
 
-The container auto-seeds an empty persisted `/nix` volume from the image on first boot. Do not delete that volume if you expect `nix profile add` installs to survive container recreation.
+Rules for coherent persistence:
+
+- persist the whole `/home/hermes` tree, not selected dot-directories
+- reuse the same `/home/hermes`, `/workspace`, and `/nix` mounts together when you recreate the container
+- keep the runtime user ownership coherent; bind mounts should be writable by UID/GID `3000:3000`
+- do not delete or replace `/nix` if you expect `nix profile add` installs to survive container replacement
+- do not point multiple unrelated Hermes deployments at the same `/home/hermes`
+- do not move Hermes core into `/home/hermes`; `/opt/hermes` stays image-owned so image replacement cleanly updates Hermes itself
+
+First boot behavior:
+
+- the image creates the home/runtime directories it needs under `/home/hermes`
+- the image seeds the home defaults and npm CLIs into the persisted home if they are missing
+- the image auto-seeds an empty persisted `/nix` from the image on first boot
+
+Detailed downstream persistence guidance still lives in [docs/workstation-image.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/workstation-image.md).
 
 ## Environment Variables
 
 Two env layers exist:
 
-1. Fixed image defaults baked into the container
-2. Downstream operator env passed at runtime
+1. Fixed image defaults baked into the image
+2. Downstream operator env supplied at runtime
 
-Downstream should not override the fixed image defaults unless there is a specific reason. The fixed contract and the downstream operator inputs are documented in [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/runtime-env.md).
+### Fixed Image Defaults
 
-Important downstream-managed inputs:
+These are internal image-owned variables. Downstream must not set or override them through `--env`, `--env-file`, Compose `environment:`, or a persisted `.env`.
 
-- `OPENAI_API_KEY`
-- `OPENROUTER_API_KEY`
+- `HOME=/home/hermes`
+- `HERMES_HOME=/home/hermes/.hermes`
+- `XDG_CONFIG_HOME=/home/hermes/.config`
+- `XDG_CACHE_HOME=/home/hermes/.cache`
+- `XDG_DATA_HOME=/home/hermes/.local/share`
+- `NPM_CONFIG_PREFIX=/home/hermes/.local`
+- `CARGO_HOME=/home/hermes/.cargo`
+- `RUSTUP_HOME=/home/hermes/.rustup`
+- `GHOSTSHIP_WORKSPACE_ROOT=/workspace`
+- `GHOSTSHIP_WEB_PORT=7681`
+- `GHOSTSHIP_DASHBOARD_HOST=127.0.0.1`
+- `GHOSTSHIP_DASHBOARD_PORT=9119`
+- `GHOSTSHIP_ROUTER_HOST=127.0.0.1`
+- `GHOSTSHIP_ROUTER_PORT=8788`
+- `GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1`
+- `GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock`
+- `GHOSTSHIP_TTYD_BASE_PATH=/terminal`
+- `GHOSTSHIP_TERMINAL_CWD=/workspace`
+
+These variables are internal because they define the persisted home layout, XDG layout, native tool install roots, and internal service topology for the workstation container. Overriding them makes the persistence contract incoherent and is unsupported.
+
+The image `PATH` prefers:
+
+- `/home/hermes/.local/bin`
+- `/home/hermes/.cargo/bin`
+- `/home/hermes/.nix-profile/bin`
+- `/opt/hermes/venv/bin`
+- `/opt/ghostship-router/venv/bin`
+
+### Where Downstream Env Vars Go
+
+Downstream-owned env vars should go in exactly one of these places:
+
+- preferred: the container runtime env, via `--env-file ./.env`, Compose `env_file:`, or Compose `environment:`
+- optional: `/home/hermes/.hermes/.env` if you intentionally want Hermes to read them from persisted home state
+
+Important rule:
+
+- the image does not regenerate `/home/hermes/.hermes/.env`
+- if you choose runtime env, keep using runtime env consistently
+- if you choose persisted `.hermes/.env`, treat that file as downstream-owned state
+
+### Downstream Operator Env Summary
+
+Required for useful model execution:
+
 - `OPENCODE_GO_API_KEY`
+- `OPENROUTER_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
+
+Required when Discord gateway is enabled:
+
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
-- `DISCORD_HOME_CHANNEL`
+- `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
-- `GHOSTSHIP_DEEPTHINK_CHANNEL`
+- `GHOSTSHIP_CODEX_CHANNEL`
+
+Recommended optional operator env:
+
 - `WEBHOOK_SECRET`
 - `BWS_ACCESS_TOKEN`
+- `GITHUB_TOKEN`
+
+Supported but not recommended for downstream:
+
+- `BWS_SERVER_URL`
+- `BROWSER_CDP_URL`
+- `BROWSERBASE_API_KEY`
+- `BROWSERBASE_PROJECT_ID`
+- `BROWSER_USE_API_KEY`
+- `CAMOFOX_URL`
+
+Other service-specific `ghostship-*` utility vars are optional and recommended only when that service integration is actually in use.
+
+Internal-only runtime env:
+
+- `_GHOSTSHIP_ROUTER_API_KEY`
+
+Important behavior:
+
+- `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
+- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router and Codex pinned channels.
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to router alias `agentic`
+- `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning
+- `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`
+- `GHOSTSHIP_CODEX_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`
+- `/model` cannot override those forced channels
+- `_GHOSTSHIP_ROUTER_API_KEY` is auto-generated at boot, stays inside the container, and is not part of the downstream env contract
 
 Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume.
+
+The full fixed env contract is also documented in [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/runtime-env.md).
 
 ## Dashboard, Router, And Forced Channels
 
@@ -184,7 +331,7 @@ Router:
 Forced Discord channels:
 
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `agentic` lane
-- `GHOSTSHIP_DEEPTHINK_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning
+- `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning
 - `/model` does not override either forced channel
 
 ## Native Hermes Management
@@ -198,6 +345,34 @@ Inside the container, manage Hermes like a normal host install:
 - edit `/home/hermes/.hermes/.env`
 
 Do not use `hermes gateway install` inside the container. `s6` already supervises `hermes gateway run`, `hermes dashboard`, `ghostship-hermes-router`, `ttyd`, and `nginx`.
+
+## Post-Setup Checklist
+
+After the first successful container boot:
+
+1. authenticate Codex if you want the Discord Codex lane to work
+2. verify provider and gateway env are present
+3. inspect `config.yaml` once and confirm the expected local-router defaults
+4. run `hermes doctor`
+5. open the dashboard and confirm `/terminal/` works through the same origin
+
+Recommended post-setup flow:
+
+```fish
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
+
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
+
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'sed -n "1,220p" /home/hermes/.hermes/config.yaml'
+```
+
+Expected config shape after first boot:
+
+- Hermes home at `/home/hermes/.hermes`
+- `terminal.backend: local`
+- `terminal.cwd: /workspace`
+- root model pointed at the local router
+- Discord forced-channel behavior controlled by runtime env, not by hardcoding channel ids into `config.yaml`
 
 ## Verification
 

@@ -246,7 +246,6 @@ docker run -d \
   -e BROWSER_CDP_URL=ws://single-agent-browser.example/ws \
   -e CHAPTARR_URL=http://chaptarr.example:8789 \
   -e CHAPTARR_API_KEY=chaptarr-token \
-  -e GHOSTSHIP_ROUTER_API_KEY=router-secret \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
@@ -373,7 +372,6 @@ docker run -d \
   -e BROWSER_CDP_URL=ws://single-agent-browser.example/ws \
   -e CHAPTARR_URL=http://chaptarr.example:8789 \
   -e CHAPTARR_API_KEY=chaptarr-token \
-  -e GHOSTSHIP_ROUTER_API_KEY=router-secret \
   -v "$home_dir:/home/hermes" \
   -v "$workspace_dir:/workspace" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \

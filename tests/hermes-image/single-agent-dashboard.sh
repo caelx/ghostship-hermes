@@ -91,15 +91,14 @@ mkdir -p "$home_dir" "$workspace_dir" "$nix_dir"
   --volume "$home_dir:/home/hermes" \
   --volume "$workspace_dir:/workspace" \
   --volume "$nix_dir:/nix" \
-  --env OPENAI_API_KEY=test-openai \
   --env OPENROUTER_API_KEY=test-openrouter \
   --env OPENCODE_GO_API_KEY=test-opencode \
   --env GOOGLE_AI_STUDIO_API_KEY=test-google \
   --env DISCORD_BOT_TOKEN=test-discord-token \
   --env DISCORD_ALLOWED_USERS=1 \
-  --env DISCORD_HOME_CHANNEL=2 \
+  --env DISCORD_FREE_RESPONSE_CHANNELS=3,4 \
   --env GHOSTSHIP_ROUTER_CHANNEL=3 \
-  --env GHOSTSHIP_DEEPTHINK_CHANNEL=4 \
+  --env GHOSTSHIP_CODEX_CHANNEL=4 \
   --env WEBHOOK_SECRET=test-webhook-secret \
   "$image_ref" >/dev/null
 
@@ -115,8 +114,23 @@ curl -fsSI "http://127.0.0.1:${dashboard_port}/terminal/" >/dev/null
 bundle="$(curl -fsS "http://127.0.0.1:${dashboard_port}/" | sed -n 's/.*src=\"\([^\"]*index-[^\"]*\.js\)\".*/\1/p' | head -n1)"
 curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q '/terminal/'
 
-run_in_container "$container_name" 'command -v nix >/dev/null && command -v git >/dev/null && command -v rg >/dev/null && command -v ttyd >/dev/null && command -v tmux >/dev/null && command -v agent-browser >/dev/null'
+run_in_container "$container_name" 'command -v nix >/dev/null && command -v git >/dev/null && command -v rg >/dev/null && command -v ttyd >/dev/null && command -v tmux >/dev/null && command -v tirith >/dev/null && command -v agent-browser >/dev/null'
+run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.memory.holographic"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: minimax-m2.7" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: gpt-5.4-mini" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^memory:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: holographic" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^plugins:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    db_path: \$HERMES_HOME/memory_store.db" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    model: gemini-3.1-flash-lite-preview" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    base_url: https://generativelanguage.googleapis.com/v1beta/openai/" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    api_key: \${GOOGLE_AI_STUDIO_API_KEY}" >/dev/null'
+run_as_hermes "$container_name" 'grep -F "group_sessions_per_user: true" /home/hermes/.hermes/config.yaml >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^terminal:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  timeout: 180" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reactions: false" >/dev/null'
+run_as_hermes "$container_name" 'grep -F "unauthorized_dm_behavior: ignore" /home/hermes/.hermes/config.yaml >/dev/null'
 
 doctor_output="$(run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes doctor' || true)"
 grep -q '✓ git' <<<"$doctor_output"
@@ -142,15 +156,14 @@ run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
   --volume "$home_dir:/home/hermes" \
   --volume "$workspace_dir:/workspace" \
   --volume "$nix_dir:/nix" \
-  --env OPENAI_API_KEY=test-openai \
   --env OPENROUTER_API_KEY=test-openrouter \
   --env OPENCODE_GO_API_KEY=test-opencode \
   --env GOOGLE_AI_STUDIO_API_KEY=test-google \
   --env DISCORD_BOT_TOKEN=test-discord-token \
   --env DISCORD_ALLOWED_USERS=1 \
-  --env DISCORD_HOME_CHANNEL=2 \
+  --env DISCORD_FREE_RESPONSE_CHANNELS=3,4 \
   --env GHOSTSHIP_ROUTER_CHANNEL=3 \
-  --env GHOSTSHIP_DEEPTHINK_CHANNEL=4 \
+  --env GHOSTSHIP_CODEX_CHANNEL=4 \
   --env WEBHOOK_SECRET=test-webhook-secret \
   "$image_ref" >/dev/null
 

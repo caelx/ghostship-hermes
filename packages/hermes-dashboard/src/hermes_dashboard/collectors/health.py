@@ -60,7 +60,7 @@ class HealthState:
 
 EXPECTED_KEYS = [
     ('OPENCODE_GO_API_KEY', 'env', 'Primary model provider'),
-    ('OPENAI_API_KEY', 'env', 'Router bearer token'),
+    ('_GHOSTSHIP_ROUTER_API_KEY', 'internal-env', 'Internal router bearer token'),
     ('GOOGLE_AI_STUDIO_API_KEY', 'env', 'Auxiliary task provider'),
     ('OPENROUTER_API_KEY', 'env', 'Optional fallback provider'),
     ('DISCORD_TOKEN', 'env', 'Messaging gateway bot token'),

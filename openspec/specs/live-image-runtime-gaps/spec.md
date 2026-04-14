@@ -13,7 +13,7 @@ The published Hermes image SHALL configure the managed runtime to use direct `op
 - **AND** the managed config sets `fallback_model.provider` to `custom`
 - **AND** the managed config sets `fallback_model.model` to `agentic`
 - **AND** the managed config sets `fallback_model.base_url` to `http://127.0.0.1:8788/v1`
-- **AND** the managed config sets `fallback_model.api_key_env` to `OPENAI_API_KEY`
+- **AND** the managed config sets `fallback_model.api_key_env` to `_GHOSTSHIP_ROUTER_API_KEY`
 
 #### Scenario: Managed router env blocks only `openrouter/free` by default
 - **WHEN** the managed router service environment is rendered
@@ -49,4 +49,3 @@ The fix SHALL require post-publish and post-deploy validation instead of assumin
 - **THEN** they inspect the published image for the intended model/runtime contract
 - **AND** they verify on the deployed host that the dashboard shows the intended config, terminal open works, the router env disables `openrouter/free`, and `gateway.pid` survives `hermes doctor`
 - **AND** they do not treat the rollout as healthy if the direct `opencode-go` primary lane remains broken
-

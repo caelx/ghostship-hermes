@@ -124,11 +124,9 @@ def test_config_reads_hermes_api_server_aliases(tmp_path: Path, monkeypatch) -> 
     env_keys = (
         "GHOSTSHIP_ROUTER_HOST",
         "GHOSTSHIP_ROUTER_PORT",
-        "GHOSTSHIP_ROUTER_API_KEY",
         "GHOSTSHIP_ROUTER_CORS_ORIGINS",
         "API_SERVER_HOST",
         "API_SERVER_PORT",
-        "API_SERVER_KEY",
         "API_SERVER_CORS_ORIGINS",
         "GHOSTSHIP_ROUTER_STATE_DIR",
         "GHOSTSHIP_ROUTER_DB_PATH",
@@ -139,13 +137,12 @@ def test_config_reads_hermes_api_server_aliases(tmp_path: Path, monkeypatch) -> 
             monkeypatch.delenv(key, raising=False)
         monkeypatch.setenv("API_SERVER_HOST", "0.0.0.0")
         monkeypatch.setenv("API_SERVER_PORT", "9999")
-        monkeypatch.setenv("API_SERVER_KEY", "router-key")
         monkeypatch.setenv("API_SERVER_CORS_ORIGINS", "http://localhost:3000,https://example.test")
         monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
         config = RouterConfig.from_env()
         assert config.host == "0.0.0.0"
         assert config.port == 9999
-        assert config.api_key == "router-key"
+        assert config.api_key is None
         assert config.cors_origins == ("http://localhost:3000", "https://example.test")
     finally:
         for key, value in saved.items():
@@ -202,11 +199,9 @@ def test_config_reads_opencode_go_api_key_alias(tmp_path: Path, monkeypatch) -> 
                 monkeypatch.setenv(key, value)
 
 
-def test_config_reads_openai_api_key_for_custom_provider_compatibility(tmp_path: Path, monkeypatch) -> None:
+def test_config_reads_internal_router_api_key(tmp_path: Path, monkeypatch) -> None:
     env_keys = (
-        "GHOSTSHIP_ROUTER_API_KEY",
-        "API_SERVER_KEY",
-        "OPENAI_API_KEY",
+        "_GHOSTSHIP_ROUTER_API_KEY",
         "GHOSTSHIP_ROUTER_STATE_DIR",
         "GHOSTSHIP_ROUTER_DB_PATH",
     )
@@ -214,10 +209,10 @@ def test_config_reads_openai_api_key_for_custom_provider_compatibility(tmp_path:
     try:
         for key in env_keys:
             monkeypatch.delenv(key, raising=False)
-        monkeypatch.setenv("OPENAI_API_KEY", "custom-provider-key")
+        monkeypatch.setenv("_GHOSTSHIP_ROUTER_API_KEY", "internal-router-key")
         monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
         config = RouterConfig.from_env()
-        assert config.api_key == "custom-provider-key"
+        assert config.api_key == "internal-router-key"
     finally:
         for key, value in saved.items():
             if value is None:

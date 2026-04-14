@@ -14,7 +14,7 @@
 
 - [ ] 3.1 Replace the repo-owned dashboard package/runtime with the upstream Hermes dashboard on the supported browser port, and delete the retired custom dashboard code path.
 - [x] 3.2 Add the minimal repo-owned dashboard frontend patch that exposes a `Terminal` entry, and run `ttyd` as its own supervised sidecar behind the published `/terminal/` path without recreating the old dashboard surface or a custom Hermes PTY backend.
-- [x] 3.3 Keep the router mandatory in the final image runtime and preserve the Discord forced-channel patch set in the wrapped Hermes package: the router-pinned free-response lane and the `#deepthink` Codex `gpt-5.4` high-reasoning lane, without introducing extra service/doctor compatibility patches.
+- [x] 3.3 Keep the router mandatory in the final image runtime and preserve the Discord forced-channel patch set in the wrapped Hermes package: the router-pinned free-response lane and the Codex `gpt-5.4` high-reasoning lane selected by `GHOSTSHIP_CODEX_CHANNEL`, without introducing extra service/doctor compatibility patches.
 
 ## 4. Tooling Split
 
