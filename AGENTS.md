@@ -70,6 +70,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 
 ### Discord Routing
 
+- `DISCORD_HOME_CHANNEL` is part of the downstream Discord contract.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `agentic` lane.
 - `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with `reasoning.effort = high`.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the router-pinned and Codex-pinned channels.

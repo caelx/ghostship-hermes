@@ -50,7 +50,7 @@ Fixed image defaults are already baked into the image:
 
 These are internal image-owned variables and paths. Downstream must not override them through runtime env.
 
-Downstream should pass only the operator-facing runtime env vars. The full list lives in [runtime-env.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/runtime-env.md).
+Downstream should pass only the operator-facing runtime env vars. The full list lives in [runtime-env.md](/home/nixos/dev/ghostship-hermes/docs/runtime-env.md).
 
 The common downstream set for the default Ghostship runtime is:
 
@@ -59,6 +59,7 @@ The common downstream set for the default Ghostship runtime is:
 - `GOOGLE_AI_STUDIO_API_KEY`
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
+- `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
 - `GHOSTSHIP_CODEX_CHANNEL`
@@ -66,6 +67,7 @@ The common downstream set for the default Ghostship runtime is:
 
 Discord channel contract:
 
+- `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
 - `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned and Codex-pinned channels.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins one free-response channel to the local router `agentic` lane.
@@ -80,7 +82,7 @@ Internal-only runtime auth is auto-generated:
 Codex OAuth is not set by env var. Authenticate once inside the persisted home:
 
 ```fish
-docker exec -it --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
+docker exec -it --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
 ```
 
 That writes `/home/hermes/.hermes/auth.json`, which persists with the home volume.
@@ -155,8 +157,8 @@ Quick smoke:
 
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
-docker exec ghostship-hermes sh -lc 'command -v nix git rg agent-browser'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bws gcloud blogtato agent-browser ghostship-sonarr ghostship-hermes-router'
 ```
 
 Prove `/nix` survives replacement:
@@ -173,8 +175,10 @@ Replace the container with the same `/home/hermes`, `/workspace`, and `/nix` mou
 Default image behavior:
 
 - Hermes/runtime-required Linux tools ship in the image.
+- The full repo `ghostship-*` CLI layer ships in the image.
+- The operator utility bundle ships in the image.
 - Node-native agent tools ship through npm in persisted home state.
-- Nix stays available for optional downstream or Hermes-installed extras, but the image no longer seeds a large default Nix utility profile.
+- Nix stays available for extra downstream or Hermes-installed packages on top of the image defaults.
 
 Current preinstalled npm tools:
 

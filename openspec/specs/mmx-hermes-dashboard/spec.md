@@ -43,6 +43,6 @@ The supported browser contract SHALL keep browser terminal access available thro
 
 #### Scenario: Opening the terminal entry reaches ttyd through the published path
 - **WHEN** an operator opens the patched `Terminal` entry from the dashboard
-- **THEN** the browser opens the published `/terminal/` path
+- **THEN** the dashboard renders an embedded iframe for the published `/terminal/` path
 - **AND** that path reaches the supervised `ttyd` sidecar
 - **AND** the browser terminal becomes reachable without the retired custom dashboard backend or a custom Hermes PTY transport

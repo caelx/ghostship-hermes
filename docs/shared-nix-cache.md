@@ -11,6 +11,6 @@ Nix still matters at runtime:
 
 For current deployment guidance, use:
 
-- [README.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/README.md)
-- [docs/workstation-image.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/workstation-image.md)
-- [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/runtime-env.md)
+- [README.md](/home/nixos/dev/ghostship-hermes/README.md)
+- [docs/workstation-image.md](/home/nixos/dev/ghostship-hermes/docs/workstation-image.md)
+- [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/docs/runtime-env.md)

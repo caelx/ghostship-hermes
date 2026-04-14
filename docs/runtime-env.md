@@ -19,6 +19,8 @@ These are internal image-owned variables. They are already set in the image, and
 - `NPM_CONFIG_PREFIX=/home/hermes/.local`
 - `CARGO_HOME=/home/hermes/.cargo`
 - `RUSTUP_HOME=/home/hermes/.rustup`
+- `NIXPKGS_ALLOW_UNFREE=1`
+- `NIX_CONFIG=experimental-features = nix-command flakes`
 - `GHOSTSHIP_WORKSPACE_ROOT=/workspace`
 - `GHOSTSHIP_WEB_PORT=7681`
 - `GHOSTSHIP_DASHBOARD_HOST=127.0.0.1`
@@ -44,6 +46,8 @@ The image also bakes a PATH that prefers:
 - `/home/hermes/.local/bin`
 - `/home/hermes/.cargo/bin`
 - `/home/hermes/.nix-profile/bin`
+- `/opt/ghostship-utils/venv/bin`
+- `/opt/ghostship/bin`
 - `/opt/hermes/venv/bin`
 - `/opt/ghostship-router/venv/bin`
 
@@ -62,6 +66,8 @@ Do not set these in downstream runtime env:
 - `NPM_CONFIG_PREFIX`
 - `CARGO_HOME`
 - `RUSTUP_HOME`
+- `NIXPKGS_ALLOW_UNFREE`
+- `NIX_CONFIG`
 - `GHOSTSHIP_WORKSPACE_ROOT`
 - `GHOSTSHIP_WEB_PORT`
 - `GHOSTSHIP_DASHBOARD_HOST`
@@ -95,12 +101,14 @@ Notes:
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
+- `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
 - `GHOSTSHIP_CODEX_CHANNEL`
 
 Channel behavior:
 
+- `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
 - `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned and Codex-pinned channels.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `agentic`.
@@ -196,3 +204,26 @@ The Discord Codex lane depends on that persisted auth. It does not use a downstr
 ## No In-Container Auth Layer
 
 The dashboard and ttyd do not add basic auth. Protect the container at the proxy or access-control layer instead. Current expected deployment is Cloudflare Access in front of the public `:7681` surface.
+
+## Image-Baked Utility Layer
+
+These commands are expected to exist in the image without downstream installation:
+
+- all repo `ghostship-*` CLIs
+- `blogtato`
+- `bws`
+- `codex`
+- `gemini`
+- `agent-browser`
+- `opencode`
+- `fd`
+- `gcloud`
+- `gh`
+- `git`
+- `gws`
+- `jq`
+- `rg`
+- `tmux`
+- `ttyd`
+- `uv`
+- `yq`

@@ -39,4 +39,4 @@ ln -sfn /nix/var/nix/profiles/per-user/hermes/profile "$HOME/.nix-profile"
 chown -h 3000:3000 "$HOME/.nix-profile"
 
 HOME="$HOME" HERMES_HOME="$HERMES_HOME" GHOSTSHIP_WORKSPACE_ROOT="$GHOSTSHIP_WORKSPACE_ROOT" /command/s6-setuidgid hermes /opt/hermes/venv/bin/python /opt/ghostship/bin/init_home.py
-HOME="$HOME" HERMES_HOME="$HERMES_HOME" PATH="/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:$HOME/.local/bin:$HOME/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" /command/s6-setuidgid hermes /opt/hermes/venv/bin/hermes skills list >/dev/null 2>&1 || true
+HOME="$HOME" HERMES_HOME="$HERMES_HOME" PATH="/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:$HOME/.local/bin:$HOME/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" /command/s6-setuidgid hermes /opt/hermes/venv/bin/hermes skills list >/dev/null 2>&1 || true

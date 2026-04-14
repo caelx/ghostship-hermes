@@ -3,7 +3,14 @@ set -euo pipefail
 
 image_ref="${1:?usage: single-agent-dashboard.sh <image-ref>}"
 container_name="ghostship-hermes-dashboard-test"
-dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-17681}"
+dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-$(python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)}"
 tmp_root="$(mktemp -d)"
 home_dir="$tmp_root/home"
 workspace_dir="$tmp_root/workspace"
@@ -79,7 +86,7 @@ run_in_container() {
 run_as_hermes() {
   local target_container="$1"
   shift
-  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
+  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
 }
 
 mkdir -p "$home_dir" "$workspace_dir" "$nix_dir"
@@ -96,6 +103,7 @@ mkdir -p "$home_dir" "$workspace_dir" "$nix_dir"
   --env GOOGLE_AI_STUDIO_API_KEY=test-google \
   --env DISCORD_BOT_TOKEN=test-discord-token \
   --env DISCORD_ALLOWED_USERS=1 \
+  --env DISCORD_HOME_CHANNEL=2 \
   --env DISCORD_FREE_RESPONSE_CHANNELS=3,4 \
   --env GHOSTSHIP_ROUTER_CHANNEL=3 \
   --env GHOSTSHIP_CODEX_CHANNEL=4 \
@@ -113,8 +121,22 @@ run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; 
 curl -fsSI "http://127.0.0.1:${dashboard_port}/terminal/" >/dev/null
 bundle="$(curl -fsS "http://127.0.0.1:${dashboard_port}/" | sed -n 's/.*src=\"\([^\"]*index-[^\"]*\.js\)\".*/\1/p' | head -n1)"
 curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q '/terminal/'
+curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allow-same-origin allow-scripts allow-forms"'
+! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'allow-modals'
+! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'href:"/terminal/",target:"_blank"'
 
-run_in_container "$container_name" 'command -v nix >/dev/null && command -v git >/dev/null && command -v rg >/dev/null && command -v ttyd >/dev/null && command -v tmux >/dev/null && command -v tirith >/dev/null && command -v agent-browser >/dev/null'
+run_in_container "$container_name" '
+for cmd in \
+  nix git rg ttyd tmux tirith jq fd yq uv gh gws bws gcloud blogtato \
+  codex gemini agent-browser opencode \
+  ghostship-bazarr ghostship-bookstack ghostship-changedetection ghostship-chaptarr ghostship-cloakbrowser \
+  ghostship-flaresolverr ghostship-grimmory ghostship-n8n ghostship-nzbget ghostship-plex ghostship-pricebuddy \
+  ghostship-prowlarr ghostship-pyload-ng ghostship-qbittorrent ghostship-radarr ghostship-romm ghostship-rss-bridge \
+  ghostship-searxng ghostship-sonarr ghostship-synology ghostship-tautulli ghostship-hermes-router
+do
+  command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }
+done
+'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.memory.holographic"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
 run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
@@ -161,6 +183,7 @@ run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
   --env GOOGLE_AI_STUDIO_API_KEY=test-google \
   --env DISCORD_BOT_TOKEN=test-discord-token \
   --env DISCORD_ALLOWED_USERS=1 \
+  --env DISCORD_HOME_CHANNEL=2 \
   --env DISCORD_FREE_RESPONSE_CHANNELS=3,4 \
   --env GHOSTSHIP_ROUTER_CHANNEL=3 \
   --env GHOSTSHIP_CODEX_CHANNEL=4 \

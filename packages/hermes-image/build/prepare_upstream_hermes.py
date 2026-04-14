@@ -452,56 +452,10 @@ async def proxy_terminal_websocket(websocket: WebSocket, session_id: str, path: 
             pass
 '''
 
-CONSOLE_PAGE = r'''import { useEffect, useState } from "react";
-import { RefreshCcw, TerminalSquare, Trash2 } from "lucide-react";
-import { api } from "@/lib/api";
-import type { ConsoleResponse } from "@/lib/api";
+CONSOLE_PAGE = r'''import { TerminalSquare } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 export default function ConsolePage() {
-  const [consoleState, setConsoleState] = useState<ConsoleResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [opening, setOpening] = useState(false);
-  const session = consoleState?.session ?? null;
-
-  const load = async () => {
-    const state = await api.getConsole();
-    setConsoleState(state);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    load().catch(() => setLoading(false));
-    const interval = window.setInterval(() => {
-      api.getConsole().then(setConsoleState).catch(() => {});
-    }, 2000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  const openConsole = async () => {
-    setOpening(true);
-    try {
-      setConsoleState(await api.openConsole());
-    } finally {
-      setOpening(false);
-    }
-  };
-
-  const closeConsole = async () => {
-    if (!session) return;
-    setConsoleState(await api.closeConsoleSession(session.id));
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
       <Card>
@@ -513,39 +467,10 @@ export default function ConsolePage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2 text-sm text-muted-foreground">
-            <p>Workspace: <span className="font-mono-ui text-foreground">{consoleState?.terminal_cwd}</span></p>
-            <p>Home: <span className="font-mono-ui text-foreground">{consoleState?.home}</span></p>
+            <p>Workspace: <span className="font-mono-ui text-foreground">/workspace</span></p>
+            <p>Path: <span className="font-mono-ui text-foreground">/terminal/</span></p>
+            <p>The terminal stays embedded in the Hermes web UI and is backed by the local ttyd sidecar.</p>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={openConsole} disabled={opening} className="flex-1">
-              <TerminalSquare className="h-3 w-3" />
-              {session ? "Reuse Session" : opening ? "Opening..." : "Open Console"}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => load().catch(() => {})}>
-              <RefreshCcw className="h-3 w-3" />
-            </Button>
-          </div>
-          {session ? (
-            <div className="space-y-3 border border-border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{session.label}</div>
-                  <div className="font-mono-ui text-xs text-muted-foreground">{session.terminal_url}</div>
-                </div>
-                <Badge variant={session.ready ? "success" : "warning"}>
-                  {session.ready ? "ready" : "starting"}
-                </Badge>
-              </div>
-              <Button type="button" variant="outline" className="w-full" onClick={closeConsole}>
-                <Trash2 className="h-3 w-3" />
-                Close Session
-              </Button>
-            </div>
-          ) : (
-            <div className="border border-border p-4 text-sm text-muted-foreground">
-              No terminal session is running.
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -554,18 +479,12 @@ export default function ConsolePage() {
           <CardTitle className="text-base">Terminal</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {session ? (
-            <iframe
-              title="Hermes Console"
-              src={session.terminal_url}
-              className="h-[70vh] w-full border-0 bg-background"
-              sandbox="allow-same-origin allow-scripts allow-forms allow-modals"
-            />
-          ) : (
-            <div className="flex h-[70vh] items-center justify-center bg-card text-sm text-muted-foreground">
-              Open the console to start an on-demand ttyd session.
-            </div>
-          )}
+          <iframe
+            title="Hermes Console"
+            src="/terminal/"
+            className="h-[70vh] w-full border-0 bg-background"
+            sandbox="allow-same-origin allow-scripts allow-forms"
+          />
         </CardContent>
       </Card>
     </div>
@@ -627,11 +546,26 @@ def main() -> None:
     )
     app_text = replace_once(
         app_text,
-        "          </nav>\n",
-        """            <a\n              href=\"/terminal/\"\n              target=\"_blank\"\n              rel=\"noreferrer\"\n              className=\"group relative inline-flex items-center gap-1.5 border-r border-border px-4 py-2 font-display text-[0.8rem] tracking-[0.12em] uppercase whitespace-nowrap transition-colors cursor-pointer shrink-0 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring\"\n            >\n              <TerminalSquare className=\"h-3.5 w-3.5\" />\n              Terminal\n              <span className=\"absolute inset-0 bg-foreground pointer-events-none transition-opacity duration-150 group-hover:opacity-5 opacity-0\" />\n            </a>\n          </nav>\n""",
+        'import CronPage from "@/pages/CronPage";\n',
+        'import CronPage from "@/pages/CronPage";\nimport ConsolePage from "@/pages/ConsolePage";\n',
+        path=app_tsx,
+    )
+    app_text = replace_once(
+        app_text,
+        '  { id: "cron", label: "Cron", icon: Clock },\n',
+        '  { id: "cron", label: "Cron", icon: Clock },\n  { id: "console", label: "Terminal", icon: TerminalSquare },\n',
+        path=app_tsx,
+    )
+    app_text = replace_once(
+        app_text,
+        '  cron: CronPage,\n',
+        '  cron: CronPage,\n  console: ConsolePage,\n',
         path=app_tsx,
     )
     app_tsx.write_text(app_text, encoding="utf-8")
+
+    console_page = root / "web" / "src" / "pages" / "ConsolePage.tsx"
+    console_page.write_text(CONSOLE_PAGE, encoding="utf-8")
 
 
 if __name__ == "__main__":

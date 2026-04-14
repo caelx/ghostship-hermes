@@ -284,7 +284,7 @@ let
       };
       streaming = {
         enabled = true;
-        transport = "off";
+        transport = "edit";
         edit_interval = 0.3;
         buffer_threshold = 40;
       };
@@ -312,12 +312,12 @@ let
       unauthorized_dm_behavior = "ignore";
       display = {
         compact = true;
-        interim_assistant_messages = true;
+        interim_assistant_messages = false;
         streaming = true;
         tool_progress = "all";
         background_process_notifications = "result";
         bell_on_complete = false;
-        show_reasoning = false;
+        show_reasoning = true;
         skin = "default";
       };
       group_sessions_per_user = true;

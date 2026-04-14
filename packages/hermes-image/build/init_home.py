@@ -101,7 +101,7 @@ DEFAULT_CONFIG = {
     },
     "streaming": {
         "enabled": True,
-        "transport": "off",
+        "transport": "edit",
         "edit_interval": 0.3,
         "buffer_threshold": 40,
     },
@@ -134,12 +134,12 @@ DEFAULT_CONFIG = {
     "unauthorized_dm_behavior": "ignore",
     "display": {
         "compact": True,
-        "interim_assistant_messages": True,
+        "interim_assistant_messages": False,
         "streaming": True,
         "tool_progress": "all",
         "background_process_notifications": "result",
         "bell_on_complete": False,
-        "show_reasoning": False,
+        "show_reasoning": True,
         "skin": "default",
     },
     "group_sessions_per_user": True,

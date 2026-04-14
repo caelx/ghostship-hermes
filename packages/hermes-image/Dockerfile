@@ -20,6 +20,8 @@ ENV HOME=/home/hermes \
     CARGO_HOME=/home/hermes/.cargo \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
+    NIX_CONFIG=experimental-features\ =\ nix-command\ flakes \
+    NIXPKGS_ALLOW_UNFREE=1 \
     RUSTUP_HOME=/home/hermes/.rustup \
     GHOSTSHIP_WORKSPACE_ROOT=/workspace \
     GHOSTSHIP_WEB_PORT=7681 \
@@ -31,18 +33,20 @@ ENV HOME=/home/hermes \
     GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock \
     GHOSTSHIP_TTYD_BASE_PATH=/terminal \
     GHOSTSHIP_TERMINAL_CWD=/workspace \
-    PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
+    fd-find \
     curl \
     ffmpeg \
     findutils \
     gnupg \
     git \
     grep \
+    jq \
     nginx \
     procps \
     python3 \
@@ -54,6 +58,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ttyd \
     util-linux \
     xz-utils \
+    yq \
     zstd \
     build-essential \
     pkg-config \
@@ -113,15 +118,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship /opt/ghostship-router
-COPY packages/ghostship-cli-contract /src/packages/ghostship-cli-contract
-COPY packages/hermes-router /src/packages/hermes-router
-COPY packages/hermes-image/build /src/packages/hermes-image/build
+RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship /opt/ghostship-router /opt/ghostship-utils
+COPY flake.nix /src/
+COPY packages /src/packages
 
 RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/${HERMES_REF}.tar.gz" -o /tmp/hermes-agent.tar.gz \
     && mkdir -p /tmp/hermes-agent \
     && tar -xzf /tmp/hermes-agent.tar.gz -C /tmp/hermes-agent --strip-components=1 \
     && rm -f /tmp/hermes-agent.tar.gz \
+    && find /src/packages -type d \( -name .venv -o -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache \) -prune -exec rm -rf {} + \
     && python3 /src/packages/hermes-image/build/prepare_upstream_hermes.py /tmp/hermes-agent \
     && cd /tmp/hermes-agent/web \
     && npm install --include=optional --no-audit --no-fund \
@@ -133,6 +138,21 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && python3 -m venv /opt/ghostship-router/venv \
     && /opt/ghostship-router/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/ghostship-router/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/hermes-router \
+    && python3 -m venv /opt/ghostship-utils/venv \
+    && /opt/ghostship-utils/venv/bin/pip install --upgrade pip setuptools wheel \
+    && /opt/ghostship-utils/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/*-cli uv \
+    && cd /src \
+    && tool_paths="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features 'nix-command flakes' build --impure --no-write-lock-file --no-link --print-out-paths .#blogtato .#gws nixpkgs#bws nixpkgs#gh nixpkgs#google-cloud-sdk)" \
+    && for tool_path in $tool_paths; do \
+         if [ -d "$tool_path/bin" ]; then \
+           for bin in "$tool_path"/bin/*; do \
+             [ -e "$bin" ] || continue; \
+             ln -sf "$bin" "/opt/ghostship/bin/$(basename "$bin")"; \
+           done; \
+         fi; \
+       done \
+    && if [ -x /opt/ghostship/bin/blog ] && [ ! -e /opt/ghostship/bin/blogtato ]; then ln -sf /opt/ghostship/bin/blog /opt/ghostship/bin/blogtato; fi \
+    && ln -sf /usr/bin/fdfind /opt/ghostship/bin/fd \
     && cp /src/packages/hermes-image/build/init_home.py /opt/ghostship/bin/init_home.py \
     && apt-get purge -y build-essential pkg-config libffi-dev libssl-dev \
     && apt-get autoremove -y \

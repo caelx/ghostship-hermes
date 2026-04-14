@@ -62,9 +62,9 @@ Persistent downstream-owned layer:
 
 Package ownership split:
 
-- image: Hermes core plus only true runtime dependencies and the small set of tools Hermes/runtime health actually expects, such as `git` and `ripgrep`
-- native npm: `codex`, `gemini-cli`, `agent-browser`, `opencode`
-- persisted Nix: optional userland package layer for downstream or Hermes-installed extras that should survive container replacement
+- image: Hermes core, router, full repo `ghostship-*` CLI layer, and the operator utility bundle for the workstation contract
+- native npm seed in persisted home: `codex`, `gemini-cli`, `agent-browser`, `opencode`
+- persisted Nix: extra downstream or Hermes-installed packages on top of the image defaults
 
 ## Build
 
@@ -207,7 +207,7 @@ First boot behavior:
 - the image seeds the home defaults and npm CLIs into the persisted home if they are missing
 - the image auto-seeds an empty persisted `/nix` from the image on first boot
 
-Detailed downstream persistence guidance still lives in [docs/workstation-image.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/workstation-image.md).
+Detailed downstream persistence guidance still lives in [docs/workstation-image.md](/home/nixos/dev/ghostship-hermes/docs/workstation-image.md).
 
 ## Environment Variables
 
@@ -228,6 +228,8 @@ These are internal image-owned variables. Downstream must not set or override th
 - `NPM_CONFIG_PREFIX=/home/hermes/.local`
 - `CARGO_HOME=/home/hermes/.cargo`
 - `RUSTUP_HOME=/home/hermes/.rustup`
+- `NIXPKGS_ALLOW_UNFREE=1`
+- `NIX_CONFIG=experimental-features = nix-command flakes`
 - `GHOSTSHIP_WORKSPACE_ROOT=/workspace`
 - `GHOSTSHIP_WEB_PORT=7681`
 - `GHOSTSHIP_DASHBOARD_HOST=127.0.0.1`
@@ -246,6 +248,8 @@ The image `PATH` prefers:
 - `/home/hermes/.local/bin`
 - `/home/hermes/.cargo/bin`
 - `/home/hermes/.nix-profile/bin`
+- `/opt/ghostship-utils/venv/bin`
+- `/opt/ghostship/bin`
 - `/opt/hermes/venv/bin`
 - `/opt/ghostship-router/venv/bin`
 
@@ -274,6 +278,7 @@ Required when Discord gateway is enabled:
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
+- `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
 - `GHOSTSHIP_CODEX_CHANNEL`
@@ -301,6 +306,7 @@ Internal-only runtime env:
 
 Important behavior:
 
+- `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
 - `DISCORD_FREE_RESPONSE_CHANNELS` should include the router and Codex pinned channels.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to router alias `agentic`
@@ -312,7 +318,7 @@ Important behavior:
 
 Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume.
 
-The full fixed env contract is also documented in [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/.worktrees/adopt-ubuntu-native-workstation-image/docs/runtime-env.md).
+The full fixed env contract is also documented in [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/docs/runtime-env.md).
 
 ## Dashboard, Router, And Forced Channels
 
@@ -320,7 +326,7 @@ Dashboard:
 
 - upstream Hermes dashboard is the primary UI
 - repo patch adds one `Terminal` entry only
-- `Terminal` opens `/terminal/`, which is served by `ttyd`
+- `Terminal` renders an embedded iframe for `/terminal/`, which is served by `ttyd`
 
 Router:
 
@@ -359,11 +365,11 @@ After the first successful container boot:
 Recommended post-setup flow:
 
 ```fish
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
 
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
 
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'sed -n "1,220p" /home/hermes/.hermes/config.yaml'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'sed -n "1,220p" /home/hermes/.hermes/config.yaml'
 ```
 
 Expected config shape after first boot:
@@ -387,9 +393,9 @@ Useful live checks:
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
 curl -fsS http://127.0.0.1:7681/terminal/ >/dev/null
-docker exec ghostship-hermes sh -lc 'command -v nix git rg agent-browser'
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bws gcloud blogtato agent-browser ghostship-sonarr ghostship-hermes-router'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
 ```
 
 ## CI And Release
@@ -401,11 +407,12 @@ docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/her
 
 ## Ghostship Utilities
 
-The repo still ships the `ghostship-*` CLI utilities. They remain JSON-first and keep their repo-owned API docs under `docs/api/`.
+The image ships the full `ghostship-*` CLI utility layer. They remain JSON-first and keep their repo-owned API docs under `docs/api/`.
 
 Current bundled family:
 
 - `ghostship-bazarr`
+- `ghostship-bookstack`
 - `ghostship-changedetection`
 - `ghostship-chaptarr`
 - `ghostship-cloakbrowser`
@@ -425,6 +432,22 @@ Current bundled family:
 - `ghostship-sonarr`
 - `ghostship-synology`
 - `ghostship-tautulli`
+
+Additional baked operator utilities:
+
+- `blogtato`
+- `bws`
+- `fd`
+- `gcloud`
+- `gh`
+- `git`
+- `gws`
+- `jq`
+- `rg`
+- `tmux`
+- `ttyd`
+- `uv`
+- `yq`
 
 ## Upstream References
 
