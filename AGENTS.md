@@ -77,9 +77,10 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Packaging Split
 
 - Image-owned layer is Hermes core plus true runtime dependencies only.
-- Generic operator tools belong in persistent userland Nix.
-- Node-native CLIs such as `codex`, `gemini-cli`, and `opencode` belong in npm under `/home/hermes`.
-- Avoid convenience-driven image bloat. If a binary is not required by boot, supervision, router, dashboard, ttyd, or native Hermes runtime, move it out of base.
+- Prefer the utility's native package manager when one is the expected upstream install path.
+- Persisted `/nix` is an optional userland package layer, not the default seeded home for every extra CLI.
+- Node-native CLIs such as `codex`, `gemini-cli`, `agent-browser`, and `opencode` belong in npm under `/home/hermes`.
+- Avoid convenience-driven image bloat. If a binary is not required by boot, supervision, router, dashboard, ttyd, native Hermes runtime, or upstream doctor/runtime expectations, move it out of base.
 
 ### Testing
 

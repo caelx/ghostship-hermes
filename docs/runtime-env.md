@@ -38,6 +38,11 @@ The image also bakes a PATH that prefers:
 - `/opt/hermes/venv/bin`
 - `/opt/ghostship-router/venv/bin`
 
+Notes:
+
+- `/home/hermes/.nix-profile/bin` may be empty on first boot until the operator or Hermes installs something through Nix.
+- Node-native CLIs that ship by default are installed with npm under `/home/hermes/.local/bin`.
+
 ## Downstream Operator Env
 
 These are the variables downstream should set when the deployment needs them.

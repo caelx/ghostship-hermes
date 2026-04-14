@@ -1,30 +1,30 @@
 ## MODIFIED Requirements
 
 ### Requirement: Managed Hermes runtime exposes the approved helper CLI set
-The workstation SHALL expose the approved default helper CLI set through persisted userland package-manager layers rather than the immutable image layer. Generic Linux/operator tools SHALL come from the default userland Nix profile, while ecosystem-native tools may come from their native package-manager layer.
+The workstation SHALL expose the approved helper CLI set through the package-manager layer each tool naturally expects, while keeping non-core helper tooling out of the immutable image by default. Native-manager installs SHALL be preferred where they are the upstream-supported path, and persisted Nix SHALL remain available as an optional fallback layer for downstream or Hermes-installed extras.
 
-#### Scenario: Default helper CLIs come from persisted userland layers
-- **WHEN** the workstation has completed its supported first-run userland tool initialization
-- **THEN** the approved default helper CLIs are available on the Hermes-user `PATH`
-- **AND** those tools resolve from persisted userland package-manager state instead of the immutable image layer
+#### Scenario: Shipped helper CLIs come from their expected package-manager layers
+- **WHEN** the workstation has completed its supported first-run initialization
+- **THEN** the approved shipped helper CLIs are available on the Hermes-user `PATH`
+- **AND** those tools resolve from their documented package-manager layers instead of from a repo-owned convergence shim
 
 #### Scenario: Missing helper CLI from immutable image is not itself a regression
 - **WHEN** maintainers inspect the immutable image layer after this change
-- **THEN** the absence of a default helper CLI from the immutable image is not itself a contract failure
-- **AND** the contract failure is instead whether the supported default userland layer makes that CLI available as documented
+- **THEN** the absence of a non-core helper CLI from the immutable image is not itself a contract failure
+- **AND** the contract failure is instead whether the tool is available through its documented install path
 
 ## ADDED Requirements
 
-### Requirement: Generic userland tools default to the persisted Nix layer
-The workstation SHALL treat persisted userland Nix as the default package layer for generic Linux/operator tools that are not part of the immutable core runtime.
+### Requirement: Persisted Nix remains available as an optional userland layer
+The workstation SHALL keep persisted Nix available for downstream or Hermes-installed userland tooling that should survive container replacement, without requiring the image to preseed a large default Nix utility profile.
 
-#### Scenario: Generic tools are installed through the supported Nix layer
-- **WHEN** the repo defines the approved default generic tooling set
-- **THEN** those tools are provisioned through the persisted Nix layer
-- **AND** the docs describe Nix as the supported default package manager for that class of tooling
+#### Scenario: Optional Nix installs survive replacement
+- **WHEN** an operator or Hermes installs extra tooling through persisted Nix
+- **THEN** that tooling remains available while the same `/nix` mount is reused
+- **AND** the docs describe persisted Nix as an optional supported package layer rather than the default answer for every extra CLI
 
 ### Requirement: Node-native agent CLIs default to the persisted npm layer
-The workstation SHALL treat npm as the default package manager for Node-native agent CLIs such as `codex`, `gemini-cli`, and `opencode`, and those tools SHALL live in persisted home state rather than the immutable image.
+The workstation SHALL treat npm as the default package manager for Node-native agent CLIs such as `codex`, `gemini-cli`, `agent-browser`, and `opencode`, and those tools SHALL live in persisted home state rather than the immutable image.
 
 #### Scenario: Node-native agent CLIs resolve from the npm prefix
 - **WHEN** the workstation has completed its supported first-run npm tool initialization

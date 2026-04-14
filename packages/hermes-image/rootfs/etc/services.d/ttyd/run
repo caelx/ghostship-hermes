@@ -18,7 +18,6 @@ exec /command/s6-setuidgid hermes env TMUX_TMPDIR="$TMUX_TMPDIR" ttyd \
   -i "$GHOSTSHIP_TTYD_SOCKET" \
   -U hermes:hermes \
   -b "$GHOSTSHIP_TTYD_BASE_PATH" \
-  -O \
   -W \
   -w "$GHOSTSHIP_TERMINAL_CWD" \
   -t disableLeaveAlert=true \

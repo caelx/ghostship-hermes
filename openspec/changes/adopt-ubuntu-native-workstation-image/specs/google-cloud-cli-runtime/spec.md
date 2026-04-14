@@ -1,17 +1,17 @@
 ## MODIFIED Requirements
 
 ### Requirement: Hermes image ships the Google Cloud CLI
-The default workstation contract SHALL make `gcloud` available on `PATH` through the repo’s default persisted userland Nix layer rather than requiring the executable to live in the immutable core image.
+The workstation contract SHALL document `gcloud` as an optional userland tool rather than as a default seeded image tool, while still giving downstream a supported persisted install path for it.
 
-#### Scenario: Default workstation exposes `gcloud`
-- **WHEN** the workstation has completed its supported default userland Nix initialization
-- **THEN** the runtime exposes the `gcloud` executable
-- **AND** the executable is available on `PATH` inside the container runtime without an additional manual installation step
+#### Scenario: Docs describe how optional `gcloud` persists
+- **WHEN** maintainers inspect the runtime docs
+- **THEN** the docs explain how downstream can install `gcloud` through a supported persisted userland path
+- **AND** the docs do not claim `gcloud` is preinstalled by default
 
 ### Requirement: Runtime policy documents the Google Cloud CLI as an approved extra tool
-The repo's runtime policy and operator guidance SHALL describe `gcloud` as an approved default workstation tool while distinguishing it from the smaller immutable core image tool set.
+The repo's runtime policy and operator guidance SHALL describe `gcloud` as an approved optional workstation tool while distinguishing it from the smaller immutable core image tool set.
 
-#### Scenario: Approved extra-CLI policy includes `gcloud` in the default userland layer
+#### Scenario: Approved extra-CLI policy includes `gcloud` in the optional userland layer
 - **WHEN** maintainers inspect the runtime policy and image guidance
-- **THEN** the documented approved default workstation tool set includes `gcloud`
-- **AND** that documentation distinguishes the default userland layer from the immutable core image layer
+- **THEN** the documented approved optional workstation tool set includes `gcloud`
+- **AND** that documentation distinguishes optional userland installation from the immutable core image layer

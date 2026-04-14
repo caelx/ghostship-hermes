@@ -19,7 +19,7 @@
 ## 4. Tooling Split
 
 - [x] 4.1 Audit the current baked utility set and move every non-core convenience tool out of the immutable image unless a core boot/runtime call site requires it directly.
-- [x] 4.2 Define and implement the default persisted userland Nix tool set, including the approved extra CLIs that must remain available by default.
+- [x] 4.2 Define and implement the reduced persisted Nix contract so `/nix` stays available for optional downstream or Hermes-installed tools without seeding a large default utility profile.
 - [x] 4.3 Define and implement the default native-package-manager userland tool set for npm-managed agent CLIs such as `codex`, `gemini-cli`, and `opencode`.
 
 ## 5. CI, Validation, And Publication

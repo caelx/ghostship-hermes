@@ -10,7 +10,7 @@ The workstation SHALL run Hermes from the image-owned runtime under `/opt/hermes
 
 #### Scenario: Userland tools resolve from persisted package-manager layers
 - **WHEN** an operator or Hermes session invokes a supported userland tool from the workstation `PATH`
-- **THEN** generic Linux/operator tools may resolve from the persisted userland Nix profile
+- **THEN** tools may resolve from their documented persisted package-manager layers
 - **AND** Node-native agent CLIs may resolve from the persisted npm prefix under `/home/hermes`
 - **AND** the runtime does not require a live network refresh in the hot path of that invocation
 
@@ -24,12 +24,12 @@ The workstation SHALL keep only the minimum immutable image layer needed for Ubu
 
 #### Scenario: Immutable core excludes convenience tooling without a core call site
 - **WHEN** maintainers inspect the immutable image contents after this change
-- **THEN** convenience CLIs such as `jq`, `ripgrep`, `fd`, `gh`, `gcloud`, `gws`, `bws`, and `tmux` are not kept in the immutable layer unless a documented core boot/runtime call site requires them
-- **AND** those tools instead belong to a persisted userland layer
+- **THEN** convenience CLIs such as `jq`, `fd`, `gh`, `gcloud`, `gws`, `bws`, `uv`, and `yq` are not kept in the immutable layer unless a documented core boot/runtime call site requires them
+- **AND** those tools instead belong to optional persisted userland layers
 
 #### Scenario: Immutable core keeps required package-manager/runtime surfaces
 - **WHEN** maintainers inspect the immutable image contents after this change
-- **THEN** the image retains Nix because it is the supported generic userland package manager
+- **THEN** the image retains Nix because it is the supported optional userland package manager
 - **AND** the image retains Node/npm because npm is the supported native package manager for Node-native agent CLIs
 
 ## REMOVED Requirements

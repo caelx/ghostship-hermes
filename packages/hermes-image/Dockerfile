@@ -33,11 +33,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     findutils \
     gnupg \
+    git \
     grep \
     nginx \
     procps \
     python3 \
     python3-venv \
+    ripgrep \
     sed \
     tar \
     tmux \
@@ -100,28 +102,22 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
 
 RUN mkdir -p /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/nixpkgs \
     && printf '%s\n' '{ allowUnfreePredicate = pkg: builtins.elem (builtins.parseDrvName pkg.name).name [ "bws" ]; }' > /opt/ghostship/home-seed/.config/nixpkgs/config.nix \
-    && npm install --prefix /opt/ghostship/home-seed/.local -g @openai/codex @google/gemini-cli opencode-ai
+    && printf '%s\n' \
+      'set -g status-style bg=#041C1C,fg=#FFE6CB' \
+      'set -g message-style bg=#0C3838,fg=#FFE6CB' \
+      'set -g mode-style bg=#FFBD38,fg=#041C1C' \
+      'set -g pane-border-style fg=#0C3838' \
+      'set -g pane-active-border-style fg=#67E8F9' \
+      'set -g status-left-length 30' \
+      'set -g status-right-length 50' \
+      "set -g status-left '#[fg=#67E8F9,bold] ghostship '" \
+      "set -g status-right '#[fg=#5EEAD4]%Y-%m-%d #[fg=#FFE6CB]%H:%M '" \
+      "set -g window-status-current-format '#[fg=#041C1C,bg=#FFBD38,bold] #I:#W '" \
+      "set -g window-status-format '#[fg=#FFE6CB,bg=#0A2E2E] #I:#W '" \
+      > /opt/ghostship/home-seed/.tmux.conf \
+    && npm install --prefix /opt/ghostship/home-seed/.local -g @openai/codex @google/gemini-cli agent-browser opencode-ai
 
-RUN install -d -o 3000 -g 3000 /home/hermes/.config/nixpkgs /nix/var/nix/profiles/per-user/hermes /nix/var/nix/gcroots/per-user/hermes \
-    && cp /opt/ghostship/home-seed/.config/nixpkgs/config.nix /home/hermes/.config/nixpkgs/config.nix \
-    && chown 3000:3000 /home/hermes/.config/nixpkgs/config.nix \
-    && runuser -u hermes -- env HOME=/home/hermes NIXPKGS_ALLOW_UNFREE=1 /home/hermes/.nix-profile/bin/nix --extra-experimental-features 'nix-command flakes' \
-      profile add \
-      --impure \
-      --profile /nix/var/nix/profiles/per-user/hermes/profile \
-      nixpkgs#gh \
-      nixpkgs#git \
-      nixpkgs#google-cloud-sdk \
-      nixpkgs#bws \
-      nixpkgs#openssh \
-      nixpkgs#fd \
-      nixpkgs#jq \
-      nixpkgs#ripgrep \
-      nixpkgs#tmux \
-      nixpkgs#uv \
-      nixpkgs#yq \
-      github:googleworkspace/cli#gws \
-    && mkdir -p /opt/ghostship \
+RUN mkdir -p /opt/ghostship \
     && tar --zstd -cpf /opt/ghostship/nix-seed.tar.zst /nix
 
 COPY packages/hermes-image/rootfs/ /

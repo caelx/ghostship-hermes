@@ -14,7 +14,7 @@ Why:
 
 - `/home/hermes` preserves Hermes config, Codex auth, sessions, memories, skills, XDG state, npm-installed CLIs, shell history, and user config.
 - `/workspace` preserves projects and work products.
-- `/nix` preserves user-installed Nix packages and build outputs across restart and full container replacement.
+- `/nix` preserves optional user-installed Nix packages and build outputs across restart and full container replacement.
 
 ## `/nix` Persistence
 
@@ -66,7 +66,7 @@ The common downstream set for the default Ghostship runtime is:
 Codex OAuth is not set by env var. Authenticate once inside the persisted home:
 
 ```fish
-docker exec -it ghostship-hermes sh -lc 'su -s /bin/sh hermes -c "HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes /opt/hermes/venv/bin/hermes auth"'
+docker exec -it --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
 ```
 
 That writes `/home/hermes/.hermes/auth.json`, which persists with the home volume.
@@ -141,15 +141,34 @@ Quick smoke:
 
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
-docker exec ghostship-hermes sh -lc 'su -s /bin/sh hermes -c "HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /opt/hermes/venv/bin/hermes gateway status"'
-docker exec ghostship-hermes sh -lc 'command -v nix git rg'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg agent-browser'
 ```
 
 Prove `/nix` survives replacement:
 
 ```fish
-docker exec ghostship-hermes sh -lc 'su -s /bin/sh hermes -c "HOME=/home/hermes PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin nix --extra-experimental-features \"nix-command flakes\" profile add nixpkgs#hello"'
-docker exec ghostship-hermes sh -lc 'su -s /bin/sh hermes -c "HOME=/home/hermes PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin hello"'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'nix --extra-experimental-features "nix-command flakes" profile add nixpkgs#hello'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env PATH=/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'hello'
 ```
 
 Replace the container with the same `/home/hermes`, `/workspace`, and `/nix` mounts. `hello` should still exist.
+
+## Utility Installation Policy
+
+Default image behavior:
+
+- Hermes/runtime-required Linux tools ship in the image.
+- Node-native agent tools ship through npm in persisted home state.
+- Nix stays available for optional downstream or Hermes-installed extras, but the image no longer seeds a large default Nix utility profile.
+
+Current preinstalled npm tools:
+
+- `codex`
+- `gemini-cli`
+- `agent-browser`
+- `opencode`
+
+Known upstream caveat:
+
+- `hermes doctor` in Hermes `0.9` looks for `agent-browser` under Hermes' own `node_modules` tree rather than checking the npm-global CLI path. In this image `agent-browser` is intentionally installed the native way with npm under `/home/hermes/.local/bin`, so `command -v agent-browser` is the authoritative validation until upstream broadens that check.

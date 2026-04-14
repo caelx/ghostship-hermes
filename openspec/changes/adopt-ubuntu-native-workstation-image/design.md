@@ -22,7 +22,7 @@ This is a cross-cutting change. It alters the OS base, service supervision, pers
 - Use the upstream Hermes dashboard, with only a small repo-owned frontend patch for a `ttyd`-backed terminal entry while `ttyd` itself runs as a separate supervised sidecar behind the published `/terminal/` path.
 - Keep the router mandatory and preserve the Discord free-channel router-pinning patch.
 - Keep the Discord forced-channel patch surface narrow: only the router-pinned free-response channel and the `#deepthink` Codex lane are repo-owned gateway behavior overrides, and the migration must not add extra compatibility patches for service management, `doctor`, or other upstream runtime surfaces.
-- Split the old utility set into minimal immutable core tools, default userland Nix tools, and native-package-manager userland tools.
+- Split the old utility set into minimal immutable core tools, native-package-manager userland tools, and optional persisted Nix tooling for downstream or Hermes-installed extras.
 - Ship explicit downstream documentation for persistence, `/nix` reuse, home-directory persistence, and operator-facing environment variables.
 - Rework GitHub Actions and release docs around the new image.
 
@@ -60,7 +60,7 @@ The workstation will treat:
 
 - `/home/hermes` as the canonical persisted home and Hermes state root
 - `/workspace` as the persisted work-products root
-- `/nix` as the persisted userland Nix store/profile root
+- `/nix` as the persisted optional userland Nix store/profile root
 
 The image will not hide those requirements behind symlink facades such as `/opt/data/home`. `HOME` and `HERMES_HOME` will point directly into the persisted home tree.
 
@@ -128,7 +128,7 @@ Image-owned fixed env:
 - `XDG_CACHE_HOME=/home/hermes/.cache`
 - `XDG_DATA_HOME=/home/hermes/.local/share`
 - `NPM_CONFIG_PREFIX=/home/hermes/.local`
-- `PATH` including `/opt/hermes/bin`, the default/user Nix profile bin path, and `/home/hermes/.local/bin`
+- `PATH` including `/opt/hermes/bin`, the optional/user Nix profile bin path, and `/home/hermes/.local/bin`
 
 Downstream-owned operator env:
 
@@ -177,7 +177,7 @@ Alternatives considered:
 - Inject UI changes at runtime. Rejected because it is too fragile.
 - Build a custom PTY/WebSocket transport into Hermes’ FastAPI server. Rejected because `ttyd` already covers the hard terminal transport path with less churn.
 
-### 7. Split the utility surface into immutable core, default userland Nix, and native-package-manager layers
+### 7. Split the utility surface into immutable core, native-package-manager layers, and optional persisted Nix
 
 The immutable core image will contain only:
 
@@ -192,19 +192,7 @@ The immutable core image will contain only:
 - router/dashboard patch runtime dependencies
 - only the shell/process/network utilities directly required for boot, health checks, and core services
 
-Default userland Nix will contain the repo-approved generic Linux/operator tools that should be available by default but do not belong in the immutable core image, such as:
-
-- `gh`
-- `ssh`, `scp`, `ssh-keygen`
-- `gcloud`
-- `gws`
-- `bws`
-- `git`
-- `jq`
-- `ripgrep`
-- `fd`
-- `yq`
-- `tmux`
+Persisted Nix remains available for optional downstream or Hermes-installed extras that should survive container replacement, but the image will no longer seed a large default Nix utility profile on first boot.
 
 Native package-manager userland will cover tools that are best managed by their own ecosystem, especially npm-managed agent CLIs such as:
 
@@ -212,18 +200,18 @@ Native package-manager userland will cover tools that are best managed by their 
 - `gemini-cli`
 - `opencode`
 
-The design assumption is first-run seeding of the default userland layers into persisted storage, not continuous repo-owned convergence of all user tooling on every boot.
+The design assumption is native-manager-first installation for shipped tools, plus optional persisted Nix installs when operators or Hermes explicitly choose them, not continuous repo-owned convergence of all user tooling on every boot.
 
 Why:
 
 - satisfies the “move as much as possible out of core” goal
-- preserves default availability of approved operator tools
 - keeps ecosystem-native update flows where they make more sense than Nix
+- keeps Nix available for optional persisted installs without making it the default answer for every extra CLI
 
 Alternatives considered:
 
 - Keep all old tools in the immutable image. Rejected because it keeps the base too large and muddy.
-- Force all userland tools through Nix. Rejected because the user explicitly wants native package managers for Node-native CLIs.
+- Force all userland tools through Nix. Rejected because the user explicitly wants native package managers where tools expect them.
 
 ### 8. Keep the router and Discord router pin as mandatory repo-owned deltas
 
@@ -266,7 +254,7 @@ Why:
 2. Build the Ubuntu 24.04 workstation image with Hermes core, Nix, Node/npm, router, `ttyd`, and `s6`.
 3. Replace the current NixOS bootstrap/runtime wiring with the new persisted-home and persisted-`/nix` contract.
 4. Replace the custom dashboard with the upstream dashboard plus the small `Terminal` entry patch and supervised `ttyd` sidecar.
-5. Move default extra CLIs into the seeded userland Nix layer and npm-managed layer.
+5. Move default extra CLIs into the smallest possible immutable layer, npm-managed layer, or optional Nix layer according to each tool's expected install path.
 6. Rewrite smoke tests and live validation around the new runtime, persistence, and env contract.
 7. Update GitHub Actions build/publication and release docs together.
 8. Roll out through a test image first; rollback is to keep publishing the existing NixOS image contract until the Ubuntu workstation image passes publish and live validation.
@@ -274,6 +262,6 @@ Why:
 ## Open Questions
 
 - Should the repo keep publishing a separate reusable base artifact in addition to the final workstation image, or only the final image?
-- What exact user-profile path should the docs standardize for the default userland Nix profile: `~/.nix-profile`, an XDG profile path, or a dedicated repo-owned profile name?
-- Should the first-run default userland tool seeding be fully automatic, or should the repo expose an explicit initialization command for downstream operators who want tighter control?
+- What exact user-profile path should the docs standardize for the optional userland Nix profile: `~/.nix-profile`, an XDG profile path, or a dedicated repo-owned profile name?
+- Should the repo preseed any non-core Nix utilities at all, or leave persisted Nix entirely operator-driven?
 - Does the upstream Hermes dashboard patch land best in the wrapped Hermes package, or should the repo carry a separate patching step in the image assembly path?

@@ -1,12 +1,12 @@
 ## MODIFIED Requirements
 
 ### Requirement: Hermes image ships the official Bitwarden CLI
-The default workstation contract SHALL make the official `bws` Bitwarden Secrets Manager CLI available on `PATH` through the repo’s default persisted userland Nix layer rather than requiring the executable to live in the immutable core image.
+The workstation contract SHALL document the official `bws` Bitwarden Secrets Manager CLI as an optional userland tool rather than as a default seeded image tool, while still giving downstream a supported persisted install path for it.
 
-#### Scenario: Workstation runtime exposes `bws`
-- **WHEN** the workstation has completed its supported default userland Nix initialization
-- **THEN** the runtime exposes the `bws` executable
-- **AND** the executable is available on `PATH` inside the container runtime
+#### Scenario: Docs describe how optional `bws` persists
+- **WHEN** maintainers inspect the runtime docs
+- **THEN** the docs explain how downstream can install `bws` through a supported persisted userland path
+- **AND** the docs do not claim `bws` is preinstalled by default
 
 ### Requirement: Hermes runtime supports a documented Bitwarden appdata location
 The Hermes runtime and docs SHALL provide a stable, user-writable convention for `bws` local configuration/state under persisted Hermes home storage, rather than relying on default host-oriented XDG paths.

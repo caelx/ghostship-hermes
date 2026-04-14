@@ -62,9 +62,9 @@ Persistent downstream-owned layer:
 
 Package ownership split:
 
-- image: Hermes core plus only true runtime dependencies
-- userland Nix: generic Linux/operator tools such as `git`, `jq`, `ripgrep`, `gh`, `gcloud`, `gws`, `bws`, `fd`, `tmux`, `uv`, `yq`
-- native npm: `codex`, `gemini-cli`, `opencode`
+- image: Hermes core plus only true runtime dependencies and the small set of tools Hermes/runtime health actually expects, such as `git` and `ripgrep`
+- native npm: `codex`, `gemini-cli`, `agent-browser`, `opencode`
+- persisted Nix: optional userland package layer for downstream or Hermes-installed extras that should survive container replacement
 
 ## Build
 
@@ -138,7 +138,7 @@ Behavior:
 
 - `/home/hermes` preserves Hermes config, auth, sessions, memories, skills, npm-installed CLIs, and user config.
 - `/workspace` preserves projects and work products.
-- `/nix` preserves user-installed Nix packages and build outputs across restart and container replacement.
+- `/nix` preserves operator-installed or Hermes-installed Nix packages and build outputs across restart and container replacement.
 
 The container auto-seeds an empty persisted `/nix` volume from the image on first boot. Do not delete that volume if you expect `nix profile add` installs to survive container recreation.
 
@@ -212,9 +212,9 @@ Useful live checks:
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
 curl -fsS http://127.0.0.1:7681/terminal/ >/dev/null
-docker exec ghostship-hermes sh -lc 'command -v nix git rg'
-docker exec ghostship-hermes sh -lc 'su -s /bin/sh hermes -c "HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /opt/hermes/venv/bin/hermes gateway status"'
-docker exec ghostship-hermes sh -lc 'su -s /bin/sh hermes -c "HOME=/home/hermes HERMES_HOME=/home/hermes/.hermes PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /opt/hermes/venv/bin/hermes doctor"'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg agent-browser'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
 ```
 
 ## CI And Release
