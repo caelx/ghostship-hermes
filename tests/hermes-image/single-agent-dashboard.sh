@@ -137,6 +137,7 @@ do
   command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }
 done
 '
+run_in_container "$container_name" 'find /home/hermes \! -user hermes -print -quit | grep -q "^$"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.memory.holographic"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
 run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
