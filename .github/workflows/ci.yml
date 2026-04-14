@@ -39,6 +39,8 @@ jobs:
           docker buildx build \
             --load \
             --target final \
+            --cache-from type=gha,scope=ghostship-hermes-ci-amd64 \
+            --cache-to type=gha,mode=max,scope=ghostship-hermes-ci-amd64 \
             --build-arg HERMES_REF="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)" \
             --tag ghostship-hermes:ci \
             --file packages/hermes-image/Dockerfile \

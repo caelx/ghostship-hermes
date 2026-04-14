@@ -97,10 +97,14 @@ jobs:
             tag_args+=(--tag "${IMAGE_NAME}:${tag}-${PLATFORM_TAG}")
           done
 
+          cache_ref="${IMAGE_NAME}:buildcache-${PLATFORM_TAG}"
+
           docker buildx build \
             --platform "${PLATFORM}" \
             --push \
             --target final \
+            --cache-from "type=registry,ref=${cache_ref}" \
+            --cache-to "type=registry,ref=${cache_ref},mode=max" \
             --build-arg "HERMES_REF=${HERMES_REF}" \
             "${tag_args[@]}" \
             --file packages/hermes-image/Dockerfile \
