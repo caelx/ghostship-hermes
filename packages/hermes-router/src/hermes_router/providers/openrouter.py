@@ -124,6 +124,7 @@ class OpenRouterProvider:
 
     def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
         body = dict(payload)
+        body.pop("stream", None)
         body["model"] = backend_model
         try:
             response = self.client.request_json("POST", "/chat/completions", json_body=body, timeout=timeout)

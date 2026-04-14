@@ -150,3 +150,126 @@ def test_chat_completion_strips_stream_flag_before_sync_request() -> None:
     )
     assert result.payload["choices"][0]["message"]["content"] == "ok"
     assert len(seen_bodies) == 1
+
+
+def test_chat_completion_stream_uses_native_chunks() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/chat/completions", "/v1/chat/completions"}
+        body = json.loads(request.content.decode())
+        assert body["stream"] is True
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hel"},"finish_reason":null}]}\n\n'
+                'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}\n\n'
+                "data: [DONE]\n\n"
+            ),
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/v1", transport=make_transport(handler))
+    provider._family_cache["minimax-m2.5-free"] = "chat_completions"
+    result = provider.chat_completions_stream(
+        "minimax-m2.5-free",
+        {"messages": [{"role": "user", "content": "hello"}], "stream": True},
+    )
+    events = list(result.chunks)
+    assert [event.content for event in events if event.content] == ["hel", "lo"]
+    assert result.state.usage == {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+    assert result.state.final_payload is not None
+    assert result.state.final_payload["choices"][0]["message"]["content"] == "hello"
+    assert result.state.final_payload["choices"][0]["finish_reason"] == "stop"
+
+
+def test_responses_stream_uses_native_events() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/responses", "/v1/responses"}
+        body = json.loads(request.content.decode())
+        assert body["stream"] is True
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                'event: response.output_text.delta\n'
+                'data: {"type":"response.output_text.delta","delta":"hel"}\n\n'
+                'event: response.output_text.delta\n'
+                'data: {"type":"response.output_text.delta","delta":"lo"}\n\n'
+                'event: response.completed\n'
+                'data: {"type":"response.completed","response":{"id":"resp_1","model":"gpt-5.4-mini","output_text":"hello","usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}\n\n'
+                "data: [DONE]\n\n"
+            ),
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/v1", transport=make_transport(handler))
+    provider._family_cache["gpt-5.4-mini"] = "responses"
+    result = provider.chat_completions_stream(
+        "gpt-5.4-mini",
+        {"messages": [{"role": "user", "content": "hello"}], "stream": True},
+    )
+    events = list(result.chunks)
+    assert [event.content for event in events if event.content] == ["hel", "lo"]
+    assert result.state.usage == {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5}
+    assert result.state.final_payload is not None
+    assert result.state.final_payload["choices"][0]["message"]["content"] == "hello"
+
+
+def test_messages_stream_uses_native_events() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/messages", "/v1/messages"}
+        body = json.loads(request.content.decode())
+        assert body["stream"] is True
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                'event: message_start\n'
+                'data: {"type":"message_start","message":{"usage":{"input_tokens":4}}}\n\n'
+                'event: content_block_delta\n'
+                'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hel"}}\n\n'
+                'event: content_block_delta\n'
+                'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"lo"}}\n\n'
+                'event: message_delta\n'
+                'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":4,"output_tokens":2}}\n\n'
+            ),
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/v1", transport=make_transport(handler))
+    provider._family_cache["claude-sonnet-4-6"] = "messages"
+    result = provider.chat_completions_stream(
+        "claude-sonnet-4-6",
+        {"messages": [{"role": "user", "content": "hello"}], "stream": True},
+    )
+    events = list(result.chunks)
+    assert [event.content for event in events if event.content] == ["hel", "lo"]
+    assert any(event.finish_reason == "end_turn" for event in events)
+    assert result.state.final_payload is not None
+    assert result.state.final_payload["choices"][0]["message"]["content"] == "hello"
+    assert result.state.final_payload["choices"][0]["finish_reason"] == "end_turn"
+
+
+def test_google_stream_uses_native_events() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/models/gemini-3-flash:streamGenerateContent", "/v1/models/gemini-3-flash:streamGenerateContent"}
+        assert request.url.params["alt"] == "sse"
+        body = json.loads(request.content.decode())
+        assert "stream" not in body
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                'data: {"candidates":[{"content":{"parts":[{"text":"hel"}]}}]}\n\n'
+                'data: {"candidates":[{"content":{"parts":[{"text":"lo"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2,"totalTokenCount":6}}\n\n'
+            ),
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/v1", transport=make_transport(handler))
+    provider._family_cache["gemini-3-flash"] = "google_generate_content"
+    result = provider.chat_completions_stream(
+        "gemini-3-flash",
+        {"messages": [{"role": "user", "content": "hello"}], "stream": True},
+    )
+    events = list(result.chunks)
+    assert [event.content for event in events if event.content] == ["hel", "lo"]
+    assert any(event.finish_reason == "stop" for event in events)
+    assert result.state.final_payload is not None
+    assert result.state.final_payload["choices"][0]["message"]["content"] == "hello"

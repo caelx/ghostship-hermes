@@ -183,68 +183,26 @@ class OpencodeZenProvider:
         )
 
     def chat_completions_stream(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatStreamResult:
-        result = self.chat_completions(backend_model, payload, timeout=timeout)
-        state = ProviderChatStreamState(
-            first_text_latency_ms=result.first_text_latency_ms,
-            usage=result.payload.get("usage") if isinstance(result.payload.get("usage"), dict) else None,
-            final_payload=result.payload,
-        )
-        message = ((result.payload.get("choices") or [{}])[0].get("message") or {})
-        text = self._extract_chat_completion_text(result.payload)
-        reasoning = message.get("reasoning_content") or message.get("reasoning")
-        tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else None
-        finish_reason = ((result.payload.get("choices") or [{}])[0].get("finish_reason") or None)
-        state.emitted_text = text
-        if isinstance(reasoning, str):
-            state.emitted_reasoning = reasoning
-
-        def stream_chunks():
-            delta: dict[str, Any] = {}
-            if text:
-                delta["content"] = text
-            if isinstance(reasoning, str) and reasoning:
-                delta["reasoning_content"] = reasoning
-            if tool_calls:
-                delta["tool_calls"] = tool_calls
-            if delta:
-                yield ProviderChatStreamEvent(
-                    content=text or None,
-                    reasoning=reasoning if isinstance(reasoning, str) and reasoning else None,
-                    tool_calls=tool_calls,
-                    finish_reason=finish_reason if isinstance(finish_reason, str) else None,
-                    usage=state.usage,
-                    raw_chunk={
-                        "id": result.payload.get("id") or f"chatcmpl-{backend_model}",
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": backend_model,
-                        "choices": [
-                            {
-                                "index": 0,
-                                "delta": delta,
-                                "finish_reason": finish_reason if isinstance(finish_reason, str) else None,
-                            }
-                        ],
-                    },
-                )
-            if state.usage:
-                yield ProviderChatStreamEvent(
-                    usage=state.usage,
-                    raw_chunk={
-                        "id": result.payload.get("id") or f"chatcmpl-{backend_model}",
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": backend_model,
-                        "choices": [],
-                        "usage": state.usage,
-                    },
-                )
-
-        return ProviderChatStreamResult(
-            chunks=stream_chunks(),
-            provider=result.provider,
-            backend_model=result.backend_model,
-            state=state,
+        family_order = self._endpoint_family_order(backend_model)
+        last_error: NormalizedProviderError | None = None
+        for family in family_order:
+            try:
+                result = self._stream_with_family(family, backend_model, payload, timeout=timeout)
+                self._family_cache[backend_model] = family
+                return result
+            except NormalizedProviderError as exc:
+                last_error = exc
+                if self._should_try_next_family(exc):
+                    continue
+                raise
+        if last_error is not None:
+            raise last_error
+        raise NormalizedProviderError(
+            "bad_request",
+            f"No supported OpenCode Zen endpoint family worked for model '{backend_model}'.",
+            provider=self.name,
+            backend_model=backend_model,
+            retryable=False,
         )
 
     def _endpoint_family_order(self, model_id: str) -> list[str]:
@@ -285,6 +243,73 @@ class OpencodeZenProvider:
             provider=self.name,
             backend_model=backend_model,
             first_text_latency_ms=latency_ms,
+        )
+
+    def _stream_with_family(self, family: str, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatStreamResult:
+        body, path, params = self._build_stream_request(family, backend_model, payload)
+        request_timeout = timeout or self.client.default_timeout
+        state = ProviderChatStreamState()
+        started_at = time.monotonic()
+        tool_calls_acc: dict[int, dict[str, Any]] = {}
+        finish_reason: str | None = None
+
+        def stream_chunks():
+            nonlocal finish_reason
+            spec = self.client.build_request_spec("POST", path, json_body=body, params=params, timeout=request_timeout)
+            url = f"{self.client.base_url}{spec.path}"
+            try:
+                with self.client._client(spec.timeout) as client:
+                    with client.stream(spec.method, url, params=spec.params, json=spec.json_body, headers=spec.headers) as response:
+                        if response.is_error:
+                            details: Any = None
+                            try:
+                                details = response.json()
+                            except Exception:
+                                details = response.text or None
+                            raise self._normalize_http_error(
+                                HttpStatusError(
+                                    f"remote service returned HTTP {response.status_code}",
+                                    status_code=response.status_code,
+                                    details=details,
+                                    headers=dict(response.headers),
+                                ),
+                                backend_model=backend_model,
+                            )
+                        for event_name, event_data in self._iter_sse_events(response.iter_lines()):
+                            if event_data == "[DONE]":
+                                break
+                            for event in self._stream_events_from_sse(
+                                family,
+                                backend_model,
+                                event_name,
+                                event_data,
+                                state=state,
+                                tool_calls_acc=tool_calls_acc,
+                                started_at=started_at,
+                            ):
+                                if isinstance(event.finish_reason, str) and event.finish_reason:
+                                    finish_reason = event.finish_reason
+                                yield event
+            except TimeoutError as exc:
+                raise NormalizedProviderError("timeout", str(exc), provider=self.name, backend_model=backend_model, retryable=True, details=exc.details) from exc
+            except TransportError as exc:
+                raise NormalizedProviderError("transport_error", str(exc), provider=self.name, backend_model=backend_model, retryable=True, details=exc.details) from exc
+            except HttpStatusError as exc:
+                raise self._normalize_http_error(exc, backend_model=backend_model) from exc
+            if state.final_payload is None:
+                state.final_payload = self._final_stream_payload(
+                    family,
+                    backend_model,
+                    state=state,
+                    finish_reason=finish_reason,
+                    tool_calls_acc=tool_calls_acc,
+                )
+
+        return ProviderChatStreamResult(
+            chunks=stream_chunks(),
+            provider=self.name,
+            backend_model=backend_model,
+            state=state,
         )
 
     def _build_request(self, family: str, backend_model: str, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -334,6 +359,15 @@ class OpencodeZenProvider:
                 }
             return body, f"/models/{backend_model}:generateContent"
         raise NormalizedProviderError("bad_request", f"Unsupported endpoint family '{family}'.", provider=self.name, backend_model=backend_model)
+
+    def _build_stream_request(self, family: str, backend_model: str, payload: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
+        body, path = self._build_request(family, backend_model, payload)
+        params: dict[str, Any] | None = None
+        if family == "google_generate_content":
+            stream_path = f"/models/{backend_model}:streamGenerateContent"
+            return body, stream_path, {"alt": "sse"}
+        body["stream"] = True
+        return body, path, params
 
     @staticmethod
     def _build_responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -410,6 +444,280 @@ class OpencodeZenProvider:
                 "usage": payload.get("usageMetadata"),
             }
         return payload
+
+    def _final_stream_payload(
+        self,
+        family: str,
+        backend_model: str,
+        *,
+        state: ProviderChatStreamState,
+        finish_reason: str | None,
+        tool_calls_acc: dict[int, dict[str, Any]],
+    ) -> dict[str, Any]:
+        message: dict[str, Any] = {"role": "assistant"}
+        if state.emitted_text:
+            message["content"] = state.emitted_text
+        if state.emitted_reasoning:
+            message["reasoning_content"] = state.emitted_reasoning
+        if tool_calls_acc:
+            message["tool_calls"] = [
+                {
+                    "id": item.get("id"),
+                    "type": item.get("type") or "function",
+                    "function": {
+                        "name": item.get("function", {}).get("name", ""),
+                        "arguments": item.get("function", {}).get("arguments", ""),
+                    },
+                }
+                for _, item in sorted(tool_calls_acc.items())
+            ]
+        resolved_finish = finish_reason or ("tool_calls" if tool_calls_acc else "stop")
+        payload = {
+            "id": f"chatcmpl-{backend_model}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": backend_model,
+            "choices": [{"index": 0, "message": message, "finish_reason": resolved_finish}],
+            "usage": state.usage,
+        }
+        if family == "google_generate_content":
+            payload["usage"] = state.usage
+        return payload
+
+    def _stream_events_from_sse(
+        self,
+        family: str,
+        backend_model: str,
+        event_name: str | None,
+        event_data: str,
+        *,
+        state: ProviderChatStreamState,
+        tool_calls_acc: dict[int, dict[str, Any]],
+        started_at: float,
+    ) -> list[ProviderChatStreamEvent]:
+        try:
+            payload = json.loads(event_data)
+        except json.JSONDecodeError:
+            return []
+        if family == "chat_completions":
+            return self._chat_completion_stream_events(
+                backend_model,
+                payload,
+                state=state,
+                tool_calls_acc=tool_calls_acc,
+                started_at=started_at,
+            )
+        if family == "responses":
+            return self._responses_stream_events(
+                payload,
+                backend_model=backend_model,
+                event_name=event_name,
+                state=state,
+                started_at=started_at,
+            )
+        if family == "messages":
+            return self._messages_stream_events(payload, event_name=event_name, state=state, started_at=started_at)
+        if family == "google_generate_content":
+            return self._google_stream_events(payload, state=state, started_at=started_at)
+        return []
+
+    @staticmethod
+    def _iter_sse_events(lines: Any):
+        event_name: str | None = None
+        data_lines: list[str] = []
+        for raw_line in lines:
+            line = raw_line.decode() if isinstance(raw_line, bytes) else str(raw_line)
+            if line == "":
+                if data_lines:
+                    yield event_name, "\n".join(data_lines)
+                event_name = None
+                data_lines = []
+                continue
+            if line.startswith(":"):
+                continue
+            if line.startswith("event:"):
+                event_name = line[6:].strip() or None
+                continue
+            if line.startswith("data:"):
+                data_lines.append(line[5:].lstrip())
+        if data_lines:
+            yield event_name, "\n".join(data_lines)
+
+    def _chat_completion_stream_events(
+        self,
+        backend_model: str,
+        payload_chunk: dict[str, Any],
+        *,
+        state: ProviderChatStreamState,
+        tool_calls_acc: dict[int, dict[str, Any]],
+        started_at: float,
+    ) -> list[ProviderChatStreamEvent]:
+        events: list[ProviderChatStreamEvent] = []
+        if isinstance(payload_chunk.get("usage"), dict):
+            state.usage = payload_chunk["usage"]
+        choices = payload_chunk.get("choices") or []
+        if not choices:
+            if state.usage:
+                return [ProviderChatStreamEvent(usage=state.usage, raw_chunk=payload_chunk)]
+            return []
+        choice = choices[0] or {}
+        delta = choice.get("delta") or {}
+        content = delta.get("content")
+        if isinstance(content, str) and content:
+            if state.first_text_latency_ms is None:
+                state.first_text_latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+            state.emitted_text += content
+        else:
+            content = None
+        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+        if isinstance(reasoning, str) and reasoning:
+            state.emitted_reasoning += reasoning
+        else:
+            reasoning = None
+        raw_tool_calls = delta.get("tool_calls")
+        tool_calls: list[dict[str, Any]] | None = None
+        if isinstance(raw_tool_calls, list):
+            tool_calls = []
+            for raw_tool_call in raw_tool_calls:
+                if not isinstance(raw_tool_call, dict):
+                    continue
+                index = int(raw_tool_call.get("index") or 0)
+                function = raw_tool_call.get("function") if isinstance(raw_tool_call.get("function"), dict) else {}
+                entry = tool_calls_acc.setdefault(
+                    index,
+                    {
+                        "index": index,
+                        "id": raw_tool_call.get("id"),
+                        "type": raw_tool_call.get("type") or "function",
+                        "function": {"name": "", "arguments": ""},
+                    },
+                )
+                if raw_tool_call.get("id"):
+                    entry["id"] = raw_tool_call["id"]
+                if raw_tool_call.get("type"):
+                    entry["type"] = raw_tool_call["type"]
+                if function.get("name"):
+                    entry["function"]["name"] += str(function["name"])
+                if function.get("arguments"):
+                    entry["function"]["arguments"] += str(function["arguments"])
+                tool_calls.append(raw_tool_call)
+        choice_finish_reason = choice.get("finish_reason")
+        events.append(
+            ProviderChatStreamEvent(
+                content=content,
+                reasoning=reasoning,
+                tool_calls=tool_calls,
+                finish_reason=choice_finish_reason if isinstance(choice_finish_reason, str) else None,
+                usage=state.usage,
+                raw_chunk=payload_chunk,
+            )
+        )
+        return events
+
+    def _responses_stream_events(
+        self,
+        payload: dict[str, Any],
+        *,
+        backend_model: str,
+        event_name: str | None,
+        state: ProviderChatStreamState,
+        started_at: float,
+    ) -> list[ProviderChatStreamEvent]:
+        event_type = event_name or str(payload.get("type") or "")
+        events: list[ProviderChatStreamEvent] = []
+        if event_type == "response.output_text.delta":
+            delta = payload.get("delta")
+            if isinstance(delta, str) and delta:
+                if state.first_text_latency_ms is None:
+                    state.first_text_latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+                state.emitted_text += delta
+                events.append(ProviderChatStreamEvent(content=delta))
+        elif event_type == "response.reasoning.delta":
+            delta = payload.get("delta")
+            if isinstance(delta, str) and delta:
+                state.emitted_reasoning += delta
+                events.append(ProviderChatStreamEvent(reasoning=delta))
+        elif event_type == "response.completed":
+            response = payload.get("response") if isinstance(payload.get("response"), dict) else {}
+            usage = response.get("usage")
+            if isinstance(usage, dict):
+                state.usage = usage
+            if response:
+                state.final_payload = self._normalize_response("responses", backend_model, response)
+            events.append(ProviderChatStreamEvent(finish_reason="stop", usage=state.usage))
+        return events
+
+    def _messages_stream_events(
+        self,
+        payload: dict[str, Any],
+        *,
+        event_name: str | None,
+        state: ProviderChatStreamState,
+        started_at: float,
+    ) -> list[ProviderChatStreamEvent]:
+        event_type = event_name or str(payload.get("type") or "")
+        events: list[ProviderChatStreamEvent] = []
+        if event_type == "message_start":
+            message = payload.get("message")
+            usage = message.get("usage") if isinstance(message, dict) else None
+            if isinstance(usage, dict):
+                state.usage = usage
+        elif event_type == "content_block_delta":
+            delta = payload.get("delta") if isinstance(payload.get("delta"), dict) else {}
+            text = delta.get("text") if isinstance(delta.get("text"), str) else None
+            reasoning = delta.get("thinking") if isinstance(delta.get("thinking"), str) else None
+            if text:
+                if state.first_text_latency_ms is None:
+                    state.first_text_latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+                state.emitted_text += text
+            if reasoning:
+                state.emitted_reasoning += reasoning
+            if text or reasoning:
+                events.append(ProviderChatStreamEvent(content=text, reasoning=reasoning))
+        elif event_type == "message_delta":
+            delta = payload.get("delta") if isinstance(payload.get("delta"), dict) else {}
+            usage = payload.get("usage")
+            if isinstance(usage, dict):
+                state.usage = usage
+            finish_reason = delta.get("stop_reason") if isinstance(delta.get("stop_reason"), str) else None
+            if finish_reason or state.usage:
+                events.append(ProviderChatStreamEvent(finish_reason=finish_reason, usage=state.usage))
+        return events
+
+    def _google_stream_events(
+        self,
+        payload: dict[str, Any],
+        *,
+        state: ProviderChatStreamState,
+        started_at: float,
+    ) -> list[ProviderChatStreamEvent]:
+        events: list[ProviderChatStreamEvent] = []
+        text_parts: list[str] = []
+        finish_reason: str | None = None
+        for candidate in payload.get("candidates", []):
+            if not isinstance(candidate, dict):
+                continue
+            candidate_finish = candidate.get("finishReason")
+            if isinstance(candidate_finish, str) and candidate_finish:
+                finish_reason = candidate_finish.lower()
+            content = candidate.get("content") if isinstance(candidate.get("content"), dict) else {}
+            for part in content.get("parts", []):
+                if not isinstance(part, dict):
+                    continue
+                text = part.get("text")
+                if isinstance(text, str) and text:
+                    text_parts.append(text)
+        content_delta = "".join(text_parts)
+        if content_delta:
+            if state.first_text_latency_ms is None:
+                state.first_text_latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+            state.emitted_text += content_delta
+        usage = payload.get("usageMetadata")
+        if isinstance(usage, dict):
+            state.usage = usage
+        if content_delta or finish_reason or state.usage:
+            events.append(ProviderChatStreamEvent(content=content_delta or None, finish_reason=finish_reason, usage=state.usage))
+        return events
 
     @staticmethod
     def _extract_chat_completion_text(payload: dict[str, Any]) -> str:
