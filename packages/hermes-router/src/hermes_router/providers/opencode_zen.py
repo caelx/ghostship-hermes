@@ -291,6 +291,7 @@ class OpencodeZenProvider:
         messages = payload.get("messages", [])
         if family == "chat_completions":
             body = dict(payload)
+            body.pop("stream", None)
             body["model"] = backend_model
             return body, "/chat/completions"
         if family == "responses":

@@ -120,3 +120,33 @@ def test_chat_completion_normalizes_messages_and_google_families() -> None:
     assert gemini.payload["choices"][0]["message"]["content"] == "gemini ok"
     assert any(path.endswith("/messages") for path in seen_paths)
     assert any(path.endswith("/models/gemini-3-flash:generateContent") for path in seen_paths)
+
+
+def test_chat_completion_strips_stream_flag_before_sync_request() -> None:
+    seen_bodies: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path not in {"/chat/completions", "/v1/chat/completions"}:
+            raise AssertionError(f"unexpected path: {request.url.path}")
+        body = json.loads(request.content.decode())
+        seen_bodies.append(body)
+        assert "stream" not in body
+        assert body["model"] == "minimax-m2.5-free"
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "model": "minimax-m2.5-free",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            },
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/v1", transport=make_transport(handler))
+    provider._family_cache["minimax-m2.5-free"] = "chat_completions"
+    result = provider.chat_completions(
+        "minimax-m2.5-free",
+        {"messages": [{"role": "user", "content": "hello"}], "stream": True},
+    )
+    assert result.payload["choices"][0]["message"]["content"] == "ok"
+    assert len(seen_bodies) == 1
