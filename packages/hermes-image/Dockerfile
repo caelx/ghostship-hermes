@@ -14,7 +14,12 @@ ENV HOME=/home/hermes \
     XDG_CACHE_HOME=/home/hermes/.cache \
     XDG_DATA_HOME=/home/hermes/.local/share \
     NPM_CONFIG_PREFIX=/home/hermes/.local \
+    npm_config_audit=false \
+    npm_config_fund=false \
+    npm_config_update_notifier=false \
     CARGO_HOME=/home/hermes/.cargo \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
     RUSTUP_HOME=/home/hermes/.rustup \
     GHOSTSHIP_WORKSPACE_ROOT=/workspace \
     GHOSTSHIP_WEB_PORT=7681 \
@@ -86,7 +91,7 @@ RUN mkdir -p /opt/hermes \
     && tar -xzf /tmp/hermes-agent.tar.gz -C /tmp/hermes-agent --strip-components=1 \
     && rm -f /tmp/hermes-agent.tar.gz \
     && cd /tmp/hermes-agent/web \
-    && npm install --include=optional \
+    && npm install --include=optional --no-audit --no-fund \
     && npm run build \
     && python3 -m venv /opt/hermes/venv \
     && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
@@ -119,7 +124,7 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && rm -f /tmp/hermes-agent.tar.gz \
     && python3 /src/packages/hermes-image/build/prepare_upstream_hermes.py /tmp/hermes-agent \
     && cd /tmp/hermes-agent/web \
-    && npm install --include=optional \
+    && npm install --include=optional --no-audit --no-fund \
     && npm run build \
     && rm -rf /opt/hermes/venv \
     && python3 -m venv /opt/hermes/venv \
@@ -148,7 +153,7 @@ RUN mkdir -p /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/ni
       "set -g window-status-current-format '#[fg=#041C1C,bg=#FFBD38,bold] #I:#W '" \
       "set -g window-status-format '#[fg=#FFE6CB,bg=#0A2E2E] #I:#W '" \
       > /opt/ghostship/home-seed/.tmux.conf \
-    && npm install --prefix /opt/ghostship/home-seed/.local -g @openai/codex @google/gemini-cli agent-browser opencode-ai
+    && npm install --prefix /opt/ghostship/home-seed/.local -g --no-audit --no-fund @openai/codex @google/gemini-cli agent-browser opencode-ai
 
 RUN mkdir -p /opt/ghostship \
     && tar --zstd -cpf /opt/ghostship/nix-seed.tar.zst /nix

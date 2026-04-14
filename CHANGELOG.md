@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Reduced GitHub Actions workstation-image build noise by disabling pip cache/version-check chatter during image-layer venv installs and turning off npm audit/fund/update-notifier output in Docker build steps. Remaining build warnings in current logs are upstream dependency deprecations or normal apt/container packaging noise.
 - Added explicit Buildx layer caching for the Ubuntu workstation image workflows: `ci.yml` now uses a GitHub Actions cache scope for the amd64 smoke-build path, and `publish-image.yml` now reuses per-architecture GHCR registry caches before pushing multi-arch tags.
 - Pinned Hermes release updated to `v2026.4.13`.
 - Breaking: replaced the old NixOS/systemd image contract with a custom Ubuntu 24.04 workstation image built from `packages/hermes-image/Dockerfile`, moved container supervision to `s6-overlay`, switched the browser surface to the upstream Hermes `0.9` dashboard with a small `Terminal` entry patch backed by same-origin `ttyd`, kept `ghostship-hermes-router` plus Discord forced-channel routing as the only repo-owned Hermes deltas, and made `/home/hermes`, `/workspace`, and `/nix` the canonical persistence contract for downstream deployments and CI.
