@@ -1,65 +1,94 @@
 # Runtime Environment Contract
 
-This image's managed runtime environment is the generated file:
+This image has two env layers:
 
-- `/home/hermes/.hermes/.env`
+1. fixed image defaults baked into the Docker image
+2. downstream operator env passed at container runtime
 
-Bootstrap rewrites that file from the allowlists in
-`packages/hermes-image/nixos-module.nix`
-on every managed boot.
+Downstream should treat the fixed image defaults as part of the image contract. The operator-facing env vars are the values you pass with `--env`, `--env-file`, or Compose `environment:`.
 
-Rules:
+## Fixed Image Defaults
 
-- Only approved keys are copied into the managed `.env`.
-- Unset keys are omitted.
-- `TERMINAL_CWD=/workspace` is always written.
-- `WEBHOOK_ENABLED=true` and `WEBHOOK_PORT=8644` are always written.
-- If `OPENCODE_API_KEY` is unset but `OPENCODE_GO_API_KEY` is set, bootstrap also writes `OPENCODE_API_KEY` with the same value.
-- The managed scaffold uses Codex OAuth for the `openai-codex` fallback path and uses `OPENAI_API_KEY` as the bearer token input for manual `ghostship-router` calls.
+These are already set in the image. Downstream normally should not override them.
 
-## Single-Agent Inputs
+- `HOME=/home/hermes`
+- `HERMES_HOME=/home/hermes/.hermes`
+- `XDG_CONFIG_HOME=/home/hermes/.config`
+- `XDG_CACHE_HOME=/home/hermes/.cache`
+- `XDG_DATA_HOME=/home/hermes/.local/share`
+- `NPM_CONFIG_PREFIX=/home/hermes/.local`
+- `CARGO_HOME=/home/hermes/.cargo`
+- `RUSTUP_HOME=/home/hermes/.rustup`
+- `GHOSTSHIP_WORKSPACE_ROOT=/workspace`
+- `GHOSTSHIP_WEB_PORT=7681`
+- `GHOSTSHIP_DASHBOARD_HOST=127.0.0.1`
+- `GHOSTSHIP_DASHBOARD_PORT=9119`
+- `GHOSTSHIP_ROUTER_HOST=127.0.0.1`
+- `GHOSTSHIP_ROUTER_PORT=8788`
+- `GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1`
+- `GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock`
+- `GHOSTSHIP_TTYD_BASE_PATH=/terminal`
+- `GHOSTSHIP_TERMINAL_CWD=/workspace`
+
+The image also bakes a PATH that prefers:
+
+- `/home/hermes/.local/bin`
+- `/home/hermes/.cargo/bin`
+- `/home/hermes/.nix-profile/bin`
+- `/opt/hermes/venv/bin`
+- `/opt/ghostship-router/venv/bin`
+
+## Downstream Operator Env
+
+These are the variables downstream should set when the deployment needs them.
+
+### Core Runtime
+
+- `OPENAI_API_KEY`
+- `OPENROUTER_API_KEY`
+
+Notes:
+
+- `OPENAI_API_KEY` is the compatibility bearer token Hermes uses when talking to the local router through the OpenAI-compatible endpoint.
+- `OPENROUTER_API_KEY` lets the local router talk to OpenRouter-backed models.
+
+### Direct Provider Lanes
+
+- `OPENCODE_GO_API_KEY`
+- `GOOGLE_AI_STUDIO_API_KEY`
+
+Use these when the runtime needs direct provider access outside the local router path.
+
+### Discord Gateway
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
-- `GHOSTSHIP_ROUTER_CHANNEL`
 - `DISCORD_HOME_CHANNEL`
-- `BROWSER_CDP_URL`
+- `GHOSTSHIP_ROUTER_CHANNEL`
+- `GHOSTSHIP_DEEPTHINK_CHANNEL`
+
+Channel behavior:
+
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `agentic`.
+- `GHOSTSHIP_DEEPTHINK_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning.
+
+### Webhook / Workflow Secrets
+
 - `WEBHOOK_SECRET`
-
-When `GHOSTSHIP_ROUTER_CHANNEL` is set, the managed advisory hook treats that Discord channel as a Ghostship Router guidance lane. It does not block replies or modify gateway dispatch; it only warns users to switch with `/model custom:ghostship-router:<model>` when the session is not already tracked as a router-backed model.
-
-## Provider, Auth, And Integration Inputs
-
-- `GOOGLE_AI_STUDIO_API_KEY`
-- `OPENROUTER_API_KEY`
-- `OPENROUTER_BASE_URL`
-- `OPENROUTER_HTTP_REFERER`
-- `OPENROUTER_TITLE`
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `OPENCODE_API_KEY`
-- `OPENCODE_GO_API_KEY`
-- `OPENCODE_BASE_URL`
-- `GITHUB_TOKEN`
-- `GH_TOKEN`
-- `HASS_TOKEN`
-- `HASS_URL`
 - `BWS_ACCESS_TOKEN`
 - `BWS_SERVER_URL`
+- `GITHUB_TOKEN`
+- `GH_TOKEN`
 
-## Browser-Provider Inputs
+### Browser / Remote Browser Options
 
+- `BROWSER_CDP_URL`
 - `BROWSERBASE_API_KEY`
 - `BROWSERBASE_PROJECT_ID`
 - `BROWSER_USE_API_KEY`
-- `BROWSERBASE_PROXIES`
-- `BROWSERBASE_ADVANCED_STEALTH`
-- `BROWSERBASE_KEEP_ALIVE`
-- `BROWSERBASE_SESSION_TIMEOUT`
-- `BROWSER_INACTIVITY_TIMEOUT`
 - `CAMOFOX_URL`
 
-## Utility And Service Inputs
+### Service Utility Inputs
 
 - `SEARXNG_URL`
 - `SONARR_URL`
@@ -107,20 +136,16 @@ When `GHOSTSHIP_ROUTER_CHANNEL` is set, the managed advisory hook treats that Di
 - `N8N_URL`
 - `N8N_API_KEY`
 
-## Intentionally Not Copied Into The Managed `.env`
+## Codex Auth Is Not An Env Var
 
-These values are not part of the managed single-agent runtime contract and should
-not be expected in `/home/hermes/.hermes/.env`:
+Codex OAuth is persisted in:
 
-- `CHAPTARR_API_PATH`
-- `CHAPTARR_API_VERSION`
-- `N8N_PUBLIC_API_ENDPOINT`
-- `N8N_PUBLIC_API_VERSION`
-- `GHOSTSHIP_ROUTER_API_KEY`
-- `API_SERVER_HOST`
-- `API_SERVER_PORT`
-- `API_SERVER_KEY`
+- `/home/hermes/.hermes/auth.json`
 
-The general rule is that fixed path/version selectors, router-daemon internals,
-container boot plumbing, and test-only headers stay outside the managed Hermes
-runtime env file.
+That file survives container replacement as long as `/home/hermes` is persisted.
+
+`#deepthink` depends on that persisted auth. It does not use `OPENAI_API_KEY`.
+
+## No In-Container Auth Layer
+
+The dashboard and ttyd do not add basic auth. Protect the container at the proxy or access-control layer instead. Current expected deployment is Cloudflare Access in front of the public `:7681` surface.

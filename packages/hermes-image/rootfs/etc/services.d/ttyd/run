@@ -1,0 +1,30 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+export HOME="${HOME:-/home/hermes}"
+export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+export GHOSTSHIP_TTYD_SOCKET="${GHOSTSHIP_TTYD_SOCKET:-/run/user/3000/ttyd.sock}"
+export GHOSTSHIP_TTYD_BASE_PATH="${GHOSTSHIP_TTYD_BASE_PATH:-/terminal}"
+export GHOSTSHIP_TERMINAL_CWD="${GHOSTSHIP_TERMINAL_CWD:-/workspace}"
+export TMUX_TMPDIR="${TMUX_TMPDIR:-$HOME/.local/state/tmux}"
+
+rm -f "$GHOSTSHIP_TTYD_SOCKET"
+mkdir -p "$(dirname "$GHOSTSHIP_TTYD_SOCKET")" "$TMUX_TMPDIR" "$HOME/.local/state/ghostship-hermes/ttyd"
+chown -R 3000:3000 "$(dirname "$GHOSTSHIP_TTYD_SOCKET")" "$TMUX_TMPDIR" "$HOME/.local/state/ghostship-hermes"
+
+TTYD_THEME='{"background":"#041C1C","foreground":"#FFE6CB","cursor":"#FFE6CB","cursorAccent":"#041C1C","selectionBackground":"#0C3838","black":"#041C1C","red":"#FB7185","green":"#4ADE80","yellow":"#FFBD38","blue":"#67E8F9","magenta":"#F9A8D4","cyan":"#5EEAD4","white":"#FFE6CB","brightBlack":"#0A2E2E","brightRed":"#FCA5A5","brightGreen":"#86EFAC","brightYellow":"#FCD34D","brightBlue":"#A5F3FC","brightMagenta":"#FBCFE8","brightCyan":"#99F6E4","brightWhite":"#FFF5E6"}'
+
+exec /command/s6-setuidgid hermes env TMUX_TMPDIR="$TMUX_TMPDIR" ttyd \
+  -i "$GHOSTSHIP_TTYD_SOCKET" \
+  -U hermes:hermes \
+  -b "$GHOSTSHIP_TTYD_BASE_PATH" \
+  -O \
+  -W \
+  -w "$GHOSTSHIP_TERMINAL_CWD" \
+  -t disableLeaveAlert=true \
+  -t disableResizeOverlay=true \
+  -t rendererType=webgl \
+  -t fontFamily='Courier Prime, monospace' \
+  -t fontSize=14 \
+  -t "theme=${TTYD_THEME}" \
+  tmux new -A -s webterm

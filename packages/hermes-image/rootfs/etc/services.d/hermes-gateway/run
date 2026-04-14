@@ -1,0 +1,5 @@
+#!/command/with-contenv bash
+set -euo pipefail
+export HOME="${HOME:-/home/hermes}"
+export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+exec /command/s6-setuidgid hermes /opt/hermes/venv/bin/hermes gateway run --replace

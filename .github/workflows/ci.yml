@@ -22,9 +22,6 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Validate flake evaluation
-        # Keep this step at evaluation-only scope so it catches broken flake
-        # wiring without redundantly building every check before the targeted
-        # test/build steps below run.
         run: nix flake check --no-build
 
       - name: Run Python utility tests
@@ -33,10 +30,18 @@ jobs:
       - name: Build Python utility package
         run: nix develop -c python3 scripts/python_utility.py build packages/searxng-cli
 
-      - name: Build runtime package
-        run: nix build .#packages.x86_64-linux.ghostship-hermes-runtime
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-      - name: Evaluate arm64 image derivation
-        # Keep x86-host CI at evaluation-only scope for arm64. Full arm64 image
-        # builds run in publish-image on native arm64 infrastructure.
-        run: nix eval .#packages.aarch64-linux.ghostship-hermes-image.drvPath --raw
+      - name: Build workstation image
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --load \
+            --build-arg HERMES_REF="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)" \
+            --tag ghostship-hermes:ci \
+            --file packages/hermes-image/Dockerfile \
+            .
+
+      - name: Smoke test workstation image
+        run: tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:ci

@@ -6,7 +6,7 @@
 - Hermes state must survive container restart and replacement
 - user-installed tooling must persist, especially Nix-installed userland tools under `/nix`
 - the browser surface should be upstream Hermes, not a separate repo dashboard
-- the repo must still keep its product deltas: the local router, the Discord free-channel router pin, and a browser console tab
+- the repo must still keep its product deltas: the local router, the Discord forced-channel patch set (`ghostship-router` free-response lane plus `#deepthink` on Codex `gpt-5.4` high reasoning), and a small browser terminal entry backed by `ttyd`
 
 This is a cross-cutting change. It alters the OS base, service supervision, persistence model, environment-variable ownership, utility packaging, browser contract, build pipeline, smoke tests, and downstream operator documentation.
 
@@ -19,8 +19,9 @@ This is a cross-cutting change. It alters the OS base, service supervision, pers
 - Persist `/home/hermes`, `/workspace`, and `/nix` across restart and container replacement.
 - Use `s6` as the in-container supervision layer for the mandatory gateway, dashboard, and router services.
 - Keep Hermes management host-native at the config/state level: operators manage Hermes through the CLI, dashboard, and files in persisted home state rather than through image rebuilds.
-- Use the upstream Hermes dashboard, with only a small repo-owned patch for a `ttyd`-backed `Console` tab.
+- Use the upstream Hermes dashboard, with only a small repo-owned frontend patch for a `ttyd`-backed terminal entry while `ttyd` itself runs as a separate supervised sidecar behind the published `/terminal/` path.
 - Keep the router mandatory and preserve the Discord free-channel router-pinning patch.
+- Keep the Discord forced-channel patch surface narrow: only the router-pinned free-response channel and the `#deepthink` Codex lane are repo-owned gateway behavior overrides, and the migration must not add extra compatibility patches for service management, `doctor`, or other upstream runtime surfaces.
 - Split the old utility set into minimal immutable core tools, default userland Nix tools, and native-package-manager userland tools.
 - Ship explicit downstream documentation for persistence, `/nix` reuse, home-directory persistence, and operator-facing environment variables.
 - Rework GitHub Actions and release docs around the new image.
@@ -38,7 +39,7 @@ This is a cross-cutting change. It alters the OS base, service supervision, pers
 
 ### 1. Build a custom Ubuntu 24.04 workstation image instead of extending the stock runtime image
 
-The new runtime will use `ubuntu:24.04` as the base image and will assemble the repo contract explicitly: Hermes core under `/opt/hermes`, baked-in Nix, the router, the dashboard patch, `ttyd`, `s6`, and only the minimum system/runtime dependencies.
+The new runtime will use `ubuntu:24.04` as the base image and will assemble the repo contract explicitly: Hermes core under `/opt/hermes`, baked-in Nix, the router, the dashboard frontend patch, a supervised `ttyd`+`tmux` sidecar, the published reverse proxy, `s6`, and only the minimum system/runtime dependencies.
 
 Why:
 
@@ -102,7 +103,7 @@ The container will use `s6` as PID 1 and supervise the mandatory long-running se
 - Hermes dashboard
 - Ghostship router
 
-The `ttyd` integration will be owned by the dashboard patch path rather than by a separate always-on system manager contract. Docker remains the outer lifecycle manager, and `hermes gateway install` is not part of the container contract.
+The `ttyd` integration will run as its own always-on supervised sidecar backed by a shared `tmux` session, while the dashboard patch stays frontend-only. Docker remains the outer lifecycle manager, and `hermes gateway install` is not part of the container contract.
 
 Why:
 
@@ -153,13 +154,13 @@ Alternatives considered:
 
 - Keep rewriting `.env` from container env at boot. Rejected because it preserves the managed-runtime projection model the user wants to leave behind.
 
-### 6. Make the upstream dashboard the source of truth and carry only a small repo-owned `Console` tab patch
+### 6. Make the upstream dashboard the source of truth and carry only a small repo-owned terminal-entry patch
 
 The browser surface will come from the upstream Hermes dashboard on its native runtime path. The repo keeps only a narrow patch set:
 
-- add a `Console` tab or nav entry
-- expose or proxy the minimal backend path needed to create and reach `ttyd` sessions
-- keep the `ttyd` integration same-origin with the dashboard
+- add a `Terminal` nav entry that opens `/terminal/`
+- keep `ttyd` as a separate supervised sidecar service backed by a shared `tmux` session
+- publish the upstream dashboard and `ttyd` through one reverse-proxy surface so the browser reaches the dashboard at `/` and the terminal at `/terminal/`
 
 The repo will not keep the old custom dashboard backend/frontend or its browser API contract.
 
@@ -167,13 +168,14 @@ Why:
 
 - reduces browser drift materially while still preserving the required console UX
 - keeps the patch small and easy to audit against upstream
-- avoids maintaining a second full dashboard stack
+- avoids maintaining a second full dashboard stack or a custom PTY/WebSocket backend inside Hermes
 
 Alternatives considered:
 
 - Keep the custom dashboard. Rejected because the user explicitly wants the built-in dashboard.
 - Wrap the upstream dashboard inside a larger Ghostship shell. Rejected because it recreates a parallel dashboard product.
 - Inject UI changes at runtime. Rejected because it is too fragile.
+- Build a custom PTY/WebSocket transport into Hermes’ FastAPI server. Rejected because `ttyd` already covers the hard terminal transport path with less churn.
 
 ### 7. Split the utility surface into immutable core, default userland Nix, and native-package-manager layers
 
@@ -185,6 +187,8 @@ The immutable core image will contain only:
 - Node/npm as the native package-manager path for Node-based agent tools
 - `s6`
 - `ttyd`
+- `tmux`
+- the published reverse proxy
 - router/dashboard patch runtime dependencies
 - only the shell/process/network utilities directly required for boot, health checks, and core services
 
@@ -223,12 +227,20 @@ Alternatives considered:
 
 ### 8. Keep the router and Discord router pin as mandatory repo-owned deltas
 
-The local router remains a mandatory core service in the final image, and the repo continues to patch Hermes so configured Discord free-response channels stay pinned to the router-managed path.
+The local router remains a mandatory core service in the final image, and the repo continues to patch Hermes so configured Discord forced-response channels stay pinned to repo-owned execution paths:
+
+- the existing router-managed Discord free-response lane stays pinned to the local router alias
+- a new Discord `#deepthink` lane is pinned to `openai-codex` / `gpt-5.4` with high reasoning effort
 
 Why:
 
 - these are explicit product requirements, not optional add-ons
 - upstream still does not expose a declarative per-channel routing override that replaces the repo patch
+
+Alternatives considered:
+
+- Let `/model` or session state decide those channels dynamically. Rejected because those channels are meant to stay pinned regardless of user session state.
+- Add broader repo-owned doctor/service shims so the forced channels can reuse old Ghostship runtime assumptions. Rejected because the new workstation image is explicitly trying to align to upstream runtime behavior everywhere outside the approved forced-channel and terminal-entry patch surface.
 
 ### 9. Rebuild GitHub Actions and release docs around the Ubuntu workstation image
 
@@ -243,7 +255,7 @@ Why:
 
 - [Risk] Losing declarative NixOS convergence makes runtime drift easier inside persisted home state. → Mitigation: keep Hermes core immutable, keep the repo-owned patch set small, and document which layers are operator-owned versus image-owned.
 - [Risk] `/nix` persistence is easy to get wrong and can break first boot if mounted unsafely. → Mitigation: make `/nix` seeding and reuse a first-class documented contract with explicit named-volume and bind-mount instructions.
-- [Risk] Carrying a `Console` tab patch means the dashboard is not purely upstream. → Mitigation: keep the patch small, source-compatible, and narrowly scoped to the console route/tab only.
+- [Risk] Carrying a `Terminal` entry patch means the dashboard is not purely upstream. → Mitigation: keep the patch small, source-compatible, and narrowly scoped to the terminal entry only.
 - [Risk] Default userland tooling may no longer be instantly available if the first-run seed path is broken. → Mitigation: validate the seed path in smoke tests and keep the default tool list explicit and small.
 - [Risk] Moving default tools out of the immutable image changes long-standing operator expectations. → Mitigation: document the new split clearly, including where each tool class lives and how to reinstall or upgrade it.
 - [Risk] GitHub Actions migration from the NixOS image path to the Ubuntu workstation image can break multi-arch publication or cache reuse. → Mitigation: keep the publication contract explicit, test both architectures, and update the runbook at the same time as the workflow change.
@@ -253,7 +265,7 @@ Why:
 1. Land the contract changes in OpenSpec, docs, and AGENTS memory before implementation starts.
 2. Build the Ubuntu 24.04 workstation image with Hermes core, Nix, Node/npm, router, `ttyd`, and `s6`.
 3. Replace the current NixOS bootstrap/runtime wiring with the new persisted-home and persisted-`/nix` contract.
-4. Replace the custom dashboard with the upstream dashboard plus the small `Console` tab patch.
+4. Replace the custom dashboard with the upstream dashboard plus the small `Terminal` entry patch and supervised `ttyd` sidecar.
 5. Move default extra CLIs into the seeded userland Nix layer and npm-managed layer.
 6. Rewrite smoke tests and live validation around the new runtime, persistence, and env contract.
 7. Update GitHub Actions build/publication and release docs together.

@@ -2,12 +2,6 @@ name: publish-image
 
 on:
   workflow_dispatch:
-    inputs:
-      publish_shared_cache:
-        description: Publish or refresh the shared Nix cache after the image build
-        required: false
-        default: false
-        type: boolean
   schedule:
     - cron: '0 14 * * *'
   push:
@@ -16,11 +10,10 @@ on:
     paths:
       - '.github/workflows/publish-image.yml'
       - '.github/workflows/update-hermes-release.yml'
-      - 'flake.nix'
-      - 'flake.lock'
       - 'packages/**'
-      - 'scripts/export_publishable_image.sh'
-      - 'scripts/shared_nix_cache.sh'
+      - 'tests/hermes-image/**'
+      - 'README.md'
+      - 'docs/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -65,10 +58,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - system: x86_64-linux
+          - platform: linux/amd64
             runs_on: ubuntu-24.04
             platform_tag: amd64
-          - system: aarch64-linux
+          - platform: linux/arm64
             runs_on: ubuntu-24.04-arm
             platform_tag: arm64
     runs-on: ${{ matrix.runs_on }}
@@ -80,21 +73,9 @@ jobs:
       TAGS: ${{ needs.prepare.outputs.tags }}
       HERMES_REF: ${{ needs.prepare.outputs.hermes_ref }}
       PLATFORM_TAG: ${{ matrix.platform_tag }}
-      GHOSTSHIP_CACHE_REPO: ${{ vars.GHOSTSHIP_CACHE_REPO }}
-      GHOSTSHIP_CACHE_PUBLIC_KEY: ${{ vars.GHOSTSHIP_CACHE_PUBLIC_KEY }}
-      GHOSTSHIP_CACHE_GHCR_TOKEN: ${{ secrets.GHOSTSHIP_CACHE_GHCR_TOKEN }}
-      GHOSTSHIP_CACHE_SIGNING_KEY: ${{ secrets.GHOSTSHIP_CACHE_SIGNING_KEY }}
-      GHOSTSHIP_CACHE_GHCR_USER: ${{ github.repository_owner }}
-      GITHUB_CACHE_FALLBACK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CACHE_REFRESH_REQUESTED: ${{ github.event_name == 'schedule' || inputs.publish_shared_cache }}
+      PLATFORM: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
-
-      - uses: DeterminateSystems/nix-installer-action@main
-        with:
-          determinate: false
-          extra-conf: |
-            experimental-features = nix-command flakes
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -103,102 +84,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bootstrap shared Ghostship Nix cache
-        id: cache_consume
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push architecture image
         shell: bash
         run: |
           set -euo pipefail
 
-          if scripts/shared_nix_cache.sh bootstrap; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "shared Ghostship cache not consumable before build; continuing with uncached build" >&2
-          fi
-
-      - name: Check shared cache publish configuration
-        id: cache_publish
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ "${CACHE_REFRESH_REQUESTED:-false}" != "true" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "shared cache publication is gated off for this run; only the daily schedule or workflow_dispatch with publish_shared_cache=true can refresh the cache" >&2
-          elif [ -z "${GHOSTSHIP_CACHE_PUBLIC_KEY:-}" ] || [ -z "${GHOSTSHIP_CACHE_SIGNING_KEY:-}" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "shared cache signing or public-key configuration missing; skipping cache publication" >&2
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Plan shared cache publication (pre-build)
-        id: cache_plan
-        if: steps.cache_publish.outputs.enabled == 'true'
-        env:
-          PLAN_FILE: ${{ runner.temp }}/ghostship-cache-${{ matrix.platform_tag }}.txt
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if timeout 900 scripts/shared_nix_cache.sh plan ".#packages.${{ matrix.system }}.ghostship-hermes-image" "$PLAN_FILE"; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            : > "$PLAN_FILE"
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "shared cache planning failed before image build; skipping cache upload for this leg" >&2
-          fi
-          echo "plan_file=$PLAN_FILE" >> "$GITHUB_OUTPUT"
-
-      - name: Build and publish architecture archive
-        id: build_image
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          final_bundle="$(nix build --no-link --print-out-paths .#packages.${{ matrix.system }}.ghostship-hermes-image)"
-          echo "final_bundle=$final_bundle" >> "$GITHUB_OUTPUT"
-
-          scripts/export_publishable_image.sh \
-            "$final_bundle" \
-            "ghostship-hermes:ci-${PLATFORM_TAG}" \
-            "ghostship-hermes-${PLATFORM_TAG}.tar"
-
-      - name: Publish architecture image tags
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cat > publish-arch-tags.sh <<'SCRIPT'
-          set -euo pipefail
-          archive="docker-archive:$(pwd)/ghostship-hermes-${PLATFORM_TAG}.tar"
+          tag_args=()
           for tag in $TAGS; do
-            skopeo copy \
-              "$archive" \
-              "docker://${IMAGE_NAME}:${tag}-${PLATFORM_TAG}"
+            tag_args+=(--tag "${IMAGE_NAME}:${tag}-${PLATFORM_TAG}")
           done
-          SCRIPT
-          chmod +x publish-arch-tags.sh
-          nix shell nixpkgs#skopeo -c bash ./publish-arch-tags.sh
 
-      - name: Publish shared cache entries
-        if: steps.cache_plan.outputs.enabled == 'true'
-        env:
-          PLAN_FILE: ${{ steps.cache_plan.outputs.plan_file }}
-          FINAL_BUNDLE: ${{ steps.build_image.outputs.final_bundle }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if scripts/shared_nix_cache.sh publish "$PLAN_FILE" "$FINAL_BUNDLE"; then
-            echo "shared cache publish completed" >&2
-          else
-            echo "shared cache publish failed after image build; keeping image publication result" >&2
-          fi
-
-      - name: Remove temporary publish artifacts
-        if: always()
-        run: rm -rf publish-arch-tags.sh "ghostship-hermes-${PLATFORM_TAG}.tar"
+          docker buildx build \
+            --platform "${PLATFORM}" \
+            --push \
+            --build-arg "HERMES_REF=${HERMES_REF}" \
+            "${tag_args[@]}" \
+            --file packages/hermes-image/Dockerfile \
+            .
 
   publish-manifests:
     needs:

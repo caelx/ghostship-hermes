@@ -49,13 +49,15 @@ The workstation SHALL use `ubuntu:24.04` as its base OS and SHALL supervise its 
 - **AND** the container PID 1 path uses `s6`
 
 ### Requirement: Mandatory workstation services are supervised in-container
-The workstation SHALL treat the Hermes gateway, Hermes dashboard, and Ghostship router as mandatory long-running in-container services under the supervision layer.
+The workstation SHALL treat the published web listener, Hermes gateway, Hermes dashboard, Ghostship router, and the `ttyd` terminal sidecar as mandatory long-running in-container services under the supervision layer.
 
 #### Scenario: Core product services start under supervision
 - **WHEN** the workstation container starts successfully
-- **THEN** `s6` starts and supervises the Hermes gateway service
+- **THEN** `s6` starts and supervises the published web listener service
+- **AND** `s6` starts and supervises the Hermes gateway service
 - **AND** `s6` starts and supervises the Hermes dashboard service
 - **AND** `s6` starts and supervises the Ghostship router service
+- **AND** `s6` starts and supervises the `ttyd` terminal sidecar service
 
 ### Requirement: Hermes core is immutable and image-owned
 The workstation SHALL keep Hermes core in an immutable image-owned path so image replacement upgrades Hermes itself without requiring the persisted home layer to own the runtime checkout.

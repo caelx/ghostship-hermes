@@ -1,0 +1,140 @@
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+ARG HERMES_REF=v2026.4.13
+ARG S6_OVERLAY_VERSION=3.2.1.0
+
+ENV HOME=/home/hermes \
+    HERMES_HOME=/home/hermes/.hermes \
+    XDG_CONFIG_HOME=/home/hermes/.config \
+    XDG_CACHE_HOME=/home/hermes/.cache \
+    XDG_DATA_HOME=/home/hermes/.local/share \
+    NPM_CONFIG_PREFIX=/home/hermes/.local \
+    CARGO_HOME=/home/hermes/.cargo \
+    RUSTUP_HOME=/home/hermes/.rustup \
+    GHOSTSHIP_WORKSPACE_ROOT=/workspace \
+    GHOSTSHIP_WEB_PORT=7681 \
+    GHOSTSHIP_DASHBOARD_HOST=127.0.0.1 \
+    GHOSTSHIP_DASHBOARD_PORT=9119 \
+    GHOSTSHIP_ROUTER_HOST=127.0.0.1 \
+    GHOSTSHIP_ROUTER_PORT=8788 \
+    GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1 \
+    GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock \
+    GHOSTSHIP_TTYD_BASE_PATH=/terminal \
+    GHOSTSHIP_TERMINAL_CWD=/workspace \
+    PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    ffmpeg \
+    findutils \
+    gnupg \
+    grep \
+    nginx \
+    procps \
+    python3 \
+    python3-venv \
+    sed \
+    tar \
+    tmux \
+    ttyd \
+    util-linux \
+    xz-utils \
+    zstd \
+    build-essential \
+    pkg-config \
+    libffi-dev \
+    libssl-dev \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid 3000 hermes && useradd --uid 3000 --gid 3000 --create-home --home-dir /home/hermes --shell /bin/bash hermes
+
+RUN case "$TARGETARCH" in \
+      amd64) s6_arch=x86_64 ;; \
+      arm64) s6_arch=aarch64 ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/s6-overlay-noarch.tar.xz "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" \
+    && curl -fsSL -o /tmp/s6-overlay-arch.tar.xz "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz" \
+    && tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz \
+    && tar -C / -Jxpf /tmp/s6-overlay-arch.tar.xz \
+    && rm -f /tmp/s6-overlay-noarch.tar.xz /tmp/s6-overlay-arch.tar.xz
+
+RUN mkdir -p /nix \
+    && chown 3000:3000 /nix \
+    && runuser -u hermes -- env HOME=/home/hermes sh -c 'curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon --yes --no-modify-profile' \
+    && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix)" /usr/local/bin/nix
+
+RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship /opt/ghostship-router /opt/hermes
+COPY packages/ghostship-cli-contract /src/packages/ghostship-cli-contract
+COPY packages/hermes-router /src/packages/hermes-router
+COPY packages/hermes-image/build /src/packages/hermes-image/build
+
+RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/${HERMES_REF}.tar.gz" -o /tmp/hermes-agent.tar.gz \
+    && mkdir -p /tmp/hermes-agent \
+    && tar -xzf /tmp/hermes-agent.tar.gz -C /tmp/hermes-agent --strip-components=1 \
+    && rm -f /tmp/hermes-agent.tar.gz \
+    && python3 /src/packages/hermes-image/build/prepare_upstream_hermes.py /tmp/hermes-agent \
+    && cd /tmp/hermes-agent/web \
+    && npm install --include=optional \
+    && npm run build \
+    && python3 -m venv /opt/hermes/venv \
+    && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
+    && /opt/hermes/venv/bin/pip install "/tmp/hermes-agent[all]" \
+    && python3 -m venv /opt/ghostship-router/venv \
+    && /opt/ghostship-router/venv/bin/pip install --upgrade pip setuptools wheel \
+    && /opt/ghostship-router/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/hermes-router \
+    && cp /src/packages/hermes-image/build/init_home.py /opt/ghostship/bin/init_home.py \
+    && apt-get purge -y build-essential gnupg pkg-config libffi-dev libssl-dev \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/hermes-agent
+
+RUN mkdir -p /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/nixpkgs \
+    && printf '%s\n' '{ allowUnfreePredicate = pkg: builtins.elem (builtins.parseDrvName pkg.name).name [ "bws" ]; }' > /opt/ghostship/home-seed/.config/nixpkgs/config.nix \
+    && npm install --prefix /opt/ghostship/home-seed/.local -g @openai/codex @google/gemini-cli opencode-ai
+
+RUN install -d -o 3000 -g 3000 /home/hermes/.config/nixpkgs /nix/var/nix/profiles/per-user/hermes /nix/var/nix/gcroots/per-user/hermes \
+    && cp /opt/ghostship/home-seed/.config/nixpkgs/config.nix /home/hermes/.config/nixpkgs/config.nix \
+    && chown 3000:3000 /home/hermes/.config/nixpkgs/config.nix \
+    && runuser -u hermes -- env HOME=/home/hermes NIXPKGS_ALLOW_UNFREE=1 /home/hermes/.nix-profile/bin/nix --extra-experimental-features 'nix-command flakes' \
+      profile add \
+      --impure \
+      --profile /nix/var/nix/profiles/per-user/hermes/profile \
+      nixpkgs#gh \
+      nixpkgs#git \
+      nixpkgs#google-cloud-sdk \
+      nixpkgs#bws \
+      nixpkgs#openssh \
+      nixpkgs#fd \
+      nixpkgs#jq \
+      nixpkgs#ripgrep \
+      nixpkgs#tmux \
+      nixpkgs#uv \
+      nixpkgs#yq \
+      github:googleworkspace/cli#gws \
+    && mkdir -p /opt/ghostship \
+    && tar --zstd -cpf /opt/ghostship/nix-seed.tar.zst /nix
+
+COPY packages/hermes-image/rootfs/ /
+
+RUN chmod +x /etc/cont-init.d/10-ghostship-prepare \
+    /etc/services.d/hermes-gateway/run \
+    /etc/services.d/hermes-dashboard/run \
+    /etc/services.d/nginx/run \
+    /etc/services.d/ttyd/run \
+    /etc/services.d/ghostship-router/run \
+    /usr/local/bin/nix \
+    /usr/local/bin/ps
+
+EXPOSE 7681
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=5 CMD bash -lc 'curl -fsS "http://127.0.0.1:${GHOSTSHIP_WEB_PORT}/api/status" >/dev/null'
+ENTRYPOINT ["/init"]

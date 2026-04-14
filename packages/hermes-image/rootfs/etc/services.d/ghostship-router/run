@@ -1,0 +1,7 @@
+#!/command/with-contenv bash
+set -euo pipefail
+export HOME="${HOME:-/home/hermes}"
+export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+export GHOSTSHIP_ROUTER_HOST="${GHOSTSHIP_ROUTER_HOST:-127.0.0.1}"
+export GHOSTSHIP_ROUTER_PORT="${GHOSTSHIP_ROUTER_PORT:-8788}"
+exec /command/s6-setuidgid hermes /opt/ghostship-router/venv/bin/ghostship-hermes-router --host "$GHOSTSHIP_ROUTER_HOST" --port "$GHOSTSHIP_ROUTER_PORT"

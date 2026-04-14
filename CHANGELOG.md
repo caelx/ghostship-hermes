@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Pinned Hermes release updated to `v2026.4.13`.
+- Breaking: replaced the old NixOS/systemd image contract with a custom Ubuntu 24.04 workstation image built from `packages/hermes-image/Dockerfile`, moved container supervision to `s6-overlay`, switched the browser surface to the upstream Hermes `0.9` dashboard with a small `Terminal` entry patch backed by same-origin `ttyd`, kept `ghostship-hermes-router` plus Discord forced-channel routing as the only repo-owned Hermes deltas, and made `/home/hermes`, `/workspace`, and `/nix` the canonical persistence contract for downstream deployments and CI.
 
 - Repaired the Hermes container runtime contract by publishing `STOPSIGNAL SIGRTMIN+3`, aligning the managed `hermes-gateway.service` stop policy with upstream Hermes (`KillMode=mixed`, `KillSignal=SIGTERM`, `TimeoutStopSec=60s`, `Restart=on-failure`), disabling container-incompatible `/etc/hosts` and root channel activation writes while keeping the explicit hostname contract, making `ghostship-hermes-user-tooling` reconcile only drifted Nix/npm state instead of rebuilding it on every boot, and adding OCI source/revision labels plus smoke coverage for the new runtime metadata and stop path.
 

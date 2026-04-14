@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -eq 4 ] && [ "$1" = "eww" ] && [ "$2" = "-ax" ] && [ "$3" = "-o" ] && [ "$4" = "pid=,command=" ]; then
+  exec /usr/bin/ps axeww -o pid=,command=
+fi
+
+exec /usr/bin/ps "$@"
