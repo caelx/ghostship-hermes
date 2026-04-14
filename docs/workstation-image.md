@@ -68,6 +68,7 @@ The common downstream set for the default Ghostship runtime is:
 Discord channel contract:
 
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
+- `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` default to `false` inside the image. Downstream can omit them unless the runtime contract intentionally changes.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
 - `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned and Codex-pinned channels.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins one free-response channel to the local router `agentic` lane.

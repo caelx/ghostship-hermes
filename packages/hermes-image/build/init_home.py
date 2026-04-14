@@ -17,6 +17,20 @@ AUXILIARY_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 AUXILIARY_API_KEY = "${GOOGLE_AI_STUDIO_API_KEY}"
 
 
+def _env_flag(name: str, default: str) -> bool:
+    return os.environ.get(name, default).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+DISCORD_REACTIONS = _env_flag("DISCORD_REACTIONS", "false")
+DISCORD_REQUIRE_MENTION = _env_flag("DISCORD_REQUIRE_MENTION", "false")
+DISCORD_AUTO_THREAD = _env_flag("DISCORD_AUTO_THREAD", "false")
+
+
 def _direct_gemini() -> dict[str, str]:
     return {
         "model": AUXILIARY_MODEL,
@@ -127,9 +141,9 @@ DEFAULT_CONFIG = {
         "timeout": 180,
     },
     "discord": {
-        "require_mention": False,
-        "auto_thread": False,
-        "reactions": False,
+        "require_mention": DISCORD_REQUIRE_MENTION,
+        "auto_thread": DISCORD_AUTO_THREAD,
+        "reactions": DISCORD_REACTIONS,
     },
     "unauthorized_dm_behavior": "ignore",
     "display": {

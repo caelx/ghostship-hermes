@@ -237,6 +237,9 @@ These are internal image-owned variables. Downstream must not set or override th
 - `GHOSTSHIP_ROUTER_HOST=127.0.0.1`
 - `GHOSTSHIP_ROUTER_PORT=8788`
 - `GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1`
+- `DISCORD_REACTIONS=false`
+- `DISCORD_REQUIRE_MENTION=false`
+- `DISCORD_AUTO_THREAD=false`
 - `GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock`
 - `GHOSTSHIP_TTYD_BASE_PATH=/terminal`
 - `GHOSTSHIP_TERMINAL_CWD=/workspace`
@@ -307,6 +310,7 @@ Internal-only runtime env:
 Important behavior:
 
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
+- `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` default to `false` in the image. Downstream normally should not set them unless the contract intentionally changes.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
 - `DISCORD_FREE_RESPONSE_CHANNELS` should include the router and Codex pinned channels.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to router alias `agentic`
