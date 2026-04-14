@@ -1,97 +1,68 @@
 ## MODIFIED Requirements
 
 ### Requirement: Normal invocation uses local installed state
-The workstation SHALL use already-installed local apps, persisted local state, and the active managed-runtime identity during normal invocation rather than requiring live network refresh in the hot path or falling back to service-discovery assumptions that do not match the managed image topology.
+The workstation SHALL run Hermes from the image-owned runtime under `/opt/hermes` while resolving operator-installed userland tools from persisted package-manager state under `/nix` and `/home/hermes`, and Hermes terminal execution SHALL default to the local container backend instead of a nested Docker sandbox.
 
-#### Scenario: Local invocation uses the managed layered toolchain
-- **WHEN** the agent invokes `hermes`, `codex`, `opencode`, `agent-browser`, `python3`, `pip`, `fd`, `uv`, `yq`, `tmux`, or related runtime commands
-- **THEN** the invocation uses the currently installed local state from the managed user Nix profile or the managed persisted npm tool prefix
-- **AND** the Hermes-user runtime contract exposes `/home/hermes/.local/bin` and the managed user profile bin on the normal invocation path for those commands
-- **AND** `agent-browser` may be satisfied by the image-managed runtime layer instead of the mutable npm-managed tool layer when the image declares it as a supported exception
-- **AND** the invocation does not first require a live update round trip during that invocation
+#### Scenario: Hermes resolves from the immutable core runtime
+- **WHEN** an operator or service invokes `hermes` inside the workstation container
+- **THEN** the resolved executable comes from the image-owned Hermes core runtime under `/opt/hermes`
+- **AND** the invocation does not depend on a persisted managed Nix profile entry shadowing the current image generation
 
-#### Scenario: Managed Hermes invocation sees managed runtime identity
-- **WHEN** an operator runs `hermes ...` inside the managed image
-- **THEN** the root managed Hermes home exposes the managed-runtime marker or equivalent managed identity that Hermes checks for interactive commands
-- **AND** the invocation does not require switching into a repo-owned named profile to discover the supported managed runtime behavior
+#### Scenario: Userland tools resolve from persisted package-manager layers
+- **WHEN** an operator or Hermes session invokes a supported userland tool from the workstation `PATH`
+- **THEN** tools may resolve from their documented persisted package-manager layers
+- **AND** Node-native agent CLIs may resolve from the persisted npm prefix under `/home/hermes`
+- **AND** the runtime does not require a live network refresh in the hot path of that invocation
 
-#### Scenario: Image replacement converges the active Hermes wrapper generation
-- **WHEN** the workstation boots after replacing the image while `/home/hermes` persists
-- **THEN** the `hermes` executable that resolves from the managed Hermes-user PATH matches the currently booted repo-managed wrapper generation
-- **AND** a stale persisted `hermes-agent-wrapped` entry does not continue shadowing newer baked runtime behavior from the replacement image
+#### Scenario: Hermes terminal execution stays local to the workstation container
+- **WHEN** the managed Hermes runtime executes terminal work with its default terminal backend
+- **THEN** the execution runs directly inside the workstation container
+- **AND** the runtime does not require the nested Docker terminal backend for the supported default path
 
-#### Scenario: Image replacement converges repo-managed persisted system config
-- **WHEN** the workstation boots after replacing the image while repo-managed system config persists under `/home/hermes`
-- **THEN** repo-owned persisted runtime config that is meant to track the current image generation is reconciled to the current contract during managed convergence
-- **AND** stale persisted repo-managed values do not continue shadowing newer baked or bootstrap-defined runtime behavior from the replacement image
+### Requirement: Runtime keeps only a minimum viable immutable system layer
+The workstation SHALL keep only the minimum immutable image layer needed for Ubuntu boot, `s6` supervision, Hermes core, the mandatory router and dashboard surfaces, `ttyd`, Nix, Node/npm, and the small set of shell/process/network utilities directly required by core runtime functions.
 
-#### Scenario: Retired router-primary key does not survive replacement
-- **WHEN** the current image contract no longer owns `model.base_url` for the root managed agent and persisted config still contains the older router-primary value
-- **THEN** managed convergence removes that retired repo-owned key during boot
-- **AND** the resulting managed config no longer routes the direct primary lane through the local router
+#### Scenario: Immutable core excludes convenience tooling without a core call site
+- **WHEN** maintainers inspect the immutable image contents after this change
+- **THEN** convenience CLIs such as `jq`, `fd`, `gh`, `gcloud`, `gws`, `bws`, `uv`, and `yq` are not kept in the immutable layer unless a documented core boot/runtime call site requires them
+- **AND** those tools instead belong to optional persisted userland layers
+
+#### Scenario: Immutable core keeps required package-manager/runtime surfaces
+- **WHEN** maintainers inspect the immutable image contents after this change
+- **THEN** the image retains Nix because it is the supported optional userland package manager
+- **AND** the image retains Node/npm because npm is the supported native package manager for Node-native agent CLIs
+
+## REMOVED Requirements
+
+### Requirement: Managed gateway commands align with upstream Hermes user services
+**Reason**: The new workstation image keeps Hermes config and state host-native, but it moves container service supervision to `s6` plus Docker instead of `systemd --user`.
+**Migration**: Operators SHALL manage Hermes config through the CLI, dashboard, and files under persisted home state, while the long-running gateway/dashboard/router process lifecycle is managed through `s6` service wiring and Docker restart policy instead of `hermes gateway install`.
 
 ## ADDED Requirements
 
-### Requirement: Local Hermes browser default resolves to a working agent-browser command
-The workstation SHALL keep Hermes local browser workflows pointed at `agent-browser` while ensuring that the resolved command launches a working backend on supported image architectures.
+### Requirement: Workstation image uses Ubuntu 24.04 with `s6` supervision
+The workstation SHALL use `ubuntu:24.04` as its base OS and SHALL supervise its mandatory long-running services through `s6` inside the container.
 
-#### Scenario: Local browser default stays anchored on agent-browser
-- **WHEN** maintainers inspect the managed single-agent config or operators inspect the managed agent browser configuration
-- **THEN** Hermes local browser mode remains the default browser path
-- **AND** that default continues to use `agent-browser` as the local browser command rather than switching to a different provider to avoid this bug
+#### Scenario: Maintainer inspects the base runtime contract
+- **WHEN** maintainers inspect the workstation image build or runtime contract
+- **THEN** the base OS is Ubuntu 24.04
+- **AND** the container PID 1 path uses `s6`
 
-#### Scenario: Operator-facing agent-browser command launches successfully
-- **WHEN** the operator invokes `agent-browser` from the managed Hermes-user PATH in a supported image
-- **THEN** the resolved command launches a working backend for that image architecture
-- **AND** the managed runtime does not prefer a broken mutable npm shim over a working image-managed `agent-browser` binary
+### Requirement: Mandatory workstation services are supervised in-container
+The workstation SHALL treat the published web listener, Hermes gateway, Hermes dashboard, Ghostship router, and the `ttyd` terminal sidecar as mandatory long-running in-container services under the supervision layer.
 
-### Requirement: Runtime keeps only a minimum viable immutable system layer
-The workstation SHALL keep only the minimum system-layer packages needed to boot, supervise services, expose the browser/router runtime surface, and provide a small approved set of baked admin/debug CLIs.
+#### Scenario: Core product services start under supervision
+- **WHEN** the workstation container starts successfully
+- **THEN** `s6` starts and supervises the published web listener service
+- **AND** `s6` starts and supervises the Hermes gateway service
+- **AND** `s6` starts and supervises the Hermes dashboard service
+- **AND** `s6` starts and supervises the Ghostship router service
+- **AND** `s6` starts and supervises the `ttyd` terminal sidecar service
 
-#### Scenario: Most user-facing tools live outside the immutable system layer
-- **WHEN** maintainers inspect the runtime contract for Hermes and operator-facing CLI tools
-- **THEN** the immutable image layer does not remain the primary home for broadly updateable user-facing tools such as `hermes`, `curl`, `jq`, `python3`, `nix`, `ripgrep`, and `node`/`npm`
-- **AND** those tools are instead expected through managed user-facing runtime layers unless the repo explicitly approves them as baked image tools
+### Requirement: Hermes core is immutable and image-owned
+The workstation SHALL keep Hermes core in an immutable image-owned path so image replacement upgrades Hermes itself without requiring the persisted home layer to own the runtime checkout.
 
-#### Scenario: Approved admin CLIs may remain baked into the image layer
-- **WHEN** maintainers inspect the default-image runtime contract for operator/admin tools
-- **THEN** the immutable image layer may include the repo-approved admin/debug CLI set such as `git`, `gh`, and the OpenSSH client tools
-- **AND** those approved baked tools do not by themselves redefine the image as the primary home for the broader mutable user-facing tool surface
-
-### Requirement: Runtime exposes a managed persisted npm tool prefix
-The workstation SHALL expose a persisted npm-managed tool prefix on the Hermes user `PATH` for fast-moving agent CLIs that are intentionally updated outside the image closure.
-
-#### Scenario: Managed npm tool prefix survives restart and replacement
-- **WHEN** the container boots with persisted `/home/hermes`
-- **THEN** the runtime prepares a managed npm tool prefix and cache under `/home/hermes`
-- **AND** `/home/hermes/.local/bin` remains available on the Hermes-user default invocation path across restart and replacement
-- **AND** that prefix remains available on `PATH` for the Hermes runtime user across restart and replacement
-
-
-### Requirement: Managed user tooling includes a pip-capable Python runtime
-The workstation SHALL treat Python packaging support as part of the managed Hermes-user runtime toolchain rather than a partial image-layer fallback.
-
-#### Scenario: Mutable Python tooling lives in the managed runtime layer
-- **WHEN** maintainers inspect the runtime contract for Hermes and operator-facing CLI tools
-- **THEN** the supported `python3`, `pip`, and `python3 -m pip` workflow comes from the managed user profile layer
-- **AND** the runtime does not rely on a separate image-only `pip` exception to provide that workflow
-
-## MODIFIED Requirements
-
-### Requirement: Managed gateway commands align with upstream Hermes user services
-The workstation SHALL align interactive gateway commands with upstream Hermes Linux service behavior by using a real `systemd --user` `hermes-gateway.service` owned by `hermes` instead of a repo-owned system unit or an upstream named-profile fleet.
-
-#### Scenario: Managed gateway status reflects the upstream Hermes user unit
-- **WHEN** an operator runs `hermes gateway status` or an equivalent Hermes status surface inside the managed image
-- **THEN** the command reports the state of `systemd --user` `hermes-gateway.service`
-- **AND** it does not claim the gateway is stopped solely because the image uses a repo-specific system-unit layout
-
-#### Scenario: Managed control paths target the upstream Hermes user unit
-- **WHEN** an operator runs `hermes gateway start`, `stop`, or `restart` inside the managed image
-- **THEN** the command targets `systemd --user` `hermes-gateway.service` or equivalent upstream Hermes control behavior
-- **AND** it does not redirect the operator to a Ghostship-specific system-unit contract
-
-#### Scenario: Managed gateway starts without interactive login
-- **WHEN** the container boots the managed runtime without an interactive Hermes login session
-- **THEN** the Hermes user manager is available for `hermes-gateway.service`
-- **AND** the managed gateway can start and restart through that user-service topology during normal boot
+#### Scenario: Image replacement updates Hermes core without replacing home state
+- **WHEN** the operator replaces the container image while reusing the same persisted `/home/hermes`
+- **THEN** the Hermes runtime used by the container comes from the new image’s `/opt/hermes`
+- **AND** the persisted home state remains intact across that replacement

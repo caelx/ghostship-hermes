@@ -1,30 +1,22 @@
-# google-workspace-cli-runtime Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-google-workspace-cli-and-vendor-skills. Update Purpose after archive.
-## Requirements
 ### Requirement: Hermes image ships a pinned Google Workspace CLI
-The default Hermes image SHALL include the upstream `gws` executable on `PATH`, and the executable SHALL be built from a pinned flake input revision rather than installed through an ad hoc runtime package manager flow.
+The workstation contract SHALL treat the upstream `gws` executable as an optional userland tool rather than as a default seeded image tool, and any documented install path SHALL remain sourced from a pinned upstream revision rather than an ad hoc runtime download.
 
-#### Scenario: Default image exposes `gws`
-- **WHEN** the default Hermes image is built from the repo flake
-- **THEN** the image contents include the `gws` executable
-- **AND** the executable is available on `PATH` inside the container runtime without an additional installation step
+#### Scenario: Docs describe how optional `gws` persists
+- **WHEN** maintainers inspect the runtime docs
+- **THEN** the docs explain how downstream can install `gws` through a supported persisted userland path
+- **AND** the docs do not claim `gws` is preinstalled by default
 
-#### Scenario: Upstream revision is pinned in flake wiring
-- **WHEN** maintainers inspect the repo flake and package wiring
-- **THEN** the `gws` package source resolves from a pinned upstream flake input
-- **AND** the image does not rely on `npm install -g`, release-tarball download steps, or runtime bootstrap installs to provide `gws`
+#### Scenario: Upstream revision remains pinned in repo wiring
+- **WHEN** maintainers inspect the repo package wiring for the default `gws` tool
+- **THEN** the `gws` package source resolves from a pinned upstream revision
+- **AND** the default workstation contract does not depend on an ad hoc runtime download to provide it
 
-### Requirement: Repo evaluation covers the Google Workspace CLI package
-The repo flake SHALL evaluate the `gws` integration as part of normal package and image wiring so integration failures appear during standard flake checks, derivation inspection, or image build workflows.
+### Requirement: Image contract remains package-based
+The workstation SHALL document `gws` through a pinned package-based install path rather than through a separate skill bundle or a mutable ad hoc installer.
 
-#### Scenario: Flake evaluation includes `gws`
-- **WHEN** maintainers run the repo's flake checks or inspect package outputs
-- **THEN** the `gws` package wiring evaluates successfully as part of the repo flake outputs
-- **AND** the default Hermes image package depends on that evaluated package
-
-#### Scenario: Image contract remains package-based
-- **WHEN** maintainers inspect the image composition logic
-- **THEN** `gws` is included through the repo-managed package set that projects tools onto the runtime `PATH`
+#### Scenario: Maintainer inspects the optional tool composition
+- **WHEN** maintainers inspect the optional workstation tool composition logic
+- **THEN** `gws` is included through a pinned documented userland package path
 - **AND** the integration does not depend on a separate Google Workspace skill bundle

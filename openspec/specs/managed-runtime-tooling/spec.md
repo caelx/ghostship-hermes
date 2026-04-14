@@ -1,23 +1,40 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Managed Hermes runtime exposes the approved helper CLI set
-The workstation SHALL expose the repo-approved mutable helper CLI set through the managed Hermes user Nix profile so operators and Hermes sessions can rely on those commands without expanding the immutable image layer.
+The workstation SHALL expose the approved helper CLI set through the package-manager layer each tool naturally expects, while keeping non-core helper tooling out of the immutable image by default. Native-manager installs SHALL be preferred where they are the upstream-supported path, and persisted Nix SHALL remain available as an optional fallback layer for downstream or Hermes-installed extras.
 
-#### Scenario: Managed helper CLIs resolve from the Hermes-user PATH
-- **WHEN** the container boots or the managed user-tooling refresh converges the Hermes runtime profile
-- **THEN** the Hermes-user PATH exposes `fd`, `uv`, `yq`, and `tmux` from the dedicated managed Nix profile
-- **AND** those commands are available to Hermes and interactive shells without an additional manual installation step
+#### Scenario: Shipped helper CLIs come from their expected package-manager layers
+- **WHEN** the workstation has completed its supported first-run initialization
+- **THEN** the approved shipped helper CLIs are available on the Hermes-user `PATH`
+- **AND** those tools resolve from their documented package-manager layers instead of from a repo-owned convergence shim
 
-### Requirement: Managed Hermes runtime exposes a pip-capable Python environment
-The workstation SHALL expose a managed Python runtime for Hermes that provides a consistent interpreter and pip workflow from the managed user profile.
+#### Scenario: Missing helper CLI from immutable image is not itself a regression
+- **WHEN** maintainers inspect the immutable image layer after this change
+- **THEN** the absence of a non-core helper CLI from the immutable image is not itself a contract failure
+- **AND** the contract failure is instead whether the tool is available through its documented install path
 
-#### Scenario: Python and pip commands both work from the managed runtime
-- **WHEN** an operator or Hermes session invokes `python3`, `pip`, or `python3 -m pip` from the managed Hermes-user PATH
-- **THEN** `python3` launches the managed interpreter
-- **AND** `pip` launches successfully from the same managed runtime contract
-- **AND** `python3 -m pip` also launches successfully without requiring a separate environment activation step
+## ADDED Requirements
 
-#### Scenario: Managed Python contract survives image replacement
-- **WHEN** the workstation boots after image replacement while `/home/hermes` persists
-- **THEN** the managed user-tooling convergence restores the current approved Python-and-pip runtime contract into the dedicated managed profile
-- **AND** stale managed entries do not leave Hermes with a mismatched `python3` and `pip` combination
+### Requirement: Persisted Nix remains available as an optional userland layer
+The workstation SHALL keep persisted Nix available for downstream or Hermes-installed userland tooling that should survive container replacement, without requiring the image to preseed a large default Nix utility profile.
+
+#### Scenario: Optional Nix installs survive replacement
+- **WHEN** an operator or Hermes installs extra tooling through persisted Nix
+- **THEN** that tooling remains available while the same `/nix` mount is reused
+- **AND** the docs describe persisted Nix as an optional supported package layer rather than the default answer for every extra CLI
+
+### Requirement: Node-native agent CLIs default to the persisted npm layer
+The workstation SHALL treat npm as the default package manager for Node-native agent CLIs such as `codex`, `gemini-cli`, `agent-browser`, and `opencode`, and those tools SHALL live in persisted home state rather than the immutable image.
+
+#### Scenario: Node-native agent CLIs resolve from the npm prefix
+- **WHEN** the workstation has completed its supported first-run npm tool initialization
+- **THEN** supported Node-native agent CLIs resolve from the persisted npm prefix under `/home/hermes`
+- **AND** the immutable image does not need to carry those CLIs directly
+
+### Requirement: Repo boot does not continuously overwrite userland tool choices
+The workstation SHALL avoid a boot contract that continuously deletes or force-reconciles operator-managed userland tools across every restart.
+
+#### Scenario: User-added tooling survives restart and replacement
+- **WHEN** an operator adds supported userland tooling through the persisted Nix or npm layer
+- **THEN** that tooling remains present across workstation restarts and container replacement while the same persisted mounts are reused
+- **AND** the runtime does not delete it solely because it is not part of the repo’s default seed list
