@@ -552,14 +552,14 @@ def main() -> None:
     )
     app_text = replace_once(
         app_text,
-        '  { id: "cron", label: "Cron", icon: Clock },\n',
-        '  { id: "cron", label: "Cron", icon: Clock },\n  { id: "console", label: "Terminal", icon: TerminalSquare },\n',
+        '  { id: "env", label: "Keys", icon: KeyRound },\n] as const;\n',
+        '  { id: "env", label: "Keys", icon: KeyRound },\n  { id: "console", label: "Terminal", icon: TerminalSquare },\n] as const;\n',
         path=app_tsx,
     )
     app_text = replace_once(
         app_text,
-        '  cron: CronPage,\n',
-        '  cron: CronPage,\n  console: ConsolePage,\n',
+        '  env: EnvPage,\n};\n',
+        '  env: EnvPage,\n  console: ConsolePage,\n};\n',
         path=app_tsx,
     )
     app_tsx.write_text(app_text, encoding="utf-8")

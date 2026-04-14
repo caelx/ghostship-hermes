@@ -64,14 +64,15 @@ Package ownership split:
 
 - image: Hermes core, router, full repo `ghostship-*` CLI layer, and the operator utility bundle for the workstation contract
 - native npm seed in persisted home: `codex`, `gemini-cli`, `agent-browser`, `opencode`
-- persisted Nix: extra downstream or Hermes-installed packages on top of the image defaults
+- image-managed Nix defaults: `bws`, `gh`, `gcloud`, `gws`, `blogtato`
+- persisted Nix user profile: extra downstream or Hermes-installed packages on top of the image defaults
 
 ## Build
 
 The Dockerfile is intentionally split into two stages:
 
 - `base`: Ubuntu + Hermes core + system/runtime dependencies only, with no Ghostship-specific overlay content
-- `final`: Ghostship router, dashboard patch, runtime rootfs, seeded userland defaults, and other repo-owned overlay content
+- `final`: Ghostship router, dashboard patch, runtime rootfs, seeded userland defaults, exported managed Nix default-tool closure, and other repo-owned overlay content
 
 Local image build:
 
@@ -190,6 +191,7 @@ What each mount owns:
 - `/workspace`
   - project checkouts and work products
 - `/nix`
+  - image-managed Nix default-tool profile payload
   - operator-installed or Hermes-installed Nix packages and build outputs
 
 Rules for coherent persistence:
@@ -206,6 +208,7 @@ First boot behavior:
 - the image creates the home/runtime directories it needs under `/home/hermes`
 - the image seeds the home defaults and npm CLIs into the persisted home if they are missing
 - the image auto-seeds an empty persisted `/nix` from the image on first boot
+- the image reconciles the current image-managed Nix default profile into reused non-empty `/nix` mounts on every boot without deleting user-managed Nix content
 
 Detailed downstream persistence guidance still lives in [docs/workstation-image.md](/home/nixos/dev/ghostship-hermes/docs/workstation-image.md).
 
@@ -237,6 +240,7 @@ These are internal image-owned variables. Downstream must not set or override th
 - `GHOSTSHIP_ROUTER_HOST=127.0.0.1`
 - `GHOSTSHIP_ROUTER_PORT=8788`
 - `GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1`
+- `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
 - `DISCORD_REACTIONS=false`
 - `DISCORD_REQUIRE_MENTION=false`
 - `DISCORD_AUTO_THREAD=false`
@@ -251,6 +255,7 @@ The image `PATH` prefers:
 - `/home/hermes/.local/bin`
 - `/home/hermes/.cargo/bin`
 - `/home/hermes/.nix-profile/bin`
+- `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin`
 - `/opt/ghostship-utils/venv/bin`
 - `/opt/ghostship/bin`
 - `/opt/hermes/venv/bin`
