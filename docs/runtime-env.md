@@ -98,15 +98,20 @@ These are the variables downstream may set when the deployment needs them.
 
 ### Required For Useful Model Execution
 
-Both provider credentials should be present for the default Ghostship runtime lane:
+The default direct Ghostship runtime lane requires:
 
 - `OPENCODE_GO_API_KEY`
-- `OPENROUTER_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
+
+The local router can additionally use any configured provider credential:
+
+- `NVIDIA_BUILD_API_KEY`
+- `OPENROUTER_API_KEY`
 
 Notes:
 
 - `OPENCODE_GO_API_KEY` is the preferred direct credential for the default Ghostship lane.
+- `NVIDIA_BUILD_API_KEY` enables the prioritized curated free-only NVIDIA Build inventory in the local router.
 - `OPENROUTER_API_KEY` enables OpenRouter-backed candidates in the local router.
 - `GOOGLE_AI_STUDIO_API_KEY` is required because the runtime uses Gemini-backed supplemental tasks.
 
@@ -125,7 +130,7 @@ Channel behavior:
 - `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` are image-owned and default to `false`. Treat them as optional for downstream because the image already sets the defaults.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
 - `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned and Codex-pinned channels.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `agentic`.
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `coding`.
 - `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning.
 - `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
 - `GHOSTSHIP_CODEX_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.

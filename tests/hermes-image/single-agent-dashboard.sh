@@ -175,6 +175,18 @@ run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.herme
 run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: minimax-m2.7" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: gpt-5.4-mini" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    name: ghostship-router" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    model: coding" >/dev/null'
+run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
+import inspect
+from pathlib import Path
+import gateway.run
+
+source_path = Path(inspect.getsourcefile(gateway.run))
+text = source_path.read_text(encoding="utf-8")
+assert "\"model\": \"coding\"" in text
+assert "ghostship-router (`coding`)" in text
+PY'
 run_as_hermes "$container_name" 'sed -n "/^memory:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: holographic" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^plugins:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    db_path: \$HERMES_HOME/memory_store.db" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    model: gemini-3.1-flash-lite-preview" >/dev/null'

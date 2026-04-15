@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added native `nvidia-build` router support behind `NVIDIA_BUILD_API_KEY`, restricted NVIDIA routing to the repo-curated free-only inventory (`moonshotai/kimi-k2-instruct`, `mistralai/mistral-nemotron`, and `deepseek-ai/deepseek-r1`), made NVIDIA outrank Zen and OpenRouter by default, enforced a top-3-per-provider-per-bucket shortlist before alias interleaving, switched the managed Discord router channel pin from `agentic` to `coding`, expanded router/runtime validation for the new policy, and bumped `ghostship-hermes-router` to `0.4.0`.
 - Fixed the workstation image build by copying bundled upstream Hermes skills into the home-seed layer before `/tmp/hermes-agent` is removed, so CI/publish no longer fail on a missing `skills/` tree during the final image stage.
 - Reduced GitHub Actions workstation-image build noise by disabling pip cache/version-check chatter during image-layer venv installs and turning off npm audit/fund/update-notifier output in Docker build steps. Remaining build warnings in current logs are upstream dependency deprecations or normal apt/container packaging noise.
 - Added explicit Buildx layer caching for the Ubuntu workstation image workflows: `ci.yml` now uses a GitHub Actions cache scope for the amd64 smoke-build path, and `publish-image.yml` now reuses per-architecture GHCR registry caches before pushing multi-arch tags.

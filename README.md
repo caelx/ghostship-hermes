@@ -283,11 +283,15 @@ Important rule:
 
 ### Downstream Operator Env Summary
 
-Required for useful model execution:
+Required for the default direct runtime lane:
 
 - `OPENCODE_GO_API_KEY`
-- `OPENROUTER_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
+
+Optional router-provider credentials:
+
+- `NVIDIA_BUILD_API_KEY`
+- `OPENROUTER_API_KEY`
 
 Required when Discord gateway is enabled:
 
@@ -323,7 +327,7 @@ Important behavior:
 - `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` default to `false` in the image. Downstream normally should not set them unless the contract intentionally changes.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
 - `DISCORD_FREE_RESPONSE_CHANNELS` should include the router and Codex pinned channels.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to router alias `agentic`
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to router alias `coding`
 - `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning
 - `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_CODEX_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`
@@ -347,11 +351,14 @@ Router:
 
 - `ghostship-hermes-router` is mandatory
 - it listens on `127.0.0.1:8788`
-- Hermes default config points at the local router
+- the managed Hermes config keeps direct `opencode-go/minimax-m2.7` as the primary model lane
+- the managed Hermes config exposes `ghostship-router` as a local custom provider pinned to alias `coding`
+- when configured, NVIDIA Build participates as a curated free-only provider and outranks Zen/OpenRouter by default
+- normal alias routing keeps only the top 3 scored models per provider for each bucket before cross-provider interleaving
 
 Forced Discord channels:
 
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `agentic` lane
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `coding` lane
 - `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning
 - `/model` does not override either forced channel
 
@@ -392,7 +399,9 @@ Expected config shape after first boot:
 - Hermes home at `/home/hermes/.hermes`
 - `terminal.backend: local`
 - `terminal.cwd: /workspace`
-- root model pointed at the local router
+- root model uses direct `opencode-go/minimax-m2.7`
+- `fallback_model` uses Codex `gpt-5.4-mini`
+- `custom_providers` includes `ghostship-router` pinned to `coding`
 - Discord forced-channel behavior controlled by runtime env, not by hardcoding channel ids into `config.yaml`
 
 ## Verification

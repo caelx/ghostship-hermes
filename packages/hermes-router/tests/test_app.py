@@ -12,6 +12,7 @@ from hermes_router.app import create_app
 from hermes_router.config import AliasConfig, RouterConfig
 from hermes_router.models import ChatCompletionRequest
 from hermes_router.providers.base import NormalizedProviderError, ProviderChatResult, ProviderChatStreamEvent, ProviderModel
+from hermes_router.providers.nvidia_build import NvidiaBuildProvider
 from hermes_router.providers.opencode_zen import OpencodeZenProvider
 from hermes_router.service import RouterService
 from hermes_router.state import SqliteStateStore
@@ -54,12 +55,20 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         provider_throttle_ladder_seconds=(15, 30, 60, 300, 900),
         openrouter_min_request_spacing_seconds=3.0,
         opencode_min_request_spacing_seconds=2.0,
+        nvidia_build_min_request_spacing_seconds=1.0,
         openrouter_api_key="secret",
         openrouter_base_url="https://openrouter.example/api/v1",
         openrouter_http_referer=None,
         openrouter_title=None,
         opencode_api_key="opencode-secret",
         opencode_base_url="https://opencode.example/api",
+        nvidia_build_api_key=None,
+        nvidia_build_base_url="https://integrate.api.nvidia.com/v1",
+        nvidia_build_models=(
+            "moonshotai/kimi-k2-instruct",
+            "mistralai/mistral-nemotron",
+            "deepseek-ai/deepseek-r1",
+        ),
         assisted_bucket_model=None,
         assisted_bucket_batch_size=20,
         disabled_providers=(),
@@ -213,6 +222,30 @@ def test_config_reads_internal_router_api_key(tmp_path: Path, monkeypatch) -> No
         monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
         config = RouterConfig.from_env()
         assert config.api_key == "internal-router-key"
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                monkeypatch.delenv(key, raising=False)
+            else:
+                monkeypatch.setenv(key, value)
+
+
+def test_config_reads_nvidia_build_api_key(tmp_path: Path, monkeypatch) -> None:
+    env_keys = (
+        "NVIDIA_BUILD_API_KEY",
+        "NVIDIA_API_KEY",
+        "GHOSTSHIP_ROUTER_STATE_DIR",
+        "GHOSTSHIP_ROUTER_DB_PATH",
+    )
+    saved = {key: os.environ.get(key) for key in env_keys}
+    try:
+        for key in env_keys:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("NVIDIA_BUILD_API_KEY", "nvidia-secret")
+        monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
+        config = RouterConfig.from_env()
+        assert config.nvidia_build_api_key == "nvidia-secret"
+        assert config.nvidia_build_base_url == "https://integrate.api.nvidia.com/v1"
     finally:
         for key, value in saved.items():
             if value is None:
@@ -1598,6 +1631,119 @@ def test_empty_inventory_does_not_trigger_lazy_refresh(tmp_path: Path) -> None:
     assert service.preview_routes("coding") == []
     assert provider.list_calls == 0
     assert service.readiness().ok is False
+
+
+def test_build_providers_registers_nvidia_when_configured(tmp_path: Path) -> None:
+    config = make_config(
+        tmp_path,
+        openrouter_api_key=None,
+        opencode_api_key=None,
+        nvidia_build_api_key="nvidia-secret",
+    )
+    service = RouterService(config, state_store=SqliteStateStore(config.db_path))
+    assert list(service.providers) == ["nvidia-build"]
+    assert isinstance(service.providers["nvidia-build"], NvidiaBuildProvider)
+
+
+def test_nvidia_provider_priority_beats_other_providers_when_candidates_are_comparable(tmp_path: Path) -> None:
+    nvidia = DummyProvider(
+        "nvidia-build",
+        models=[ProviderModel(id="mistralai/mistral-nemotron", provider="nvidia-build", is_free=True, tags=("coding",))],
+    )
+    opencode = DummyProvider(
+        "opencode-zen",
+        models=[ProviderModel(id="qwen3-coder:free", provider="opencode-zen", is_free=True, tags=("coding",))],
+    )
+    openrouter = DummyProvider(
+        "openrouter",
+        models=[ProviderModel(id="openrouter/code-1:free", provider="openrouter", is_free=True, tags=("coding",))],
+    )
+    config = make_config(
+        tmp_path,
+        aliases=(
+            AliasConfig(name="auxiliary", description="light", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(
+        config,
+        providers={"nvidia-build": nvidia, "opencode-zen": opencode, "openrouter": openrouter},
+        state_store=SqliteStateStore(config.db_path),
+    )
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("coding")
+    assert preview[0]["provider_name"] == "nvidia-build"
+    assert preview[0]["backend_model"] == "mistralai/mistral-nemotron"
+
+
+def test_nvidia_prefixed_alias_pin_routes_to_nvidia_provider(tmp_path: Path) -> None:
+    nvidia = DummyProvider(
+        "nvidia-build",
+        models=[ProviderModel(id="mistralai/mistral-nemotron", provider="nvidia-build", is_free=True, tags=("coding",))],
+    )
+    config = make_config(
+        tmp_path,
+        openrouter_api_key=None,
+        opencode_api_key=None,
+        aliases=(
+            AliasConfig(name="auxiliary", description="light", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=("nvidia/mistralai/mistral-nemotron",)),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(config, providers={"nvidia-build": nvidia}, state_store=SqliteStateStore(config.db_path))
+    service.refresh_inventory(reason="manual")
+    _, headers = service.chat_completions(ChatCompletionRequest.model_validate({"model": "coding", "messages": [{"role": "user", "content": "hello"}]}))
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "nvidia-build"
+    assert headers["X-Ghostship-Router-Backend-Model"] == "mistralai/mistral-nemotron"
+
+
+def test_alias_candidate_shortlist_caps_each_provider_at_top_three(tmp_path: Path) -> None:
+    openrouter = DummyProvider(
+        "openrouter",
+        models=[
+            ProviderModel(id="openrouter/code-1:free", provider="openrouter", is_free=True, tags=("coding",)),
+            ProviderModel(id="openrouter/code-2:free", provider="openrouter", is_free=True, tags=("coding",)),
+            ProviderModel(id="openrouter/code-3:free", provider="openrouter", is_free=True, tags=("coding",)),
+            ProviderModel(id="openrouter/code-4:free", provider="openrouter", is_free=True, tags=("coding",)),
+            ProviderModel(id="openrouter/code-5:free", provider="openrouter", is_free=True, tags=("coding",)),
+        ],
+    )
+    opencode = DummyProvider(
+        "opencode-zen",
+        models=[ProviderModel(id="qwen3-coder:free", provider="opencode-zen", is_free=True, tags=("coding",))],
+    )
+    config = make_config(
+        tmp_path,
+        alias_model_limit=6,
+        provider_lane_limit=5,
+        aliases=(
+            AliasConfig(name="auxiliary", description="light", preferred_models=()),
+            AliasConfig(name="coding", description="code", preferred_models=()),
+            AliasConfig(name="agentic", description="agent", preferred_models=()),
+            AliasConfig(name="vision", description="vision", preferred_models=()),
+            AliasConfig(name="tts", description="tts", preferred_models=()),
+        ),
+    )
+    service = RouterService(
+        config,
+        providers={"openrouter": openrouter, "opencode-zen": opencode},
+        state_store=SqliteStateStore(config.db_path),
+    )
+    service.refresh_inventory(reason="manual")
+    preview = service.preview_routes("coding")
+    openrouter_candidates = [candidate for candidate in preview if candidate["provider_name"] == "openrouter"]
+    assert len(openrouter_candidates) == 3
+    assert {candidate["backend_model"] for candidate in openrouter_candidates} == {
+        "openrouter/code-1:free",
+        "openrouter/code-2:free",
+        "openrouter/code-3:free",
+    }
 
 
 def test_config_defaults_state_dir_to_user_state_home(monkeypatch) -> None:

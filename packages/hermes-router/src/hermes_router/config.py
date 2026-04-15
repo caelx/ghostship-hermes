@@ -116,12 +116,16 @@ class RouterConfig:
     provider_throttle_ladder_seconds: tuple[int, ...]
     openrouter_min_request_spacing_seconds: float
     opencode_min_request_spacing_seconds: float
+    nvidia_build_min_request_spacing_seconds: float
     openrouter_api_key: str | None
     openrouter_base_url: str
     openrouter_http_referer: str | None
     openrouter_title: str | None
     opencode_api_key: str | None
     opencode_base_url: str
+    nvidia_build_api_key: str | None
+    nvidia_build_base_url: str
+    nvidia_build_models: tuple[str, ...]
     assisted_bucket_model: str | None
     assisted_bucket_batch_size: int
     disabled_providers: tuple[str, ...]
@@ -182,12 +186,24 @@ class RouterConfig:
                 "GHOSTSHIP_ROUTER_OPENCODE_MIN_REQUEST_SPACING_SECONDS",
                 default=2.0,
             ),
+            nvidia_build_min_request_spacing_seconds=_parse_float_env(
+                "GHOSTSHIP_ROUTER_NVIDIA_BUILD_MIN_REQUEST_SPACING_SECONDS",
+                default=1.0,
+            ),
             openrouter_api_key=os.environ.get("OPENROUTER_API_KEY"),
             openrouter_base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             openrouter_http_referer=os.environ.get("OPENROUTER_HTTP_REFERER"),
             openrouter_title=os.environ.get("OPENROUTER_TITLE"),
             opencode_api_key=_first_env("OPENCODE_GO_API_KEY", "OPENCODE_API_KEY"),
             opencode_base_url=os.environ.get("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1"),
+            nvidia_build_api_key=_first_env("NVIDIA_BUILD_API_KEY", "NVIDIA_API_KEY"),
+            nvidia_build_base_url=os.environ.get("NVIDIA_BUILD_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+            nvidia_build_models=_parse_csv_env("GHOSTSHIP_ROUTER_NVIDIA_BUILD_MODELS")
+            or (
+                "moonshotai/kimi-k2-instruct",
+                "mistralai/mistral-nemotron",
+                "deepseek-ai/deepseek-r1",
+            ),
             assisted_bucket_model=os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"),
             assisted_bucket_batch_size=int(os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE", "20")),
             disabled_providers=_parse_csv_env("GHOSTSHIP_ROUTER_DISABLED_PROVIDERS"),
