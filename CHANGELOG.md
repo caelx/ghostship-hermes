@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Changed `ci.yml` to consume the published GHCR amd64 Buildx cache instead of exporting a separate GitHub Actions cache, matching the already-working `publish-image` path and avoiding long workstation-image build stalls in CI.
 - Changed the workstation smoke to create the first Camofox tab against the in-container dashboard API instead of `https://example.com`, keeping `/tabs`/VNC/browser startup coverage while removing CI's dependency on external network success for image validation.
 - Added native `nvidia-build` router support behind `NVIDIA_BUILD_API_KEY`, restricted NVIDIA routing to the repo-curated free-only inventory (`moonshotai/kimi-k2-instruct`, `mistralai/mistral-nemotron`, and `deepseek-ai/deepseek-r1`), made NVIDIA outrank Zen and OpenRouter by default, enforced a top-3-per-provider-per-bucket shortlist before alias interleaving, switched the managed Discord router channel pin from `agentic` to `coding`, expanded router/runtime validation for the new policy, and bumped `ghostship-hermes-router` to `0.4.0`.
 - Breaking: removed the managed Discord Codex-pinned lane and retired `GHOSTSHIP_CODEX_CHANNEL` from the supported downstream env contract, keeping only the router-pinned forced Discord channel.

@@ -33,14 +33,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build workstation image
         run: |
           set -euo pipefail
           docker buildx build \
             --load \
             --target final \
-            --cache-from type=gha,scope=ghostship-hermes-ci-amd64 \
-            --cache-to type=gha,mode=max,scope=ghostship-hermes-ci-amd64 \
+            --cache-from type=registry,ref=ghcr.io/${{ github.repository_owner }}/ghostship-hermes:buildcache-amd64 \
             --build-arg HERMES_REF="$(tr -d '\n' < packages/hermes-image/hermes-release.txt)" \
             --tag ghostship-hermes:ci \
             --file packages/hermes-image/Dockerfile \
