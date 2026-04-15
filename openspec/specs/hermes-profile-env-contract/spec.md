@@ -62,4 +62,6 @@ The workstation docs SHALL enumerate the supported downstream-owned operator env
 - **AND** the docs show how to provide those values through Compose, `docker run`, or a persisted operator-managed env file under `/home/hermes/.hermes`
 - **AND** the docs distinguish operator-facing env from image-internal plumbing env
 - **AND** the docs identify `DISCORD_HOME_CHANNEL` as required downstream env when the Discord gateway is enabled
-- **AND** the docs identify the downstream-owned Discord channel pin env needed for the router lane and the Codex lane selected by `GHOSTSHIP_CODEX_CHANNEL`
+- **AND** the docs identify `GHOSTSHIP_ROUTER_CHANNEL` as the only downstream-owned Discord channel pin env in the supported contract
+- **AND** the docs identify `GHOSTSHIP_CODEX_CHANNEL` as removed from the supported downstream env contract
+- **AND** the docs explain that Codex auth remains persisted home state rather than a downstream env key

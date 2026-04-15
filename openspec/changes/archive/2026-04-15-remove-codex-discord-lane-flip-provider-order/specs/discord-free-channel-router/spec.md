@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Managed Discord forced-response sessions use the repo-owned pinned route
 The managed Hermes runtime SHALL force configured Discord pinned-response sessions to use the repo-owned route for that channel instead of the runtime's default direct model path or stale session-scoped overrides.

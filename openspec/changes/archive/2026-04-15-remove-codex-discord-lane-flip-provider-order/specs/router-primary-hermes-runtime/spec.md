@@ -1,18 +1,4 @@
-## REMOVED Requirements
-
-### Requirement: Hermes runtime uses the local router as its primary OpenAI-compatible endpoint
-**Reason**: The managed image no longer treats the local router as the primary model endpoint.
-**Migration**: Configure the managed runtime for direct `opencode-go/minimax-m2.7` primary execution and keep the local router only as the configured `fallback_model`.
-
-### Requirement: Managed gateway starts behind the local router
-**Reason**: The managed gateway no longer depends on a router-primary model contract.
-**Migration**: Keep the managed gateway supervised by the repo-owned service contract, while the managed runtime uses direct primary execution and router fallback independently.
-
-### Requirement: Image validation proves router-primary behavior
-**Reason**: Validation must prove the current direct-primary contract instead of the retired router-primary contract.
-**Migration**: Validate direct `opencode-go/minimax-m2.7` primary execution, router `agentic` fallback wiring, and absence of stale router-primary config drift.
-
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Hermes runtime uses direct OpenCode Go as its primary model path
 The Hermes image SHALL configure the managed Hermes runtime to use `openai-codex/gpt-5.4` as the primary model lane while keeping direct `opencode-go/minimax-m2.7` as the configured fallback model.
@@ -21,16 +7,16 @@ The Hermes image SHALL configure the managed Hermes runtime to use `openai-codex
 - **WHEN** the image bootstraps the managed Hermes config
 - **THEN** the managed config sets `model.provider` to `openai-codex`
 - **AND** the managed config sets `model.default` to `gpt-5.4`
-- **AND** the managed config does not leave a router-primary `model.base_url` in place for the direct primary lane
 - **AND** the managed config sets `fallback_model.provider` to `opencode-go`
 - **AND** the managed config sets `fallback_model.model` to `minimax-m2.7`
+- **AND** the managed config does not leave a router-primary `model.base_url` in place for the direct primary lane
 - **AND** the managed config does not leave retired router fallback fields such as `fallback_model.base_url = http://127.0.0.1:8788/v1`
 
 ### Requirement: Managed config convergence removes retired router-primary drift
 The image SHALL reconcile repo-owned managed config on boot so stale managed provider-order fields from older image generations do not continue shadowing the current Codex-primary contract.
 
 #### Scenario: Persisted retired provider order is rewritten during managed convergence
-- **WHEN** the container boots with persisted `/home/hermes/.hermes/config.yaml` from an older router-primary image generation
+- **WHEN** the container boots with persisted `/home/hermes/.hermes/config.yaml` from an older managed image generation
 - **THEN** managed convergence removes any retired root-managed `model.base_url` value that points at `http://127.0.0.1:8788/v1`
 - **AND** managed convergence rewrites the managed primary model contract to `openai-codex/gpt-5.4`
 - **AND** managed convergence rewrites the managed fallback model contract to `opencode-go/minimax-m2.7`
@@ -45,6 +31,8 @@ The repo's image validation paths SHALL verify the Codex-primary contract instea
 - **AND** the validation proves the managed config uses `openai-codex/gpt-5.4` as the primary model lane
 - **AND** the validation proves the managed config uses `opencode-go/minimax-m2.7` as the fallback model lane
 - **AND** the validation does not treat stale fallback wiring or removed Discord env references as acceptable proof of the new contract
+
+## ADDED Requirements
 
 ### Requirement: Managed agent defaults match the Codex primary lane
 The Hermes image SHALL set the repo-owned managed agent defaults so the primary Codex lane uses the intended default thinking level.
