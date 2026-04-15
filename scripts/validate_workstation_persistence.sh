@@ -243,7 +243,6 @@ docker run -d \
   -e GHOSTSHIP_ROUTER_CHANNEL=single-agent-channel \
   -e DISCORD_HOME_CHANNEL=single-agent-home \
   -e WEBHOOK_SECRET=single-agent-webhook-secret \
-  -e BROWSER_CDP_URL=ws://single-agent-browser.example/ws \
   -e CHAPTARR_URL=http://chaptarr.example:8789 \
   -e CHAPTARR_API_KEY=chaptarr-token \
   -v "$home_dir:/home/hermes" \
@@ -369,7 +368,6 @@ docker run -d \
   -e GHOSTSHIP_ROUTER_CHANNEL=single-agent-channel \
   -e DISCORD_HOME_CHANNEL=single-agent-home \
   -e WEBHOOK_SECRET=single-agent-webhook-secret \
-  -e BROWSER_CDP_URL=ws://single-agent-browser.example/ws \
   -e CHAPTARR_URL=http://chaptarr.example:8789 \
   -e CHAPTARR_API_KEY=chaptarr-token \
   -v "$home_dir:/home/hermes" \

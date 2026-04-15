@@ -492,6 +492,45 @@ export default function ConsolePage() {
 }
 '''
 
+BROWSER_PAGE = r'''import { Monitor } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+export default function BrowserPage() {
+  return (
+    <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Monitor className="h-4 w-4" />
+            Browser Live View
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>Path: <span className="font-mono-ui text-foreground">/camofox/vnc.html</span></p>
+            <p>The live browser view stays embedded in the Hermes web UI and is proxied through the local Camofox VNC sidecar.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="overflow-hidden">
+        <CardHeader>
+          <CardTitle className="text-base">Live Browser</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <iframe
+            title="Camofox Live Browser"
+            src="/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify"
+            className="h-[70vh] w-full border-0 bg-background"
+            sandbox="allow-same-origin allow-scripts allow-forms"
+          />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+'''
+
 
 def replace_once(text: str, old: str, new: str, *, path: Path) -> str:
     if old not in text:
@@ -541,28 +580,31 @@ def main() -> None:
     app_text = replace_once(
         app_text,
         'import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Package, Settings } from "lucide-react";\n',
-        'import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Package, Settings, TerminalSquare } from "lucide-react";\n',
+        'import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Monitor, Package, Settings, TerminalSquare } from "lucide-react";\n',
         path=app_tsx,
     )
     app_text = replace_once(
         app_text,
         'import CronPage from "@/pages/CronPage";\n',
-        'import CronPage from "@/pages/CronPage";\nimport ConsolePage from "@/pages/ConsolePage";\n',
+        'import CronPage from "@/pages/CronPage";\nimport BrowserPage from "@/pages/BrowserPage";\nimport ConsolePage from "@/pages/ConsolePage";\n',
         path=app_tsx,
     )
     app_text = replace_once(
         app_text,
         '  { id: "env", label: "Keys", icon: KeyRound },\n] as const;\n',
-        '  { id: "env", label: "Keys", icon: KeyRound },\n  { id: "console", label: "Terminal", icon: TerminalSquare },\n] as const;\n',
+        '  { id: "browser", label: "Browser", icon: Monitor },\n  { id: "env", label: "Keys", icon: KeyRound },\n  { id: "console", label: "Terminal", icon: TerminalSquare },\n] as const;\n',
         path=app_tsx,
     )
     app_text = replace_once(
         app_text,
         '  env: EnvPage,\n};\n',
-        '  env: EnvPage,\n  console: ConsolePage,\n};\n',
+        '  browser: BrowserPage,\n  env: EnvPage,\n  console: ConsolePage,\n};\n',
         path=app_tsx,
     )
     app_tsx.write_text(app_text, encoding="utf-8")
+
+    browser_page = root / "web" / "src" / "pages" / "BrowserPage.tsx"
+    browser_page.write_text(BROWSER_PAGE, encoding="utf-8")
 
     console_page = root / "web" / "src" / "pages" / "ConsolePage.tsx"
     console_page.write_text(CONSOLE_PAGE, encoding="utf-8")

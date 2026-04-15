@@ -90,6 +90,9 @@ DEFAULT_CONFIG = {
     },
     "browser": {
         "cloud_provider": "local",
+        "camofox": {
+            "managed_persistence": True,
+        },
         "inactivity_timeout": 120,
         "command_timeout": 30,
         "record_sessions": False,
@@ -269,8 +272,6 @@ def _normalize_router_auth(config: object) -> bool:
                 changed = True
 
     return changed
-
-
 def main() -> None:
     for relative in (
         ".config",

@@ -64,7 +64,8 @@ Package ownership split:
 
 - image: Hermes core, router, full repo `ghostship-*` CLI layer, and the operator utility bundle for the workstation contract
 - native npm seed in persisted home: `codex`, `gemini-cli`, `agent-browser`, `opencode`
-- image-managed Nix defaults: `bws`, `gh`, `gcloud`, `gws`, `blogtato`
+- image-managed Nix defaults: `bws`, `gh`, `gcloud`, `gws`, `blogwatcher-cli`
+- image-managed local browser tooling: `camofox-browser` with browser binaries under `/opt/ghostship` and `~/.cache/camoufox` auto-linked there on fresh homes
 - persisted Nix user profile: extra downstream or Hermes-installed packages on top of the image defaults
 
 ## Build
@@ -241,12 +242,18 @@ These are internal image-owned variables. Downstream must not set or override th
 - `GHOSTSHIP_ROUTER_PORT=8788`
 - `GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1`
 - `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
+- `CAMOFOX_URL=http://127.0.0.1:9377`
+- `CAMOFOX_PORT=9377`
 - `DISCORD_REACTIONS=false`
 - `DISCORD_REQUIRE_MENTION=false`
 - `DISCORD_AUTO_THREAD=false`
 - `GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock`
 - `GHOSTSHIP_TTYD_BASE_PATH=/terminal`
 - `GHOSTSHIP_TERMINAL_CWD=/workspace`
+- `GHOSTSHIP_CAMOFOX_VNC_PORT=5901`
+- `GHOSTSHIP_CAMOFOX_WEB_PORT=6080`
+- `CAMOUFOX_CACHE_DIR=/opt/ghostship/camoufox-cache`
+- `PLAYWRIGHT_BROWSERS_PATH=/opt/ghostship/browser-cache`
 
 These variables are internal because they define the persisted home layout, XDG layout, native tool install roots, and internal service topology for the workstation container. Overriding them makes the persistence contract incoherent and is unsupported.
 
@@ -300,11 +307,9 @@ Recommended optional operator env:
 Supported but not recommended for downstream:
 
 - `BWS_SERVER_URL`
-- `BROWSER_CDP_URL`
 - `BROWSERBASE_API_KEY`
 - `BROWSERBASE_PROJECT_ID`
 - `BROWSER_USE_API_KEY`
-- `CAMOFOX_URL`
 
 Other service-specific `ghostship-*` utility vars are optional and recommended only when that service integration is actually in use.
 
@@ -335,6 +340,7 @@ Dashboard:
 
 - upstream Hermes dashboard is the primary UI
 - repo patch adds one `Terminal` entry only
+- `Browser` renders an embedded iframe for `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`, which is served by the local noVNC sidecar in front of Camofox
 - `Terminal` renders an embedded iframe for `/terminal/`, which is served by `ttyd`
 
 Router:
@@ -402,7 +408,9 @@ Useful live checks:
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
 curl -fsS http://127.0.0.1:7681/terminal/ >/dev/null
-docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bws gcloud blogtato agent-browser ghostship-sonarr ghostship-hermes-router'
+curl -fsS 'http://127.0.0.1:7681/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify' >/dev/null
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bws gcloud blogwatcher-cli agent-browser ghostship-sonarr ghostship-hermes-router'
+docker exec ghostship-hermes sh -lc 'curl -fsS http://127.0.0.1:9377/health | jq'
 docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
 docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
 ```
@@ -444,7 +452,7 @@ Current bundled family:
 
 Additional baked operator utilities:
 
-- `blogtato`
+- `blogwatcher-cli`
 - `bws`
 - `fd`
 - `gcloud`
@@ -457,6 +465,10 @@ Additional baked operator utilities:
 - `ttyd`
 - `uv`
 - `yq`
+
+The image also runs a local `camofox-browser` sidecar on `http://127.0.0.1:9377`. `CAMOFOX_URL` is image-owned, always set internally, and keeps Hermes browser tools on the local Camofox default path. Browser binaries stay image-owned under `/opt/ghostship`, while fresh homes get `~/.cache/camoufox` linked to that image cache so Camofox can actually find `version.json`. Persistent Camofox profiles/cookies live under `/home/hermes/.local/state/camofox-browser` so `browser.camofox.managed_persistence: true` actually survives container replacement. A paired `x11vnc` + `noVNC` stack exposes the live browser view through the same origin at `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`, and the Camofox `/health` payload advertises the same noVNC port Hermes expects for `vnc_url`.
+
+Bundled upstream Hermes skills are seeded into `/home/hermes/.hermes/skills` from the image on boot, but seeding is file-granular. Existing downstream custom skills are preserved, and only missing default skill files are added.
 
 ## Upstream References
 

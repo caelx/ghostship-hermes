@@ -82,7 +82,7 @@
           ghostshipN8n = mkGhostshipPythonUtility ./packages/n8n-cli/package.nix;
           ghostshipChaptarr = mkGhostshipPythonUtility ./packages/chaptarr-cli/package.nix;
           agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
-          blogtato = pkgs.callPackage ./packages/blogtato/package.nix { };
+          blogwatcher = pkgs.callPackage ./packages/blogwatcher/package.nix { };
           upstreamHermesAgent = hermes-agent.packages.${system}.default;
           wrappedHermesAgent = pkgs.callPackage ./packages/hermes-agent-wrapped/package.nix {
             hermesAgentPackage = upstreamHermesAgent;
@@ -140,16 +140,11 @@
               pkgs.bws
               pkgs.gh
               pkgs.google-cloud-sdk
-              blogtato
+              blogwatcher
               googleWorkspaceCli
             ];
             pathsToLink = [ "/bin" ];
             ignoreCollisions = true;
-            postBuild = ''
-              if [ -x "$out/bin/blog" ] && [ ! -e "$out/bin/blogtato" ]; then
-                ln -s blog "$out/bin/blogtato"
-              fi
-            '';
           };
 
           baseUtilityPackages = [
@@ -224,12 +219,12 @@
             modulePath = ./packages/hermes-image/nixos-final-module.nix;
             extraSpecialArgs = {
               inherit
-                blogtato
+                blogwatcher
                 ghostshipHermesRouter
                 ghostshipHermesRuntime
                 hermesDashboard
                 ;
-              blogtatoPackage = blogtato;
+              blogwatcherPackage = blogwatcher;
               hermesAgentPackage = wrappedHermesAgent;
               ghostshipUtilities = allUtilities;
               sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseUtilityPackages;
@@ -266,7 +261,7 @@
           bws = pkgs.bws;
           gcloud = pkgs.google-cloud-sdk;
           agent-browser = agentBrowser;
-          blogtato = blogtato;
+          blogwatcher = blogwatcher;
           gws = googleWorkspaceCli;
           hermes-dashboard = hermesDashboard;
           ghostship-cli-contract = ghostshipCliContract;
@@ -315,7 +310,7 @@
             bws
             gcloud
             agent-browser
-            blogtato
+            blogwatcher
             gws
             hermes-dashboard
             ghostship-cli-contract

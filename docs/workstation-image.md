@@ -38,7 +38,7 @@ First-boot behavior:
 - every boot reconciles the image-managed default Nix profile at `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults` if the current image expects store paths that are missing from a reused non-empty `/nix`
 
 That means downstream does not need a separate manual `/nix` bootstrap step for a brand-new empty persistent volume.
-It also means existing non-empty `/nix` mounts are a supported upgrade path for image-managed defaults like `bws`, `gh`, `gcloud`, `gws`, and `blogtato`.
+It also means existing non-empty `/nix` mounts are a supported upgrade path for image-managed defaults like `bws`, `gh`, `gcloud`, `gws`, and `blogwatcher-cli`, while image-managed browser binaries for local `camofox-browser` stay under `/opt/ghostship` and fresh homes get `~/.cache/camoufox` linked there automatically.
 
 ## Required Vs Fixed Environment Variables
 
@@ -49,6 +49,12 @@ Fixed image defaults are already baked into the image:
 - XDG paths under `/home/hermes`
 - npm/cargo/rustup roots under `/home/hermes`
 - `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
+- `CAMOFOX_URL=http://127.0.0.1:9377`
+- `CAMOFOX_PORT=9377`
+- `GHOSTSHIP_CAMOFOX_VNC_PORT=5901`
+- `GHOSTSHIP_CAMOFOX_WEB_PORT=6080`
+- `CAMOUFOX_CACHE_DIR=/opt/ghostship/camoufox-cache`
+- `PLAYWRIGHT_BROWSERS_PATH=/opt/ghostship/browser-cache`
 - router/dashboard/ttyd internal ports and paths
 
 These are internal image-owned variables and paths. Downstream must not override them through runtime env.
@@ -162,7 +168,9 @@ Quick smoke:
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
 docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
-docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bws gcloud blogtato agent-browser ghostship-sonarr ghostship-hermes-router'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bws gcloud blogwatcher-cli agent-browser ghostship-sonarr ghostship-hermes-router'
+docker exec ghostship-hermes sh -lc 'curl -fsS http://127.0.0.1:9377/health | jq'
+curl -fsS 'http://127.0.0.1:7681/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify' >/dev/null
 ```
 
 Prove `/nix` survives replacement:
@@ -181,8 +189,11 @@ Default image behavior:
 - Hermes/runtime-required Linux tools ship in the image.
 - The full repo `ghostship-*` CLI layer ships in the image.
 - The operator utility bundle ships as an image-managed Nix default profile exported from the Ghostship-specific final image phase and reconciled into persisted `/nix` on every boot.
+- local `camofox-browser` ships in the image and keeps browser binaries under `/opt/ghostship`, while fresh homes get `~/.cache/camoufox` linked there and persistent profiles/cookies live under `/home/hermes/.local/state/camofox-browser`.
+- paired `x11vnc` + `noVNC` sidecars ship in the image so the dashboard can embed the live Camofox browser view through the same origin.
 - Node-native agent tools ship through npm in persisted home state.
 - Nix stays available for extra downstream or Hermes-installed packages through `/home/hermes/.nix-profile/bin` on top of the image-managed defaults.
+- bundled upstream Hermes skills are seeded into `/home/hermes/.hermes/skills` on boot without overwriting downstream custom skills that already exist there.
 
 Current preinstalled npm tools:
 
@@ -190,6 +201,8 @@ Current preinstalled npm tools:
 - `gemini-cli`
 - `agent-browser`
 - `opencode`
+
+Separate from those npm CLIs, the image also runs a local `camofox-browser` service for Hermes browser tools and exposes the live browser iframe path at `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`.
 
 Known upstream caveat:
 

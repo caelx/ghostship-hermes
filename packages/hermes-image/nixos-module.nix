@@ -12,7 +12,7 @@
   includeManagedRuntime ? false,
   hermesAgentPackage,
   sharedGhostshipDependencyPackages ? [ ],
-  blogtatoPackage ? null,
+  blogwatcherPackage ? null,
   ...
 }:
 let
@@ -119,7 +119,6 @@ let
     "DISCORD_HOME_CHANNEL"
   ];
   managedBrowserEnvKeys = [
-    "BROWSER_CDP_URL"
     "HERMES_HUD_PROJECTS_DIR"
     "GHOSTSHIP_HUD_DEFAULT_PROFILE_NAME"
   ];
@@ -175,11 +174,11 @@ let
       name = "tmux";
       ref = "nixpkgs#tmux";
     }
-  ] ++ lib.optionals (blogtatoPackage != null) [
+  ] ++ lib.optionals (blogwatcherPackage != null) [
     {
-      name = "blogtato";
-      bootstrapRef = "${blogtatoPackage}";
-      ref = "${runtimeFlakeRefDefault}#blogtato";
+      name = "blogwatcher-cli";
+      bootstrapRef = "${blogwatcherPackage}";
+      ref = "${runtimeFlakeRefDefault}#blogwatcher";
     }
   ] ++ [
     {
@@ -259,6 +258,9 @@ let
       };
       browser = {
         cloud_provider = "local";
+        camofox = {
+          managed_persistence = true;
+        };
         inactivity_timeout = 120;
         command_timeout = 30;
         record_sessions = false;

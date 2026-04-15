@@ -13,6 +13,9 @@ ENV HOME=/home/hermes \
     XDG_CONFIG_HOME=/home/hermes/.config \
     XDG_CACHE_HOME=/home/hermes/.cache \
     XDG_DATA_HOME=/home/hermes/.local/share \
+    CAMOFOX_URL=http://127.0.0.1:9377 \
+    CAMOFOX_PORT=9377 \
+    CAMOUFOX_CACHE_DIR=/opt/ghostship/camoufox-cache \
     NPM_CONFIG_PREFIX=/home/hermes/.local \
     npm_config_audit=false \
     npm_config_fund=false \
@@ -37,6 +40,9 @@ ENV HOME=/home/hermes \
     GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock \
     GHOSTSHIP_TTYD_BASE_PATH=/terminal \
     GHOSTSHIP_TERMINAL_CWD=/workspace \
+    GHOSTSHIP_CAMOFOX_VNC_PORT=5901 \
+    GHOSTSHIP_CAMOFOX_WEB_PORT=6080 \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ghostship/browser-cache \
     PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
 
@@ -47,11 +53,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     findutils \
+    fonts-liberation \
     gnupg \
     git \
     grep \
     jq \
+    libasound2t64 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnss3 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxkbcommon0 \
+    libxrandr2 \
     nginx \
+    novnc \
     procps \
     python3 \
     python3-venv \
@@ -61,6 +78,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux \
     ttyd \
     util-linux \
+    websockify \
+    x11vnc \
+    xvfb \
     xz-utils \
     yq \
     zstd \
@@ -147,6 +167,13 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && python3 -m venv /opt/ghostship-utils/venv \
     && /opt/ghostship-utils/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/ghostship-utils/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/*-cli uv \
+    && mkdir -p /opt/camofox-browser /opt/ghostship/browser-cache /opt/ghostship/camoufox-cache \
+    && cd /opt/camofox-browser \
+    && npm init -y >/dev/null 2>&1 \
+    && npm install --omit=dev --no-audit --no-fund @askjo/camofox-browser \
+    && CAMOUFOX_CACHE_DIR=/opt/ghostship/camoufox-cache PLAYWRIGHT_BROWSERS_PATH=/opt/ghostship/browser-cache ./node_modules/.bin/camoufox-js fetch \
+    && python3 /src/packages/hermes-image/build/patch_camofox_server.py /opt/camofox-browser/node_modules/@askjo/camofox-browser/server.js \
+    && chown -R 3000:3000 /opt/ghostship/browser-cache /opt/ghostship/camoufox-cache \
     && cd /src \
     && default_tools_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features 'nix-command flakes' build --impure --no-write-lock-file --no-link --print-out-paths .#ghostship-default-tools)" \
     && printf '%s\n' "$default_tools_path" > /opt/ghostship/nix-default-tools.out-path \
@@ -158,7 +185,8 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent
 
-RUN mkdir -p /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/nixpkgs \
+RUN mkdir -p /opt/ghostship/home-seed/.hermes /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/nixpkgs \
+    && cp -R /tmp/hermes-agent/skills /opt/ghostship/home-seed/.hermes/skills \
     && printf '%s\n' '{ allowUnfreePredicate = pkg: builtins.elem (builtins.parseDrvName pkg.name).name [ "bws" ]; }' > /opt/ghostship/home-seed/.config/nixpkgs/config.nix \
     && printf '%s\n' \
       'set -g status-style bg=#041C1C,fg=#FFE6CB' \
@@ -181,6 +209,9 @@ RUN mkdir -p /opt/ghostship \
 COPY packages/hermes-image/rootfs/ /
 
 RUN chmod +x /etc/cont-init.d/10-ghostship-prepare \
+    /etc/services.d/camofox-browser/run \
+    /etc/services.d/camofox-vnc/run \
+    /etc/services.d/camofox-web/run \
     /etc/services.d/hermes-gateway/run \
     /etc/services.d/hermes-dashboard/run \
     /etc/services.d/nginx/run \

@@ -61,13 +61,17 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Empty persisted `/nix` volumes are safe because the cont-init phase seeds `/nix` from `/opt/ghostship/nix-seed.tar.zst` on first boot.
 - Reused non-empty `/nix` volumes must be reconciled on boot with the image-managed default Nix profile at `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`; do not rely on raw `/opt/ghostship/bin -> /nix/store/...` symlinks for image-managed defaults.
 - Persisting `/home/hermes` preserves Hermes config, Codex auth, npm CLIs, XDG state, and other tool state in the way workstation users expect.
-- Treat `HOME`, `HERMES_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `NPM_CONFIG_PREFIX`, `CARGO_HOME`, `RUSTUP_HOME`, `GHOSTSHIP_WORKSPACE_ROOT`, `GHOSTSHIP_WEB_PORT`, `GHOSTSHIP_DASHBOARD_HOST`, `GHOSTSHIP_DASHBOARD_PORT`, `GHOSTSHIP_ROUTER_HOST`, `GHOSTSHIP_ROUTER_PORT`, `GHOSTSHIP_ROUTER_URL`, `GHOSTSHIP_NIX_DEFAULT_PROFILE`, `GHOSTSHIP_TTYD_SOCKET`, `GHOSTSHIP_TTYD_BASE_PATH`, and `GHOSTSHIP_TERMINAL_CWD` as internal image-owned variables. Do not expose them as downstream-facing env knobs and do not override them from runtime env.
+- Upstream bundled Hermes skills must be copied into the image home seed under `.hermes/skills`; `hermes skills list` alone does not seed them. Use file-granular seeding so downstream custom skills survive while missing defaults are added.
+- Treat `HOME`, `HERMES_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `NPM_CONFIG_PREFIX`, `CARGO_HOME`, `RUSTUP_HOME`, `GHOSTSHIP_WORKSPACE_ROOT`, `GHOSTSHIP_WEB_PORT`, `GHOSTSHIP_DASHBOARD_HOST`, `GHOSTSHIP_DASHBOARD_PORT`, `GHOSTSHIP_ROUTER_HOST`, `GHOSTSHIP_ROUTER_PORT`, `GHOSTSHIP_ROUTER_URL`, `GHOSTSHIP_NIX_DEFAULT_PROFILE`, `GHOSTSHIP_TTYD_SOCKET`, `GHOSTSHIP_TTYD_BASE_PATH`, `GHOSTSHIP_TERMINAL_CWD`, `CAMOFOX_URL`, `CAMOFOX_PORT`, `GHOSTSHIP_CAMOFOX_VNC_PORT`, `GHOSTSHIP_CAMOFOX_WEB_PORT`, `CAMOUFOX_CACHE_DIR`, and `PLAYWRIGHT_BROWSERS_PATH` as internal image-owned variables. Do not expose them as downstream-facing env knobs and do not override them from runtime env.
 - `nix` itself must stay reachable even when `/home/hermes` is replaced by a fresh persisted mount. Keep `/usr/local/bin/nix` symlinked to the installed binary.
 - Upstream `hermes gateway status` shells out to `ps eww -ax -o pid=,command=`. Ubuntu `procps` rejects that exact argument order in this container. Keep the narrow `/usr/local/bin/ps` wrapper that rewrites only that invocation to `ps axeww -o pid=,command=`.
 - `ttyd` should bind a unix socket under `/run/user/3000`, not `/run`, because the runtime service runs as `hermes`.
 - `ttyd` should be backed by `tmux new -A -s webterm` so browser reconnects do not kill the terminal session.
 - Keep ttyd styling aligned to the dashboard palette.
 - Bind the public web surface to `0.0.0.0:7681`, but keep internal dashboard and router listeners on localhost.
+- Hermes browser tools should default to local Camofox mode in this image by running `camofox-browser` on `127.0.0.1:9377` and setting image-owned `CAMOFOX_URL` to that endpoint.
+- Fresh homes need `~/.cache/camoufox` linked to the image-owned Camofox binary cache under `/opt/ghostship`, otherwise upstream `camofox-browser` fails on `/tabs` because it looks for `version.json` under the home cache.
+- The dashboard should embed the live browser view through the same origin at `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`, backed by internal `x11vnc` and `noVNC` sidecars.
 
 ### Discord Routing
 
@@ -87,6 +91,8 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Image-owned layer is Hermes core plus true runtime dependencies only.
 - Prefer the utility's native package manager when one is the expected upstream install path.
 - Persisted `/nix` has two lanes: an image-managed default profile for baseline Nix tools and the user-managed `/home/hermes/.nix-profile` for extra installs.
+- `camofox-browser` should run as an internal sidecar with browser binaries/caches under `/opt/ghostship`, while persisted profiles/cookies live under `/home/hermes/.local/state/camofox-browser`.
+- Use the same iframe sandbox policy for the live browser tab as the terminal tab: `allow-same-origin allow-scripts allow-forms`, no modal permission.
 - Node-native CLIs such as `codex`, `gemini-cli`, `agent-browser`, and `opencode` belong in npm under `/home/hermes`.
 - Avoid convenience-driven image bloat. If a binary is not required by boot, supervision, router, dashboard, ttyd, native Hermes runtime, or upstream doctor/runtime expectations, move it out of base.
 
@@ -97,6 +103,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
   - dashboard `/api/status`
   - router readiness
   - terminal path `/terminal/`
+  - browser live-view path `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`
   - native `hermes gateway status`
   - `hermes doctor` as far as upstream supports without repo shims
   - persistence across restart and full container recreation for `/home/hermes`, `/workspace`, and `/nix`

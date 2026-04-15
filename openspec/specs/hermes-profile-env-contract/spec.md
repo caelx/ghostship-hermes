@@ -31,10 +31,6 @@ The workstation SHALL keep operator-facing runtime env changes visible through t
 **Reason**: Discord env remains supported, but the image no longer owns a special projection step for writing those values into managed home state.
 **Migration**: Downstream deployments SHALL supply the supported Discord env directly through the documented downstream env mechanism.
 
-### Requirement: Bootstrap projects browser CDP configuration into the managed `.env`
-**Reason**: Browser/CDP env remains supported, but the image no longer rewrites `.env` to project it.
-**Migration**: Downstream deployments SHALL supply `BROWSER_CDP_URL` through the documented downstream env mechanism when needed.
-
 ### Requirement: Bootstrap projects managed webhook listener env into the managed `.env`
 **Reason**: Webhook env remains part of the supported operator-facing env surface, but it is no longer copied into a repo-generated `.env` file.
 **Migration**: Downstream deployments SHALL supply webhook env directly and persist operator-managed `.env` only if they want file-backed config in home state.

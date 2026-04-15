@@ -1,0 +1,15 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+export HOME="${HOME:-/home/hermes}"
+export CAMOFOX_PORT="${CAMOFOX_PORT:-9377}"
+export CAMOUFOX_CACHE_DIR="${CAMOUFOX_CACHE_DIR:-/opt/ghostship/camoufox-cache}"
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/ghostship/browser-cache}"
+export CAMOFOX_PROFILE_DIR="${CAMOFOX_PROFILE_DIR:-$HOME/.local/state/camofox-browser/profiles}"
+export CAMOFOX_COOKIES_DIR="${CAMOFOX_COOKIES_DIR:-$HOME/.local/state/camofox-browser/cookies}"
+
+# Browser state stays in persisted home so managed_persistence survives image replacement.
+mkdir -p "$CAMOFOX_PROFILE_DIR" "$CAMOFOX_COOKIES_DIR"
+
+cd /opt/camofox-browser
+exec /command/s6-setuidgid hermes node node_modules/@askjo/camofox-browser/server.js

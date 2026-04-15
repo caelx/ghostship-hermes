@@ -90,6 +90,12 @@ run_as_hermes() {
 }
 
 mkdir -p "$home_dir" "$workspace_dir" "$nix_dir"
+mkdir -p "$home_dir/.hermes/skills/custom"
+cat >"$home_dir/.hermes/skills/custom/SKILL.md" <<'EOF'
+# Custom Skill
+
+Custom downstream skill should survive image seeding.
+EOF
 
 "$container_engine" rm -f "$container_name" >/dev/null 2>&1 || true
 "$container_engine" run -d \
@@ -112,22 +118,26 @@ mkdir -p "$home_dir" "$workspace_dir" "$nix_dir"
 
 wait_for_http "http://127.0.0.1:${dashboard_port}/api/status"
 wait_for_http "http://127.0.0.1:${dashboard_port}/terminal/"
+wait_for_http "http://127.0.0.1:${dashboard_port}/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify"
 wait_for_container_http "$container_name" "http://127.0.0.1:8788/readyz"
+wait_for_container_http "$container_name" "http://127.0.0.1:9377/health"
 
 status_json="$(curl -fsS "http://127.0.0.1:${dashboard_port}/api/status")"
 printf '%s' "$status_json" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data["hermes_home"] == "/home/hermes/.hermes"; assert data["gateway_state"] is not None'
 
 run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; data = json.load(urllib.request.urlopen("http://127.0.0.1:8788/readyz")); assert data["ok"] is True'\'''
 curl -fsSI "http://127.0.0.1:${dashboard_port}/terminal/" >/dev/null
+curl -fsS "http://127.0.0.1:${dashboard_port}/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify" >/dev/null
 bundle="$(curl -fsS "http://127.0.0.1:${dashboard_port}/" | sed -n 's/.*src=\"\([^\"]*index-[^\"]*\.js\)\".*/\1/p' | head -n1)"
 curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q '/terminal/'
+curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q '/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify'
 curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allow-same-origin allow-scripts allow-forms"'
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'allow-modals'
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'href:"/terminal/",target:"_blank"'
 
 run_in_container "$container_name" '
 for cmd in \
-  nix git rg ttyd tmux tirith jq fd yq uv gh gws bws gcloud blogtato \
+  nix git rg ttyd tmux tirith jq fd yq uv gh gws bws gcloud blogwatcher-cli \
   codex gemini agent-browser opencode \
   ghostship-bazarr ghostship-bookstack ghostship-changedetection ghostship-chaptarr ghostship-cloakbrowser \
   ghostship-flaresolverr ghostship-grimmory ghostship-n8n ghostship-nzbget ghostship-plex ghostship-pricebuddy \
@@ -137,12 +147,27 @@ do
   command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }
 done
 '
-run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogtato; do command -v "$cmd" >/dev/null || exit 1; done'
+run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
 run_as_hermes "$container_name" 'bws --help >/dev/null'
 run_as_hermes "$container_name" 'gws --help >/dev/null'
 run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'
-run_as_hermes "$container_name" 'blogtato --help >/dev/null'
+run_as_hermes "$container_name" 'blogwatcher-cli --help >/dev/null'
+run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; data = json.load(urllib.request.urlopen("http://127.0.0.1:9377/health")); assert data["ok"] is True; assert data["vncPort"] == 6080'\'''
+run_as_hermes "$container_name" 'cat >/tmp/camofox_smoke.py <<'\''PY'\''
+import json
+from tools.browser_camofox import camofox_close, camofox_navigate, check_camofox_available, get_camofox_url, is_camofox_mode
+
+assert get_camofox_url() == "http://127.0.0.1:9377"
+assert is_camofox_mode() is True
+assert check_camofox_available() is True
+result = json.loads(camofox_navigate("https://example.com", task_id="camofox-smoke"))
+assert result["success"] is True
+assert result.get("vnc_url") == "http://127.0.0.1:6080"
+print(json.dumps(result))
+print(camofox_close(task_id="camofox-smoke"))
+PY
+/opt/hermes/venv/bin/python /tmp/camofox_smoke.py'
 run_in_container "$container_name" 'test -z "$(find /home/hermes \! -user hermes -print -quit)"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.memory.holographic"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
@@ -157,9 +182,12 @@ run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.h
 run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    api_key: \${GOOGLE_AI_STUDIO_API_KEY}" >/dev/null'
 run_as_hermes "$container_name" 'grep -F "group_sessions_per_user: true" /home/hermes/.hermes/config.yaml >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^terminal:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  timeout: 180" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^browser:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    managed_persistence: true" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reactions: false" >/dev/null'
 run_as_hermes "$container_name" 'grep -F "unauthorized_dm_behavior: ignore" /home/hermes/.hermes/config.yaml >/dev/null'
+run_in_container "$container_name" 'test -f /home/hermes/.hermes/skills/custom/SKILL.md'
+run_in_container "$container_name" 'test -f /home/hermes/.hermes/skills/autonomous-ai-agents/codex/SKILL.md'
 
 doctor_output="$(run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes doctor' || true)"
 grep -q '✓ git' <<<"$doctor_output"
@@ -177,12 +205,20 @@ run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 wait_for_http "http://127.0.0.1:${dashboard_port}/api/status"
 run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-home.txt >/dev/null && grep -Fx "smoke-workspace" /workspace/persist-workspace.txt >/dev/null'
 run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
-run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogtato; do command -v "$cmd" >/dev/null || exit 1; done'
+run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
 run_as_hermes "$container_name" 'bws --help >/dev/null'
 run_as_hermes "$container_name" 'gws --help >/dev/null'
 run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'
-run_as_hermes "$container_name" 'blogtato --help >/dev/null'
+run_as_hermes "$container_name" 'blogwatcher-cli --help >/dev/null'
+run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; data = json.load(urllib.request.urlopen("http://127.0.0.1:9377/health")); assert data["ok"] is True; assert data["vncPort"] == 6080'\'''
+run_as_hermes "$container_name" 'cat >/tmp/camofox_verify.py <<'\''PY'\''
+from tools.browser_camofox import check_camofox_available, get_vnc_url
+
+assert check_camofox_available() is True
+assert get_vnc_url() == "http://127.0.0.1:6080"
+PY
+/opt/hermes/venv/bin/python /tmp/camofox_verify.py'
 
 "$container_engine" rm -f "$container_name" >/dev/null
 "$container_engine" run -d \
