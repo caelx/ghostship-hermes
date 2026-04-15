@@ -168,6 +168,8 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && /opt/ghostship-utils/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/ghostship-utils/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/*-cli uv \
     && mkdir -p /opt/camofox-browser /opt/ghostship/browser-cache /opt/ghostship/camoufox-cache \
+    && mkdir -p /opt/ghostship/home-seed/.hermes \
+    && cp -R /tmp/hermes-agent/skills /opt/ghostship/home-seed/.hermes/skills \
     && cd /opt/camofox-browser \
     && npm init -y >/dev/null 2>&1 \
     && npm install --omit=dev --no-audit --no-fund @askjo/camofox-browser \
@@ -186,7 +188,6 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent
 
 RUN mkdir -p /opt/ghostship/home-seed/.hermes /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/nixpkgs \
-    && cp -R /tmp/hermes-agent/skills /opt/ghostship/home-seed/.hermes/skills \
     && printf '%s\n' '{ allowUnfreePredicate = pkg: builtins.elem (builtins.parseDrvName pkg.name).name [ "bws" ]; }' > /opt/ghostship/home-seed/.config/nixpkgs/config.nix \
     && printf '%s\n' \
       'set -g status-style bg=#041C1C,fg=#FFE6CB' \

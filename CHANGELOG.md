@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed the workstation image build by copying bundled upstream Hermes skills into the home-seed layer before `/tmp/hermes-agent` is removed, so CI/publish no longer fail on a missing `skills/` tree during the final image stage.
 - Reduced GitHub Actions workstation-image build noise by disabling pip cache/version-check chatter during image-layer venv installs and turning off npm audit/fund/update-notifier output in Docker build steps. Remaining build warnings in current logs are upstream dependency deprecations or normal apt/container packaging noise.
 - Added explicit Buildx layer caching for the Ubuntu workstation image workflows: `ci.yml` now uses a GitHub Actions cache scope for the amd64 smoke-build path, and `publish-image.yml` now reuses per-architecture GHCR registry caches before pushing multi-arch tags.
 - Pinned Hermes release updated to `v2026.4.13`.
