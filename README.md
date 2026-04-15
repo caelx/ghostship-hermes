@@ -40,7 +40,6 @@ Immutable image-owned layer:
 - `s6`, `nginx`, `ttyd`
 - repo-owned Hermes patches:
   - Discord router-pinned channel
-  - Discord Codex channel pinned to Codex `gpt-5.4` with high reasoning
   - dashboard `Terminal` entry
 - baked fixed environment defaults
 
@@ -300,7 +299,6 @@ Required when Discord gateway is enabled:
 - `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
-- `GHOSTSHIP_CODEX_CHANNEL`
 
 Recommended optional operator env:
 
@@ -326,15 +324,13 @@ Important behavior:
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
 - `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` default to `false` in the image. Downstream normally should not set them unless the contract intentionally changes.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
-- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router and Codex pinned channels.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to router alias `coding`
-- `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning
+- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned free-response channel.
 - `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`
-- `GHOSTSHIP_CODEX_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`
-- `/model` cannot override those forced channels
+- `/model` cannot override the router-pinned forced channel
 - `_GHOSTSHIP_ROUTER_API_KEY` is auto-generated at boot, stays inside the container, and is not part of the downstream env contract
 
-Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume.
+Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume and backs the default `openai-codex/gpt-5.4` primary lane.
 
 The full fixed env contract is also documented in [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/docs/runtime-env.md).
 
@@ -351,16 +347,15 @@ Router:
 
 - `ghostship-hermes-router` is mandatory
 - it listens on `127.0.0.1:8788`
-- the managed Hermes config keeps direct `opencode-go/minimax-m2.7` as the primary model lane
-- the managed Hermes config exposes `ghostship-router` as a local custom provider pinned to alias `coding`
+- Hermes default config uses Codex `gpt-5.4` as the primary lane and `opencode-go/minimax-m2.7` as the configured fallback
+- the managed Hermes config also exposes `ghostship-router` as a local custom provider pinned to alias `coding`
 - when configured, NVIDIA Build participates as a curated free-only provider and outranks Zen/OpenRouter by default
 - normal alias routing keeps only the top 3 scored models per provider for each bucket before cross-provider interleaving
 
 Forced Discord channels:
 
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `coding` lane
-- `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning
-- `/model` does not override either forced channel
+- `/model` does not override that forced channel
 
 ## Native Hermes Management
 
@@ -378,9 +373,9 @@ Do not use `hermes gateway install` inside the container. `s6` already supervise
 
 After the first successful container boot:
 
-1. authenticate Codex if you want the Discord Codex lane to work
+1. authenticate Codex so the default primary lane can run
 2. verify provider and gateway env are present
-3. inspect `config.yaml` once and confirm the expected local-router defaults
+3. inspect `config.yaml` once and confirm the expected Codex-primary and OpenCode-fallback defaults
 4. run `hermes doctor`
 5. open the dashboard and confirm `/terminal/` works through the same origin
 

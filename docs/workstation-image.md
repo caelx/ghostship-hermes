@@ -71,7 +71,6 @@ The common downstream set for the default Ghostship runtime is:
 - `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
-- `GHOSTSHIP_CODEX_CHANNEL`
 - `WEBHOOK_SECRET`
 
 Discord channel contract:
@@ -79,17 +78,15 @@ Discord channel contract:
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
 - `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` default to `false` inside the image. Downstream can omit them unless the runtime contract intentionally changes.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
-- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned and Codex-pinned channels.
+- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned free-response channel.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins one free-response channel to the local router `agentic` lane.
-- `GHOSTSHIP_CODEX_CHANNEL` pins one free-response channel to Codex `gpt-5.4` with high reasoning.
 - `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
-- `GHOSTSHIP_CODEX_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
 
 Internal-only runtime auth is auto-generated:
 
 - `_GHOSTSHIP_ROUTER_API_KEY`
 
-Codex OAuth is not set by env var. Authenticate once inside the persisted home:
+Codex OAuth is not set by env var. Authenticate once inside the persisted home for the default primary lane:
 
 ```fish
 docker exec -it --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'

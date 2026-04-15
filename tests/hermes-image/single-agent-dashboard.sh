@@ -110,9 +110,8 @@ EOF
   --env DISCORD_BOT_TOKEN=test-discord-token \
   --env DISCORD_ALLOWED_USERS=1 \
   --env DISCORD_HOME_CHANNEL=2 \
-  --env DISCORD_FREE_RESPONSE_CHANNELS=3,4 \
+  --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
   --env GHOSTSHIP_ROUTER_CHANNEL=3 \
-  --env GHOSTSHIP_CODEX_CHANNEL=4 \
   --env WEBHOOK_SECRET=test-webhook-secret \
   "$image_ref" >/dev/null
 
@@ -162,7 +161,7 @@ assert get_camofox_url() == "http://127.0.0.1:9377"
 assert is_camofox_mode() is True
 assert check_camofox_available() is True
 result = json.loads(camofox_navigate("https://example.com", task_id="camofox-smoke"))
-assert result["success"] is True
+assert result["success"] is True, result
 assert result.get("vnc_url") == "http://127.0.0.1:6080"
 print(json.dumps(result))
 print(camofox_close(task_id="camofox-smoke"))
@@ -171,10 +170,11 @@ PY
 run_in_container "$container_name" 'test -z "$(find /home/hermes \! -user hermes -print -quit)"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.memory.holographic"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: minimax-m2.7" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: gpt-5.4-mini" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.4" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    name: ghostship-router" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    model: coding" >/dev/null'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
@@ -245,9 +245,8 @@ PY
   --env DISCORD_BOT_TOKEN=test-discord-token \
   --env DISCORD_ALLOWED_USERS=1 \
   --env DISCORD_HOME_CHANNEL=2 \
-  --env DISCORD_FREE_RESPONSE_CHANNELS=3,4 \
+  --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
   --env GHOSTSHIP_ROUTER_CHANNEL=3 \
-  --env GHOSTSHIP_CODEX_CHANNEL=4 \
   --env WEBHOOK_SECRET=test-webhook-secret \
   "$image_ref" >/dev/null
 

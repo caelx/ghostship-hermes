@@ -41,8 +41,8 @@ def _direct_gemini() -> dict[str, str]:
 
 DEFAULT_CONFIG = {
     "model": {
-        "provider": "opencode-go",
-        "default": "minimax-m2.7",
+        "provider": "openai-codex",
+        "default": "gpt-5.4",
     },
     "memory": {
         "provider": "holographic",
@@ -59,8 +59,8 @@ DEFAULT_CONFIG = {
         }
     },
     "fallback_model": {
-        "provider": "openai-codex",
-        "model": "gpt-5.4-mini",
+        "provider": "opencode-go",
+        "model": "minimax-m2.7",
     },
     "custom_providers": [
         {
@@ -74,7 +74,7 @@ DEFAULT_CONFIG = {
     "timezone": "Pacific/Honolulu",
     "agent": {
         "max_turns": 110,
-        "reasoning_effort": "high",
+        "reasoning_effort": "medium",
         "verbose": False,
     },
     "compression": {
@@ -272,6 +272,42 @@ def _normalize_router_auth(config: object) -> bool:
                 changed = True
 
     return changed
+
+
+def _normalize_managed_model_contract(config: object) -> bool:
+    if not isinstance(config, dict):
+        return False
+
+    changed = False
+
+    model = config.get("model")
+    if (
+        isinstance(model, dict)
+        and model.get("provider") == "opencode-go"
+        and model.get("default") == "minimax-m2.7"
+    ):
+        model["provider"] = "openai-codex"
+        model["default"] = "gpt-5.4"
+        changed = True
+
+    fallback_model = config.get("fallback_model")
+    if (
+        isinstance(fallback_model, dict)
+        and fallback_model.get("provider") == "openai-codex"
+        and fallback_model.get("model") == "gpt-5.4-mini"
+    ):
+        fallback_model["provider"] = "opencode-go"
+        fallback_model["model"] = "minimax-m2.7"
+        changed = True
+
+    agent = config.get("agent")
+    if isinstance(agent, dict) and agent.get("reasoning_effort") == "high":
+        agent["reasoning_effort"] = "medium"
+        changed = True
+
+    return changed
+
+
 def main() -> None:
     for relative in (
         ".config",
@@ -307,6 +343,7 @@ def main() -> None:
         changed = _merge_missing_defaults(loaded, DEFAULT_CONFIG) or changed
         changed = _normalize_group_sessions(loaded) or changed
         changed = _normalize_router_auth(loaded) or changed
+        changed = _normalize_managed_model_contract(loaded) or changed
         if changed:
             config_path.write_text(
                 yaml.safe_dump(loaded, sort_keys=False),
