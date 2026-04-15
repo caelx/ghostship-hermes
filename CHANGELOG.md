@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Raised the internal `camofox-browser` service timeouts (`HANDLER_TIMEOUT_MS=90000`, `NAVIGATE_TIMEOUT_MS=60000`) so cold-start local browser launches do not fail the workstation smoke path on CI, and made the smoke assert print the returned Camofox payload on failure.
 - Fixed the workstation image build by copying bundled upstream Hermes skills into the home-seed layer before `/tmp/hermes-agent` is removed, so CI/publish no longer fail on a missing `skills/` tree during the final image stage.
 - Reduced GitHub Actions workstation-image build noise by disabling pip cache/version-check chatter during image-layer venv installs and turning off npm audit/fund/update-notifier output in Docker build steps. Remaining build warnings in current logs are upstream dependency deprecations or normal apt/container packaging noise.
 - Added explicit Buildx layer caching for the Ubuntu workstation image workflows: `ci.yml` now uses a GitHub Actions cache scope for the amd64 smoke-build path, and `publish-image.yml` now reuses per-architecture GHCR registry caches before pushing multi-arch tags.

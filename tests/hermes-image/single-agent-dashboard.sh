@@ -162,7 +162,7 @@ assert get_camofox_url() == "http://127.0.0.1:9377"
 assert is_camofox_mode() is True
 assert check_camofox_available() is True
 result = json.loads(camofox_navigate("https://example.com", task_id="camofox-smoke"))
-assert result["success"] is True
+assert result["success"] is True, result
 assert result.get("vnc_url") == "http://127.0.0.1:6080"
 print(json.dumps(result))
 print(camofox_close(task_id="camofox-smoke"))
