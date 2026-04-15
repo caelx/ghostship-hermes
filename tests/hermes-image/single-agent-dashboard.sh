@@ -42,6 +42,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
+dump_failure_state() {
+  local exit_code="$1"
+  if [ "$exit_code" -eq 0 ]; then
+    return
+  fi
+  if ! "$container_engine" ps -a --format '{{.Names}}' | grep -Fx "$container_name" >/dev/null 2>&1; then
+    return
+  fi
+
+  echo "===== container logs: $container_name =====" >&2
+  "$container_engine" logs "$container_name" >&2 || true
+
+  echo "===== camofox health =====" >&2
+  "$container_engine" exec "$container_name" /bin/sh -lc 'curl -sS http://127.0.0.1:9377/health || true' >&2 || true
+  echo >&2
+
+  echo "===== direct camofox /tabs =====" >&2
+  "$container_engine" exec "$container_name" /bin/sh -lc "curl -sS -X POST http://127.0.0.1:9377/tabs -H 'content-type: application/json' -d '{\"userId\":\"smoke\",\"sessionKey\":\"smoke\",\"url\":\"http://127.0.0.1:7681/api/status\"}' || true" >&2 || true
+  echo >&2
+}
+trap 'dump_failure_state "$?"' ERR
+
 wait_for_http() {
   local url="$1"
   local attempts="${2:-90}"
