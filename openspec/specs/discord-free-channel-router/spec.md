@@ -6,7 +6,7 @@ The managed Hermes runtime SHALL force configured Discord pinned-response sessio
 #### Scenario: Free-response message uses the router lane
 - **WHEN** a message arrives from a managed Discord free-response channel selected by `GHOSTSHIP_ROUTER_CHANNEL`
 - **THEN** the gateway resolves that turn against the local router endpoint
-- **AND** the turn uses the repo-approved router alias
+- **AND** the turn uses router alias `coding`
 - **AND** the turn does not fall back to the default direct provider path for that message
 
 #### Scenario: Retired Codex channel env does not create a forced lane
@@ -21,10 +21,10 @@ The managed Hermes runtime SHALL ignore or clear session-scoped model override s
 #### Scenario: Existing session override does not displace router pinning
 - **WHEN** a Discord free-response session selected by `GHOSTSHIP_ROUTER_CHANNEL` already has cached session-scoped model override state
 - **THEN** the managed runtime does not use that override for the next free-response turn
-- **AND** the free-response turn still runs on the router-pinned path
+- **AND** the free-response turn still runs on the router-pinned `coding` path
 
 #### Scenario: Model switch command is rejected in pinned free-response context
 - **WHEN** a user issues `/model` inside a managed Discord free-response session selected by `GHOSTSHIP_ROUTER_CHANNEL`
 - **THEN** the runtime rejects the switch for that session
-- **AND** the runtime reports that the free-response channel is pinned to the router-managed path
+- **AND** the runtime reports that the free-response channel is pinned to ghostship-router `coding`
 - **AND** the session does not persist a new model override from that command
