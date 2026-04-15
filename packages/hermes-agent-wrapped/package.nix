@@ -165,7 +165,7 @@ turn_route_replacement = """    @staticmethod
 
         if self._ghostship_is_discord_router_channel(source):
             primary = {
-                "model": "agentic",
+                "model": "coding",
                 "base_url": "http://127.0.0.1:8788/v1",
                 "provider": "custom",
                 "api_mode": "chat_completions",
@@ -174,7 +174,7 @@ turn_route_replacement = """    @staticmethod
                 "credential_pool": None,
             }
             route = resolve_turn_route(user_message, getattr(self, "_smart_model_routing", {}), primary)
-            route["model"] = "agentic"
+            route["model"] = "coding"
             route["runtime"] = self._ghostship_force_discord_router_channel_route(route.get("runtime", {}))
             route["label"] = "ghostship discord router channel pin"
             route["signature"] = (
@@ -235,7 +235,7 @@ model_guard_marker = """        # No args: show interactive picker (Telegram/Dis
 """
 model_guard_replacement = """        if self._ghostship_is_discord_router_channel(source):
             self._session_model_overrides.pop(session_key, None)
-            return "This Discord router channel is pinned to ghostship-router (`agentic`)."
+            return "This Discord router channel is pinned to ghostship-router (`coding`)."
 
         # No args: show interactive picker (Telegram/Discord) or text list
         if not model_input and not explicit_provider:

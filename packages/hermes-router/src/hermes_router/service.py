@@ -14,6 +14,7 @@ from typing import Any
 from .config import AliasConfig, RouterConfig
 from .models import ChatCompletionRequest, ModelCard, ModelsResponse, ReadinessResponse, ResponsesRequest
 from .providers.base import ChatProvider, NormalizedProviderError, ProviderChatStreamEvent, ProviderChatStreamResult, ProviderModel
+from .providers.nvidia_build import NvidiaBuildProvider
 from .providers.opencode_zen import OpencodeZenProvider
 from .providers.openrouter import OpenRouterProvider
 from .state import RouteEvent, SqliteStateStore, StateStore
@@ -134,6 +135,12 @@ _SIZE_HINTS: tuple[tuple[str, float], ...] = (
     ("thinking", 0.75),
 )
 
+_PROVIDER_PRIORITY_BIAS: dict[str, float] = {
+    "nvidia-build": 12.0,
+    "opencode-zen": 1.0,
+    "openrouter": 0.0,
+}
+
 
 class RouterServiceError(Exception):
     def __init__(self, status_code: int, detail: Any):
@@ -189,6 +196,13 @@ class RouterService:
 
     def _build_providers(self) -> dict[str, ChatProvider]:
         providers: dict[str, ChatProvider] = {}
+        if self.config.nvidia_build_api_key:
+            providers["nvidia-build"] = NvidiaBuildProvider(
+                self.config.nvidia_build_api_key,
+                models=self.config.nvidia_build_models,
+                base_url=self.config.nvidia_build_base_url,
+                default_timeout=self.config.default_timeout,
+            )
         if self.config.openrouter_api_key:
             providers["openrouter"] = OpenRouterProvider(
                 self.config.openrouter_api_key,
@@ -1627,16 +1641,13 @@ class RouterService:
         known_inventory = inventory if inventory is not None else self._inventory_for_all()
         probe_selected: set[str] = set()
         for model_id in model_ids:
-            normalized = model_id
-            if normalized.startswith("opencode/"):
-                normalized = normalized.removeprefix("opencode/")
-            elif normalized.startswith("openrouter/"):
-                normalized = normalized.removeprefix("openrouter/")
+            normalized = self._normalize_prefixed_model_id(model_id)
             matched = [model for model in known_inventory if model.id == normalized or model.id == model_id]
-            if known_inventory and not matched and normalized == model_id and "openrouter" in self.providers:
-                matched.append(ProviderModel(id=model_id, provider="openrouter", is_free=model_id.endswith(":free")))
-            elif known_inventory and not matched and normalized != model_id and "openrouter" in self.providers:
-                matched.append(ProviderModel(id=normalized, provider="openrouter", is_free=normalized.endswith(":free")))
+            if known_inventory and not matched:
+                inferred_provider = self._provider_name_from_prefixed_model_id(model_id)
+                if inferred_provider in self.providers:
+                    fallback_model_id = normalized if normalized != model_id else model_id
+                    matched.append(ProviderModel(id=fallback_model_id, provider=inferred_provider, is_free=self._model_id_looks_free(fallback_model_id)))
             alias_name = alias or self._alias_for_model_id(model_id) or "coding"
             for model in matched:
                 if not self._model_is_routable(model, alias=alias_name):
@@ -1673,7 +1684,7 @@ class RouterService:
             and (ignore_provider_pacing or not self._provider_is_pacing(model.provider))
         ]
         scored_by_provider: dict[str, list[tuple[ProviderModel, dict[str, Any]]]] = {}
-        lane_limit = max(1, self.config.provider_lane_limit)
+        lane_limit = min(3, max(1, self.config.provider_lane_limit))
         for model in filtered:
             breakdown = self._score_breakdown(alias.name, model)
             if breakdown["total_score"] <= 0:
@@ -1730,7 +1741,7 @@ class RouterService:
             if token in lowered:
                 penalty_score -= 1.0
         free_score = 100.0 if model.is_free else 0.0
-        provider_bias = 0.25 if model.provider == "openrouter" else 0.0
+        provider_bias = _PROVIDER_PRIORITY_BIAS.get(model.provider, 0.0)
         model_health = (
             float(model_state.get("recent_success", 0)) * 2.0
             - float(model_state.get("recent_failure", 0)) * 3.0
@@ -1810,7 +1821,7 @@ class RouterService:
         }
 
     def _model_allowed(self, model_id: str) -> bool:
-        normalized = model_id.removeprefix("opencode/")
+        normalized = self._normalize_prefixed_model_id(model_id)
         if self.config.allow_models and normalized not in self.config.allow_models and model_id not in self.config.allow_models:
             return False
         if normalized in self.config.block_models or model_id in self.config.block_models:
@@ -1849,11 +1860,17 @@ class RouterService:
         return float(provider_state.get("next_request_at", 0) or 0) > time.time()
 
     def _provider_spacing_seconds(self, provider_name: str) -> float:
+        if provider_name == "nvidia-build":
+            return self.config.nvidia_build_min_request_spacing_seconds
         if provider_name == "openrouter":
             return self.config.openrouter_min_request_spacing_seconds
         if provider_name == "opencode-zen":
             return self.config.opencode_min_request_spacing_seconds
-        return min(self.config.openrouter_min_request_spacing_seconds, self.config.opencode_min_request_spacing_seconds)
+        return min(
+            self.config.nvidia_build_min_request_spacing_seconds,
+            self.config.openrouter_min_request_spacing_seconds,
+            self.config.opencode_min_request_spacing_seconds,
+        )
 
     def _provider_suppression_source(self, provider_name: str, *, state: dict[str, Any] | None = None) -> str | None:
         provider_state = state or self.state_store.get_provider_state().get(provider_name, {})
@@ -2083,7 +2100,7 @@ class RouterService:
 
         ordered: list[RouteCandidate] = []
         seen: set[tuple[str, str]] = set()
-        for provider_name in ("opencode-zen", "openrouter", None):
+        for provider_name in ("nvidia-build", "opencode-zen", "openrouter", None):
             for candidate in sorted_candidates(provider_name):
                 key = (candidate.provider_name, candidate.backend_model)
                 if key in seen:
@@ -2537,6 +2554,37 @@ class RouterService:
             if any(token in model_id.lower() for token in tokens):
                 return alias
         return None
+
+    @staticmethod
+    def _provider_name_from_prefixed_model_id(model_id: str) -> str | None:
+        prefixes = {
+            "opencode/": "opencode-zen",
+            "openrouter/": "openrouter",
+            "nvidia/": "nvidia-build",
+            "nvidia-build/": "nvidia-build",
+        }
+        lowered = model_id.lower()
+        for prefix, provider_name in prefixes.items():
+            if lowered.startswith(prefix):
+                return provider_name
+        return None
+
+    @classmethod
+    def _normalize_prefixed_model_id(cls, model_id: str) -> str:
+        provider_name = cls._provider_name_from_prefixed_model_id(model_id)
+        if provider_name is None:
+            return model_id
+        prefix = "nvidia-build/" if model_id.lower().startswith("nvidia-build/") else f"{model_id.split('/', 1)[0]}/"
+        return model_id.removeprefix(prefix)
+
+    @staticmethod
+    def _model_id_looks_free(model_id: str) -> bool:
+        lowered = model_id.lower()
+        return lowered.endswith(":free") or lowered.endswith("-free") or lowered in {
+            "moonshotai/kimi-k2-instruct",
+            "mistralai/mistral-nemotron",
+            "deepseek-ai/deepseek-r1",
+        }
 
     def _log_event(self, event: str, **fields: Any) -> None:
         logger.info("router_event %s", json.dumps({"event": event, **fields}, sort_keys=True))

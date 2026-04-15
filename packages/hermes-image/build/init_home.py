@@ -68,7 +68,7 @@ DEFAULT_CONFIG = {
             "base_url": ROUTER_URL,
             "api_key_env": ROUTER_API_KEY_ENV,
             "api_mode": "chat_completions",
-            "model": "agentic",
+            "model": "coding",
         }
     ],
     "timezone": "Pacific/Honolulu",

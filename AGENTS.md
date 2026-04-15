@@ -77,7 +77,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Discord Routing
 
 - `DISCORD_HOME_CHANNEL` is part of the downstream Discord contract.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `agentic` lane.
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `coding` lane.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the router-pinned free-response channel.
 - The router-pinned forced channel must ignore per-session `/model` overrides.
 - Keep the managed Discord defaults at `require_mention = false` and `reactions = false`. Do not flip them back unless the user explicitly changes the contract.
@@ -85,6 +85,13 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - The default Codex primary lane depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
 - Do not use `OPENAI_API_KEY` anywhere in this repo's active runtime contract.
 - Do not expose router auth as a downstream env knob. If the router needs a token for Hermes integration, it must be an internal auto-generated underscore-prefixed env such as `_GHOSTSHIP_ROUTER_API_KEY`.
+
+### Router Policy
+
+- `NVIDIA_BUILD_API_KEY` enables the repo-owned `nvidia-build` provider.
+- The NVIDIA provider must stay curated and free-only; do not switch it to broad catalog discovery by default.
+- Normal alias routing keeps only the top 3 scored models per provider for each bucket before cross-provider interleaving.
+- Default provider priority is `nvidia-build` ahead of `opencode-zen` ahead of `openrouter` when remaining score inputs are otherwise comparable.
 
 ### Packaging Split
 

@@ -101,11 +101,16 @@ These are the variables downstream may set when the deployment needs them.
 These provider credentials should be present for the default Ghostship runtime:
 
 - `OPENCODE_GO_API_KEY`
-- `OPENROUTER_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
+
+The local router can additionally use any configured provider credential:
+
+- `NVIDIA_BUILD_API_KEY`
+- `OPENROUTER_API_KEY`
 
 Notes:
 
+- `NVIDIA_BUILD_API_KEY` enables the prioritized curated free-only NVIDIA Build inventory in the local router.
 - `OPENCODE_GO_API_KEY` backs the configured `opencode-go/minimax-m2.7` fallback lane.
 - `OPENROUTER_API_KEY` enables OpenRouter-backed candidates in the local router.
 - `GOOGLE_AI_STUDIO_API_KEY` is required because the runtime uses Gemini-backed supplemental tasks.
@@ -124,8 +129,8 @@ Channel behavior:
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
 - `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` are image-owned and default to `false`. Treat them as optional for downstream because the image already sets the defaults.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `coding`.
 - `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned free-response channel.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `agentic`.
 - `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
 
 ### Recommended Optional Operator Env
