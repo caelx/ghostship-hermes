@@ -22,7 +22,6 @@
 - Discord forced-channel routing is mandatory.
 - The only repo-owned Hermes patches are:
   - Discord router-pinned channel
-  - Discord Codex channel pinned to Codex `gpt-5.4` with high reasoning
   - dashboard `Terminal` entry
 - Do not add extra Hermes service/doctor compatibility patches unless upstream behavior changes and there is no cleaner workaround.
 - Do not use `hermes gateway install` inside the container runtime. `s6` owns service supervision.
@@ -73,17 +72,17 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Fresh homes need `~/.cache/camoufox` linked to the image-owned Camofox binary cache under `/opt/ghostship`, otherwise upstream `camofox-browser` fails on `/tabs` because it looks for `version.json` under the home cache.
 - Camofox cold starts on CI can exceed the upstream default 30s handler timeout. Keep the internal `camofox-browser` service timeouts raised (`HANDLER_TIMEOUT_MS=90000`, `NAVIGATE_TIMEOUT_MS=60000`) so the first local navigate does not fail during image smoke.
 - The dashboard should embed the live browser view through the same origin at `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`, backed by internal `x11vnc` and `noVNC` sidecars.
+- The managed Hermes runtime primary lane is Codex `gpt-5.4` with `agent.reasoning_effort = "medium"`, and the configured fallback lane is direct `opencode-go/minimax-m2.7`.
 
 ### Discord Routing
 
 - `DISCORD_HOME_CHANNEL` is part of the downstream Discord contract.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `agentic` lane.
-- `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with `reasoning.effort = high`.
-- `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the router-pinned and Codex-pinned channels.
-- Forced channels must ignore per-session `/model` overrides.
+- `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the router-pinned free-response channel.
+- The router-pinned forced channel must ignore per-session `/model` overrides.
 - Keep the managed Discord defaults at `require_mention = false` and `reactions = false`. Do not flip them back unless the user explicitly changes the contract.
 - `DISCORD_REACTIONS=false`, `DISCORD_REQUIRE_MENTION=false`, and `DISCORD_AUTO_THREAD=false` are image-owned defaults. Treat them as optional for downstream and do not make downstream set them unless the contract changes.
-- The Discord Codex lane depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
+- The default Codex primary lane depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
 - Do not use `OPENAI_API_KEY` anywhere in this repo's active runtime contract.
 - Do not expose router auth as a downstream env knob. If the router needs a token for Hermes integration, it must be an internal auto-generated underscore-prefixed env such as `_GHOSTSHIP_ROUTER_API_KEY`.
 

@@ -98,7 +98,7 @@ These are the variables downstream may set when the deployment needs them.
 
 ### Required For Useful Model Execution
 
-Both provider credentials should be present for the default Ghostship runtime lane:
+These provider credentials should be present for the default Ghostship runtime:
 
 - `OPENCODE_GO_API_KEY`
 - `OPENROUTER_API_KEY`
@@ -106,9 +106,10 @@ Both provider credentials should be present for the default Ghostship runtime la
 
 Notes:
 
-- `OPENCODE_GO_API_KEY` is the preferred direct credential for the default Ghostship lane.
+- `OPENCODE_GO_API_KEY` backs the configured `opencode-go/minimax-m2.7` fallback lane.
 - `OPENROUTER_API_KEY` enables OpenRouter-backed candidates in the local router.
 - `GOOGLE_AI_STUDIO_API_KEY` is required because the runtime uses Gemini-backed supplemental tasks.
+- Codex primary auth is not an env var; it is persisted in `/home/hermes/.hermes/auth.json`.
 
 ### Required When Discord Gateway Is Enabled
 
@@ -117,18 +118,15 @@ Notes:
 - `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
-- `GHOSTSHIP_CODEX_CHANNEL`
 
 Channel behavior:
 
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
 - `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` are image-owned and default to `false`. Treat them as optional for downstream because the image already sets the defaults.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
-- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned and Codex-pinned channels.
+- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned free-response channel.
 - `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `agentic`.
-- `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex `gpt-5.4` with high reasoning.
 - `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
-- `GHOSTSHIP_CODEX_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
 
 ### Recommended Optional Operator Env
 
@@ -211,7 +209,7 @@ Codex OAuth is persisted in:
 
 That file survives container replacement as long as `/home/hermes` is persisted.
 
-The Discord Codex lane depends on that persisted auth. It does not use a downstream env key.
+The default Codex primary lane depends on that persisted auth. It does not use a downstream env key.
 
 ## No In-Container Auth Layer
 

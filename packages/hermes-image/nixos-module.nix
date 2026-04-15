@@ -214,8 +214,8 @@ let
     in
     {
       model = {
-        provider = "opencode-go";
-        default = "minimax-m2.7";
+        provider = "openai-codex";
+        default = "gpt-5.4";
       };
       memory = {
         provider = "holographic";
@@ -230,8 +230,8 @@ let
         default_trust = 0.5;
       };
       fallback_model = {
-        provider = "openai-codex";
-        model = "gpt-5.4-mini";
+        provider = "opencode-go";
+        model = "minimax-m2.7";
       };
       custom_providers = [
         {
@@ -242,7 +242,7 @@ let
       timezone = "Pacific/Honolulu";
       agent = {
         max_turns = 110;
-        reasoning_effort = "high";
+        reasoning_effort = "medium";
         verbose = false;
       };
       compression = {
@@ -626,12 +626,13 @@ EOF
 
       tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
       ${pkgs.gawk}/bin/awk '
-        BEGIN { in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0 }
+        BEGIN { in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0 }
         /^model:[[:space:]]*$/ {
           in_model = 1
           in_fallback_model = 0
           in_discord = 0
           in_custom = 0
+          in_agent = 0
           print
           next
         }
@@ -640,6 +641,7 @@ EOF
           in_fallback_model = 1
           in_discord = 0
           in_custom = 0
+          in_agent = 0
           print
           next
         }
@@ -648,6 +650,7 @@ EOF
           in_fallback_model = 0
           in_discord = 1
           in_custom = 0
+          in_agent = 0
           print
           next
         }
@@ -656,19 +659,50 @@ EOF
           in_fallback_model = 0
           in_discord = 0
           in_custom = 1
+          in_agent = 0
           print
           next
         }
-        (in_model || in_fallback_model || in_discord || in_custom) && /^[^[:space:]]/ {
+        /^agent:[[:space:]]*$/ {
           in_model = 0
           in_fallback_model = 0
           in_discord = 0
           in_custom = 0
+          in_agent = 1
+          print
+          next
+        }
+        (in_model || in_fallback_model || in_discord || in_custom || in_agent) && /^[^[:space:]]/ {
+          in_model = 0
+          in_fallback_model = 0
+          in_discord = 0
+          in_custom = 0
+          in_agent = 0
         }
         in_model && $0 == "  base_url: http://127.0.0.1:8788/v1" {
           next
         }
+        in_model && $0 == "  provider: opencode-go" {
+          print "  provider: openai-codex"
+          next
+        }
+        in_model && $0 == "  default: minimax-m2.7" {
+          print "  default: gpt-5.4"
+          next
+        }
         in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
+          next
+        }
+        in_fallback_model && $0 == "  provider: openai-codex" {
+          print "  provider: opencode-go"
+          next
+        }
+        in_fallback_model && $0 == "  model: gpt-5.4-mini" {
+          print "  model: minimax-m2.7"
+          next
+        }
+        in_agent && $0 == "  reasoning_effort: high" {
+          print "  reasoning_effort: medium"
           next
         }
         in_discord && $0 ~ /^  require_mention:[[:space:]]/ {

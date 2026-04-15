@@ -193,21 +193,37 @@ assert_router_inventory() {
 
 assert_model_config() {
   local target_container="$1"
-  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: opencode-go" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "default: minimax-m2.7" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: openai-codex" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "default: gpt-5.4" >/dev/null'
   run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: gpt-5.4-mini" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
   run_as_hermes "$target_container" '! sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "api_key:" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
 }
 
 assert_config_migration() {
   local target_container="$1"
+  run_as_hermes "$target_container" 'sed -i "/^model:/,/^[^ ]/s/^  provider: openai-codex$/  provider: opencode-go/" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -i "/^model:/,/^[^ ]/s/^  default: gpt-5.4$/  default: minimax-m2.7/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^model:$/a\  base_url: http://127.0.0.1:8788/v1" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  provider: opencode-go$/  provider: openai-codex/" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  model: minimax-m2.7$/  model: gpt-5.4-mini/" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -i "/^agent:/,/^[^ ]/s/^  reasoning_effort: medium$/  reasoning_effort: high/" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: minimax-m2.7" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: gpt-5.4-mini" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
   run_in_container "$target_container" 'systemctl start ghostship-hermes-bootstrap.service >/dev/null'
   run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.4" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
 }
 
 assert_primary_execution() {
@@ -234,6 +250,7 @@ docker run -d \
   --tmpfs /run/lock \
   --tmpfs /tmp \
   -e container=docker \
+  -e OPENCODE_GO_API_KEY=single-agent-opencode-key \
   -e OPENROUTER_API_KEY \
   -e OPENROUTER_BASE_URL \
   -e OPENROUTER_HTTP_REFERER \
@@ -257,7 +274,7 @@ wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/health"
 wait_for_http "${dashboard_base_url}/api/profiles"
 wait_for_http "${dashboard_base_url}/api/projects"
-curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "coding" and .config_provider == "auto" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "gpt-5.4" and .config_provider == "openai-codex" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/profiles" | jq -e ' .profiles[0].name == "Managed Agent" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/projects" | jq -e ' .projects_dir == "/workspace" ' >/dev/null
 
@@ -359,6 +376,7 @@ docker run -d \
   --tmpfs /run/lock \
   --tmpfs /tmp \
   -e container=docker \
+  -e OPENCODE_GO_API_KEY=single-agent-opencode-key \
   -e OPENROUTER_API_KEY \
   -e OPENROUTER_BASE_URL \
   -e OPENROUTER_HTTP_REFERER \
@@ -382,7 +400,7 @@ wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/health"
 wait_for_http "${dashboard_base_url}/api/profiles"
 wait_for_http "${dashboard_base_url}/api/projects"
-curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "coding" and .config_provider == "auto" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "gpt-5.4" and .config_provider == "openai-codex" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/profiles" | jq -e ' .profiles[0].name == "Managed Agent" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/projects" | jq -e ' .projects_dir == "/workspace" ' >/dev/null
 

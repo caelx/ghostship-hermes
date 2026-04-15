@@ -11,11 +11,11 @@ def _load_app_module(monkeypatch, tmp_path: Path):
     managed_home.mkdir(parents=True)
     (managed_home / 'config.yaml').write_text(
         """model:
-  provider: opencode-go
-  default: minimax-m2.7
-fallback_model:
   provider: openai-codex
-  model: gpt-5.4-mini
+  default: gpt-5.4
+fallback_model:
+  provider: opencode-go
+  model: minimax-m2.7
 """,
         encoding='utf-8',
     )

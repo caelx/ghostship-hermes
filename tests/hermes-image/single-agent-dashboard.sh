@@ -110,9 +110,8 @@ EOF
   --env DISCORD_BOT_TOKEN=test-discord-token \
   --env DISCORD_ALLOWED_USERS=1 \
   --env DISCORD_HOME_CHANNEL=2 \
-  --env DISCORD_FREE_RESPONSE_CHANNELS=3,4 \
+  --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
   --env GHOSTSHIP_ROUTER_CHANNEL=3 \
-  --env GHOSTSHIP_CODEX_CHANNEL=4 \
   --env WEBHOOK_SECRET=test-webhook-secret \
   "$image_ref" >/dev/null
 
@@ -171,10 +170,11 @@ PY
 run_in_container "$container_name" 'test -z "$(find /home/hermes \! -user hermes -print -quit)"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.memory.holographic"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: minimax-m2.7" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: gpt-5.4-mini" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.4" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^memory:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: holographic" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^plugins:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    db_path: \$HERMES_HOME/memory_store.db" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    model: gemini-3.1-flash-lite-preview" >/dev/null'
@@ -233,9 +233,8 @@ PY
   --env DISCORD_BOT_TOKEN=test-discord-token \
   --env DISCORD_ALLOWED_USERS=1 \
   --env DISCORD_HOME_CHANNEL=2 \
-  --env DISCORD_FREE_RESPONSE_CHANNELS=3,4 \
+  --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
   --env GHOSTSHIP_ROUTER_CHANNEL=3 \
-  --env GHOSTSHIP_CODEX_CHANNEL=4 \
   --env WEBHOOK_SECRET=test-webhook-secret \
   "$image_ref" >/dev/null
 
