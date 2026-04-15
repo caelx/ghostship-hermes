@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Changed the workstation smoke to create the first Camofox tab against the in-container dashboard API instead of `https://example.com`, keeping `/tabs`/VNC/browser startup coverage while removing CI's dependency on external network success for image validation.
 - Breaking: removed the managed Discord Codex-pinned lane and retired `GHOSTSHIP_CODEX_CHANNEL` from the supported downstream env contract, keeping only the router-pinned forced Discord channel.
 - Breaking: flipped the managed Hermes model order so the default primary lane is `openai-codex/gpt-5.4`, the configured fallback lane is `opencode-go/minimax-m2.7`, and the shared managed `agent.reasoning_effort` default is now `medium`.
 - Extended managed config convergence so persisted homes are rewritten off the retired `opencode-go`-primary / `gpt-5.4-mini`-fallback contract and the old `reasoning_effort = "high"` default during bootstrap, and updated smoke/persistence validation plus runtime docs to prove the new contract.

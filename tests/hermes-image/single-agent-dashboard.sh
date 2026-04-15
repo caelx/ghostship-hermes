@@ -160,9 +160,10 @@ from tools.browser_camofox import camofox_close, camofox_navigate, check_camofox
 assert get_camofox_url() == "http://127.0.0.1:9377"
 assert is_camofox_mode() is True
 assert check_camofox_available() is True
-result = json.loads(camofox_navigate("https://example.com", task_id="camofox-smoke"))
+result = json.loads(camofox_navigate("http://127.0.0.1:7681/api/status", task_id="camofox-smoke"))
 assert result["success"] is True, result
 assert result.get("vnc_url") == "http://127.0.0.1:6080"
+assert result.get("url", "").startswith("http://127.0.0.1:7681/")
 print(json.dumps(result))
 print(camofox_close(task_id="camofox-smoke"))
 PY
