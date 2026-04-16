@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed `camofox-browser` state-directory ownership by creating the persisted profile and cookie directories as `hermes` before the service drops privileges, so `/home/hermes` stays fully user-owned during smoke validation.
 - Fixed the image-owned Camofox cache seeding by mirroring the fetched browser runtime from the build user's upstream default cache into `/opt/ghostship/camoufox-cache`, and tightened the workstation smoke to assert `~/.cache/camoufox/version.json` exists before the first browser navigate.
 - Expanded the Camofox/Firefox runtime dependency set further with the remaining Playwright-style X/render/font/media libraries (`libdbus-glib-1-2`, `libxt6`, `libxtst6`, `libxrender1`, `libxcursor1`, `libxi6`, `libxcb-shm0`, `libfontconfig1`, `libfreetype6`, `libharfbuzz0b`, `libgdk-pixbuf-2.0-0`, `libcairo-gobject2`, `libpangocairo-1.0-0`, `libpangoft2-1.0-0`, `libevent-2.1-7t64`, `libopus0`, `libvpx9`, `libwebp7`) so the Camofox sidecar has the full Linux browser stack it expects in CI.
 - Added the missing Linux Firefox/Playwright runtime libraries to the workstation image (`libdbus-1-3`, `libglib2.0-0`, `libnspr4`, `libx11-6`, `libxcb1`, `libxext6`, `libxfixes3`, `libatk*`, `libpango-1.0-0`, `libcairo2`, `libcups2t64`, `libdrm2`, `xdg-utils`) so the Camofox sidecar can actually launch a browser instead of 500ing on the first `/tabs` request in CI.

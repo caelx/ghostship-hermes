@@ -11,7 +11,7 @@ export HANDLER_TIMEOUT_MS="${HANDLER_TIMEOUT_MS:-90000}"
 export NAVIGATE_TIMEOUT_MS="${NAVIGATE_TIMEOUT_MS:-60000}"
 
 # Browser state stays in persisted home so managed_persistence survives image replacement.
-mkdir -p "$CAMOFOX_PROFILE_DIR" "$CAMOFOX_COOKIES_DIR"
+install -d -m 0750 -o hermes -g hermes "$CAMOFOX_PROFILE_DIR" "$CAMOFOX_COOKIES_DIR"
 
 cd /opt/camofox-browser
 exec /command/s6-setuidgid hermes node node_modules/@askjo/camofox-browser/server.js
