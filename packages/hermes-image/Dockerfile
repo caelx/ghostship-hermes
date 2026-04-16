@@ -61,25 +61,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2t64 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
+    libcairo-gobject2 \
     libcairo2 \
     libcups2t64 \
     libdbus-1-3 \
+    libdbus-glib-1-2 \
     libdrm2 \
+    libevent-2.1-7t64 \
+    libfontconfig1 \
+    libfreetype6 \
+    libgdk-pixbuf-2.0-0 \
     libgbm1 \
     libglib2.0-0 \
     libgtk-3-0 \
+    libharfbuzz0b \
     libnspr4 \
     libnss3 \
+    libopus0 \
     libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libpangoft2-1.0-0 \
+    libvpx9 \
+    libwebp7 \
     libx11-6 \
     libx11-xcb1 \
     libxcb1 \
+    libxcb-shm0 \
     libxcomposite1 \
+    libxcursor1 \
     libxdamage1 \
+    libxi6 \
     libxext6 \
     libxfixes3 \
     libxkbcommon0 \
     libxrandr2 \
+    libxrender1 \
+    libxt6 \
+    libxtst6 \
     nginx \
     novnc \
     procps \

@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Expanded the Camofox/Firefox runtime dependency set further with the remaining Playwright-style X/render/font/media libraries (`libdbus-glib-1-2`, `libxt6`, `libxtst6`, `libxrender1`, `libxcursor1`, `libxi6`, `libxcb-shm0`, `libfontconfig1`, `libfreetype6`, `libharfbuzz0b`, `libgdk-pixbuf-2.0-0`, `libcairo-gobject2`, `libpangocairo-1.0-0`, `libpangoft2-1.0-0`, `libevent-2.1-7t64`, `libopus0`, `libvpx9`, `libwebp7`) so the Camofox sidecar has the full Linux browser stack it expects in CI.
 - Added the missing Linux Firefox/Playwright runtime libraries to the workstation image (`libdbus-1-3`, `libglib2.0-0`, `libnspr4`, `libx11-6`, `libxcb1`, `libxext6`, `libxfixes3`, `libatk*`, `libpango-1.0-0`, `libcairo2`, `libcups2t64`, `libdrm2`, `xdg-utils`) so the Camofox sidecar can actually launch a browser instead of 500ing on the first `/tabs` request in CI.
 - Changed `ci.yml` to consume the published GHCR amd64 Buildx cache instead of exporting a separate GitHub Actions cache, matching the already-working `publish-image` path and avoiding long workstation-image build stalls in CI.
 - Changed the workstation smoke to create the first Camofox tab against the in-container dashboard API instead of `https://example.com`, keeping `/tabs`/VNC/browser startup coverage while removing CI's dependency on external network success for image validation.
