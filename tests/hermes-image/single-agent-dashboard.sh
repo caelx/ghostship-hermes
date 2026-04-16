@@ -189,7 +189,11 @@ assert result.get("url", "").startswith("http://127.0.0.1:7681/")
 print(json.dumps(result))
 print(camofox_close(task_id="camofox-smoke"))
 PY
-/opt/hermes/venv/bin/python /tmp/camofox_smoke.py'
+'
+if ! run_as_hermes "$container_name" '/opt/hermes/venv/bin/python /tmp/camofox_smoke.py'; then
+  dump_failure_state 1
+  exit 1
+fi
 run_in_container "$container_name" 'test -z "$(find /home/hermes \! -user hermes -print -quit)"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.memory.holographic"'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
