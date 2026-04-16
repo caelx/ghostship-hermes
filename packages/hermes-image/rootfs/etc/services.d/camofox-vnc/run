@@ -4,7 +4,7 @@ set -euo pipefail
 export HOME="${HOME:-/home/hermes}"
 export GHOSTSHIP_CAMOFOX_VNC_PORT="${GHOSTSHIP_CAMOFOX_VNC_PORT:-5901}"
 
-mkdir -p "$HOME/.local/state/ghostship-hermes/camofox"
+install -d -m 0750 -o hermes -g hermes "$HOME/.local/state/ghostship-hermes/camofox"
 
 # Wait for the Xvfb display spawned by camofox-browser, then keep the raw VNC socket local.
 exec /command/s6-setuidgid hermes x11vnc \

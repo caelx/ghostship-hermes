@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed the `camofox-vnc` sidecar to create its persisted state directory under `/home/hermes/.local/state/ghostship-hermes/camofox` as `hermes`, eliminating the remaining root-owned home-path drift that was still failing the workstation smoke after Camofox navigation succeeded.
 - Pinned Hermes release updated to `v2026.4.16`.
 - Fixed the upstream dashboard patcher for Hermes `v2026.4.16` by teaching `prepare_upstream_hermes.py` to patch both the older static-nav `App.tsx` layout and the newer `BUILTIN_NAV` plus explicit route layout, so `publish-image` no longer fails when upstream bumps the web shell structure.
 - Fixed `camofox-browser` state-directory ownership by creating the persisted profile and cookie directories as `hermes` before the service drops privileges, so `/home/hermes` stays fully user-owned during smoke validation.
