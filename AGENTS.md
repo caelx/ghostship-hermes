@@ -70,6 +70,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Bind the public web surface to `0.0.0.0:7681`, but keep internal dashboard and router listeners on localhost.
 - Hermes browser tools should default to local Camofox mode in this image by running `camofox-browser` on `127.0.0.1:9377` and setting image-owned `CAMOFOX_URL` to that endpoint.
 - Fresh homes need `~/.cache/camoufox` linked to the image-owned Camofox binary cache under `/opt/ghostship`, otherwise upstream `camofox-browser` fails on `/tabs` because it looks for `version.json` under the home cache.
+- `camoufox-js fetch` does not reliably honor the image's custom cache-dir env during build. Fetch into the upstream default cache under `/root/.cache/camoufox`, then mirror that tree into `/opt/ghostship/camoufox-cache` and assert `version.json` exists there before shipping the image.
 - Camofox cold starts on CI can exceed the upstream default 30s handler timeout. Keep the internal `camofox-browser` service timeouts raised (`HANDLER_TIMEOUT_MS=90000`, `NAVIGATE_TIMEOUT_MS=60000`) so the first local navigate does not fail during image smoke.
 - The dashboard should embed the live browser view through the same origin at `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`, backed by internal `x11vnc` and `noVNC` sidecars.
 - The managed Hermes runtime primary lane is Codex `gpt-5.4` with `agent.reasoning_effort = "medium"`, and the configured fallback lane is direct `opencode-go/minimax-m2.7`.

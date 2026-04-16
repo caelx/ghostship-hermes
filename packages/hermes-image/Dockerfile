@@ -205,7 +205,11 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && cd /opt/camofox-browser \
     && npm init -y >/dev/null 2>&1 \
     && npm install --omit=dev --no-audit --no-fund @askjo/camofox-browser \
-    && CAMOUFOX_CACHE_DIR=/opt/ghostship/camoufox-cache PLAYWRIGHT_BROWSERS_PATH=/opt/ghostship/browser-cache ./node_modules/.bin/camoufox-js fetch \
+    && HOME=/root PLAYWRIGHT_BROWSERS_PATH=/opt/ghostship/browser-cache ./node_modules/.bin/camoufox-js fetch \
+    && rm -rf /opt/ghostship/camoufox-cache \
+    && mkdir -p /opt/ghostship/camoufox-cache \
+    && cp -a /root/.cache/camoufox/. /opt/ghostship/camoufox-cache/ \
+    && test -f /opt/ghostship/camoufox-cache/version.json \
     && python3 /src/packages/hermes-image/build/patch_camofox_server.py /opt/camofox-browser/node_modules/@askjo/camofox-browser/server.js \
     && chown -R 3000:3000 /opt/ghostship/browser-cache /opt/ghostship/camoufox-cache \
     && cd /src \

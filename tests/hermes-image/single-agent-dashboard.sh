@@ -142,6 +142,7 @@ wait_for_http "http://127.0.0.1:${dashboard_port}/terminal/"
 wait_for_http "http://127.0.0.1:${dashboard_port}/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify"
 wait_for_container_http "$container_name" "http://127.0.0.1:8788/readyz"
 wait_for_container_http "$container_name" "http://127.0.0.1:9377/health"
+run_as_hermes "$container_name" 'test -f "$HOME/.cache/camoufox/version.json"'
 
 status_json="$(curl -fsS "http://127.0.0.1:${dashboard_port}/api/status")"
 printf '%s' "$status_json" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data["hermes_home"] == "/home/hermes/.hermes"; assert data["gateway_state"] is not None'
