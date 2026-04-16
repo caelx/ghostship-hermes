@@ -577,30 +577,56 @@ def main() -> None:
 
     app_tsx = root / "web" / "src" / "App.tsx"
     app_text = app_tsx.read_text(encoding="utf-8")
-    app_text = replace_once(
-        app_text,
-        'import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Package, Settings } from "lucide-react";\n',
-        'import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Monitor, Package, Settings, TerminalSquare } from "lucide-react";\n',
-        path=app_tsx,
-    )
-    app_text = replace_once(
-        app_text,
-        'import CronPage from "@/pages/CronPage";\n',
-        'import CronPage from "@/pages/CronPage";\nimport BrowserPage from "@/pages/BrowserPage";\nimport ConsolePage from "@/pages/ConsolePage";\n',
-        path=app_tsx,
-    )
-    app_text = replace_once(
-        app_text,
-        '  { id: "env", label: "Keys", icon: KeyRound },\n] as const;\n',
-        '  { id: "browser", label: "Browser", icon: Monitor },\n  { id: "env", label: "Keys", icon: KeyRound },\n  { id: "console", label: "Terminal", icon: TerminalSquare },\n] as const;\n',
-        path=app_tsx,
-    )
-    app_text = replace_once(
-        app_text,
-        '  env: EnvPage,\n};\n',
-        '  browser: BrowserPage,\n  env: EnvPage,\n  console: ConsolePage,\n};\n',
-        path=app_tsx,
-    )
+    if 'const BUILTIN_NAV: NavItem[] = [' in app_text:
+        app_text = replace_once(
+            app_text,
+            """import {\n  Activity, BarChart3, Clock, FileText, KeyRound,\n  MessageSquare, Package, Settings, Puzzle,\n  Sparkles, Terminal, Globe, Database, Shield,\n  Wrench, Zap, Heart, Star, Code, Eye,\n} from \"lucide-react\";\n""",
+            """import {\n  Activity, BarChart3, Clock, FileText, KeyRound,\n  MessageSquare, Monitor, Package, Settings, Puzzle,\n  Sparkles, Terminal, TerminalSquare, Globe, Database, Shield,\n  Wrench, Zap, Heart, Star, Code, Eye,\n} from \"lucide-react\";\n""",
+            path=app_tsx,
+        )
+        app_text = replace_once(
+            app_text,
+            'import CronPage from "@/pages/CronPage";\n',
+            'import CronPage from "@/pages/CronPage";\nimport BrowserPage from "@/pages/BrowserPage";\nimport ConsolePage from "@/pages/ConsolePage";\n',
+            path=app_tsx,
+        )
+        app_text = replace_once(
+            app_text,
+            '  { path: "/env", labelKey: "keys", label: "Keys", icon: KeyRound },\n];\n',
+            '  { path: "/browser", label: "Browser", icon: Monitor },\n  { path: "/env", labelKey: "keys", label: "Keys", icon: KeyRound },\n  { path: "/console", label: "Terminal", icon: TerminalSquare },\n];\n',
+            path=app_tsx,
+        )
+        app_text = replace_once(
+            app_text,
+            '          <Route path="/env" element={<EnvPage />} />\n',
+            '          <Route path="/browser" element={<BrowserPage />} />\n          <Route path="/env" element={<EnvPage />} />\n          <Route path="/console" element={<ConsolePage />} />\n',
+            path=app_tsx,
+        )
+    else:
+        app_text = replace_once(
+            app_text,
+            'import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Package, Settings } from "lucide-react";\n',
+            'import { Activity, BarChart3, Clock, FileText, KeyRound, MessageSquare, Monitor, Package, Settings, TerminalSquare } from "lucide-react";\n',
+            path=app_tsx,
+        )
+        app_text = replace_once(
+            app_text,
+            'import CronPage from "@/pages/CronPage";\n',
+            'import CronPage from "@/pages/CronPage";\nimport BrowserPage from "@/pages/BrowserPage";\nimport ConsolePage from "@/pages/ConsolePage";\n',
+            path=app_tsx,
+        )
+        app_text = replace_once(
+            app_text,
+            '  { id: "env", label: "Keys", icon: KeyRound },\n] as const;\n',
+            '  { id: "browser", label: "Browser", icon: Monitor },\n  { id: "env", label: "Keys", icon: KeyRound },\n  { id: "console", label: "Terminal", icon: TerminalSquare },\n] as const;\n',
+            path=app_tsx,
+        )
+        app_text = replace_once(
+            app_text,
+            '  env: EnvPage,\n};\n',
+            '  browser: BrowserPage,\n  env: EnvPage,\n  console: ConsolePage,\n};\n',
+            path=app_tsx,
+        )
     app_tsx.write_text(app_text, encoding="utf-8")
 
     browser_page = root / "web" / "src" / "pages" / "BrowserPage.tsx"

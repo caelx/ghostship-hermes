@@ -74,6 +74,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - The `camofox-browser` service must create its persisted profile and cookie directories owned by `hermes` before dropping privileges; creating them as root trips the `/home/hermes` ownership smoke.
 - Camofox cold starts on CI can exceed the upstream default 30s handler timeout. Keep the internal `camofox-browser` service timeouts raised (`HANDLER_TIMEOUT_MS=90000`, `NAVIGATE_TIMEOUT_MS=60000`) so the first local navigate does not fail during image smoke.
 - The dashboard should embed the live browser view through the same origin at `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`, backed by internal `x11vnc` and `noVNC` sidecars.
+- Upstream Hermes `web/src/App.tsx` ships in two currently supported released shapes: the older static nav/page map and the newer `BUILTIN_NAV` plus explicit `<Route>` layout. Keep `prepare_upstream_hermes.py` patching both shapes so upstream dashboard bumps do not break the image build.
 - The managed Hermes runtime primary lane is Codex `gpt-5.4` with `agent.reasoning_effort = "medium"`, and the configured fallback lane is direct `opencode-go/minimax-m2.7`.
 
 ### Discord Routing
