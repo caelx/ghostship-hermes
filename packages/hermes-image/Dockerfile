@@ -143,9 +143,7 @@ RUN mkdir -p /nix \
     && chown 3000:3000 /nix \
     && runuser -u hermes -- env HOME=/home/hermes sh -c 'curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon --yes --no-modify-profile' \
     && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix)" /usr/local/bin/nix \
-    && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix-store)" /usr/local/bin/nix-store \
-    && tirith_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths nixpkgs#tirith)" \
-    && ln -s "${tirith_path}/bin/tirith" /usr/local/bin/tirith
+    && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix-store)" /usr/local/bin/nix-store
 
 RUN mkdir -p /opt/hermes \
     && curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/${HERMES_REF}.tar.gz" -o /tmp/hermes-agent.tar.gz \
@@ -213,6 +211,8 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && python3 /src/packages/hermes-image/build/patch_camofox_server.py /opt/camofox-browser/node_modules/@askjo/camofox-browser/server.js \
     && chown -R 3000:3000 /opt/ghostship/browser-cache /opt/ghostship/camoufox-cache \
     && cd /src \
+    && tirith_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin nix --extra-experimental-features 'nix-command flakes' build --impure --no-write-lock-file --no-link --print-out-paths .#tirith)" \
+    && ln -sf "${tirith_path}/bin/tirith" /usr/local/bin/tirith \
     && default_tools_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features 'nix-command flakes' build --impure --no-write-lock-file --no-link --print-out-paths .#ghostship-default-tools)" \
     && printf '%s\n' "$default_tools_path" > /opt/ghostship/nix-default-tools.out-path \
     && runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin sh -lc 'closure_paths="$(nix-store -qR "'"$default_tools_path"'")"; nix-store --export $closure_paths' \

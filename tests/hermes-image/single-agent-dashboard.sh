@@ -61,6 +61,10 @@ dump_failure_state() {
   echo "===== direct camofox /tabs =====" >&2
   "$container_engine" exec "$container_name" /bin/sh -lc "curl -sS -X POST http://127.0.0.1:9377/tabs -H 'content-type: application/json' -d '{\"userId\":\"smoke\",\"sessionKey\":\"smoke\",\"url\":\"http://127.0.0.1:7681/api/status\"}' || true" >&2 || true
   echo >&2
+
+  echo "===== non-hermes owned paths =====" >&2
+  "$container_engine" exec "$container_name" /bin/sh -lc "find /home/hermes \\! -user hermes -printf '%u:%g %y %p -> %l\\n' | sed -n '1,80p'" >&2 || true
+  echo >&2
 }
 trap 'dump_failure_state "$?"' ERR
 
@@ -109,6 +113,10 @@ run_as_hermes() {
   local target_container="$1"
   shift
   "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
+}
+
+smoke_note() {
+  printf '== smoke: %s ==\n' "$1"
 }
 
 mkdir -p "$home_dir" "$workspace_dir" "$nix_dir"
@@ -195,9 +203,13 @@ if ! run_as_hermes "$container_name" '/opt/hermes/venv/bin/python /tmp/camofox_s
   dump_failure_state 1
   exit 1
 fi
+smoke_note "home ownership"
 run_in_container "$container_name" 'test -z "$(find /home/hermes \! -user hermes -print -quit)"'
+smoke_note "memory plugin import"
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.memory.holographic"'
+smoke_note "gateway status"
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
+smoke_note "config assertions"
 run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.4" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
@@ -229,14 +241,17 @@ run_as_hermes "$container_name" 'grep -F "unauthorized_dm_behavior: ignore" /hom
 run_in_container "$container_name" 'test -f /home/hermes/.hermes/skills/custom/SKILL.md'
 run_in_container "$container_name" 'test -f /home/hermes/.hermes/skills/autonomous-ai-agents/codex/SKILL.md'
 
+smoke_note "doctor"
 doctor_output="$(run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes doctor' || true)"
 grep -q '✓ git' <<<"$doctor_output"
 grep -q '✓ ripgrep' <<<"$doctor_output"
 grep -q '✓ codex CLI' <<<"$doctor_output"
 grep -q '✓ ~/.hermes/skills/ exists' <<<"$doctor_output"
 
+smoke_note "tmux theme"
 run_as_hermes "$container_name" 'tmux kill-session -t themecheck >/dev/null 2>&1 || true; tmux new-session -d -s themecheck sleep 600; tmux show -gv status-style | grep -Fx "bg=#041C1C,fg=#FFE6CB"; tmux show -gv pane-active-border-style | grep -Fx "fg=#67E8F9"'
 
+smoke_note "persistence warmup"
 run_in_container "$container_name" 'printf smoke-home > /home/hermes/persist-home.txt && printf smoke-workspace > /workspace/persist-workspace.txt && chown hermes:hermes /home/hermes/persist-home.txt /workspace/persist-workspace.txt'
 run_as_hermes "$container_name" "nix --extra-experimental-features 'nix-command flakes' profile add nixpkgs#hello"
 run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
@@ -245,12 +260,14 @@ run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 wait_for_http "http://127.0.0.1:${dashboard_port}/api/status"
 run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-home.txt >/dev/null && grep -Fx "smoke-workspace" /workspace/persist-workspace.txt >/dev/null'
 run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
+smoke_note "post-restart managed tools"
 run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
 run_as_hermes "$container_name" 'bws --help >/dev/null'
 run_as_hermes "$container_name" 'gws --help >/dev/null'
 run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'
 run_as_hermes "$container_name" 'blogwatcher-cli --help >/dev/null'
+smoke_note "post-restart camofox"
 run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; data = json.load(urllib.request.urlopen("http://127.0.0.1:9377/health")); assert data["ok"] is True; assert data["vncPort"] == 6080'\'''
 run_as_hermes "$container_name" 'cat >/tmp/camofox_verify.py <<'\''PY'\''
 from tools.browser_camofox import check_camofox_available, get_vnc_url

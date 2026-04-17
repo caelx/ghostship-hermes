@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed the image build to resolve `tirith` from the repo's pinned flake output instead of live `nixpkgs-unstable`, so exact-source Docker builds stop failing on transient GitHub API 504s during the base image stage.
+- Expanded the workstation smoke failure dump with a concrete `/home/hermes` ownership listing and explicit post-browser step markers, so the next late smoke failure names the failing check instead of stopping after the generic Camofox trap tail.
 - Fixed `camofox-browser` state ownership properly by creating and re-owning the full `/home/hermes/.local/state/camofox-browser` tree, not just the leaf profile/cookie directories, so the workstation smoke no longer fails on root-owned browser state after the first navigate.
 - Fixed the cont-init Camofox cache symlink to be owned by `hermes` and enabled `errtrace` in the workstation smoke script, so the `/home/hermes` ownership check no longer fails on a root-owned `~/.cache/camoufox` symlink and any future helper-function failures dump state instead of exiting silently.
 - Fixed the `camofox-vnc` sidecar to create its persisted state directory under `/home/hermes/.local/state/ghostship-hermes/camofox` as `hermes`, eliminating the remaining root-owned home-path drift that was still failing the workstation smoke after Camofox navigation succeeded.

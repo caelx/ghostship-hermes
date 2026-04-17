@@ -260,6 +260,7 @@
           ghostship-default-tools = ghostshipDefaultTools;
           bws = pkgs.bws;
           gcloud = pkgs.google-cloud-sdk;
+          tirith = pkgs.tirith;
           agent-browser = agentBrowser;
           blogwatcher = blogwatcher;
           gws = googleWorkspaceCli;
@@ -309,6 +310,7 @@
           inherit (self.packages.${system})
             bws
             gcloud
+            tirith
             agent-browser
             blogwatcher
             gws
