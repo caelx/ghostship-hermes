@@ -9,9 +9,13 @@ export CAMOFOX_PROFILE_DIR="${CAMOFOX_PROFILE_DIR:-$HOME/.local/state/camofox-br
 export CAMOFOX_COOKIES_DIR="${CAMOFOX_COOKIES_DIR:-$HOME/.local/state/camofox-browser/cookies}"
 export HANDLER_TIMEOUT_MS="${HANDLER_TIMEOUT_MS:-90000}"
 export NAVIGATE_TIMEOUT_MS="${NAVIGATE_TIMEOUT_MS:-60000}"
+export CAMOFOX_STATE_ROOT="${CAMOFOX_STATE_ROOT:-$HOME/.local/state/camofox-browser}"
 
 # Browser state stays in persisted home so managed_persistence survives image replacement.
-install -d -m 0750 -o hermes -g hermes "$CAMOFOX_PROFILE_DIR" "$CAMOFOX_COOKIES_DIR"
+install -d -m 0750 -o hermes -g hermes "$CAMOFOX_STATE_ROOT"
+install -d -m 0750 -o hermes -g hermes "$CAMOFOX_PROFILE_DIR"
+install -d -m 0750 -o hermes -g hermes "$CAMOFOX_COOKIES_DIR"
+chown -R hermes:hermes "$CAMOFOX_STATE_ROOT"
 
 cd /opt/camofox-browser
 exec /command/s6-setuidgid hermes node node_modules/@askjo/camofox-browser/server.js
