@@ -15,6 +15,15 @@ mkdir -p "$HOME" "$HERMES_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_
 chown -R 3000:3000 "$HOME" "$GHOSTSHIP_WORKSPACE_ROOT" /run/user/3000 "$internal_env_dir"
 chmod 0700 /run/user/3000
 
+# Pre-create persisted browser/VNC state as hermes before long-running services start.
+mkdir -p \
+  "$HOME/.local/state/camofox-browser/profiles" \
+  "$HOME/.local/state/camofox-browser/cookies" \
+  "$HOME/.local/state/ghostship-hermes/camofox"
+chown -R 3000:3000 \
+  "$HOME/.local/state/camofox-browser" \
+  "$HOME/.local/state/ghostship-hermes/camofox"
+
 router_api_key="$(python3 - <<'PY'
 import secrets
 print(secrets.token_urlsafe(32))
