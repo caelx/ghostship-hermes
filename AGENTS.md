@@ -70,6 +70,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Bind the public web surface to `0.0.0.0:7681`, but keep internal dashboard and router listeners on localhost.
 - Hermes browser tools should default to local Camofox mode in this image by running `camofox-browser` on `127.0.0.1:9377` and setting image-owned `CAMOFOX_URL` to that endpoint.
 - Fresh homes need `~/.cache/camoufox` linked to the image-owned Camofox binary cache under `/opt/ghostship`, otherwise upstream `camofox-browser` fails on `/tabs` because it looks for `version.json` under the home cache.
+- The `~/.cache/camoufox` symlink created during cont-init must itself be owned by `hermes`; a root-owned symlink is enough to fail the `/home/hermes` ownership smoke even when the target cache contents are correct.
 - `camoufox-js fetch` does not reliably honor the image's custom cache-dir env during build. Fetch into the upstream default cache under `/root/.cache/camoufox`, then mirror that tree into `/opt/ghostship/camoufox-cache` and assert `version.json` exists there before shipping the image.
 - The `camofox-browser` service must create its persisted profile and cookie directories owned by `hermes` before dropping privileges; creating them as root trips the `/home/hermes` ownership smoke.
 - The `camofox-vnc` sidecar must also create its persisted state directory under `/home/hermes/.local/state/ghostship-hermes/camofox` as `hermes`; a root-owned VNC state dir silently trips the same `/home/hermes` ownership smoke after browser checks pass.

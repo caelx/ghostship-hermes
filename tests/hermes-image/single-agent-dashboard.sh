@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 image_ref="${1:?usage: single-agent-dashboard.sh <image-ref>}"
 container_name="ghostship-hermes-dashboard-test"

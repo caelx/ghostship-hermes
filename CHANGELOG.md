@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed the cont-init Camofox cache symlink to be owned by `hermes` and enabled `errtrace` in the workstation smoke script, so the `/home/hermes` ownership check no longer fails on a root-owned `~/.cache/camoufox` symlink and any future helper-function failures dump state instead of exiting silently.
 - Fixed the `camofox-vnc` sidecar to create its persisted state directory under `/home/hermes/.local/state/ghostship-hermes/camofox` as `hermes`, eliminating the remaining root-owned home-path drift that was still failing the workstation smoke after Camofox navigation succeeded.
 - Pinned Hermes release updated to `v2026.4.16`.
 - Fixed the upstream dashboard patcher for Hermes `v2026.4.16` by teaching `prepare_upstream_hermes.py` to patch both the older static-nav `App.tsx` layout and the newer `BUILTIN_NAV` plus explicit route layout, so `publish-image` no longer fails when upstream bumps the web shell structure.

@@ -56,6 +56,7 @@ fi
 if [ ! -f "$XDG_CACHE_HOME/camoufox/version.json" ]; then
   rm -rf "$XDG_CACHE_HOME/camoufox"
   ln -sfn /opt/ghostship/camoufox-cache "$XDG_CACHE_HOME/camoufox"
+  chown -h 3000:3000 "$XDG_CACHE_HOME/camoufox"
 fi
 
 chown -R 3000:3000 "$HOME" "$GHOSTSHIP_WORKSPACE_ROOT"
