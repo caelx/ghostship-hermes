@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Switched the workstation smoke recreate phase to a fresh random published dashboard port instead of reusing the original one, so rootless Podman (`pasta`) no longer flakes on the second `run -p ...` during persistence validation.
+- Fixed the workstation smoke to validate `custom_providers` by parsing YAML instead of using a text range that broke on top-level list entries such as `- name: ghostship-router`.
 - Pre-created and re-owned the Camofox state tree in cont-init and switched the `camofox-browser` service to numeric-ID `mkdir/chown`, so the browser state stays `hermes`-owned even on fresh persisted homes and exact-source builds.
 - Fixed the image build to resolve `tirith` from the repo's pinned flake output instead of live `nixpkgs-unstable`, so exact-source Docker builds stop failing on transient GitHub API 504s during the base image stage.
 - Expanded the workstation smoke failure dump with a concrete `/home/hermes` ownership listing and explicit post-browser step markers, so the next late smoke failure names the failing check instead of stopping after the generic Camofox trap tail.

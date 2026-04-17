@@ -11,6 +11,14 @@ print(s.getsockname()[1])
 s.close()
 PY
 )}"
+recreate_dashboard_port="$(python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)"
 tmp_root="$(mktemp -d)"
 home_dir="$tmp_root/home"
 workspace_dir="$tmp_root/workspace"
@@ -215,8 +223,17 @@ run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.herme
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    name: ghostship-router" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    model: coding" >/dev/null'
+run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
+import yaml
+from pathlib import Path
+
+config = yaml.safe_load(Path("/home/hermes/.hermes/config.yaml").read_text(encoding="utf-8"))
+providers = config.get("custom_providers") or []
+router = next((entry for entry in providers if entry.get("name") == "ghostship-router"), None)
+assert router is not None
+assert router.get("model") == "coding"
+assert router.get("base_url") == "http://127.0.0.1:8788/v1"
+PY'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
 import inspect
 from pathlib import Path
@@ -280,7 +297,7 @@ PY
 "$container_engine" rm -f "$container_name" >/dev/null
 "$container_engine" run -d \
   --name "$container_name" \
-  --publish "${dashboard_port}:7681" \
+  --publish "${recreate_dashboard_port}:7681" \
   --volume "$home_dir:/home/hermes" \
   --volume "$workspace_dir:/workspace" \
   --volume "$nix_dir:/nix" \
@@ -295,6 +312,6 @@ PY
   --env WEBHOOK_SECRET=test-webhook-secret \
   "$image_ref" >/dev/null
 
-wait_for_http "http://127.0.0.1:${dashboard_port}/api/status"
+wait_for_http "http://127.0.0.1:${recreate_dashboard_port}/api/status"
 run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-home.txt >/dev/null && grep -Fx "smoke-workspace" /workspace/persist-workspace.txt >/dev/null'
 run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'

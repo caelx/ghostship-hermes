@@ -115,6 +115,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Testing
 
 - Live validation on `chill-penguin` is the real deployment proof path.
+- Rootless Podman on `chill-penguin` can keep the published host port bound briefly after `rm -f` during rapid recreate tests. The workstation smoke should use a fresh random host port for the recreate phase instead of trying to reuse the original published port.
 - The smoke test should cover:
   - dashboard `/api/status`
   - router readiness
