@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: The dashboard SHALL serve the MMX browser entrypoint
-The running dashboard SHALL serve the upstream Hermes native browser entrypoint on the supported published web port instead of the retired repo-packaged dashboard, while preserving a small Ghostship-owned `Terminal` entry backed by a separate `ttyd` sidecar.
+The running dashboard SHALL serve the upstream Hermes native browser entrypoint on the supported published web port instead of the retired repo-packaged dashboard, while preserving a small Ghostship-owned `Terminal` entry backed by a separate `ttyd` sidecar as the only required repo-owned dashboard extension.
 
 #### Scenario: Published browser port serves the upstream Hermes dashboard
 - **WHEN** the Hermes container starts successfully and an operator opens the browser dashboard
@@ -12,6 +12,7 @@ The running dashboard SHALL serve the upstream Hermes native browser entrypoint 
 - **WHEN** an operator navigates the browser dashboard in the published image
 - **THEN** the dashboard includes a `Terminal` entry owned by the repo’s minimal patch layer
 - **AND** that terminal entry is the only required Ghostship-specific dashboard extension in the supported browser contract
+- **AND** the supported dashboard contract does not require a repo-owned Browser live-view entry or iframe
 
 ### Requirement: Dashboard environment view reports generic model endpoint configuration
 The dashboard environment and configuration surfaces SHALL expose the managed Hermes runtime through the upstream Hermes native views and APIs rather than through Ghostship-specific grouped cards or profile-era panels.
