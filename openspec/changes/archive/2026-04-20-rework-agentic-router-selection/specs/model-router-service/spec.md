@@ -1,26 +1,5 @@
 ## ADDED Requirements
 
-### Requirement: Router supports discovered NVIDIA Build API inventory
-The router SHALL support NVIDIA Build API as an optional first-class provider activated by `NVIDIA_BUILD_API_KEY`, but it SHALL discover the live NVIDIA catalog instead of relying on a repo-curated tuple. Only discovered NVIDIA endpoints that are marked free and remain eligible after repo-owned allow or block policy filters may become route candidates.
-
-#### Scenario: Configured NVIDIA key activates discovered free inventory
-- **WHEN** `NVIDIA_BUILD_API_KEY` is configured for the router
-- **THEN** the router registers provider `nvidia-build` during provider construction and refresh
-- **AND** the provider inventory comes from NVIDIA catalog discovery instead of a hardcoded repo tuple
-- **AND** only discovered NVIDIA endpoints identified as free remain eligible for normal routing candidates
-
-#### Scenario: Repo policy overlays shape discovered NVIDIA eligibility
-- **WHEN** NVIDIA catalog discovery returns free endpoints that are not all acceptable for the repo's `agentic` lane
-- **THEN** the router applies repo-owned usable or unused policy before final candidate selection
-- **AND** discovered models explicitly marked unused do not become route candidates even if the provider exposes them as free
-
-#### Scenario: Missing NVIDIA key leaves provider disabled
-- **WHEN** `NVIDIA_BUILD_API_KEY` is not configured
-- **THEN** the router does not register provider `nvidia-build`
-- **AND** routing continues using the remaining configured providers without NVIDIA inventory
-
-## MODIFIED Requirements
-
 ### Requirement: Router exposes only the `agentic` alias for normal routing
 The router SHALL expose `agentic` as the only repo-supported logical alias for normal model selection and SHALL reject the retired logical aliases that previously represented other workload families.
 
@@ -46,6 +25,27 @@ The router SHALL expose operator-facing inventory surfaces that distinguish disc
 - **WHEN** discovery finds free models that are explicitly present in the repo-owned unused-model lists
 - **THEN** the router exposes those models through an unused inventory surface
 - **AND** those models do not become normal routing candidates
+
+## MODIFIED Requirements
+
+### Requirement: Router supports discovered NVIDIA Build API inventory
+The router SHALL support NVIDIA Build API as an optional first-class provider activated by `NVIDIA_BUILD_API_KEY`, but it SHALL discover the live NVIDIA catalog instead of relying on a repo-curated tuple. Only discovered NVIDIA endpoints that are marked free and remain eligible after repo-owned allow or block policy filters may become route candidates.
+
+#### Scenario: Configured NVIDIA key activates discovered free inventory
+- **WHEN** `NVIDIA_BUILD_API_KEY` is configured for the router
+- **THEN** the router registers provider `nvidia-build` during provider construction and refresh
+- **AND** the provider inventory comes from NVIDIA catalog discovery instead of a hardcoded repo tuple
+- **AND** only discovered NVIDIA endpoints identified as free remain eligible for normal routing candidates
+
+#### Scenario: Repo policy overlays shape discovered NVIDIA eligibility
+- **WHEN** NVIDIA catalog discovery returns free endpoints that are not all acceptable for the repo's `agentic` lane
+- **THEN** the router applies repo-owned usable or unused policy before final candidate selection
+- **AND** discovered models explicitly marked unused do not become route candidates even if the provider exposes them as free
+
+#### Scenario: Missing NVIDIA key leaves provider disabled
+- **WHEN** `NVIDIA_BUILD_API_KEY` is not configured
+- **THEN** the router does not register provider `nvidia-build`
+- **AND** routing continues using the remaining configured providers without NVIDIA inventory
 
 ### Requirement: Router performs free-first routing with transparent failover
 The router SHALL perform free-first routing for the `agentic` alias by selecting the highest-priority provider that still has eligible candidates, keeping a top-five explicitly ranked usable set per provider, routing only across the highest-ranked three models from that five-model set that are currently eligible, retrying alternate models inside the same provider after retryable failures, and switching providers only after clear free-tier exhaustion evidence or the absence of eligible candidates on the current provider.
@@ -97,54 +97,6 @@ The router SHALL perform free-first routing for the `agentic` alias by selecting
 - **WHEN** every configured provider is either exhausted for free-tier routing or lacks eligible discovered `agentic` candidates
 - **THEN** the router returns an error that indicates the `agentic` pool is currently exhausted or unavailable
 
-### Requirement: Router maintains provider-wide health state
-The router SHALL track provider-wide health independently from concrete-model health so it can react to broad provider issues without waiting for every model to fail independently.
-
-#### Scenario: Broad provider failures trigger provider cooldown
-- **WHEN** repeated recent failures indicate that many requests or refreshes against a provider are failing for the same systemic reason
-- **THEN** the router records provider-wide degraded state and applies a temporary cooldown or disablement to that provider
-
-#### Scenario: Distinct-model zero-output exhaustion trips provider disablement
-- **WHEN** two distinct backend models on the same provider fail within the provider suspect window with exhaustion-class signals
-- **AND** neither failure returns output to the caller
-- **THEN** the router treats the provider as broadly exhausted
-- **AND** it disables that provider for at least six hours
-
-#### Scenario: Provider exhaustion evidence survives cross-provider attempts
-- **WHEN** one backend model on a provider records a recent zero-output exhaustion failure
-- **AND** a later attempt within the suspect window reaches a different backend model on that same provider after trying another provider in between
-- **AND** the later backend model also fails with a zero-output exhaustion signal
-- **THEN** the router still disables the original provider for the broad exhaustion window
-
-#### Scenario: Provider recovers automatically after cooldown or refresh
-- **WHEN** a provider cooldown expires or a later refresh succeeds
-- **THEN** the router allows that provider to compete for routing again without manual intervention
-
-#### Scenario: Provider recovery uses probe admission
-- **WHEN** a provider-wide exhaustion disablement expires
-- **THEN** the router re-admits that provider through a probe-style recovery path
-- **AND** one immediate exhaustion probe failure can re-disable the provider with a longer cooldown
-
-### Requirement: Router stores rolling health and performance windows
-The router SHALL maintain recent health and timing data that is suitable for ranking volatile free-model inventories.
-
-#### Scenario: Recent behavior outweighs lifetime totals
-- **WHEN** the router evaluates a candidate model or provider
-- **THEN** recent rolling latency, failure, rate-limit, and success signals influence ranking more strongly than long-lived aggregate counters
-
-#### Scenario: Likely free-tier exhaustion affects ranking
-- **WHEN** recent failure patterns suggest probable free-tier exhaustion for a model or provider
-- **THEN** the router penalizes that candidate or provider until recovery signals appear
-
-#### Scenario: Model exhaustion cooldowns escalate across consecutive failures
-- **WHEN** the same provider-model pair records repeated consecutive exhaustion failures without an intervening success
-- **THEN** the router increases that model's cooldown through an escalating ladder
-- **AND** the ladder includes at least `30 seconds`, `1 minute`, `5 minutes`, and `10 minutes` before later capped escalation
-
-#### Scenario: Successful model call resets exhaustion escalation
-- **WHEN** a provider-model pair succeeds after an exhaustion-driven cooldown period
-- **THEN** the router resets or clears that model's consecutive exhaustion escalation state
-
 ### Requirement: Router persists routing state and exposes observability surfaces
 The router SHALL preserve the state needed for unattended operation and SHALL expose enough health and debug information to explain discovered inventory, usable-policy inputs, active provider stickiness, and any exhaustion-driven provider switch.
 
@@ -185,7 +137,7 @@ The router SHALL support operator configuration for provider enablement, strict 
 - **WHEN** the operator updates provider-specific suspect windows, daily-reset assumptions, pacing thresholds, or exhaustion evidence thresholds
 - **THEN** future provider-exhaustion classification follows the updated policy without requiring application code changes
 
-#### Scenario: Durable operator overrides affect ranking and eligibility
+#### Scenario: Durable operator overrides affect eligibility and ranking
 - **WHEN** the operator applies a persistent override for model or provider disablement, ranked ordering, or unused-model policy
 - **THEN** future discovery, ranking, and routing decisions reflect that override
 - **AND** the override remains visible and durable across service restarts

@@ -81,6 +81,14 @@ class AliasConfig:
 
 
 @dataclass(frozen=True)
+class ProviderSelectionPolicy:
+    provider_name: str
+    ranked_models: tuple[str, ...]
+    unused_models: tuple[str, ...] = ()
+    daily_reset_hours: int = 24
+
+
+@dataclass(frozen=True)
 class RouterConfig:
     host: str
     port: int
@@ -125,7 +133,6 @@ class RouterConfig:
     opencode_base_url: str
     nvidia_build_api_key: str | None
     nvidia_build_base_url: str
-    nvidia_build_models: tuple[str, ...]
     assisted_bucket_model: str | None
     assisted_bucket_batch_size: int
     disabled_providers: tuple[str, ...]
@@ -133,6 +140,10 @@ class RouterConfig:
     provider_weight_overrides: dict[str, float]
     model_weight_overrides: dict[str, float]
     alias_pin_overrides: dict[str, tuple[str, ...]]
+    provider_priority: tuple[str, ...]
+    provider_reserve_limit: int
+    provider_active_candidate_limit: int
+    provider_selection_policies: tuple[ProviderSelectionPolicy, ...]
     aliases: tuple[AliasConfig, ...]
 
     @classmethod
@@ -156,7 +167,7 @@ class RouterConfig:
             db_path=db_path,
             debug_event_limit=int(os.environ.get("GHOSTSHIP_ROUTER_DEBUG_EVENT_LIMIT", "50")),
             rolling_window_seconds=_parse_float_env("GHOSTSHIP_ROUTER_ROLLING_WINDOW_SECONDS", default=3600.0),
-            ranking_enabled=_parse_bool_env("GHOSTSHIP_ROUTER_RANKING_ENABLED", default=True),
+            ranking_enabled=_parse_bool_env("GHOSTSHIP_ROUTER_RANKING_ENABLED", default=False),
             ranking_interval_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_RANKING_INTERVAL", "900")),
             ranking_worker_model=os.environ.get("GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL"),
             ranking_shortlist_size=int(os.environ.get("GHOSTSHIP_ROUTER_RANKING_SHORTLIST_SIZE", "5")),
@@ -198,12 +209,6 @@ class RouterConfig:
             opencode_base_url=os.environ.get("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1"),
             nvidia_build_api_key=_first_env("NVIDIA_BUILD_API_KEY", "NVIDIA_API_KEY"),
             nvidia_build_base_url=os.environ.get("NVIDIA_BUILD_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-            nvidia_build_models=_parse_csv_env("GHOSTSHIP_ROUTER_NVIDIA_BUILD_MODELS")
-            or (
-                "moonshotai/kimi-k2-instruct",
-                "mistralai/mistral-nemotron",
-                "deepseek-ai/deepseek-r1",
-            ),
             assisted_bucket_model=os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"),
             assisted_bucket_batch_size=int(os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE", "20")),
             disabled_providers=_parse_csv_env("GHOSTSHIP_ROUTER_DISABLED_PROVIDERS"),
@@ -212,36 +217,78 @@ class RouterConfig:
             model_weight_overrides=_parse_assignment_env("GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES", cast=float),
             alias_pin_overrides={
                 alias: _parse_csv_env(f"GHOSTSHIP_ROUTER_ALIAS_PIN_{alias.upper()}")
-                for alias in ("auxiliary", "coding", "agentic", "vision", "tts")
+                for alias in ("agentic",)
             },
+            provider_priority=(
+                "nvidia-build",
+                "opencode-zen",
+                "openrouter",
+            ),
+            provider_reserve_limit=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_RESERVE_LIMIT", "5")),
+            provider_active_candidate_limit=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_ACTIVE_CANDIDATE_LIMIT", "3")),
+            provider_selection_policies=(
+                ProviderSelectionPolicy(
+                    provider_name="nvidia-build",
+                    ranked_models=(
+                        "minimaxai/minimax-m2.7",
+                        "qwen/qwen3-coder-480b-a35b-instruct",
+                        "moonshotai/kimi-k2-thinking",
+                        "deepseek-ai/deepseek-v3.2",
+                        "z-ai/glm-4.7",
+                    ),
+                    unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_NVIDIA_BUILD_UNUSED_MODELS"),
+                ),
+                ProviderSelectionPolicy(
+                    provider_name="opencode-zen",
+                    ranked_models=(
+                        "big-pickle",
+                        "minimax-m2.5-free",
+                        "trinity-large-preview-free",
+                        "nemotron-3-super-free",
+                        "gpt-5-nano",
+                    ),
+                    unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_OPENCODE_ZEN_UNUSED_MODELS"),
+                ),
+                ProviderSelectionPolicy(
+                    provider_name="openrouter",
+                    ranked_models=(
+                        "qwen/qwen3-next-80b-a3b-instruct:free",
+                        "google/gemma-4-31b-it:free",
+                        "google/gemma-4-26b-a4b-it:free",
+                        "openai/gpt-oss-120b:free",
+                        "meta-llama/llama-3.3-70b-instruct:free",
+                    ),
+                    unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_OPENROUTER_UNUSED_MODELS"),
+                ),
+            ),
             aliases=(
-                AliasConfig(
-                    name="auxiliary",
-                    description="Fast secondary work such as summaries, extraction, triage, and router assistance.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_AUXILIARY_MODELS"),
-                ),
-                AliasConfig(
-                    name="coding",
-                    description="Primary coding workloads.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_CODING_MODELS"),
-                ),
                 AliasConfig(
                     name="agentic",
                     description="Tool-using agent workflows and orchestration tasks.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_AGENTIC_MODELS"),
-                ),
-                AliasConfig(
-                    name="vision",
-                    description="Image and multimodal understanding with text output.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_VISION_MODELS"),
-                ),
-                AliasConfig(
-                    name="tts",
-                    description="Speech-style audio generation backends when free options are available.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_TTS_MODELS"),
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_AGENTIC_MODELS")
+                    or (
+                        "nvidia-build/minimaxai/minimax-m2.7",
+                        "nvidia-build/qwen/qwen3-coder-480b-a35b-instruct",
+                        "nvidia-build/moonshotai/kimi-k2-thinking",
+                        "nvidia-build/deepseek-ai/deepseek-v3.2",
+                        "nvidia-build/z-ai/glm-4.7",
+                        "opencode/big-pickle",
+                        "opencode/minimax-m2.5-free",
+                        "opencode/trinity-large-preview-free",
+                        "opencode/nemotron-3-super-free",
+                        "opencode/gpt-5-nano",
+                        "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
+                        "openrouter/google/gemma-4-31b-it:free",
+                        "openrouter/google/gemma-4-26b-a4b-it:free",
+                        "openrouter/openai/gpt-oss-120b:free",
+                        "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+                    ),
                 ),
             ),
         )
 
     def alias_map(self) -> dict[str, AliasConfig]:
         return {alias.name: alias for alias in self.aliases}
+
+    def provider_policy_map(self) -> dict[str, ProviderSelectionPolicy]:
+        return {policy.provider_name: policy for policy in self.provider_selection_policies}

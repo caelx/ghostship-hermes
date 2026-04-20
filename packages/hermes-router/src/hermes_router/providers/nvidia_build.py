@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+from datetime import datetime, timezone
+from html.parser import HTMLParser
 from typing import Any
 
 import httpx
@@ -68,6 +71,30 @@ def _normalized_error_details(exc: HttpStatusError) -> dict[str, Any]:
     return payload
 
 
+class _InlineScriptParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.scripts: list[str] = []
+        self._in_script = False
+        self._buffer: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if tag == "script":
+            self._in_script = True
+            self._buffer = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script" and self._in_script:
+            self.scripts.append("".join(self._buffer))
+            self._in_script = False
+            self._buffer = []
+
+    def handle_data(self, data: str) -> None:
+        if self._in_script:
+            self._buffer.append(data)
+
+
 class NvidiaBuildProvider:
     name = "nvidia-build"
 
@@ -75,8 +102,8 @@ class NvidiaBuildProvider:
         self,
         api_key: str,
         *,
-        models: tuple[str, ...],
         base_url: str,
+        catalog_url: str = "https://build.nvidia.com/models",
         transport: httpx.BaseTransport | None = None,
         default_timeout: float = 30.0,
     ):
@@ -86,22 +113,19 @@ class NvidiaBuildProvider:
             default_timeout=default_timeout,
             transport=transport,
         )
-        self.models = tuple(model for model in models if model)
+        self.catalog_url = catalog_url
+        self._transport = transport
+        self._default_timeout = default_timeout
 
     def list_models(self, *, timeout: float | None = None) -> list[ProviderModel]:
-        del timeout
+        html = self._fetch_catalog_html(timeout=timeout)
+        resources = self._parse_catalog_resources(html)
         models: list[ProviderModel] = []
-        for model_id in self.models:
-            metadata = self._metadata_for_model(model_id)
-            models.append(
-                ProviderModel(
-                    id=model_id,
-                    provider=self.name,
-                    is_free=True,
-                    tags=self._tags_for_model(model_id),
-                    metadata=metadata,
-                )
-            )
+        for resource in resources:
+            model = self._resource_to_model(resource)
+            if model is not None:
+                models.append(model)
+        models.sort(key=lambda item: item.id)
         return models
 
     def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
@@ -258,42 +282,126 @@ class NvidiaBuildProvider:
 
         return ProviderChatStreamResult(chunks=stream_chunks(), provider=self.name, backend_model=backend_model, state=state)
 
+    def _fetch_catalog_html(self, *, timeout: float | None) -> str:
+        request_timeout = timeout or self._default_timeout
+        with httpx.Client(transport=self._transport, timeout=request_timeout, follow_redirects=True) as client:
+            response = client.get(self.catalog_url, headers={"Accept": "text/html,application/xhtml+xml"})
+            response.raise_for_status()
+            return response.text
+
+    @classmethod
+    def _parse_catalog_resources(cls, html: str) -> list[dict[str, Any]]:
+        parser = _InlineScriptParser()
+        parser.feed(html)
+        blob_parts: list[str] = []
+        for script in parser.scripts:
+            match = re.search(r'self\.__next_f\.push\(\[1,"(.*)"\]\)\s*$', script, re.S)
+            if not match:
+                continue
+            blob_parts.append(json.loads(f'"{match.group(1)}"'))
+        blob = "".join(blob_parts)
+        resources: list[dict[str, Any]] = []
+        for raw in re.findall(r'\{"orgName":.*?"guestAccess":(?:true|false)\}', blob, re.S):
+            try:
+                resources.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue
+        return resources
+
+    @classmethod
+    def _resource_to_model(cls, resource: dict[str, Any]) -> ProviderModel | None:
+        resource_id = str(resource.get("resourceId") or "").strip()
+        if "/" not in resource_id:
+            return None
+        _, backend_name = resource_id.split("/", 1)
+        publisher = next(iter(cls._label_values(resource, "publisher")), "").strip()
+        backend_model = f"{publisher}/{backend_name}" if publisher else backend_name
+        metadata = cls._metadata_for_resource(resource, backend_model=backend_model)
+        if not cls._is_current_free_endpoint(resource):
+            return None
+        return ProviderModel(
+            id=backend_model,
+            provider=cls.name,
+            is_free=True,
+            tags=cls._tags_for_resource(resource, backend_model=backend_model),
+            metadata=metadata,
+        )
+
     @staticmethod
-    def _tags_for_model(model_id: str) -> tuple[str, ...]:
-        lowered = model_id.lower()
+    def _label_values(resource: dict[str, Any], key: str) -> tuple[str, ...]:
+        values: list[str] = []
+        for label in resource.get("labels") or []:
+            if not isinstance(label, dict) or label.get("key") != key:
+                continue
+            for value in label.get("values") or []:
+                text = str(value).strip()
+                if text:
+                    values.append(text)
+        return tuple(values)
+
+    @classmethod
+    def _is_current_free_endpoint(cls, resource: dict[str, Any]) -> bool:
+        nim_types = cls._label_values(resource, "nimType")
+        if any("Deprecated" in value for value in nim_types):
+            return False
+        return any(value == "Free Endpoint" for value in nim_types)
+
+    @classmethod
+    def _tags_for_resource(cls, resource: dict[str, Any], *, backend_model: str) -> tuple[str, ...]:
+        lowered = f"{backend_model} {resource.get('displayName', '')} {resource.get('description', '')}".lower()
+        label_values = " ".join(
+            value.lower()
+            for label in resource.get("labels") or []
+            if isinstance(label, dict)
+            for value in label.get("values") or []
+        )
+        haystack = f"{lowered} {label_values}"
         tags: list[str] = []
-        if any(token in lowered for token in ("code", "coder", "coding", "codex", "devstral", "qwen", "deepseek", "r1", "reason", "thinking", "nemotron", "kimi")):
-            tags.append("coding")
-        if any(token in lowered for token in ("mini", "small", "flash", "flash-lite", "nano", "haiku")):
-            tags.append("auxiliary")
-        if any(token in lowered for token in ("vision", "vl", "image", "video", "multimodal", "omni")):
+        if any(token in haystack for token in ("agentic", "tool use", "tool calling", "reasoning", "coding", "coder", "code", "thinking")):
+            tags.append("agentic")
+        if any(token in haystack for token in ("vision", "multimodal", "image", "video")):
             tags.append("vision")
-        if any(token in lowered for token in ("audio", "speech", "voice", "tts")):
+        if any(token in haystack for token in ("audio", "speech", "voice", "asr", "tts")):
             tags.append("tts")
         return tuple(dict.fromkeys(tags))
 
+    @classmethod
+    def _metadata_for_resource(cls, resource: dict[str, Any], *, backend_model: str) -> dict[str, Any]:
+        input_modalities = ["text"]
+        output_modalities = ["text"]
+        general_values = " ".join(cls._label_values(resource, "general")).lower()
+        if any(token in general_values for token in ("multimodal", "vision", "video")):
+            input_modalities = ["text", "image"]
+        if any(token in general_values for token in ("speech", "audio", "voice")):
+            output_modalities = ["audio"]
+        attributes = {
+            str(item.get("key")): item.get("value")
+            for item in resource.get("attributes") or []
+            if isinstance(item, dict) and item.get("key")
+        }
+        return {
+            "name": str(resource.get("displayName") or backend_model),
+            "description": str(resource.get("description") or "NVIDIA Build free endpoint."),
+            "created": cls._created_timestamp(resource.get("dateCreated")),
+            "input_modalities": input_modalities,
+            "output_modalities": output_modalities,
+            "catalog_source": "build.nvidia.com/models",
+            "catalog_resource_id": resource.get("resourceId"),
+            "catalog_org_name": resource.get("orgName"),
+            "catalog_labels": resource.get("labels") or [],
+            "logo": attributes.get("logo"),
+            "preview": str(attributes.get("PREVIEW") or "").lower() == "true",
+            "available": str(attributes.get("AVAILABLE") or "").lower() == "true",
+        }
+
     @staticmethod
-    def _metadata_for_model(model_id: str) -> dict[str, Any]:
-        defaults = {
-            "input_modalities": ["text"],
-            "output_modalities": ["text"],
-            "curated_free": True,
-        }
-        catalog: dict[str, dict[str, Any]] = {
-            "moonshotai/kimi-k2-instruct": {
-                "name": "Kimi K2 Instruct",
-                "description": "Curated NVIDIA Build coding-first free lane.",
-            },
-            "mistralai/mistral-nemotron": {
-                "name": "Mistral Nemotron",
-                "description": "Curated NVIDIA Build coding-first free lane.",
-            },
-            "deepseek-ai/deepseek-r1": {
-                "name": "DeepSeek R1",
-                "description": "Curated NVIDIA Build coding-first free lane.",
-            },
-        }
-        return {**defaults, **catalog.get(model_id, {"name": model_id, "description": "Curated NVIDIA Build free lane."})}
+    def _created_timestamp(value: Any) -> float | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc).timestamp()
+        except Exception:
+            return None
 
     def _normalize_http_error(self, exc: HttpStatusError, *, backend_model: str) -> NormalizedProviderError:
         status = exc.status_code

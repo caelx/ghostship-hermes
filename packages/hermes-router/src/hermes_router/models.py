@@ -26,7 +26,7 @@ class ChatCompletionRequest(BaseModel):
 class ResponsesRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    model: str = "coding"
+    model: str = "agentic"
     input: Any
     instructions: str | None = None
     previous_response_id: str | None = None

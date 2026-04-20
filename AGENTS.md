@@ -80,7 +80,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Discord Routing
 
 - `DISCORD_HOME_CHANNEL` is part of the downstream Discord contract.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `coding` lane.
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `agentic` lane.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the router-pinned free-response channel.
 - The router-pinned forced channel must ignore per-session `/model` overrides.
 - Keep the managed Discord defaults at `require_mention = false` and `reactions = false`. Do not flip them back unless the user explicitly changes the contract.
@@ -92,9 +92,12 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Router Policy
 
 - `NVIDIA_BUILD_API_KEY` enables the repo-owned `nvidia-build` provider.
-- The NVIDIA provider must stay curated and free-only; do not switch it to broad catalog discovery by default.
-- Normal alias routing keeps only the top 3 scored models per provider for each bucket before cross-provider interleaving.
-- Default provider priority is `nvidia-build` ahead of `opencode-zen` ahead of `openrouter` when remaining score inputs are otherwise comparable.
+- The NVIDIA provider uses live `build.nvidia.com/models` catalog discovery, filters to current free endpoints, and normalizes ids into `publisher/model`.
+- Normal router alias routing is `agentic`-only.
+- Each provider owns a repo-ranked top-five reserve and only the best three currently eligible models from that reserve may route at request time.
+- Uncategorized discovered models must not route; expose them only through operator-facing inventory surfaces until they are manually ranked or explicitly unused.
+- Default provider priority is fixed: `nvidia-build` ahead of `opencode-zen` ahead of `openrouter`.
+- Cross-provider failover should happen only on clear exhaustion or when a provider has no eligible ranked candidates left; ordinary retryable model failures stay inside the active provider.
 
 ### Packaging Split
 
