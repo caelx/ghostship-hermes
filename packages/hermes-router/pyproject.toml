@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ghostship-hermes-router"
-version = "0.4.0"
+version = "0.5.0"
 description = "FastAPI model router for ghostship-hermes"
 readme = "README.md"
 requires-python = ">=3.11"

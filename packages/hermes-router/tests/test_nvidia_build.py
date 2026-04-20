@@ -13,26 +13,78 @@ def make_transport(handler):
     return httpx.MockTransport(handler)
 
 
-def test_list_models_returns_curated_free_inventory() -> None:
+def _catalog_html(*resources: dict[str, object]) -> str:
+    blob = (
+        '0:["$","$L8",null,{}]\n'
+        + json.dumps(
+            {
+                "searchResult": {
+                    "results": [
+                        {
+                            "totalCount": len(resources),
+                            "groupValue": "_scored",
+                            "resources": list(resources),
+                        }
+                    ]
+                }
+            },
+            separators=(",", ":"),
+        )
+    )
+    return f'<html><body><script>self.__next_f.push([1,{json.dumps(blob)}])</script></body></html>'
+
+
+def test_list_models_discovers_current_free_inventory_from_catalog() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == httpx.URL("https://build.nvidia.com/models")
+        html = _catalog_html(
+            {
+                "orgName": "qc69jvmznzxy",
+                "resourceId": "qc69jvmznzxy/minimaxai/minimax-m2.7".replace("/minimaxai/", "/"),
+                "labels": [
+                    {"key": "nimType", "values": ["Free Endpoint"]},
+                    {"key": "publisher", "values": ["minimaxai"]},
+                    {"key": "general", "values": ["coding", "reasoning", "agentic"]},
+                ],
+                "description": "MiniMax M2.7 is a 230B-parameter text-to-text AI model excelling in coding and reasoning.",
+                "displayName": "minimax-m2.7",
+                "dateCreated": "2026-04-12T01:01:05.944Z",
+                "attributes": [
+                    {"key": "AVAILABLE", "value": "true"},
+                    {"key": "PREVIEW", "value": "false"},
+                ],
+                "guestAccess": True,
+            },
+            {
+                "orgName": "qc69jvmznzxy",
+                "resourceId": "qc69jvmznzxy/google/gemma-4-31b-it".replace("/google/", "/"),
+                "labels": [
+                    {"key": "nimType", "values": ["Deprecated Free Endpoint"]},
+                    {"key": "publisher", "values": ["google"]},
+                    {"key": "general", "values": ["coding", "agentic"]},
+                ],
+                "description": "Deprecated free route that should be filtered.",
+                "displayName": "gemma-4-31b-it",
+                "dateCreated": "2026-04-02T16:23:29.660Z",
+                "attributes": [{"key": "AVAILABLE", "value": "true"}],
+                "guestAccess": True,
+            },
+        )
+        return httpx.Response(200, text=html)
+
     provider = NvidiaBuildProvider(
         "secret",
-        models=(
-            "moonshotai/kimi-k2-instruct",
-            "mistralai/mistral-nemotron",
-            "deepseek-ai/deepseek-r1",
-        ),
         base_url="https://integrate.api.nvidia.com/v1",
+        transport=make_transport(handler),
     )
 
     models = provider.list_models()
 
-    assert [model.id for model in models] == [
-        "moonshotai/kimi-k2-instruct",
-        "mistralai/mistral-nemotron",
-        "deepseek-ai/deepseek-r1",
-    ]
-    assert all(model.provider == "nvidia-build" for model in models)
-    assert all(model.is_free is True for model in models)
+    assert [model.id for model in models] == ["minimaxai/minimax-m2.7"]
+    assert models[0].provider == "nvidia-build"
+    assert models[0].is_free is True
+    assert models[0].metadata["catalog_source"] == "build.nvidia.com/models"
+    assert "agentic" in models[0].tags
 
 
 def test_chat_completion_strips_stream_flag_before_sync_request() -> None:
@@ -56,7 +108,6 @@ def test_chat_completion_strips_stream_flag_before_sync_request() -> None:
 
     provider = NvidiaBuildProvider(
         "secret",
-        models=("mistralai/mistral-nemotron",),
         base_url="https://integrate.api.nvidia.com/v1",
         transport=make_transport(handler),
     )
@@ -79,7 +130,6 @@ def test_nvidia_retry_after_marks_provider_pacing() -> None:
 
     provider = NvidiaBuildProvider(
         "secret",
-        models=("mistralai/mistral-nemotron",),
         base_url="https://integrate.api.nvidia.com/v1",
         transport=make_transport(handler),
     )
