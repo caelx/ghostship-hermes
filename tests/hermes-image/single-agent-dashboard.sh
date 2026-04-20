@@ -300,7 +300,7 @@ run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 
 "$container_engine" restart "$container_name" >/dev/null
 smoke_note "post-restart dashboard"
-wait_for_http "http://127.0.0.1:${dashboard_port}/api/status"
+wait_for_container_http "$container_name" "http://127.0.0.1:7681/api/status"
 smoke_note "post-restart persistence"
 run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-home.txt >/dev/null && grep -Fx "smoke-workspace" /workspace/persist-workspace.txt >/dev/null'
 smoke_note "post-restart nix profile"
@@ -323,7 +323,7 @@ recreate_dashboard_port="$(container_host_port)"
 [ -n "$recreate_dashboard_port" ] || exit 1
 
 smoke_note "post-recreate dashboard"
-wait_for_http "http://127.0.0.1:${recreate_dashboard_port}/api/status"
+wait_for_container_http "$container_name" "http://127.0.0.1:7681/api/status"
 smoke_note "post-recreate persistence"
 run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-home.txt >/dev/null && grep -Fx "smoke-workspace" /workspace/persist-workspace.txt >/dev/null'
 smoke_note "post-recreate nix profile"
