@@ -21,7 +21,7 @@ from .state import RouteEvent, SqliteStateStore, StateStore
 
 logger = logging.getLogger("hermes_router")
 
-_ALIASES = ("auxiliary", "coding", "agentic", "vision", "tts")
+_ALIASES = ("agentic",)
 
 _ALIAS_HINTS: dict[str, tuple[str, ...]] = {
     "auxiliary": ("mini", "small", "flash", "flash-lite", "nano", "haiku"),
@@ -182,7 +182,7 @@ class RouterService:
             exhaustion_cooldown_ladder_seconds=config.exhaustion_cooldown_ladder_seconds,
         )
         self.providers = providers if providers is not None else self._build_providers()
-        self._provider_names = tuple(sorted(self.providers.keys()))
+        self._provider_names = tuple(name for name in self.config.provider_priority if name in self.providers)
         self._inventory = self._load_persisted_inventory()
         self._inventory_loaded_at = 0.0
         self._last_refresh_reason = "persisted"
@@ -193,13 +193,13 @@ class RouterService:
         self._last_ranking_error: dict[str, Any] | None = None
         self._last_ranking_worker: dict[str, str] | None = None
         self._refresh_lock = threading.RLock()
+        self._session_affinity: dict[str, dict[str, Any]] = {}
 
     def _build_providers(self) -> dict[str, ChatProvider]:
         providers: dict[str, ChatProvider] = {}
         if self.config.nvidia_build_api_key:
             providers["nvidia-build"] = NvidiaBuildProvider(
                 self.config.nvidia_build_api_key,
-                models=self.config.nvidia_build_models,
                 base_url=self.config.nvidia_build_base_url,
                 default_timeout=self.config.default_timeout,
             )
@@ -251,14 +251,14 @@ class RouterService:
 
     def chat_completions(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> tuple[dict[str, Any], dict[str, str]]:
         active_session_id, request_for_routing = self._prepare_chat_request(request, session_id=session_id)
-        payload, headers = self._execute_chat_completion(request_for_routing)
+        payload, headers = self._execute_chat_completion(request_for_routing, session_id=active_session_id)
         self.state_store.save_chat_session(active_session_id, self._chat_session_messages(request_for_routing, payload))
         headers["X-Hermes-Session-Id"] = active_session_id
         return payload, headers
 
     def stream_chat_completions(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> StreamPlan:
         active_session_id, request_for_routing = self._prepare_chat_request(request, session_id=session_id)
-        candidate, stream_result, first_chunk, chunk_iter = self._open_chat_stream(request_for_routing)
+        candidate, stream_result, first_chunk, chunk_iter = self._open_chat_stream(request_for_routing, session_id=active_session_id)
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         created = int(time.time())
         headers = {
@@ -587,20 +587,20 @@ class RouterService:
             raise RouterServiceError(404, {"message": f"Response not found: {response_id}"})
         return {"id": response_id, "object": "response", "deleted": True}
 
-    def _execute_chat_completion(self, request: ChatCompletionRequest) -> tuple[dict[str, Any], dict[str, str]]:
+    def _execute_chat_completion(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> tuple[dict[str, Any], dict[str, str]]:
         self._ensure_inventory_loaded_for_request()
         attempted: set[tuple[str, str]] = set()
-        candidates = self._resolve_remaining_candidates(request.model, attempted)
+        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
         if not candidates:
-            wait_seconds = self._paced_wait_seconds(request.model, attempted)
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id)
             if wait_seconds is not None:
                 time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
         if not candidates:
-            wait_seconds = self._paced_wait_seconds(request.model, attempted)
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id)
             if wait_seconds is not None:
                 time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
         if not candidates:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
         request_payload = request.model_dump(mode="json", exclude_none=True)
@@ -628,6 +628,7 @@ class RouterService:
                     is_fallback=(index > 0),
                     details={"result_provider": result.provider, "score_breakdown": candidate.score_breakdown},
                 )
+                self._remember_session_affinity(session_id, candidate)
                 headers = {
                     "X-Ghostship-Router-Backend-Provider": result.provider,
                     "X-Ghostship-Router-Backend-Model": result.backend_model,
@@ -649,21 +650,23 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                candidates = self._resolve_remaining_candidates(request.model, attempted)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
                 if not candidates:
-                    wait_seconds = self._paced_wait_seconds(request.model, attempted)
+                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id)
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
-                        candidates = self._resolve_remaining_candidates(request.model, attempted)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
         raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors})
 
     def _open_chat_stream(
         self,
         request: ChatCompletionRequest,
+        *,
+        session_id: str | None = None,
     ) -> tuple[RouteCandidate, ProviderChatStreamResult, ProviderChatStreamEvent | None, Iterator[ProviderChatStreamEvent]]:
         self._ensure_inventory_loaded_for_request()
         attempted: set[tuple[str, str]] = set()
-        candidates = self._resolve_remaining_candidates(request.model, attempted)
+        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
         if not candidates:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
 
@@ -690,6 +693,7 @@ class RouterService:
                     first_chunk = next(chunk_iter)
                 except StopIteration:
                     first_chunk = None
+                self._remember_session_affinity(session_id, candidate)
                 return candidate, stream_result, first_chunk, chunk_iter
             except NormalizedProviderError as exc:
                 self._record_failure(candidate, request.model, exc, latency_ms=None, is_fallback=(index > 0), zero_output=True)
@@ -704,12 +708,12 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                candidates = self._resolve_remaining_candidates(request.model, attempted)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
                 if not candidates:
-                    wait_seconds = self._paced_wait_seconds(request.model, attempted)
+                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id)
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
-                        candidates = self._resolve_remaining_candidates(request.model, attempted)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
         raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors})
 
     def _ensure_inventory_loaded_for_request(self) -> None:
@@ -1223,6 +1227,7 @@ class RouterService:
     def debug_state(self) -> dict[str, Any]:
         return {
             "providers": list(self._provider_names),
+            "provider_priority": list(self.config.provider_priority),
             "last_refresh_reason": self._last_refresh_reason,
             "last_refresh_at": self._last_refresh_at,
             "last_refresh_error": self._last_refresh_error,
@@ -1233,6 +1238,20 @@ class RouterService:
             "inventory_ttl_seconds": self.config.inventory_ttl_seconds,
             "refresh_interval_seconds": self.config.refresh_interval_seconds,
             "ranking_interval_seconds": self.config.ranking_interval_seconds,
+            "session_affinity": self._session_affinity,
+            "policy": {
+                "reserve_limit": self.config.provider_reserve_limit,
+                "active_candidate_limit": self.config.provider_active_candidate_limit,
+                "providers": [
+                    {
+                        "provider_name": policy.provider_name,
+                        "ranked_models": list(policy.ranked_models),
+                        "unused_models": list(policy.unused_models),
+                        "daily_reset_hours": policy.daily_reset_hours,
+                    }
+                    for policy in self.config.provider_selection_policies
+                ],
+            },
             "state": self.state_store.snapshot(),
         }
 
@@ -1278,23 +1297,55 @@ class RouterService:
         alias_config = self.config.alias_map().get(alias)
         if alias_config is None:
             raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
-        candidates: list[dict[str, Any]] = []
-        for model in self._inventory_for_all():
-            if not self._model_is_routable(model, alias=alias):
+        inventory_groups = self._inventory_groups(alias=alias)
+        providers: list[dict[str, Any]] = []
+        for provider_name in self._provider_order():
+            policy = self.config.provider_policy_map().get(provider_name)
+            if policy is None:
                 continue
-            if not self._model_effectively_enabled(model.provider, model.id):
-                continue
-            breakdown = self._score_breakdown(alias, model)
-            candidates.append(
+            ranked_entries: list[dict[str, Any]] = []
+            active_ids = {
+                candidate.backend_model
+                for candidate in self._provider_policy_candidates(
+                    provider_name,
+                    alias=alias,
+                    ignore_provider_pacing=True,
+                )
+            }
+            for rank, backend_model in enumerate(policy.ranked_models[: self.config.provider_reserve_limit], start=1):
+                model = self._lookup_model(provider_name, backend_model)
+                ranked_entries.append(
+                    {
+                        "rank": rank,
+                        "backend_model": backend_model,
+                        "discovered": model is not None,
+                        "active": backend_model in active_ids,
+                        "is_free": bool(model.is_free) if model is not None else False,
+                        "score": (
+                            self._score_breakdown(alias, model)
+                            if model is not None
+                            else {"total_score": 0.0}
+                        ),
+                    }
+                )
+            providers.append(
                 {
-                    "provider_name": model.provider,
-                    "backend_model": model.id,
-                    "is_free": model.is_free,
-                    **breakdown,
+                    "provider_name": provider_name,
+                    "enabled": self._provider_enabled(provider_name),
+                    "cooling_down": self._provider_is_cooling_down(provider_name),
+                    "pacing": self._provider_is_pacing(provider_name),
+                    "probe_mode": self._provider_in_probe_mode(provider_name),
+                    "ranked": ranked_entries,
+                    "unused_count": len(inventory_groups["unused"].get(provider_name, [])),
+                    "uncategorized_count": len(inventory_groups["uncategorized"].get(provider_name, [])),
                 }
             )
-        ordered = sorted(candidates, key=lambda item: item["total_score"], reverse=True)
-        return {"alias": alias, "candidates": ordered[: self.config.alias_model_limit * 4]}
+        return {"alias": alias, "providers": providers}
+
+    def debug_inventory(self, category: str, *, alias: str = "agentic") -> dict[str, Any]:
+        if category not in {"ranked", "unused", "uncategorized"}:
+            raise RouterServiceError(404, {"message": f"Unknown inventory category '{category}'."})
+        return {"alias": alias, "category": category, "providers": self._inventory_groups(alias=alias)[category]}
 
     def debug_model(self, provider_name: str, backend_model: str) -> dict[str, Any]:
         model = self._lookup_model(provider_name, backend_model)
@@ -1546,17 +1597,11 @@ class RouterService:
             return False
         output_modalities = self._output_modalities(model)
         input_modalities = self._input_modalities(model)
-        if alias == "tts":
-            return "audio" in output_modalities and not self._model_is_music_audio(model)
-        if alias == "vision":
-            if not ({"image", "video"} & input_modalities):
-                return False
-            return not output_modalities or output_modalities == {"text"}
-        if alias == "agentic":
-            if not self._model_supports_tools(model):
-                return False
-            return not output_modalities or output_modalities == {"text"}
+        if alias not in {None, "agentic"}:
+            return False
         if not self._model_supports_tools(model):
+            return False
+        if {"image", "video"} & input_modalities:
             return False
         if output_modalities and output_modalities != {"text"}:
             return False
@@ -1601,35 +1646,85 @@ class RouterService:
         music_tokens = ("lyria", "music", "song", "songs", "lyrics", "stereo", "clip", "instrumental", "vocals")
         return any(token in haystack for token in music_tokens)
 
-    def _resolve_candidates(self, alias: str, *, ignore_provider_pacing: bool = False) -> list[RouteCandidate]:
+    def _resolve_candidates(
+        self,
+        alias: str,
+        *,
+        session_id: str | None = None,
+        ignore_provider_pacing: bool = False,
+    ) -> list[RouteCandidate]:
         alias_config = self.config.alias_map().get(alias)
         if alias_config is None:
             direct_candidates = self._resolve_direct_model(alias)
             if direct_candidates:
                 return direct_candidates
+            if alias in {"auxiliary", "coding", "vision", "tts"}:
+                raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use 'agentic'."})
             raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
 
-        pinned_models = self._alias_pins(alias, alias_config)
-        candidates = self._preferred_candidates(pinned_models, alias=alias, ignore_provider_pacing=ignore_provider_pacing)
-        if not candidates:
-            discovered = self._discover_alias_candidates(alias_config, ignore_provider_pacing=ignore_provider_pacing)
-            candidates = [
-                RouteCandidate(
-                    provider_name=model.provider,
-                    backend_model=model.id,
-                    total_score=self._score_breakdown(alias, model)["total_score"],
-                    score_breakdown=self._score_breakdown(alias, model),
-                )
-                for model in discovered
-            ]
-        return [RouteCandidate(**{**candidate.__dict__, "is_fallback": index > 0}) for index, candidate in enumerate(candidates)]
+        for provider_name in self._provider_order(session_id=session_id):
+            provider_candidates = self._provider_policy_candidates(
+                provider_name,
+                alias=alias,
+                session_id=session_id,
+                ignore_provider_pacing=ignore_provider_pacing,
+            )
+            if provider_candidates:
+                return [
+                    RouteCandidate(**{**candidate.__dict__, "is_fallback": index > 0})
+                    for index, candidate in enumerate(provider_candidates)
+                ]
+            if (
+                not ignore_provider_pacing
+                and not self._provider_is_cooling_down(provider_name)
+                and self._provider_is_pacing(provider_name)
+                and self._provider_has_ranked_inventory(provider_name, alias=alias)
+            ):
+                return []
+        return []
 
-    def _resolve_remaining_candidates(self, alias: str, attempted: set[tuple[str, str]], *, ignore_provider_pacing: bool = False) -> list[RouteCandidate]:
-        return [
-            candidate
-            for candidate in self._resolve_candidates(alias, ignore_provider_pacing=ignore_provider_pacing)
-            if (candidate.provider_name, candidate.backend_model) not in attempted
-        ]
+    def _resolve_remaining_candidates(
+        self,
+        alias: str,
+        attempted: set[tuple[str, str]],
+        *,
+        session_id: str | None = None,
+        ignore_provider_pacing: bool = False,
+    ) -> list[RouteCandidate]:
+        alias_config = self.config.alias_map().get(alias)
+        if alias_config is None:
+            return [
+                candidate
+                for candidate in self._resolve_candidates(alias, session_id=session_id, ignore_provider_pacing=ignore_provider_pacing)
+                if (candidate.provider_name, candidate.backend_model) not in attempted
+            ]
+        for provider_name in self._provider_order(session_id=session_id):
+            provider_candidates = self._provider_policy_candidates(
+                provider_name,
+                alias=alias,
+                session_id=session_id,
+                ignore_provider_pacing=ignore_provider_pacing,
+            )
+            available = [
+                candidate
+                for candidate in provider_candidates
+                if (candidate.provider_name, candidate.backend_model) not in attempted
+            ]
+            if available:
+                return [
+                    RouteCandidate(**{**candidate.__dict__, "is_fallback": index > 0})
+                    for index, candidate in enumerate(available)
+                ]
+            if provider_candidates:
+                return []
+            if (
+                not ignore_provider_pacing
+                and not self._provider_is_cooling_down(provider_name)
+                and self._provider_is_pacing(provider_name)
+                and self._provider_has_ranked_inventory(provider_name, alias=alias)
+            ):
+                return []
+        return []
 
     def _resolve_direct_model(self, model_name: str) -> list[RouteCandidate]:
         if not self.config.allow_direct_models:
@@ -1648,7 +1743,7 @@ class RouterService:
                 if inferred_provider in self.providers:
                     fallback_model_id = normalized if normalized != model_id else model_id
                     matched.append(ProviderModel(id=fallback_model_id, provider=inferred_provider, is_free=self._model_id_looks_free(fallback_model_id)))
-            alias_name = alias or self._alias_for_model_id(model_id) or "coding"
+            alias_name = alias or self._alias_for_model_id(model_id) or "agentic"
             for model in matched:
                 if not self._model_is_routable(model, alias=alias_name):
                     continue
@@ -1673,75 +1768,125 @@ class RouterService:
                     candidates.append(candidate)
         return candidates
 
-    def _discover_alias_candidates(self, alias: AliasConfig, *, ignore_provider_pacing: bool = False) -> list[ProviderModel]:
-        filtered = [
-            model
-            for model in self._inventory_for_all()
-            if self._model_is_routable(model, alias=alias.name)
-            and self._model_effectively_enabled(model.provider, model.id)
-            and not self._is_cooling_down(model.provider, model.id)
-            and not self._provider_is_cooling_down(model.provider)
-            and (ignore_provider_pacing or not self._provider_is_pacing(model.provider))
-        ]
-        scored_by_provider: dict[str, list[tuple[ProviderModel, dict[str, Any]]]] = {}
-        lane_limit = min(3, max(1, self.config.provider_lane_limit))
-        for model in filtered:
-            breakdown = self._score_breakdown(alias.name, model)
-            if breakdown["total_score"] <= 0:
+    def _provider_order(self, *, session_id: str | None = None) -> tuple[str, ...]:
+        ordered = [name for name in self.config.provider_priority if name in self.providers]
+        affinity = self._session_affinity.get(session_id or "")
+        sticky_provider = str(affinity.get("provider_name") or "") if affinity else ""
+        if sticky_provider and sticky_provider in ordered and self._provider_enabled(sticky_provider):
+            ordered = [sticky_provider, *(name for name in ordered if name != sticky_provider)]
+        return tuple(ordered)
+
+    def _remember_session_affinity(self, session_id: str | None, candidate: RouteCandidate) -> None:
+        if not session_id:
+            return
+        self._session_affinity[session_id] = {
+            "provider_name": candidate.provider_name,
+            "backend_model": candidate.backend_model,
+            "updated_at": time.time(),
+        }
+
+    def _provider_policy_candidates(
+        self,
+        provider_name: str,
+        *,
+        alias: str,
+        session_id: str | None = None,
+        ignore_provider_pacing: bool = False,
+    ) -> list[RouteCandidate]:
+        if not self._provider_enabled(provider_name):
+            return []
+        if self._provider_is_cooling_down(provider_name):
+            return []
+        if not ignore_provider_pacing and self._provider_is_pacing(provider_name):
+            return []
+        policy = self.config.provider_policy_map().get(provider_name)
+        if policy is None:
+            return []
+        reserve = list(policy.ranked_models[: self.config.provider_reserve_limit])
+        sticky = self._session_affinity.get(session_id or "")
+        sticky_model = str(sticky.get("backend_model") or "") if sticky and sticky.get("provider_name") == provider_name else ""
+        if sticky_model in reserve:
+            reserve = [sticky_model, *(model_id for model_id in reserve if model_id != sticky_model)]
+        limit = 1 if self._provider_in_probe_mode(provider_name) else self.config.provider_active_candidate_limit
+        candidates: list[RouteCandidate] = []
+        for backend_model in reserve:
+            model = self._lookup_model(provider_name, backend_model)
+            if model is None:
                 continue
-            scored_by_provider.setdefault(model.provider, []).append((model, breakdown))
-        lanes: dict[str, list[tuple[ProviderModel, dict[str, Any]]]] = {}
-        for provider_name, items in scored_by_provider.items():
-            ordered = sorted(items, key=lambda item: item[1]["total_score"], reverse=True)
-            limit = 1 if self._provider_in_probe_mode(provider_name) else lane_limit
-            lanes[provider_name] = ordered[:limit]
-        provider_order = [
-            provider_name
-            for provider_name, _ in sorted(
-                ((provider_name, items[0][1]["total_score"]) for provider_name, items in lanes.items() if items),
-                key=lambda item: item[1],
-                reverse=True,
+            if not self._model_is_routable(model, alias=alias):
+                continue
+            if not self._model_effectively_enabled(provider_name, backend_model):
+                continue
+            if self._is_cooling_down(provider_name, backend_model):
+                continue
+            breakdown = self._score_breakdown(alias, model)
+            candidates.append(
+                RouteCandidate(
+                    provider_name=provider_name,
+                    backend_model=backend_model,
+                    total_score=breakdown["total_score"],
+                    score_breakdown=breakdown,
+                )
             )
-        ]
-        selected: list[ProviderModel] = []
-        selected_keys: set[tuple[str, str]] = set()
-        for lane_index in range(lane_limit):
-            for provider_name in provider_order:
-                lane = lanes.get(provider_name, [])
-                if lane_index >= len(lane):
-                    continue
-                model, _ = lane[lane_index]
-                key = (model.provider, model.id)
-                if key in selected_keys:
-                    continue
-                selected.append(model)
-                selected_keys.add(key)
-                if len(selected) >= self.config.alias_model_limit:
-                    return selected
-        return selected
+            if len(candidates) >= limit:
+                break
+        return candidates
+
+    def _provider_has_ranked_inventory(self, provider_name: str, *, alias: str) -> bool:
+        policy = self.config.provider_policy_map().get(provider_name)
+        if policy is None:
+            return False
+        for backend_model in policy.ranked_models[: self.config.provider_reserve_limit]:
+            model = self._lookup_model(provider_name, backend_model)
+            if model is None:
+                continue
+            if self._model_is_routable(model, alias=alias) and self._model_effectively_enabled(provider_name, backend_model):
+                return True
+        return False
+
+    def _inventory_groups(self, *, alias: str) -> dict[str, dict[str, list[dict[str, Any]]]]:
+        policies = self.config.provider_policy_map()
+        grouped: dict[str, dict[str, list[dict[str, Any]]]] = {
+            "ranked": {provider_name: [] for provider_name in self._provider_order()},
+            "unused": {provider_name: [] for provider_name in self._provider_order()},
+            "uncategorized": {provider_name: [] for provider_name in self._provider_order()},
+        }
+        for provider_name in self._provider_order():
+            policy = policies.get(provider_name)
+            if policy is None:
+                continue
+            ranked_ids = set(policy.ranked_models)
+            unused_ids = set(policy.unused_models)
+            for model in sorted(
+                (item for item in self._inventory_for_all() if item.provider == provider_name and item.is_free),
+                key=lambda item: item.id,
+            ):
+                payload = {
+                    "backend_model": model.id,
+                    "is_free": model.is_free,
+                    "routable": self._model_is_routable(model, alias=alias),
+                    "metadata": model.metadata,
+                }
+                if model.id in ranked_ids:
+                    grouped["ranked"][provider_name].append(payload)
+                elif model.id in unused_ids:
+                    grouped["unused"][provider_name].append(payload)
+                else:
+                    grouped["uncategorized"][provider_name].append(payload)
+        return grouped
 
     def _inventory_for_all(self) -> list[ProviderModel]:
         return list(self._inventory)
 
     def _score_breakdown(self, alias: str, model: ProviderModel) -> dict[str, Any]:
+        policy = self.config.provider_policy_map().get(model.provider)
+        ranked_models = policy.ranked_models if policy is not None else ()
+        rank_index = ranked_models.index(model.id) if model.id in ranked_models else None
         model_state = self.state_store.get_model_state().get(self._model_key(model.provider, model.id), {})
         provider_state = self.state_store.get_provider_state().get(model.provider, {})
-        ranking = self.state_store.get_rankings().get(self._model_key(model.provider, model.id), {})
         overrides = self._effective_overrides()
-        lowered = model.id.lower()
-        hint_score = 0.0
-        penalty_score = 0.0
-        for token in _ALIAS_HINTS.get(alias, ()):
-            if token in lowered:
-                hint_score += 0.75
-        for token in model.tags:
-            if token == alias:
-                hint_score += 0.5
-        for token in _ALIAS_PENALTIES.get(alias, ()):
-            if token in lowered:
-                penalty_score -= 1.0
-        free_score = 100.0 if model.is_free else 0.0
-        provider_bias = _PROVIDER_PRIORITY_BIAS.get(model.provider, 0.0)
+        provider_bias = float(max(len(self._provider_names) - self._provider_order().index(model.provider), 0) * 100.0)
+        reserve_bias = float(max((self.config.provider_reserve_limit - (rank_index or 99)), 0) * 10.0) if rank_index is not None else -1000.0
         model_health = (
             float(model_state.get("recent_success", 0)) * 2.0
             - float(model_state.get("recent_failure", 0)) * 3.0
@@ -1759,29 +1904,17 @@ class RouterService:
             - float(provider_state.get("recent_exhaustion", 0)) * 4.0
         )
         latency_penalty = -((float(model_state.get("first_text_latency_avg_ms") or model_state.get("latency_avg_ms") or 0.0)) / 1000.0)
-        family_name, family_bias = self._family_bias(alias, model)
-        parameter_count_b, parameter_bias, size_penalty, size_rank_bonus = self._parameter_bias(alias, model, family_name=family_name)
-        created_bias = self._recency_bias(model)
-        alias_scores = ranking.get("alias_scores", {})
-        rerank_scores = ranking.get("rerank_scores", {})
-        learned_score = (float(alias_scores.get(alias, 0.0)) * 3.0) + (float(rerank_scores.get(alias, 0.0)) * 2.0)
         provider_weight = self._provider_weight(model.provider, overrides=overrides)
         model_weight = self._model_weight(model.provider, model.id, overrides=overrides)
         cooldown_penalty = -1000.0 if self._is_cooling_down(model.provider, model.id, state=model_state) else 0.0
         provider_cooldown_penalty = -500.0 if self._provider_is_cooling_down(model.provider, state=provider_state) else 0.0
         provider_pacing_penalty = -250.0 if self._provider_is_pacing(model.provider, state=provider_state) else 0.0
         total_score = round(
-            free_score
             + provider_bias
-            + hint_score
-            + penalty_score
+            + reserve_bias
             + model_health
             + provider_health
             + latency_penalty
-            + family_bias
-            + parameter_bias
-            + created_bias
-            + learned_score
             + provider_weight
             + model_weight
             + cooldown_penalty
@@ -1791,28 +1924,17 @@ class RouterService:
         )
         return {
             "total_score": total_score,
-            "free_score": free_score,
             "provider_bias": provider_bias,
-            "hint_score": hint_score,
-            "penalty_score": penalty_score,
+            "policy_rank": (rank_index + 1) if rank_index is not None else None,
+            "reserve_bias": reserve_bias,
             "model_health_score": round(model_health, 3),
             "provider_health_score": round(provider_health, 3),
             "latency_penalty": round(latency_penalty, 3),
-            "family_bias": round(family_bias, 3),
-            "family_name": family_name,
-            "parameter_count_b": parameter_count_b,
-            "parameter_bias": round(parameter_bias, 3),
-            "size_penalty": round(size_penalty, 3),
-            "size_rank_bonus": round(size_rank_bonus, 3),
-            "recency_bias": round(created_bias, 3),
-            "learned_ranking_score": round(learned_score, 3),
             "provider_weight": provider_weight,
             "model_weight": model_weight,
             "cooldown_penalty": cooldown_penalty,
             "provider_cooldown_penalty": provider_cooldown_penalty,
             "provider_pacing_penalty": provider_pacing_penalty,
-            "ranking_reason": ranking.get("reason"),
-            "ranking_confidence": ranking.get("confidence"),
             "cooldown_until": model_state.get("cooldown_until", 0),
             "provider_cooldown_until": provider_state.get("cooldown_until", 0),
             "provider_next_request_at": provider_state.get("next_request_at", 0),
@@ -1920,11 +2042,15 @@ class RouterService:
             return not RouterService._is_temporary_provider_throttle(exc.details)
         return True
 
-    def _paced_wait_seconds(self, alias: str, attempted: set[tuple[str, str]]) -> float | None:
+    def _paced_wait_seconds(self, alias: str, attempted: set[tuple[str, str]], *, session_id: str | None = None) -> float | None:
         provider_state = self.state_store.get_provider_state()
-        max_wait_seconds = max(self.config.openrouter_min_request_spacing_seconds, self.config.opencode_min_request_spacing_seconds)
+        max_wait_seconds = max(
+            self.config.nvidia_build_min_request_spacing_seconds,
+            self.config.openrouter_min_request_spacing_seconds,
+            self.config.opencode_min_request_spacing_seconds,
+        )
         waits: list[float] = []
-        for candidate in self._resolve_candidates(alias, ignore_provider_pacing=True):
+        for candidate in self._resolve_candidates(alias, session_id=session_id, ignore_provider_pacing=True):
             if (candidate.provider_name, candidate.backend_model) in attempted:
                 continue
             state = provider_state.get(candidate.provider_name, {})

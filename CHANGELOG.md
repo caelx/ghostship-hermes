@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Breaking: reworked `ghostship-hermes-router` into an `agentic`-only free router with strict provider order (`nvidia-build -> opencode-zen -> openrouter`), live NVIDIA Build catalog discovery instead of the old curated allowlist, repo-owned top-five ranked reserves per provider with three active candidates at a time, uncategorized and unused inventory debug surfaces, exhaustion-gated provider failover plus session stickiness, switched the managed Hermes and Discord router pin from `coding` to `agentic`, expanded router/image validation for the new contract, and bumped `ghostship-hermes-router` to `0.5.0`.
 - Switched the workstation smoke recreate phase to a fresh random published dashboard port instead of reusing the original one, so rootless Podman (`pasta`) no longer flakes on the second `run -p ...` during persistence validation.
 - Fixed the workstation smoke to validate `custom_providers` by parsing YAML instead of using a text range that broke on top-level list entries such as `- name: ghostship-router`.
 - Pre-created and re-owned the Camofox state tree in cont-init and switched the `camofox-browser` service to numeric-ID `mkdir/chown`, so the browser state stays `hermes`-owned even on fresh persisted homes and exact-source builds.

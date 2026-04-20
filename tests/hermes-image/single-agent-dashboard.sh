@@ -231,7 +231,7 @@ config = yaml.safe_load(Path("/home/hermes/.hermes/config.yaml").read_text(encod
 providers = config.get("custom_providers") or []
 router = next((entry for entry in providers if entry.get("name") == "ghostship-router"), None)
 assert router is not None
-assert router.get("model") == "coding"
+assert router.get("model") == "agentic"
 assert router.get("base_url") == "http://127.0.0.1:8788/v1"
 PY'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
@@ -241,8 +241,8 @@ import gateway.run
 
 source_path = Path(inspect.getsourcefile(gateway.run))
 text = source_path.read_text(encoding="utf-8")
-assert "\"model\": \"coding\"" in text
-assert "ghostship-router (`coding`)" in text
+assert "\"model\": \"agentic\"" in text
+assert "ghostship-router (`agentic`)" in text
 PY'
 run_as_hermes "$container_name" 'sed -n "/^memory:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: holographic" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^plugins:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    db_path: \$HERMES_HOME/memory_store.db" >/dev/null'
