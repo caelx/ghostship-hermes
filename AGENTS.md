@@ -113,6 +113,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 
 - Live validation on `chill-penguin` is the real deployment proof path.
 - Rootless Podman on `chill-penguin` can hand `pasta` an already-occupied published host port during rapid recreate tests, even when the host port is auto-assigned. The workstation smoke should let the container engine choose the published port, query the selected port after startup, and retry recreate startup on `Address already in use`.
+- After container restart or recreation, dashboard `/api/status` can return before the persisted hermes user Nix profile is fully callable again. The workstation smoke should retry a user-profile command such as `hello` separately instead of assuming API readiness implies `~/.nix-profile` readiness.
 - The smoke test should cover:
   - dashboard `/api/status`
   - router readiness

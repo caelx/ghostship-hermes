@@ -92,6 +92,24 @@ wait_for_container_http() {
   return 1
 }
 
+wait_for_hermes_shell() {
+  local target_container="$1"
+  local command="$2"
+  local attempts="${3:-90}"
+  local delay="${4:-2}"
+  local try=1
+
+  while [ "$try" -le "$attempts" ]; do
+    if run_as_hermes "$target_container" "$command" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$delay"
+    try=$((try + 1))
+  done
+
+  return 1
+}
+
 run_in_container() {
   local target_container="$1"
   shift
@@ -281,9 +299,12 @@ run_as_hermes "$container_name" "nix --extra-experimental-features 'nix-command 
 run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 
 "$container_engine" restart "$container_name" >/dev/null
+smoke_note "post-restart dashboard"
 wait_for_http "http://127.0.0.1:${dashboard_port}/api/status"
+smoke_note "post-restart persistence"
 run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-home.txt >/dev/null && grep -Fx "smoke-workspace" /workspace/persist-workspace.txt >/dev/null'
-run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
+smoke_note "post-restart nix profile"
+wait_for_hermes_shell "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 smoke_note "post-restart managed tools"
 run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
 run_as_hermes "$container_name" 'bws --help >/dev/null'
@@ -301,9 +322,12 @@ start_test_container_with_retry ""
 recreate_dashboard_port="$(container_host_port)"
 [ -n "$recreate_dashboard_port" ] || exit 1
 
+smoke_note "post-recreate dashboard"
 wait_for_http "http://127.0.0.1:${recreate_dashboard_port}/api/status"
+smoke_note "post-recreate persistence"
 run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-home.txt >/dev/null && grep -Fx "smoke-workspace" /workspace/persist-workspace.txt >/dev/null'
-run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
+smoke_note "post-recreate nix profile"
+wait_for_hermes_shell "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 smoke_note "post-recreate browser profile"
 run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/ >/dev/null'
 run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
