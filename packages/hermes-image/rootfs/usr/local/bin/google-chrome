@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+binary="/opt/ghostship/cloakbrowser-current/chrome"
+profile_root="/home/hermes/.local/state/cloakbrowser"
+python_bin="/opt/cloakbrowser-venv/bin/python"
+
+if [ ! -x "$binary" ]; then
+  echo "cloakbrowser binary missing at $binary" >&2
+  exit 1
+fi
+
+if [ ! -x "$python_bin" ]; then
+  echo "cloakbrowser helper python missing at $python_bin" >&2
+  exit 1
+fi
+
+mkdir -p "$profile_root"
+chmod 0750 "$profile_root" 2>/dev/null || true
+
+mapfile -d '' -t stealth_args < <("$python_bin" - <<'PY'
+from cloakbrowser.config import get_default_stealth_args
+import sys
+
+for arg in get_default_stealth_args():
+    sys.stdout.write(arg)
+    sys.stdout.write("\0")
+PY
+)
+
+exec "$binary" "${stealth_args[@]}" "--user-data-dir=${profile_root}" "$@"

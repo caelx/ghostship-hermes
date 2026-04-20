@@ -29,18 +29,12 @@ These are internal image-owned variables. They are already set in the image, and
 - `GHOSTSHIP_ROUTER_PORT=8788`
 - `GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1`
 - `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
-- `CAMOFOX_URL=http://127.0.0.1:9377`
-- `CAMOFOX_PORT=9377`
 - `DISCORD_REACTIONS=false`
 - `DISCORD_REQUIRE_MENTION=false`
 - `DISCORD_AUTO_THREAD=false`
 - `GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock`
 - `GHOSTSHIP_TTYD_BASE_PATH=/terminal`
 - `GHOSTSHIP_TERMINAL_CWD=/workspace`
-- `GHOSTSHIP_CAMOFOX_VNC_PORT=5901`
-- `GHOSTSHIP_CAMOFOX_WEB_PORT=6080`
-- `CAMOUFOX_CACHE_DIR=/opt/ghostship/camoufox-cache`
-- `PLAYWRIGHT_BROWSERS_PATH=/opt/ghostship/browser-cache`
 
 These variables are internal because they define:
 
@@ -182,8 +176,6 @@ Channel behavior:
 - `FLARESOLVERR_URL`
 - `PYLOAD_URL`
 - `PYLOAD_API_KEY`
-- `CLOAKBROWSER_URL`
-- `CLOAKBROWSER_TOKEN`
 - `PRICEBUDDY_URL`
 - `PRICEBUDDY_TOKEN`
 - `RSS_BRIDGE_URL`
@@ -245,8 +237,4 @@ These commands are expected to exist in the image without downstream installatio
 
 For the Nix-backed defaults, the image guarantees them through the managed profile at `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin`, not through raw `/opt/ghostship/bin -> /nix/store/...` symlinks.
 
-The image also runs a local `camofox-browser` sidecar on `http://127.0.0.1:9377`. `CAMOFOX_URL` is image-owned, always set internally, and keeps Hermes browser tools on the local Camofox default path.
-
-For live browser viewing, the image also runs internal `x11vnc` and `noVNC` sidecars. The same-origin live browser page is exposed at:
-
-- `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`
+The image exposes native CloakBrowser as the standard `google-chrome` binary that `agent-browser` already probes on Linux, so Hermes' stock local browser path launches it without an executable-path override. The persistent browser profile root is `/home/hermes/.local/state/cloakbrowser`.

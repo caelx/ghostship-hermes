@@ -324,29 +324,6 @@ def test_live_pyload_ng(cli_runner) -> None:
         assert isinstance(freespace, int), f"expected freespace integer, got {type(freespace)!r}"
 
 
-def test_live_cloakbrowser(cli_runner) -> None:
-    status = cli_runner("ghostship_cloakbrowser.cli", "get_system_status")
-    auth_status = cli_runner("ghostship_cloakbrowser.cli", "auth_status")
-    profiles = cli_runner("ghostship_cloakbrowser.cli", "list_profiles")
-
-    for payload in (status, auth_status, profiles):
-        assert_json_payload(payload)
-
-    item = first_item(profiles)
-    profile_id = pick_id(item, "id", "profileId")
-    if profile_id is not None:
-        detail = cli_runner("ghostship_cloakbrowser.cli", "get_profile", str(profile_id))
-        profile_status = cli_runner("ghostship_cloakbrowser.cli", "get_profile_status", str(profile_id))
-        assert_json_payload(detail)
-        assert_json_payload(profile_status)
-
-        if isinstance(profile_status, dict) and (
-            profile_status.get("status") == "running" or profile_status.get("cdp_url")
-        ):
-            cdp_info = cli_runner("ghostship_cloakbrowser.cli", "get_cdp_info", str(profile_id))
-            assert_json_payload(cdp_info)
-
-
 def _select_rss_bridge_candidate(bridge_map: dict[str, Any]) -> tuple[str, str | None, list[str]] | None:
     for bridge_name, bridge_payload in bridge_map.items():
         parameters = bridge_payload.get("parameters") if isinstance(bridge_payload, dict) else None

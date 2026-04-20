@@ -90,9 +90,6 @@ DEFAULT_CONFIG = {
     },
     "browser": {
         "cloud_provider": "local",
-        "camofox": {
-            "managed_persistence": True,
-        },
         "inactivity_timeout": 120,
         "command_timeout": 30,
         "record_sessions": False,

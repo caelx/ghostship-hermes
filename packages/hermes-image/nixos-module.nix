@@ -65,7 +65,6 @@ let
     "BROWSERBASE_KEEP_ALIVE"
     "BROWSERBASE_SESSION_TIMEOUT"
     "BROWSER_INACTIVITY_TIMEOUT"
-    "CAMOFOX_URL"
     "SEARXNG_URL"
     "SONARR_URL"
     "SONARR_API_KEY"
@@ -100,8 +99,6 @@ let
     "FLARESOLVERR_URL"
     "PYLOAD_URL"
     "PYLOAD_API_KEY"
-    "CLOAKBROWSER_URL"
-    "CLOAKBROWSER_TOKEN"
     "PRICEBUDDY_URL"
     "PRICEBUDDY_TOKEN"
     "RSS_BRIDGE_URL"
@@ -258,9 +255,6 @@ let
       };
       browser = {
         cloud_provider = "local";
-        camofox = {
-          managed_persistence = true;
-        };
         inactivity_timeout = 120;
         command_timeout = 30;
         record_sessions = false;

@@ -3,22 +3,7 @@ set -Eeuo pipefail
 
 image_ref="${1:?usage: single-agent-dashboard.sh <image-ref>}"
 container_name="ghostship-hermes-dashboard-test"
-dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-$(python3 - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)}"
-recreate_dashboard_port="$(python3 - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)"
+dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-}"
 tmp_root="$(mktemp -d)"
 home_dir="$tmp_root/home"
 workspace_dir="$tmp_root/workspace"
@@ -62,12 +47,8 @@ dump_failure_state() {
   echo "===== container logs: $container_name =====" >&2
   "$container_engine" logs "$container_name" >&2 || true
 
-  echo "===== camofox health =====" >&2
-  "$container_engine" exec "$container_name" /bin/sh -lc 'curl -sS http://127.0.0.1:9377/health || true' >&2 || true
-  echo >&2
-
-  echo "===== direct camofox /tabs =====" >&2
-  "$container_engine" exec "$container_name" /bin/sh -lc "curl -sS -X POST http://127.0.0.1:9377/tabs -H 'content-type: application/json' -d '{\"userId\":\"smoke\",\"sessionKey\":\"smoke\",\"url\":\"http://127.0.0.1:7681/api/status\"}' || true" >&2 || true
+  echo "===== browser profile tree =====" >&2
+  "$container_engine" exec "$container_name" /bin/sh -lc "find /home/hermes/.local/state/cloakbrowser -maxdepth 2 -printf '%u:%g %y %p -> %l\\n' 2>/dev/null | sed -n '1,80p'" >&2 || true
   echo >&2
 
   echo "===== non-hermes owned paths =====" >&2
@@ -123,6 +104,62 @@ run_as_hermes() {
   "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
 }
 
+run_test_container() {
+  local publish_arg=""
+  if [ -n "${1:-}" ]; then
+    publish_arg="${1:?missing host port}:7681"
+    shift
+  else
+    shift || true
+    publish_arg="127.0.0.1::7681"
+  fi
+  "$container_engine" run -d \
+    --name "$container_name" \
+    --publish "$publish_arg" \
+    --volume "$home_dir:/home/hermes" \
+    --volume "$workspace_dir:/workspace" \
+    --volume "$nix_dir:/nix" \
+    --env OPENROUTER_API_KEY=test-openrouter \
+    --env OPENCODE_GO_API_KEY=test-opencode \
+    --env GOOGLE_AI_STUDIO_API_KEY=test-google \
+    --env DISCORD_BOT_TOKEN=test-discord-token \
+    --env DISCORD_ALLOWED_USERS=1 \
+    --env DISCORD_HOME_CHANNEL=2 \
+    --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
+    --env GHOSTSHIP_ROUTER_CHANNEL=3 \
+    --env WEBHOOK_SECRET=test-webhook-secret \
+    "$image_ref" "$@"
+}
+
+container_host_port() {
+  "$container_engine" port "$container_name" 7681/tcp | sed -n 's/.*:\([0-9][0-9]*\)$/\1/p' | head -n1
+}
+
+start_test_container_with_retry() {
+  local target_port="${1-}"
+  local create_output=""
+  local attempts=1
+
+  if [ -z "$target_port" ]; then
+    attempts=5
+  fi
+
+  for _ in $(seq 1 "$attempts"); do
+    if create_output="$(run_test_container "$target_port" 2>&1)"; then
+      return 0
+    fi
+    "$container_engine" rm -f "$container_name" >/dev/null 2>&1 || true
+    if ! grep -F "Address already in use" <<<"$create_output" >/dev/null 2>&1; then
+      printf '%s\n' "$create_output" >&2
+      return 1
+    fi
+    sleep 1
+  done
+
+  printf '%s\n' "$create_output" >&2
+  return 1
+}
+
 smoke_note() {
   printf '== smoke: %s ==\n' "$1"
 }
@@ -136,39 +173,20 @@ Custom downstream skill should survive image seeding.
 EOF
 
 "$container_engine" rm -f "$container_name" >/dev/null 2>&1 || true
-"$container_engine" run -d \
-  --name "$container_name" \
-  --publish "${dashboard_port}:7681" \
-  --volume "$home_dir:/home/hermes" \
-  --volume "$workspace_dir:/workspace" \
-  --volume "$nix_dir:/nix" \
-  --env OPENROUTER_API_KEY=test-openrouter \
-  --env OPENCODE_GO_API_KEY=test-opencode \
-  --env GOOGLE_AI_STUDIO_API_KEY=test-google \
-  --env DISCORD_BOT_TOKEN=test-discord-token \
-  --env DISCORD_ALLOWED_USERS=1 \
-  --env DISCORD_HOME_CHANNEL=2 \
-  --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
-  --env GHOSTSHIP_ROUTER_CHANNEL=3 \
-  --env WEBHOOK_SECRET=test-webhook-secret \
-  "$image_ref" >/dev/null
+start_test_container_with_retry "$dashboard_port"
+[ -n "$dashboard_port" ] || dashboard_port="$(container_host_port)"
 
 wait_for_http "http://127.0.0.1:${dashboard_port}/api/status"
 wait_for_http "http://127.0.0.1:${dashboard_port}/terminal/"
-wait_for_http "http://127.0.0.1:${dashboard_port}/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify"
 wait_for_container_http "$container_name" "http://127.0.0.1:8788/readyz"
-wait_for_container_http "$container_name" "http://127.0.0.1:9377/health"
-run_as_hermes "$container_name" 'test -f "$HOME/.cache/camoufox/version.json"'
 
 status_json="$(curl -fsS "http://127.0.0.1:${dashboard_port}/api/status")"
 printf '%s' "$status_json" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data["hermes_home"] == "/home/hermes/.hermes"; assert data["gateway_state"] is not None'
 
 run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; data = json.load(urllib.request.urlopen("http://127.0.0.1:8788/readyz")); assert data["ok"] is True'\'''
 curl -fsSI "http://127.0.0.1:${dashboard_port}/terminal/" >/dev/null
-curl -fsS "http://127.0.0.1:${dashboard_port}/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify" >/dev/null
 bundle="$(curl -fsS "http://127.0.0.1:${dashboard_port}/" | sed -n 's/.*src=\"\([^\"]*index-[^\"]*\.js\)\".*/\1/p' | head -n1)"
 curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q '/terminal/'
-curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q '/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify'
 curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allow-same-origin allow-scripts allow-forms"'
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'allow-modals'
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'href:"/terminal/",target:"_blank"'
@@ -177,7 +195,7 @@ run_in_container "$container_name" '
 for cmd in \
   nix git rg ttyd tmux tirith jq fd yq uv gh gws bws gcloud blogwatcher-cli \
   codex gemini agent-browser opencode \
-  ghostship-bazarr ghostship-bookstack ghostship-changedetection ghostship-chaptarr ghostship-cloakbrowser \
+  ghostship-bazarr ghostship-bookstack ghostship-changedetection ghostship-chaptarr \
   ghostship-flaresolverr ghostship-grimmory ghostship-n8n ghostship-nzbget ghostship-plex ghostship-pricebuddy \
   ghostship-prowlarr ghostship-pyload-ng ghostship-qbittorrent ghostship-radarr ghostship-romm ghostship-rss-bridge \
   ghostship-searxng ghostship-sonarr ghostship-synology ghostship-tautulli ghostship-hermes-router
@@ -191,26 +209,14 @@ run_as_hermes "$container_name" 'gws --help >/dev/null'
 run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'
 run_as_hermes "$container_name" 'blogwatcher-cli --help >/dev/null'
-run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; data = json.load(urllib.request.urlopen("http://127.0.0.1:9377/health")); assert data["ok"] is True; assert data["vncPort"] == 6080'\'''
-run_as_hermes "$container_name" 'cat >/tmp/camofox_smoke.py <<'\''PY'\''
-import json
-from tools.browser_camofox import camofox_close, camofox_navigate, check_camofox_available, get_camofox_url, is_camofox_mode
-
-assert get_camofox_url() == "http://127.0.0.1:9377"
-assert is_camofox_mode() is True
-assert check_camofox_available() is True
-result = json.loads(camofox_navigate("http://127.0.0.1:7681/api/status", task_id="camofox-smoke"))
-assert result["success"] is True, result
-assert result.get("vnc_url") == "http://127.0.0.1:6080"
-assert result.get("url", "").startswith("http://127.0.0.1:7681/")
-print(json.dumps(result))
-print(camofox_close(task_id="camofox-smoke"))
-PY
-'
-if ! run_as_hermes "$container_name" '/opt/hermes/venv/bin/python /tmp/camofox_smoke.py'; then
-  dump_failure_state 1
-  exit 1
-fi
+smoke_note "native browser persistence"
+run_as_hermes "$container_name" 'agent-browser close --all >/dev/null 2>&1 || true'
+run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/ >/dev/null'
+run_as_hermes "$container_name" "agent-browser eval \"localStorage.setItem('ghostship-smoke','warm');\" >/dev/null"
+run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
+run_as_hermes "$container_name" 'agent-browser close --all >/dev/null'
+run_in_container "$container_name" 'test -d /home/hermes/.local/state/cloakbrowser'
+run_in_container "$container_name" 'command -v google-chrome >/dev/null'
 smoke_note "home ownership"
 run_in_container "$container_name" 'test -z "$(find /home/hermes \! -user hermes -print -quit)"'
 smoke_note "memory plugin import"
@@ -251,7 +257,8 @@ run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.h
 run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    api_key: \${GOOGLE_AI_STUDIO_API_KEY}" >/dev/null'
 run_as_hermes "$container_name" 'grep -F "group_sessions_per_user: true" /home/hermes/.hermes/config.yaml >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^terminal:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  timeout: 180" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^browser:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    managed_persistence: true" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^browser:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  cloud_provider: local" >/dev/null'
+run_as_hermes "$container_name" '! sed -n "/^browser:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "camofox" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reactions: false" >/dev/null'
 run_as_hermes "$container_name" 'grep -F "unauthorized_dm_behavior: ignore" /home/hermes/.hermes/config.yaml >/dev/null'
@@ -284,34 +291,20 @@ run_as_hermes "$container_name" 'gws --help >/dev/null'
 run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'
 run_as_hermes "$container_name" 'blogwatcher-cli --help >/dev/null'
-smoke_note "post-restart camofox"
-run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; data = json.load(urllib.request.urlopen("http://127.0.0.1:9377/health")); assert data["ok"] is True; assert data["vncPort"] == 6080'\'''
-run_as_hermes "$container_name" 'cat >/tmp/camofox_verify.py <<'\''PY'\''
-from tools.browser_camofox import check_camofox_available, get_vnc_url
-
-assert check_camofox_available() is True
-assert get_vnc_url() == "http://127.0.0.1:6080"
-PY
-/opt/hermes/venv/bin/python /tmp/camofox_verify.py'
+smoke_note "post-restart browser profile"
+run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/ >/dev/null'
+run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
+run_as_hermes "$container_name" 'agent-browser close --all >/dev/null'
 
 "$container_engine" rm -f "$container_name" >/dev/null
-"$container_engine" run -d \
-  --name "$container_name" \
-  --publish "${recreate_dashboard_port}:7681" \
-  --volume "$home_dir:/home/hermes" \
-  --volume "$workspace_dir:/workspace" \
-  --volume "$nix_dir:/nix" \
-  --env OPENROUTER_API_KEY=test-openrouter \
-  --env OPENCODE_GO_API_KEY=test-opencode \
-  --env GOOGLE_AI_STUDIO_API_KEY=test-google \
-  --env DISCORD_BOT_TOKEN=test-discord-token \
-  --env DISCORD_ALLOWED_USERS=1 \
-  --env DISCORD_HOME_CHANNEL=2 \
-  --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
-  --env GHOSTSHIP_ROUTER_CHANNEL=3 \
-  --env WEBHOOK_SECRET=test-webhook-secret \
-  "$image_ref" >/dev/null
+start_test_container_with_retry ""
+recreate_dashboard_port="$(container_host_port)"
+[ -n "$recreate_dashboard_port" ] || exit 1
 
 wait_for_http "http://127.0.0.1:${recreate_dashboard_port}/api/status"
 run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-home.txt >/dev/null && grep -Fx "smoke-workspace" /workspace/persist-workspace.txt >/dev/null'
 run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
+smoke_note "post-recreate browser profile"
+run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/ >/dev/null'
+run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
+run_as_hermes "$container_name" 'agent-browser close --all >/dev/null'

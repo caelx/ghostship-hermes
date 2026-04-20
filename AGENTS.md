@@ -61,26 +61,20 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Reused non-empty `/nix` volumes must be reconciled on boot with the image-managed default Nix profile at `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`; do not rely on raw `/opt/ghostship/bin -> /nix/store/...` symlinks for image-managed defaults.
 - Persisting `/home/hermes` preserves Hermes config, Codex auth, npm CLIs, XDG state, and other tool state in the way workstation users expect.
 - Upstream bundled Hermes skills must be copied into the image home seed under `.hermes/skills`; `hermes skills list` alone does not seed them. Use file-granular seeding so downstream custom skills survive while missing defaults are added.
-- Treat `HOME`, `HERMES_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `NPM_CONFIG_PREFIX`, `CARGO_HOME`, `RUSTUP_HOME`, `GHOSTSHIP_WORKSPACE_ROOT`, `GHOSTSHIP_WEB_PORT`, `GHOSTSHIP_DASHBOARD_HOST`, `GHOSTSHIP_DASHBOARD_PORT`, `GHOSTSHIP_ROUTER_HOST`, `GHOSTSHIP_ROUTER_PORT`, `GHOSTSHIP_ROUTER_URL`, `GHOSTSHIP_NIX_DEFAULT_PROFILE`, `GHOSTSHIP_TTYD_SOCKET`, `GHOSTSHIP_TTYD_BASE_PATH`, `GHOSTSHIP_TERMINAL_CWD`, `CAMOFOX_URL`, `CAMOFOX_PORT`, `GHOSTSHIP_CAMOFOX_VNC_PORT`, `GHOSTSHIP_CAMOFOX_WEB_PORT`, `CAMOUFOX_CACHE_DIR`, and `PLAYWRIGHT_BROWSERS_PATH` as internal image-owned variables. Do not expose them as downstream-facing env knobs and do not override them from runtime env.
+- Treat `HOME`, `HERMES_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `NPM_CONFIG_PREFIX`, `CARGO_HOME`, `RUSTUP_HOME`, `GHOSTSHIP_WORKSPACE_ROOT`, `GHOSTSHIP_WEB_PORT`, `GHOSTSHIP_DASHBOARD_HOST`, `GHOSTSHIP_DASHBOARD_PORT`, `GHOSTSHIP_ROUTER_HOST`, `GHOSTSHIP_ROUTER_PORT`, `GHOSTSHIP_ROUTER_URL`, `GHOSTSHIP_NIX_DEFAULT_PROFILE`, `GHOSTSHIP_TTYD_SOCKET`, `GHOSTSHIP_TTYD_BASE_PATH`, `GHOSTSHIP_TERMINAL_CWD`, and `AGENT_BROWSER_PROFILE` as internal image-owned variables. Do not expose them as downstream-facing env knobs and do not override them from runtime env.
 - `nix` itself must stay reachable even when `/home/hermes` is replaced by a fresh persisted mount. Keep `/usr/local/bin/nix` symlinked to the installed binary.
 - Upstream `hermes gateway status` shells out to `ps eww -ax -o pid=,command=`. Ubuntu `procps` rejects that exact argument order in this container. Keep the narrow `/usr/local/bin/ps` wrapper that rewrites only that invocation to `ps axeww -o pid=,command=`.
 - `ttyd` should bind a unix socket under `/run/user/3000`, not `/run`, because the runtime service runs as `hermes`.
 - `ttyd` should be backed by `tmux new -A -s webterm` so browser reconnects do not kill the terminal session.
 - Keep ttyd styling aligned to the dashboard palette.
 - Bind the public web surface to `0.0.0.0:7681`, but keep internal dashboard and router listeners on localhost.
-- Hermes browser tools should default to local Camofox mode in this image by running `camofox-browser` on `127.0.0.1:9377` and setting image-owned `CAMOFOX_URL` to that endpoint.
-- Fresh homes need `~/.cache/camoufox` linked to the image-owned Camofox binary cache under `/opt/ghostship`, otherwise upstream `camofox-browser` fails on `/tabs` because it looks for `version.json` under the home cache.
-- The `~/.cache/camoufox` symlink created during cont-init must itself be owned by `hermes`; a root-owned symlink is enough to fail the `/home/hermes` ownership smoke even when the target cache contents are correct.
-- `camoufox-js fetch` does not reliably honor the image's custom cache-dir env during build. Fetch into the upstream default cache under `/root/.cache/camoufox`, then mirror that tree into `/opt/ghostship/camoufox-cache` and assert `version.json` exists there before shipping the image.
-- The `camofox-browser` service must create its persisted profile and cookie directories owned by `hermes` before dropping privileges; creating them as root trips the `/home/hermes` ownership smoke.
-- For `camofox-browser`, explicitly create and re-own the full `$HOME/.local/state/camofox-browser` tree, not just the leaf profile/cookie directories; otherwise the parent state directory still appears as `root:root` after first browser use and CI fails the home-ownership check.
-- Do that Camofox state-tree ownership work in both places: pre-create `/home/hermes/.local/state/camofox-browser/{profiles,cookies}` during cont-init and then `mkdir/chown` the same tree again in the service with numeric `3000:3000`, because fresh persisted homes and stale exact-source images both exposed root-owned drift there.
-- The `camofox-vnc` sidecar must also create its persisted state directory under `/home/hermes/.local/state/ghostship-hermes/camofox` as `hermes`; a root-owned VNC state dir silently trips the same `/home/hermes` ownership smoke after browser checks pass.
-- Camofox cold starts on CI can exceed the upstream default 30s handler timeout. Keep the internal `camofox-browser` service timeouts raised (`HANDLER_TIMEOUT_MS=90000`, `NAVIGATE_TIMEOUT_MS=60000`) so the first local navigate does not fail during image smoke.
-- The dashboard should embed the live browser view through the same origin at `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`, backed by internal `x11vnc` and `noVNC` sidecars.
+- Hermes browser tools should use the stock local `agent-browser` lane by exposing native CloakBrowser as the standard `google-chrome` binary that `agent-browser` already probes on Linux.
+- Build-time image prep must install native CloakBrowser under `/opt/ghostship` and prefetch its browser binary so runtime launches do not depend on first-boot network access.
+- The wrapper at `/usr/local/bin/google-chrome` must inject CloakBrowser's default stealth args on each launch and force `--user-data-dir=/home/hermes/.local/state/cloakbrowser`.
+- Fresh homes must pre-create `/home/hermes/.local/state/cloakbrowser` as `hermes`; browser launches must not leave root-owned state behind in that tree.
 - Upstream Hermes `web/src/App.tsx` ships in two currently supported released shapes: the older static nav/page map and the newer `BUILTIN_NAV` plus explicit `<Route>` layout. Keep `prepare_upstream_hermes.py` patching both shapes so upstream dashboard bumps do not break the image build.
 - Build `tirith` from the repo flake's pinned `.#tirith` package, not from ad-hoc `nixpkgs#tirith`, so exact-source Docker builds stay deterministic and do not depend on live `nixpkgs-unstable` GitHub API lookups.
-- When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and add step markers around the silent post-browser assertions; otherwise CI hides the actual failing late-stage check behind the generic Camofox trap output.
+- When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
 - The managed Hermes runtime primary lane is Codex `gpt-5.4` with `agent.reasoning_effort = "medium"`, and the configured fallback lane is direct `opencode-go/minimax-m2.7`.
 
 ### Discord Routing
@@ -107,7 +101,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Image-owned layer is Hermes core plus true runtime dependencies only.
 - Prefer the utility's native package manager when one is the expected upstream install path.
 - Persisted `/nix` has two lanes: an image-managed default profile for baseline Nix tools and the user-managed `/home/hermes/.nix-profile` for extra installs.
-- `camofox-browser` should run as an internal sidecar with browser binaries/caches under `/opt/ghostship`, while persisted profiles/cookies live under `/home/hermes/.local/state/camofox-browser`.
+- Native CloakBrowser should be image-owned under `/opt/ghostship`, while the persisted browser profile root lives under `/home/hermes/.local/state/cloakbrowser`.
 - Use the same iframe sandbox policy for the live browser tab as the terminal tab: `allow-same-origin allow-scripts allow-forms`, no modal permission.
 - Node-native CLIs such as `codex`, `gemini-cli`, `agent-browser`, and `opencode` belong in npm under `/home/hermes`.
 - Avoid convenience-driven image bloat. If a binary is not required by boot, supervision, router, dashboard, ttyd, native Hermes runtime, or upstream doctor/runtime expectations, move it out of base.
@@ -115,15 +109,17 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Testing
 
 - Live validation on `chill-penguin` is the real deployment proof path.
-- Rootless Podman on `chill-penguin` can keep the published host port bound briefly after `rm -f` during rapid recreate tests. The workstation smoke should use a fresh random host port for the recreate phase instead of trying to reuse the original published port.
+- Rootless Podman on `chill-penguin` can hand `pasta` an already-occupied published host port during rapid recreate tests, even when the host port is auto-assigned. The workstation smoke should let the container engine choose the published port, query the selected port after startup, and retry recreate startup on `Address already in use`.
 - The smoke test should cover:
   - dashboard `/api/status`
   - router readiness
   - terminal path `/terminal/`
-  - browser live-view path `/camofox/vnc.html?autoconnect=1&resize=remote&path=camofox/websockify`
+  - native local browser launch against the dashboard origin `/`
   - native `hermes gateway status`
   - `hermes doctor` as far as upstream supports without repo shims
+  - browser profile persistence across restart and full container recreation at `/home/hermes/.local/state/cloakbrowser`
   - persistence across restart and full container recreation for `/home/hermes`, `/workspace`, and `/nix`
+- Browser persistence smoke should write and read durable state from the dashboard origin `/` with `localStorage`; do not use `/api/status` or session cookies as the persistence proof.
 
 ### Python Utilities
 

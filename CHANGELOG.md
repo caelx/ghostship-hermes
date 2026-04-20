@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Breaking: replaced the image-managed Camofox/browser-manager stack with native CloakBrowser wired through Hermes' stock local `agent-browser` path, removed the `ghostship-cloakbrowser` CLI and all `/camofox/` live-view plumbing, and made `/home/hermes/.local/state/cloakbrowser` the single persisted browser profile root.
 - Switched the workstation smoke recreate phase to a fresh random published dashboard port instead of reusing the original one, so rootless Podman (`pasta`) no longer flakes on the second `run -p ...` during persistence validation.
 - Fixed the workstation smoke to validate `custom_providers` by parsing YAML instead of using a text range that broke on top-level list entries such as `- name: ghostship-router`.
 - Pre-created and re-owned the Camofox state tree in cont-init and switched the `camofox-browser` service to numeric-ID `mkdir/chown`, so the browser state stays `hermes`-owned even on fresh persisted homes and exact-source builds.

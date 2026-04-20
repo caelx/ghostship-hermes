@@ -14,7 +14,6 @@ The repo uses a hybrid model:
 | --- | --- | --- | --- |
 | `ghostship-bazarr` | `docs/api/bazarr.md` | `docs/api/bazarr-swagger.json` | Official Swagger + repo summary |
 | `ghostship-bookstack` | `docs/api/bookstack.md` | `docs/api/bookstack-docs.json` | Official docs plus repo-owned normalized snapshot |
-| `ghostship-cloakbrowser` | `docs/api/cloakbrowser.md` | None | Official README and source code |
 | `ghostship-changedetection` | `docs/api/changedetection.md` | `docs/api/changedetection-openapi.json` | Official OpenAPI + repo summary |
 | `ghostship-flaresolverr` | `docs/api/flaresolverr.md` | None | Official README |
 | `ghostship-grimmory` | `docs/api/grimmory.md` | None | Official Grimmory repository source code |

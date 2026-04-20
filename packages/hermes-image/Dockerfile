@@ -13,9 +13,6 @@ ENV HOME=/home/hermes \
     XDG_CONFIG_HOME=/home/hermes/.config \
     XDG_CACHE_HOME=/home/hermes/.cache \
     XDG_DATA_HOME=/home/hermes/.local/share \
-    CAMOFOX_URL=http://127.0.0.1:9377 \
-    CAMOFOX_PORT=9377 \
-    CAMOUFOX_CACHE_DIR=/opt/ghostship/camoufox-cache \
     NPM_CONFIG_PREFIX=/home/hermes/.local \
     npm_config_audit=false \
     npm_config_fund=false \
@@ -40,9 +37,7 @@ ENV HOME=/home/hermes \
     GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock \
     GHOSTSHIP_TTYD_BASE_PATH=/terminal \
     GHOSTSHIP_TERMINAL_CWD=/workspace \
-    GHOSTSHIP_CAMOFOX_VNC_PORT=5901 \
-    GHOSTSHIP_CAMOFOX_WEB_PORT=6080 \
-    PLAYWRIGHT_BROWSERS_PATH=/opt/ghostship/browser-cache \
+    AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser \
     PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
 
@@ -99,7 +94,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxt6 \
     libxtst6 \
     nginx \
-    novnc \
     procps \
     python3 \
     python3-venv \
@@ -109,10 +103,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux \
     ttyd \
     util-linux \
-    websockify \
     xdg-utils \
-    x11vnc \
-    xvfb \
     xz-utils \
     yq \
     zstd \
@@ -196,20 +187,18 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && /opt/ghostship-router/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/hermes-router \
     && python3 -m venv /opt/ghostship-utils/venv \
     && /opt/ghostship-utils/venv/bin/pip install --upgrade pip setuptools wheel \
-    && /opt/ghostship-utils/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/*-cli uv \
-    && mkdir -p /opt/camofox-browser /opt/ghostship/browser-cache /opt/ghostship/camoufox-cache \
+    && cli_packages="$(for pkg in /src/packages/*-cli; do [ -f "$pkg/pyproject.toml" ] && printf '%s ' "$pkg"; done)" \
+    && /opt/ghostship-utils/venv/bin/pip install /src/packages/ghostship-cli-contract uv $cli_packages \
+    && python3 -m venv /opt/cloakbrowser-venv \
+    && /opt/cloakbrowser-venv/bin/pip install --upgrade pip setuptools wheel \
+    && /opt/cloakbrowser-venv/bin/pip install "cloakbrowser==0.3.25" \
+    && mkdir -p /opt/ghostship/cloakbrowser-cache \
     && mkdir -p /opt/ghostship/home-seed/.hermes \
     && cp -R /tmp/hermes-agent/skills /opt/ghostship/home-seed/.hermes/skills \
-    && cd /opt/camofox-browser \
-    && npm init -y >/dev/null 2>&1 \
-    && npm install --omit=dev --no-audit --no-fund @askjo/camofox-browser \
-    && HOME=/root PLAYWRIGHT_BROWSERS_PATH=/opt/ghostship/browser-cache ./node_modules/.bin/camoufox-js fetch \
-    && rm -rf /opt/ghostship/camoufox-cache \
-    && mkdir -p /opt/ghostship/camoufox-cache \
-    && cp -a /root/.cache/camoufox/. /opt/ghostship/camoufox-cache/ \
-    && test -f /opt/ghostship/camoufox-cache/version.json \
-    && python3 /src/packages/hermes-image/build/patch_camofox_server.py /opt/camofox-browser/node_modules/@askjo/camofox-browser/server.js \
-    && chown -R 3000:3000 /opt/ghostship/browser-cache /opt/ghostship/camoufox-cache \
+    && cloakbrowser_bin="$(HOME=/root CLOAKBROWSER_CACHE_DIR=/opt/ghostship/cloakbrowser-cache /opt/cloakbrowser-venv/bin/python -c 'import os; from cloakbrowser.download import ensure_binary; print(ensure_binary(), flush=True); os._exit(0)')" \
+    && cloakbrowser_dir="$(dirname "$cloakbrowser_bin")" \
+    && ln -sfn "$cloakbrowser_dir" /opt/ghostship/cloakbrowser-current \
+    && touch /opt/ghostship/cloakbrowser-cache/.welcome_shown \
     && cd /src \
     && tirith_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin nix --extra-experimental-features 'nix-command flakes' build --impure --no-write-lock-file --no-link --print-out-paths .#tirith)" \
     && ln -sf "${tirith_path}/bin/tirith" /usr/local/bin/tirith \
@@ -246,17 +235,16 @@ RUN mkdir -p /opt/ghostship \
 COPY packages/hermes-image/rootfs/ /
 
 RUN chmod +x /etc/cont-init.d/10-ghostship-prepare \
-    /etc/services.d/camofox-browser/run \
-    /etc/services.d/camofox-vnc/run \
-    /etc/services.d/camofox-web/run \
     /etc/services.d/hermes-gateway/run \
     /etc/services.d/hermes-dashboard/run \
     /etc/services.d/nginx/run \
     /etc/services.d/ttyd/run \
     /etc/services.d/ghostship-router/run \
+    /usr/local/bin/google-chrome \
     /usr/local/bin/nix \
     /usr/local/bin/nix-store \
-    /usr/local/bin/ps
+    /usr/local/bin/ps \
+    && ln -sf /usr/local/bin/google-chrome /usr/local/bin/google-chrome-stable
 
 EXPOSE 7681
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=5 CMD bash -lc 'curl -fsS "http://127.0.0.1:${GHOSTSHIP_WEB_PORT}/api/status" >/dev/null'

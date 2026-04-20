@@ -74,7 +74,6 @@
           ghostshipSynology = mkGhostshipPythonUtility ./packages/synology-cli/package.nix;
           ghostshipFlaresolverr = mkGhostshipPythonUtility ./packages/flaresolverr-cli/package.nix;
           ghostshipPyloadNg = mkGhostshipPythonUtility ./packages/pyload-ng-cli/package.nix;
-          ghostshipCloakbrowser = mkGhostshipPythonUtility ./packages/cloakbrowser-cli/package.nix;
           ghostshipPricebuddy = mkGhostshipPythonUtility ./packages/pricebuddy-cli/package.nix;
           ghostshipRssBridge = mkGhostshipPythonUtility ./packages/rss-bridge-cli/package.nix;
           ghostshipChangedetection = mkGhostshipPythonUtility ./packages/changedetection-cli/package.nix;
@@ -169,7 +168,6 @@
             ghostshipSynology
             ghostshipFlaresolverr
             ghostshipPyloadNg
-            ghostshipCloakbrowser
             ghostshipPricebuddy
             ghostshipRssBridge
             ghostshipChangedetection
@@ -280,7 +278,6 @@
           ghostship-synology = ghostshipSynology;
           ghostship-flaresolverr = ghostshipFlaresolverr;
           ghostship-pyload-ng = ghostshipPyloadNg;
-          ghostship-cloakbrowser = ghostshipCloakbrowser;
           ghostship-pricebuddy = ghostshipPricebuddy;
           ghostship-rss-bridge = ghostshipRssBridge;
           ghostship-changedetection = ghostshipChangedetection;
@@ -330,7 +327,6 @@
             ghostship-synology
             ghostship-flaresolverr
             ghostship-pyload-ng
-            ghostship-cloakbrowser
             ghostship-pricebuddy
             ghostship-rss-bridge
             ghostship-changedetection
@@ -402,7 +398,7 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/cloakbrowser-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src:$PWD/packages/changedetection-cli/src:$PWD/packages/bookstack-cli/src:$PWD/packages/hermes-router/src${PYTHONPATH:+:$PYTHONPATH}"
+              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src:$PWD/packages/changedetection-cli/src:$PWD/packages/bookstack-cli/src:$PWD/packages/hermes-router/src${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }
