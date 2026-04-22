@@ -8,7 +8,7 @@ Current contract:
 - exposes one logical alias at `GET /v1/models`: `agentic`
 - persists inventory, route health, provider health, cooldowns, overrides, recent events, chat sessions, and stored `responses` objects in SQLite
 - refreshes inventory from `nvidia-build`, `opencode-zen`, and `openrouter`
-- discovers NVIDIA Build inventory live from `build.nvidia.com/models`, filters to current free endpoints, and normalizes them into canonical `publisher/model` ids
+- discovers NVIDIA Build inventory live from the filtered `build.nvidia.com/models?filters=nimType%3Anim_type_preview` page, filters out deprecated free endpoints, deduplicates repeated model ids, and normalizes them into canonical `publisher/model` ids
 - routes only explicitly ranked `agentic` models
 - keeps a top-five reserve per provider and chooses the best three currently eligible models from that reserve
 - never routes uncategorized discovered models; they are exposed only through debug inventory surfaces

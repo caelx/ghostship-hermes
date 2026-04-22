@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed `ghostship-hermes-router` NVIDIA free-inventory discovery to scrape the filtered `build.nvidia.com/models?filters=nimType%3Anim_type_preview` catalog page instead of the generic models index, keep deprecated free endpoints excluded, and deduplicate repeated provider/model ids before persisting inventory so router refreshes stop failing on duplicate-key writes.
 - Breaking: replaced the image-managed Camofox/browser-manager stack with native CloakBrowser wired through Hermes' stock local `agent-browser` path, removed the `ghostship-cloakbrowser` CLI and all `/camofox/` live-view plumbing, and made `/home/hermes/.local/state/cloakbrowser` the single persisted browser profile root.
 - Fixed the workstation smoke restart/recreate phases to retry a hermes-user Nix profile command after dashboard readiness, so CI no longer flakes when `/api/status` comes back before `~/.nix-profile/bin/hello` is callable again.
 - Fixed the workstation smoke restart/recreate dashboard gate to wait on the in-container dashboard endpoint instead of the host-published random port, avoiding GitHub Actions Docker restart flakes while preserving the initial public-surface check.

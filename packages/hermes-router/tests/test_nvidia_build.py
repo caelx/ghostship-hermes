@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
 
 from hermes_router.providers.base import NormalizedProviderError
 from hermes_router.providers.nvidia_build import NvidiaBuildProvider
+from hermes_router.state import SqliteStateStore
 
 
 def make_transport(handler):
@@ -36,7 +38,7 @@ def _catalog_html(*resources: dict[str, object]) -> str:
 
 def test_list_models_discovers_current_free_inventory_from_catalog() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url == httpx.URL("https://build.nvidia.com/models")
+        assert request.url == httpx.URL("https://build.nvidia.com/models?filters=nimType%3Anim_type_preview")
         html = _catalog_html(
             {
                 "orgName": "qc69jvmznzxy",
@@ -83,8 +85,121 @@ def test_list_models_discovers_current_free_inventory_from_catalog() -> None:
     assert [model.id for model in models] == ["minimaxai/minimax-m2.7"]
     assert models[0].provider == "nvidia-build"
     assert models[0].is_free is True
-    assert models[0].metadata["catalog_source"] == "build.nvidia.com/models"
+    assert models[0].metadata["catalog_source"] == "https://build.nvidia.com/models?filters=nimType%3Anim_type_preview"
     assert "agentic" in models[0].tags
+
+
+def test_list_models_deduplicates_duplicate_catalog_entries() -> None:
+    duplicate_resource = {
+        "orgName": "qc69jvmznzxy",
+        "resourceId": "qc69jvmznzxy/openai/gpt-oss-120b".replace("/openai/", "/"),
+        "labels": [
+            {"key": "nimType", "values": ["Free Endpoint"]},
+            {"key": "publisher", "values": ["openai"]},
+            {"key": "general", "values": ["reasoning", "agentic"]},
+        ],
+        "description": "OpenAI OSS route exposed twice by the catalog.",
+        "displayName": "gpt-oss-120b",
+        "dateCreated": "2026-04-12T01:01:05.944Z",
+        "attributes": [{"key": "AVAILABLE", "value": "true"}],
+        "guestAccess": True,
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == httpx.URL("https://build.nvidia.com/models?filters=nimType%3Anim_type_preview")
+        return httpx.Response(200, text=_catalog_html(duplicate_resource, dict(duplicate_resource)))
+
+    provider = NvidiaBuildProvider(
+        "secret",
+        base_url="https://integrate.api.nvidia.com/v1",
+        transport=make_transport(handler),
+    )
+
+    models = provider.list_models()
+
+    assert [model.id for model in models] == ["openai/gpt-oss-120b"]
+
+
+def test_list_models_excludes_deprecated_free_entries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == httpx.URL("https://build.nvidia.com/models?filters=nimType%3Anim_type_preview")
+        return httpx.Response(
+            200,
+            text=_catalog_html(
+                {
+                    "orgName": "qc69jvmznzxy",
+                    "resourceId": "qc69jvmznzxy/mistralai/mistral-nemotron".replace("/mistralai/", "/"),
+                    "labels": [
+                        {"key": "nimType", "values": ["Free Endpoint"]},
+                        {"key": "publisher", "values": ["mistralai"]},
+                        {"key": "general", "values": ["coding", "agentic"]},
+                    ],
+                    "description": "Current free endpoint.",
+                    "displayName": "mistral-nemotron",
+                    "dateCreated": "2026-04-12T01:01:05.944Z",
+                    "attributes": [{"key": "AVAILABLE", "value": "true"}],
+                    "guestAccess": True,
+                },
+                {
+                    "orgName": "qc69jvmznzxy",
+                    "resourceId": "qc69jvmznzxy/microsoft/phi-4-mini-flash-reasoning".replace("/microsoft/", "/"),
+                    "labels": [
+                        {"key": "nimType", "values": ["Deprecated Free Endpoint"]},
+                        {"key": "publisher", "values": ["microsoft"]},
+                        {"key": "general", "values": ["reasoning", "agentic"]},
+                    ],
+                    "description": "Deprecated free endpoint.",
+                    "displayName": "phi-4-mini-flash-reasoning",
+                    "dateCreated": "2026-04-12T01:01:05.944Z",
+                    "attributes": [{"key": "AVAILABLE", "value": "true"}],
+                    "guestAccess": True,
+                },
+            ),
+        )
+
+    provider = NvidiaBuildProvider(
+        "secret",
+        base_url="https://integrate.api.nvidia.com/v1",
+        transport=make_transport(handler),
+    )
+
+    models = provider.list_models()
+
+    assert [model.id for model in models] == ["mistralai/mistral-nemotron"]
+
+
+def test_state_store_accepts_deduplicated_nvidia_inventory(tmp_path: Path) -> None:
+    duplicate_resource = {
+        "orgName": "qc69jvmznzxy",
+        "resourceId": "qc69jvmznzxy/nvidia/nemotron-3-super-120b-a12b".replace("/nvidia/", "/"),
+        "labels": [
+            {"key": "nimType", "values": ["Free Endpoint"]},
+            {"key": "publisher", "values": ["nvidia"]},
+            {"key": "general", "values": ["coding", "agentic"]},
+        ],
+        "description": "Duplicate free endpoint listing.",
+        "displayName": "nemotron-3-super-120b-a12b",
+        "dateCreated": "2026-04-12T01:01:05.944Z",
+        "attributes": [{"key": "AVAILABLE", "value": "true"}],
+        "guestAccess": True,
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == httpx.URL("https://build.nvidia.com/models?filters=nimType%3Anim_type_preview")
+        return httpx.Response(200, text=_catalog_html(duplicate_resource, dict(duplicate_resource)))
+
+    provider = NvidiaBuildProvider(
+        "secret",
+        base_url="https://integrate.api.nvidia.com/v1",
+        transport=make_transport(handler),
+    )
+    store = SqliteStateStore(tmp_path / "router.db")
+
+    models = provider.list_models()
+    store.save_inventory("nvidia-build", models, reason="test")
+
+    stored = store.load_inventory("nvidia-build")
+    assert [model.id for model in stored] == ["nvidia/nemotron-3-super-120b-a12b"]
 
 
 def test_chat_completion_strips_stream_flag_before_sync_request() -> None:

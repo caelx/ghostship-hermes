@@ -97,13 +97,14 @@ class _InlineScriptParser(HTMLParser):
 
 class NvidiaBuildProvider:
     name = "nvidia-build"
+    _FREE_MODELS_CATALOG_URL = "https://build.nvidia.com/models?filters=nimType%3Anim_type_preview"
 
     def __init__(
         self,
         api_key: str,
         *,
         base_url: str,
-        catalog_url: str = "https://build.nvidia.com/models",
+        catalog_url: str = _FREE_MODELS_CATALOG_URL,
         transport: httpx.BaseTransport | None = None,
         default_timeout: float = 30.0,
     ):
@@ -120,13 +121,12 @@ class NvidiaBuildProvider:
     def list_models(self, *, timeout: float | None = None) -> list[ProviderModel]:
         html = self._fetch_catalog_html(timeout=timeout)
         resources = self._parse_catalog_resources(html)
-        models: list[ProviderModel] = []
+        deduped_models: dict[str, ProviderModel] = {}
         for resource in resources:
-            model = self._resource_to_model(resource)
-            if model is not None:
-                models.append(model)
-        models.sort(key=lambda item: item.id)
-        return models
+            model = self._resource_to_model(resource, catalog_source=self.catalog_url)
+            if model is not None and model.id not in deduped_models:
+                deduped_models[model.id] = model
+        return sorted(deduped_models.values(), key=lambda item: item.id)
 
     def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
         body = dict(payload)
@@ -309,14 +309,14 @@ class NvidiaBuildProvider:
         return resources
 
     @classmethod
-    def _resource_to_model(cls, resource: dict[str, Any]) -> ProviderModel | None:
+    def _resource_to_model(cls, resource: dict[str, Any], *, catalog_source: str) -> ProviderModel | None:
         resource_id = str(resource.get("resourceId") or "").strip()
         if "/" not in resource_id:
             return None
         _, backend_name = resource_id.split("/", 1)
         publisher = next(iter(cls._label_values(resource, "publisher")), "").strip()
         backend_model = f"{publisher}/{backend_name}" if publisher else backend_name
-        metadata = cls._metadata_for_resource(resource, backend_model=backend_model)
+        metadata = cls._metadata_for_resource(resource, backend_model=backend_model, catalog_source=catalog_source)
         if not cls._is_current_free_endpoint(resource):
             return None
         return ProviderModel(
@@ -366,7 +366,7 @@ class NvidiaBuildProvider:
         return tuple(dict.fromkeys(tags))
 
     @classmethod
-    def _metadata_for_resource(cls, resource: dict[str, Any], *, backend_model: str) -> dict[str, Any]:
+    def _metadata_for_resource(cls, resource: dict[str, Any], *, backend_model: str, catalog_source: str) -> dict[str, Any]:
         input_modalities = ["text"]
         output_modalities = ["text"]
         general_values = " ".join(cls._label_values(resource, "general")).lower()
@@ -385,7 +385,7 @@ class NvidiaBuildProvider:
             "created": cls._created_timestamp(resource.get("dateCreated")),
             "input_modalities": input_modalities,
             "output_modalities": output_modalities,
-            "catalog_source": "build.nvidia.com/models",
+            "catalog_source": catalog_source,
             "catalog_resource_id": resource.get("resourceId"),
             "catalog_org_name": resource.get("orgName"),
             "catalog_labels": resource.get("labels") or [],

@@ -92,7 +92,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Router Policy
 
 - `NVIDIA_BUILD_API_KEY` enables the repo-owned `nvidia-build` provider.
-- The NVIDIA provider uses live `build.nvidia.com/models` catalog discovery, filters to current free endpoints, and normalizes ids into `publisher/model`.
+- NVIDIA free inventory discovery should use the filtered `build.nvidia.com/models?filters=nimType%3Anim_type_preview` catalog page and dedupe repeated model ids before persisting inventory.
 - Normal router alias routing is `agentic`-only.
 - Each provider owns a repo-ranked top-five reserve and only the best three currently eligible models from that reserve may route at request time.
 - Uncategorized discovered models must not route; expose them only through operator-facing inventory surfaces until they are manually ranked or explicitly unused.
