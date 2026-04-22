@@ -12,7 +12,7 @@ HERMES_HOME = Path(os.environ.get("HERMES_HOME", str(HOME / ".hermes")))
 WORKSPACE = Path(os.environ.get("GHOSTSHIP_WORKSPACE_ROOT", "/workspace"))
 ROUTER_URL = os.environ.get("GHOSTSHIP_ROUTER_URL", "http://127.0.0.1:8788/v1")
 ROUTER_API_KEY_ENV = "_GHOSTSHIP_ROUTER_API_KEY"
-AUXILIARY_MODEL = "gemini-3.1-flash-lite-preview"
+AUXILIARY_MODEL = "gemini-2.5-flash-lite"
 AUXILIARY_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 AUXILIARY_API_KEY = "${GOOGLE_AI_STUDIO_API_KEY}"
 

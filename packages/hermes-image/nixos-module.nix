@@ -33,7 +33,7 @@ let
   unmanagedDefaultSoulHash = "2765a846e1bb371d78d3b93b403dfb0f8d1ba1a9895edb5f608367abfe81194d";
   managedWebhookPort = 8644;
   managedLayoutVersion = "single-agent-v1";
-  auxiliaryModelDefault = "gemini-3.1-flash-lite-preview";
+  auxiliaryModelDefault = "gemini-2.5-flash-lite";
   auxiliaryBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
   auxiliaryApiKeyRef = "\${GOOGLE_AI_STUDIO_API_KEY}";
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
