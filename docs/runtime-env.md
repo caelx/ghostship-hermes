@@ -194,8 +194,8 @@ These are internal image-owned or boot-generated variables. Downstream must not 
 
 Notes:
 
-- `_GHOSTSHIP_ROUTER_API_KEY` is auto-generated at boot.
-- the image shares it between Hermes and the local router only
+- `_GHOSTSHIP_ROUTER_API_KEY` is optional router auth.
+- the image may auto-generate it at boot and share it between Hermes and the local router
 - it is not a public/downstream credential and should never appear in deployment env files
 
 ## Codex Auth Is Not An Env Var

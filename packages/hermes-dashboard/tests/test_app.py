@@ -98,3 +98,38 @@ def test_console_routes_open_and_close_session(monkeypatch, tmp_path: Path) -> N
     closed = client.post(f'/api/console/sessions/{session_id}/close')
     assert closed.status_code == 200
     assert closed.json()['session'] is None
+
+
+def test_health_treats_router_bearer_token_as_optional(monkeypatch, tmp_path: Path) -> None:
+    _app_module, runtime_module = _load_app_module(monkeypatch, tmp_path)
+    import hermes_dashboard.collectors.health as health_module
+
+    health_module = importlib.reload(health_module)
+    monkeypatch.setenv('GOOGLE_AI_STUDIO_API_KEY', 'test-google')
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'test-openrouter')
+    monkeypatch.setenv('DISCORD_TOKEN', 'test-discord')
+    monkeypatch.setenv('BWS_ACCESS_TOKEN', 'test-bws')
+    monkeypatch.delenv('_GHOSTSHIP_ROUTER_API_KEY', raising=False)
+    monkeypatch.setattr(
+        health_module,
+        '_check_pid_file',
+        lambda name, pid_file: health_module.ServiceStatus(name=name, running=True, pid=123),
+    )
+    monkeypatch.setattr(
+        health_module,
+        '_check_process',
+        lambda name, pattern: health_module.ServiceStatus(name=name, running=True, pid=456),
+    )
+    monkeypatch.setattr(
+        health_module,
+        'gateway_service_probe',
+        lambda: runtime_module.ServiceProbe(service='hermes-gateway.service', scope=None, active=True, note='active'),
+    )
+
+    health = health_module.collect_health(str(tmp_path / '.hermes'))
+    router_key = next(item for item in health.keys if item.name == '_GHOSTSHIP_ROUTER_API_KEY')
+
+    assert router_key.present is False
+    assert router_key.required is False
+    assert health.keys_missing == 0
+    assert health.all_healthy is True

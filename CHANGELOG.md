@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed `ghostship-hermes-router` OpenRouter reserve policy to use the current repo-ranked `agentic` order (`nemotron-3-super`, `minimax-m2.5`, `trinity-large-preview`, `gemma-4-31b-it`, `qwen3-coder`), corrected the rank-1 reserve-bias scoring bug in the debug payloads, added a compact `/debug/summary` tuning surface, and made `_GHOSTSHIP_ROUTER_API_KEY` optional in the router/dashboard health contract instead of treating it as required runtime auth.
 - Fixed `ghostship-hermes-router` NVIDIA free-inventory discovery to scrape the filtered `build.nvidia.com/models?filters=nimType%3Anim_type_preview` catalog page instead of the generic models index, keep deprecated free endpoints excluded, and deduplicate repeated provider/model ids before persisting inventory so router refreshes stop failing on duplicate-key writes.
 - Breaking: replaced the image-managed Camofox/browser-manager stack with native CloakBrowser wired through Hermes' stock local `agent-browser` path, removed the `ghostship-cloakbrowser` CLI and all `/camofox/` live-view plumbing, and made `/home/hermes/.local/state/cloakbrowser` the single persisted browser profile root.
 - Fixed the workstation smoke restart/recreate phases to retry a hermes-user Nix profile command after dashboard readiness, so CI no longer flakes when `/api/status` comes back before `~/.nix-profile/bin/hello` is callable again.

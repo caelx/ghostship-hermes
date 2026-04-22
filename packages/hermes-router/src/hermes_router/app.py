@@ -116,6 +116,10 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
     def debug_providers():
         return resolved_service.debug_providers()
 
+    @app.get("/debug/summary")
+    def debug_summary():
+        return resolved_service.debug_summary()
+
     @app.get("/debug/rankings/{alias}")
     def debug_rankings(alias: str):
         try:

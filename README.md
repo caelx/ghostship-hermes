@@ -322,7 +322,7 @@ Important behavior:
 - `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned free-response channel.
 - `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`
 - `/model` cannot override the router-pinned forced channel
-- `_GHOSTSHIP_ROUTER_API_KEY` is auto-generated at boot, stays inside the container, and is not part of the downstream env contract
+- `_GHOSTSHIP_ROUTER_API_KEY` is optional internal router auth. The image may still auto-generate it for Hermes integration, but the router does not require it to run.
 
 Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume and backs the default `openai-codex/gpt-5.4` primary lane.
 

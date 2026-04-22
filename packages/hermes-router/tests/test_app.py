@@ -332,3 +332,105 @@ def test_retired_coding_alias_is_rejected(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert "retired" in response.json()["error"]["message"]
+
+
+def test_debug_rankings_reports_non_routable_ranked_models_and_promotion(tmp_path: Path) -> None:
+    config = make_config(
+        tmp_path,
+        provider_selection_policies=(
+            ProviderSelectionPolicy(
+                provider_name="nvidia-build",
+                ranked_models=("nvidia-1", "nvidia-2", "nvidia-3", "nvidia-4", "nvidia-5"),
+                unused_models=("nvidia-bad",),
+            ),
+            ProviderSelectionPolicy(
+                provider_name="opencode-zen",
+                ranked_models=("zen-1", "zen-2", "zen-3", "zen-4", "zen-5"),
+            ),
+            ProviderSelectionPolicy(
+                provider_name="openrouter",
+                ranked_models=("or-1", "or-2", "or-3", "or-4", "or-5"),
+            ),
+        ),
+    )
+    service = make_service(
+        tmp_path,
+        config=config,
+        providers={
+            "nvidia-build": FakeProvider("nvidia-build", models=[]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[]),
+            "openrouter": FakeProvider(
+                "openrouter",
+                models=[
+                    free_model("or-1", "openrouter"),
+                    free_model("or-2", "openrouter"),
+                    ProviderModel(
+                        id="or-3",
+                        provider="openrouter",
+                        is_free=True,
+                        tags=("agentic",),
+                        metadata={
+                            "supported_parameters": ["tools", "tool_choice"],
+                            "input_modalities": ["text", "image"],
+                            "output_modalities": ["text"],
+                        },
+                    ),
+                    free_model("or-4", "openrouter"),
+                    free_model("or-5", "openrouter"),
+                ],
+            ),
+        },
+    )
+
+    payload = service.debug_rankings("agentic")
+    openrouter = next(item for item in payload["providers"] if item["provider_name"] == "openrouter")
+    ranked = {item["backend_model"]: item for item in openrouter["ranked"]}
+
+    assert [item["backend_model"] for item in openrouter["active_candidates"]] == ["or-1", "or-2", "or-4"]
+    assert ranked["or-1"]["score"]["reserve_bias"] > ranked["or-2"]["score"]["reserve_bias"]
+    assert ranked["or-3"]["routable"] is False
+    assert ranked["or-3"]["excluded_reason"] == "multimodal_input"
+    assert ranked["or-4"]["active"] is True
+
+
+def test_debug_summary_reports_provider_state_and_candidate_order(tmp_path: Path) -> None:
+    config = make_config(tmp_path, api_key="secret")
+    service = make_service(
+        tmp_path,
+        config=config,
+        providers={
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-1", "nvidia-build")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-1", "opencode-zen")]),
+            "openrouter": FakeProvider("openrouter", models=[free_model("or-1", "openrouter")]),
+        },
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    response = client.get("/debug/summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["router"]["auth_required"] is True
+    assert payload["router"]["provider_priority"] == ["nvidia-build", "opencode-zen", "openrouter"]
+    assert payload["aliases"]["agentic"]["selected_provider"] == "nvidia-build"
+    assert payload["providers"][0]["inventory_counts"]["ranked"] == 1
+
+
+def test_configured_api_key_requires_authorization(tmp_path: Path) -> None:
+    config = make_config(tmp_path, api_key="secret")
+    service = make_service(
+        tmp_path,
+        config=config,
+        providers={
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-1", "nvidia-build")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[]),
+            "openrouter": FakeProvider("openrouter", models=[]),
+        },
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    unauthorized = client.get("/v1/models")
+    authorized = client.get("/v1/models", headers={"Authorization": "Bearer secret"})
+
+    assert unauthorized.status_code == 401
+    assert authorized.status_code == 200

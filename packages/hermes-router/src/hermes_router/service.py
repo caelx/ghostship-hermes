@@ -1293,11 +1293,75 @@ class RouterService:
             )
         return details
 
+    def debug_summary(self) -> dict[str, Any]:
+        provider_state = self.state_store.get_provider_state()
+        inventory_groups = self._inventory_groups(alias="agentic")
+        provider_order = list(self._provider_order())
+        enabled_providers = [provider_name for provider_name in self._provider_names if self._provider_enabled(provider_name)]
+        providers: list[dict[str, Any]] = []
+        for provider_name in self._provider_names:
+            state = provider_state.get(provider_name, {})
+            providers.append(
+                {
+                    "provider_name": provider_name,
+                    "enabled": self._provider_enabled(provider_name),
+                    "cooling_down": self._provider_is_cooling_down(provider_name, state=state),
+                    "pacing_active": self._provider_is_pacing(provider_name, state=state),
+                    "probe_mode": self._provider_in_probe_mode(provider_name, state=state),
+                    "suppression_source": self._provider_suppression_source(provider_name, state=state),
+                    "stats": state,
+                    "inventory_counts": {
+                        "ranked": len(inventory_groups["ranked"].get(provider_name, [])),
+                        "unused": len(inventory_groups["unused"].get(provider_name, [])),
+                        "uncategorized": len(inventory_groups["uncategorized"].get(provider_name, [])),
+                        "routable_ranked": sum(
+                            1 for item in inventory_groups["ranked"].get(provider_name, []) if item["routable"]
+                        ),
+                    },
+                    "active_candidates": self._render_candidates(
+                        self._provider_policy_candidates(
+                            provider_name,
+                            alias="agentic",
+                            ignore_provider_pacing=True,
+                        )
+                    ),
+                }
+            )
+        selected_candidates = self.preview_routes("agentic")
+        return {
+            "router": {
+                "configured_providers": list(self.config.provider_priority),
+                "available_providers": list(self._provider_names),
+                "enabled_providers": enabled_providers,
+                "provider_priority": provider_order,
+                "auth_required": bool(self.config.api_key),
+                "last_refresh_reason": self._last_refresh_reason,
+                "last_refresh_at": self._last_refresh_at,
+                "last_refresh_error": self._last_refresh_error,
+                "last_ranking_at": self._last_ranking_at,
+                "last_ranking_error": self._last_ranking_error,
+                "last_ranking_worker": self._last_ranking_worker,
+            },
+            "providers": providers,
+            "aliases": {
+                "agentic": {
+                    "provider_order": provider_order,
+                    "selected_provider": selected_candidates[0]["provider_name"] if selected_candidates else None,
+                    "selected_candidates": selected_candidates,
+                    "providers": self.debug_rankings("agentic")["providers"],
+                }
+            },
+        }
+
     def debug_rankings(self, alias: str) -> dict[str, Any]:
         alias_config = self.config.alias_map().get(alias)
         if alias_config is None:
             raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
         inventory_groups = self._inventory_groups(alias=alias)
+        selected_keys = {
+            (candidate["provider_name"], candidate["backend_model"])
+            for candidate in self.preview_routes(alias)
+        }
         providers: list[dict[str, Any]] = []
         for provider_name in self._provider_order():
             policy = self.config.provider_policy_map().get(provider_name)
@@ -1317,10 +1381,19 @@ class RouterService:
                 ranked_entries.append(
                     {
                         "rank": rank,
+                        "policy_rank": rank,
                         "backend_model": backend_model,
                         "discovered": model is not None,
                         "active": backend_model in active_ids,
+                        "selected_for_routing": (provider_name, backend_model) in selected_keys,
                         "is_free": bool(model.is_free) if model is not None else False,
+                        "routable": bool(model is not None and self._model_is_routable(model, alias=alias)),
+                        "excluded_reason": self._ranked_model_exclusion_reason(
+                            provider_name,
+                            backend_model,
+                            alias=alias,
+                            model=model,
+                        ),
                         "score": (
                             self._score_breakdown(alias, model)
                             if model is not None
@@ -1336,6 +1409,13 @@ class RouterService:
                     "pacing": self._provider_is_pacing(provider_name),
                     "probe_mode": self._provider_in_probe_mode(provider_name),
                     "ranked": ranked_entries,
+                    "active_candidates": self._render_candidates(
+                        self._provider_policy_candidates(
+                            provider_name,
+                            alias=alias,
+                            ignore_provider_pacing=True,
+                        )
+                    ),
                     "unused_count": len(inventory_groups["unused"].get(provider_name, [])),
                     "uncategorized_count": len(inventory_groups["uncategorized"].get(provider_name, [])),
                 }
@@ -1580,6 +1660,9 @@ class RouterService:
             candidates = self._resolve_candidates(alias)
         except RouterServiceError:
             return []
+        return self._render_candidates(candidates)
+
+    def _render_candidates(self, candidates: list[RouteCandidate]) -> list[dict[str, Any]]:
         return [
             {
                 "provider_name": candidate.provider_name,
@@ -1590,7 +1673,6 @@ class RouterService:
             }
             for candidate in candidates
         ]
-
 
     def _model_is_routable(self, model: ProviderModel, *, alias: str | None = None) -> bool:
         if not model.is_free:
@@ -1606,6 +1688,38 @@ class RouterService:
         if output_modalities and output_modalities != {"text"}:
             return False
         return True
+
+    def _ranked_model_exclusion_reason(
+        self,
+        provider_name: str,
+        backend_model: str,
+        *,
+        alias: str,
+        model: ProviderModel | None = None,
+    ) -> str | None:
+        resolved_model = model or self._lookup_model(provider_name, backend_model)
+        if resolved_model is None:
+            return "not_discovered"
+        if not resolved_model.is_free:
+            return "not_free"
+        if not self._model_supports_tools(resolved_model):
+            return "no_tool_support"
+        if {"image", "video"} & self._input_modalities(resolved_model):
+            return "multimodal_input"
+        output_modalities = self._output_modalities(resolved_model)
+        if output_modalities and output_modalities != {"text"}:
+            return "non_text_output"
+        if alias not in {None, "agentic"}:
+            return "unsupported_alias"
+        if not self._model_effectively_enabled(provider_name, backend_model):
+            return "disabled"
+        if self._is_cooling_down(provider_name, backend_model):
+            return "model_cooldown"
+        if self._provider_is_cooling_down(provider_name):
+            return "provider_cooldown"
+        if self._provider_is_pacing(provider_name):
+            return "provider_pacing"
+        return None
 
     def _model_supports_tools(self, model: ProviderModel) -> bool:
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
@@ -1886,7 +2000,7 @@ class RouterService:
         provider_state = self.state_store.get_provider_state().get(model.provider, {})
         overrides = self._effective_overrides()
         provider_bias = float(max(len(self._provider_names) - self._provider_order().index(model.provider), 0) * 100.0)
-        reserve_bias = float(max((self.config.provider_reserve_limit - (rank_index or 99)), 0) * 10.0) if rank_index is not None else -1000.0
+        reserve_bias = float(max(self.config.provider_reserve_limit - rank_index, 0) * 10.0) if rank_index is not None else -1000.0
         model_health = (
             float(model_state.get("recent_success", 0)) * 2.0
             - float(model_state.get("recent_failure", 0)) * 3.0

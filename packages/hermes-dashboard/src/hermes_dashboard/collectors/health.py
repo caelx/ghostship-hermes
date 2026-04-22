@@ -19,6 +19,7 @@ class KeyStatus:
     source: str
     present: bool = False
     note: str = ''
+    required: bool = True
 
 
 @dataclass
@@ -47,7 +48,7 @@ class HealthState:
 
     @property
     def keys_missing(self) -> int:
-        return sum(1 for key in self.keys if not key.present)
+        return sum(1 for key in self.keys if key.required and not key.present)
 
     @property
     def services_ok(self) -> int:
@@ -59,12 +60,12 @@ class HealthState:
 
 
 EXPECTED_KEYS = [
-    ('OPENCODE_GO_API_KEY', 'env', 'Primary model provider'),
-    ('_GHOSTSHIP_ROUTER_API_KEY', 'internal-env', 'Internal router bearer token'),
-    ('GOOGLE_AI_STUDIO_API_KEY', 'env', 'Auxiliary task provider'),
-    ('OPENROUTER_API_KEY', 'env', 'Optional fallback provider'),
-    ('DISCORD_TOKEN', 'env', 'Messaging gateway bot token'),
-    ('BWS_ACCESS_TOKEN', 'env', 'Bitwarden-backed workflow secrets'),
+    ('OPENCODE_GO_API_KEY', 'env', 'Primary model provider', True),
+    ('_GHOSTSHIP_ROUTER_API_KEY', 'internal-env', 'Optional internal router bearer token', False),
+    ('GOOGLE_AI_STUDIO_API_KEY', 'env', 'Auxiliary task provider', True),
+    ('OPENROUTER_API_KEY', 'env', 'Optional fallback provider', True),
+    ('DISCORD_TOKEN', 'env', 'Messaging gateway bot token', True),
+    ('BWS_ACCESS_TOKEN', 'env', 'Bitwarden-backed workflow secrets', True),
 ]
 
 
@@ -152,10 +153,10 @@ def collect_health(hermes_dir: str | None = None) -> HealthState:
         pass
 
     dotenv_keys = _get_dotenv_keys(hermes_dir)
-    known_names = {key_name for key_name, _, _ in EXPECTED_KEYS}
-    for key_name, source, note in EXPECTED_KEYS:
+    known_names = {key_name for key_name, _, _, _ in EXPECTED_KEYS}
+    for key_name, source, note, required in EXPECTED_KEYS:
         present = _check_env_key(key_name, hermes_dir, dotenv_keys)
-        state.keys.append(KeyStatus(name=key_name, source=source, present=present, note='' if present else note))
+        state.keys.append(KeyStatus(name=key_name, source=source, present=present, note='' if present else note, required=required))
 
     for extra_key in sorted(dotenv_keys):
         if extra_key not in known_names and any(extra_key.endswith(suffix) for suffix in ('_API_KEY', '_TOKEN', '_SECRET')):

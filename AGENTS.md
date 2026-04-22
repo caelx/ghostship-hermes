@@ -87,7 +87,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - `DISCORD_REACTIONS=false`, `DISCORD_REQUIRE_MENTION=false`, and `DISCORD_AUTO_THREAD=false` are image-owned defaults. Treat them as optional for downstream and do not make downstream set them unless the contract changes.
 - The default Codex primary lane depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
 - Do not use `OPENAI_API_KEY` anywhere in this repo's active runtime contract.
-- Do not expose router auth as a downstream env knob. If the router needs a token for Hermes integration, it must be an internal auto-generated underscore-prefixed env such as `_GHOSTSHIP_ROUTER_API_KEY`.
+- Do not expose router auth as a downstream env knob. If Hermes uses a router token, keep it internal as an underscore-prefixed env such as `_GHOSTSHIP_ROUTER_API_KEY`; the router itself must treat that auth as optional.
 
 ### Router Policy
 

@@ -76,7 +76,7 @@ Discord channel contract:
 - `GHOSTSHIP_ROUTER_CHANNEL` pins one free-response channel to the local router `agentic` lane.
 - `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
 
-Internal-only runtime auth is auto-generated:
+Internal-only runtime auth may be auto-generated for Hermes compatibility:
 
 - `_GHOSTSHIP_ROUTER_API_KEY`
 

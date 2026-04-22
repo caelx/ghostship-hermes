@@ -13,6 +13,7 @@ Current contract:
 - keeps a top-five reserve per provider and chooses the best three currently eligible models from that reserve
 - never routes uncategorized discovered models; they are exposed only through debug inventory surfaces
 - exposes operator debug surfaces at `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{alias}`, `GET /debug/rankings/{alias}`, `GET /debug/inventory/{category}`, and `GET /debug/models/{provider}/{model}`
+- exposes a compact tuning surface at `GET /debug/summary`
 - exposes Prometheus-style metrics at `GET /metrics`
 - supports optional internal bearer auth through `_GHOSTSHIP_ROUTER_API_KEY`
 
@@ -38,11 +39,13 @@ Seed ranked usable sets:
   - `nemotron-3-super-free`
   - `gpt-5-nano`
 - `openrouter`
-  - `qwen/qwen3-next-80b-a3b-instruct:free`
+  - `nvidia/nemotron-3-super-120b-a12b:free`
+  - `minimax/minimax-m2.5:free`
+  - `arcee-ai/trinity-large-preview:free`
   - `google/gemma-4-31b-it:free`
-  - `google/gemma-4-26b-a4b-it:free`
-  - `openai/gpt-oss-120b:free`
-  - `meta-llama/llama-3.3-70b-instruct:free`
+  - `qwen/qwen3-coder:free`
+
+`google/gemma-4-31b-it:free` remains intentionally ranked even though the current `agentic` filter usually skips it because it advertises image/video input.
 
 Compatibility notes:
 
