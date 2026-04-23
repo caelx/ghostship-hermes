@@ -267,13 +267,15 @@ The image `PATH` prefers:
 Downstream-owned env vars should go in exactly one of these places:
 
 - preferred: the container runtime env, via `--env-file ./.env`, Compose `env_file:`, or Compose `environment:`
-- optional: `/home/hermes/.hermes/.env` if you intentionally want Hermes to read them from persisted home state
+- optional: `/home/hermes/.hermes/.env` if you want the same supported Hermes env persisted into home state
 
 Important rule:
 
-- the image does not regenerate `/home/hermes/.hermes/.env`
-- if you choose runtime env, keep using runtime env consistently
-- if you choose persisted `.hermes/.env`, treat that file as downstream-owned state
+- the image projects supported Hermes env into both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env` on boot
+- `/run/ghostship/hermes.env` is the live service-facing file for the managed gateway and dashboard
+- `/home/hermes/.hermes/.env` is the persisted home-state copy of that same managed env inventory
+- non-managed keys already present in `/home/hermes/.hermes/.env` are preserved
+- managed keys in `/home/hermes/.hermes/.env` are image-owned and may be refreshed or removed when runtime env changes
 
 ### Downstream Operator Env Summary
 
@@ -368,7 +370,7 @@ Do not use `hermes gateway install` inside the container. `s6` already supervise
 After the first successful container boot:
 
 1. authenticate Codex so the default primary lane can run
-2. verify provider and gateway env are present
+2. verify provider and gateway env are present in both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`
 3. inspect `config.yaml` once and confirm the expected Codex-primary and OpenCode-fallback defaults
 4. run `hermes doctor`
 5. open the dashboard and confirm `/terminal/` works through the same origin

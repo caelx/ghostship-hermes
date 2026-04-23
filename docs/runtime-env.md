@@ -7,6 +7,13 @@ This image has two env layers:
 
 Downstream should treat the fixed image defaults as part of the image contract. The operator-facing env vars are the values you pass with `--env`, `--env-file`, or Compose `environment:`.
 
+On boot, the image projects the supported Hermes-facing env inventory into both:
+
+- `/run/ghostship/hermes.env` for the live managed gateway/dashboard service environment
+- `/home/hermes/.hermes/.env` for persisted home-state visibility inside Hermes
+
+`/home/hermes/.hermes/.env` is merge-preserved: managed keys are refreshed from the current runtime env, while unrelated pre-existing keys remain intact.
+
 ## Fixed Image Defaults
 
 These are internal image-owned variables. They are already set in the image, and downstream must not set or override them.

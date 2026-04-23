@@ -144,7 +144,14 @@ Manage Hermes like a normal host install:
 - `hermes model`
 - `hermes auth`
 - edit `~/.hermes/config.yaml`
-- edit `~/.hermes/.env`
+- inspect or extend `~/.hermes/.env`
+
+Boot projects the supported Hermes env inventory into both:
+
+- `/run/ghostship/hermes.env` for the live gateway/dashboard service environment
+- `~/.hermes/.env` for persisted home-state visibility
+
+Non-managed keys already present in `~/.hermes/.env` are preserved.
 
 Do not use:
 

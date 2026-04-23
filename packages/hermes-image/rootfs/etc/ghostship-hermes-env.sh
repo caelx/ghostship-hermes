@@ -21,13 +21,16 @@ ghostship_is_hermes_passthrough_key() {
   [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]]
 }
 
-ghostship_write_hermes_env_file() {
-  local target="$1"
-  local terminal_cwd="$2"
-  local tmp_target
-  declare -A env_values=()
+ghostship_quote_env_value() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
 
-  tmp_target="$(mktemp "$(dirname "$target")/.hermes.env.tmp.XXXXXX")"
+ghostship_collect_hermes_env() {
+  local map_name="$1"
+  local terminal_cwd="$2"
+  local -n env_values="$map_name"
+
+  env_values=()
   env_values["TERMINAL_CWD"]="$terminal_cwd"
 
   while IFS= read -r -d '' entry; do
@@ -47,16 +50,75 @@ ghostship_write_hermes_env_file() {
   if [ -z "${env_values[OPENCODE_API_KEY]+x}" ] && [ -n "${OPENCODE_GO_API_KEY:-}" ]; then
     env_values["OPENCODE_API_KEY"]="${OPENCODE_GO_API_KEY}"
   fi
+}
 
-  ghostship_quote_env_value() {
-    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
-  }
+ghostship_write_hermes_env_file() {
+  local target="$1"
+  local map_name="$2"
+  local tmp_target
+  local -n env_values="$map_name"
+
+  mkdir -p "$(dirname "$target")"
+  tmp_target="$(mktemp "$(dirname "$target")/.hermes.env.tmp.XXXXXX")"
 
   {
     for key in $(printf '%s\n' "${!env_values[@]}" | sort); do
       printf '%s=%s\n' "$key" "$(ghostship_quote_env_value "${env_values[$key]}")"
     done
   } >"$tmp_target"
+  chmod 0600 "$tmp_target"
+  mv -f "$tmp_target" "$target"
+}
+
+ghostship_write_hermes_env_keys_file() {
+  local target="$1"
+  local map_name="$2"
+  local tmp_target
+  local -n env_values="$map_name"
+
+  mkdir -p "$(dirname "$target")"
+  tmp_target="$(mktemp "$(dirname "$target")/.hermes.env.keys.tmp.XXXXXX")"
+  printf '%s\n' "${!env_values[@]}" | sort >"$tmp_target"
+  chmod 0600 "$tmp_target"
+  mv -f "$tmp_target" "$target"
+}
+
+ghostship_merge_hermes_env_file() {
+  local target="$1"
+  local managed_source="$2"
+  local previous_keys_file="$3"
+  local tmp_target
+  local line key
+  declare -A strip_keys=()
+
+  while IFS='=' read -r key _; do
+    [ -n "$key" ] || continue
+    strip_keys["$key"]=1
+  done <"$managed_source"
+
+  if [ -r "$previous_keys_file" ]; then
+    while IFS= read -r key; do
+      [ -n "$key" ] || continue
+      strip_keys["$key"]=1
+    done <"$previous_keys_file"
+  fi
+
+  mkdir -p "$(dirname "$target")"
+  tmp_target="$(mktemp "$(dirname "$target")/.hermes.env.tmp.XXXXXX")"
+
+  if [ -r "$target" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+        key="${BASH_REMATCH[2]}"
+        if [ -n "${strip_keys[$key]+x}" ]; then
+          continue
+        fi
+      fi
+      printf '%s\n' "$line" >>"$tmp_target"
+    done <"$target"
+  fi
+
+  cat "$managed_source" >>"$tmp_target"
   chmod 0600 "$tmp_target"
   mv -f "$tmp_target" "$target"
 }

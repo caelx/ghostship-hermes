@@ -347,13 +347,5 @@ def main() -> None:
                 encoding="utf-8",
             )
 
-    env_path = HERMES_HOME / ".env"
-    if not env_path.exists():
-        env_path.write_text(
-            "# Optional downstream runtime env file.\n"
-            "# Container environment variables remain the primary contract.\n",
-            encoding="utf-8",
-        )
-
 if __name__ == "__main__":
     main()

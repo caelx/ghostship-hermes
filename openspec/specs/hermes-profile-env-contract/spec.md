@@ -1,47 +1,37 @@
 ## MODIFIED Requirements
 
 ### Requirement: Managed agent `.env` is the operator-facing source of truth for runtime env
-The workstation SHALL treat `/home/hermes/.hermes/.env` as an optional downstream-owned persisted env file rather than as a repo-generated artifact, and the image SHALL NOT regenerate that file on boot.
+The workstation SHALL project the supported Hermes-facing runtime env inventory into both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env` on boot, while preserving unrelated existing keys in the persisted home-state file.
 
-#### Scenario: Operator-owned `.env` is left intact across restart
+#### Scenario: Existing non-managed `.env` keys survive restart
 - **WHEN** `/home/hermes/.hermes/.env` already exists in the persisted home volume
-- **THEN** workstation startup leaves that file intact
-- **AND** the runtime does not rewrite it from a repo-owned allowlist projection
+- **THEN** workstation startup preserves any existing keys that are outside the managed Hermes env inventory
+- **AND** the runtime refreshes managed keys from the current container env
 
-#### Scenario: Missing `.env` does not require repo-owned file generation
+#### Scenario: Missing `.env` is synthesized from the current runtime env
 - **WHEN** `/home/hermes/.hermes/.env` is absent at startup
-- **THEN** the runtime may start from downstream-provided container environment without generating a replacement `.env`
-- **AND** the supported contract does not require boot-time synthesis of that file
+- **THEN** the runtime generates a persisted `/home/hermes/.hermes/.env` from the managed Hermes env inventory
+- **AND** the generated file matches the live Hermes-facing env contract apart from any preserved downstream-only keys
+
+#### Scenario: Managed keys removed from runtime env are removed from the persisted managed subset
+- **WHEN** a key that was previously projected into `/home/hermes/.hermes/.env` is absent from the current supported runtime env
+- **THEN** workstation startup removes that key from the managed subset of `/home/hermes/.hermes/.env`
+- **AND** unrelated preserved keys remain intact
 
 ### Requirement: Managed `.env` changes remain visible to service restart wiring
-The workstation SHALL keep operator-facing runtime env changes visible through the normal downstream env surfaces used by the running services, without depending on a repo-owned bootstrap rewrite step.
+The workstation SHALL keep operator-facing runtime env changes visible through both the live service env file and the persisted home-state env file generated at boot.
 
 #### Scenario: Service runtime sees downstream-owned env changes
 - **WHEN** the operator updates supported runtime env through the documented downstream mechanism
-- **THEN** the affected services read the updated values from that downstream-owned mechanism
-- **AND** the runtime does not require a repo-owned `.env` regeneration step to make the change effective
+- **THEN** the affected services read the updated values from `/run/ghostship/hermes.env`
+- **AND** the same managed values are projected into `/home/hermes/.hermes/.env`
+- **AND** the runtime does not require operators to hand-edit both locations to keep them aligned
 
 ## REMOVED Requirements
 
-### Requirement: Bootstrap projects the supported runtime env inventory into the managed `.env`
-**Reason**: The new workstation image moves operator-facing env ownership to downstream deployment config or downstream-owned persisted files instead of repo-owned bootstrap projection.
-**Migration**: Downstream deployments SHALL supply supported runtime env through Compose, `docker run`, env files, or an operator-managed `/home/hermes/.hermes/.env` in the persisted home volume.
-
-### Requirement: Bootstrap projects generic Discord configuration into the managed `.env`
-**Reason**: Discord env remains supported, but the image no longer owns a special projection step for writing those values into managed home state.
-**Migration**: Downstream deployments SHALL supply the supported Discord env directly through the documented downstream env mechanism.
-
-### Requirement: Bootstrap projects managed webhook listener env into the managed `.env`
-**Reason**: Webhook env remains part of the supported operator-facing env surface, but it is no longer copied into a repo-generated `.env` file.
-**Migration**: Downstream deployments SHALL supply webhook env directly and persist operator-managed `.env` only if they want file-backed config in home state.
-
-### Requirement: Bootstrap maps the deployment webhook secret source into Hermes-facing env
-**Reason**: The new contract removes repo-owned env translation during boot.
-**Migration**: Downstream deployments SHALL pass the Hermes-facing webhook env names directly through the documented operator env contract.
-
-### Requirement: Managed bootstrap rewrites the managed `.env` idempotently
-**Reason**: The workstation no longer supports a repo-owned `.env` rewrite loop.
-**Migration**: Operators SHALL manage `.env` content directly if they want a persisted file under `/home/hermes/.hermes`.
+### Requirement: Managed `.env` remains purely downstream-owned and never repo-generated
+**Reason**: The workstation now emits the managed Hermes env inventory to the persisted home-state `.env` as well as the live service env file.
+**Migration**: Downstream deployments SHALL keep supplying supported runtime env through Compose, `docker run`, or env files; the image now persists those supported keys into `/home/hermes/.hermes/.env` automatically.
 
 ## ADDED Requirements
 

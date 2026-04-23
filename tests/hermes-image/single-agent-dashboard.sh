@@ -191,6 +191,15 @@ cat >"$home_dir/.hermes/skills/custom/SKILL.md" <<'EOF'
 
 Custom downstream skill should survive image seeding.
 EOF
+cat >"$home_dir/.hermes/.env" <<'EOF'
+CUSTOM_DOWNSTREAM_KEY=keep-me
+FIRECRAWL_API_KEY=stale-firecrawl
+STALE_ONLY_KEY=keep-me-too
+EOF
+cat >"$home_dir/.hermes/.ghostship-managed-env.keys" <<'EOF'
+FIRECRAWL_API_KEY
+REMOVED_MANAGED_KEY
+EOF
 
 "$container_engine" rm -f "$container_name" >/dev/null 2>&1 || true
 start_test_container_with_retry "$dashboard_port"
@@ -213,6 +222,15 @@ curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allo
 
 run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY=test-firecrawl' /run/ghostship/hermes.env >/dev/null"
 run_in_container "$container_name" "! grep -q '^GHOSTSHIP_ROUTER_PORT=' /run/ghostship/hermes.env"
+run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY='\''test-firecrawl'\''' /home/hermes/.hermes/.env >/dev/null"
+run_in_container "$container_name" "grep -Fx 'CUSTOM_DOWNSTREAM_KEY=keep-me' /home/hermes/.hermes/.env >/dev/null"
+run_in_container "$container_name" "grep -Fx 'STALE_ONLY_KEY=keep-me-too' /home/hermes/.hermes/.env >/dev/null"
+run_in_container "$container_name" "! grep -q '^FIRECRAWL_API_KEY=stale-firecrawl$' /home/hermes/.hermes/.env"
+run_in_container "$container_name" "! grep -q '^REMOVED_MANAGED_KEY=' /home/hermes/.hermes/.env"
+run_in_container "$container_name" "! grep -q '^GHOSTSHIP_ROUTER_PORT=' /home/hermes/.hermes/.env"
+run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY' /home/hermes/.hermes/.ghostship-managed-env.keys >/dev/null"
+run_in_container "$container_name" "stat -c '%U:%G %a' /home/hermes/.hermes/.env | grep -Fx 'hermes:hermes 600' >/dev/null"
+run_in_container "$container_name" "stat -c '%U:%G %a' /home/hermes/.hermes/.ghostship-managed-env.keys | grep -Fx 'hermes:hermes 600' >/dev/null"
 run_in_container "$container_name" '
 gateway_pid="$(pgrep -u hermes -f "/opt/hermes/venv/bin/hermes gateway run --replace" | head -n1)"
 tr "\0" "\n" </proc/"$gateway_pid"/environ | grep -Fx "FIRECRAWL_API_KEY=test-firecrawl" >/dev/null

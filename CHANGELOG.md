@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Changed the Hermes bootstrap env contract so the managed Hermes-facing runtime env is now emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`, while persisted non-managed `.env` keys remain intact and previously managed keys are pruned when they disappear from the runtime env surface.
 - Fixed Hermes runtime env projection to use an exclusion list instead of a hardcoded allowlist, so downstream keys such as `FIRECRAWL_API_KEY` now flow through to Hermes automatically while router/dashboard/image-only service env stays out of the Hermes service contract.
 - Changed the managed Hermes auxiliary-task default model from `gemini-3.1-flash-lite-preview` to `gemini-2.5-flash-lite`, and updated the image smoke assertion to match the new seeded config contract.
 - Fixed `ghostship-hermes-router` OpenRouter reserve policy to use the current repo-ranked `agentic` order (`nemotron-3-super`, `minimax-m2.5`, `trinity-large-preview`, `gemma-4-31b-it`, `qwen3-coder`), corrected the rank-1 reserve-bias scoring bug in the debug payloads, added a compact `/debug/summary` tuning surface, and made `_GHOSTSHIP_ROUTER_API_KEY` optional in the router/dashboard health contract instead of treating it as required runtime auth.
