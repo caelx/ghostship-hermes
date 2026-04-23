@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Pinned Hermes release updated to `v2026.4.23`.
+- Fixed the image prep patcher for Hermes `v2026.4.23` by teaching `prepare_upstream_hermes.py` to patch both the older and newer `gateway/run.py` turn-route helpers plus all currently supported `web/src/App.tsx` layouts, so `publish-image` no longer fails on missing upstream patch markers after the pin bump.
 - Fixed the workstation image smoke to stop assuming `/api/status` has a non-null `gateway_state` on the first healthy dashboard response, which was racing in CI once the smoke stopped configuring a live messaging platform.
 - Fixed the workstation image smoke to stop injecting a fake `DISCORD_BOT_TOKEN`, so CI no longer depends on a live Discord login path just to validate the container runtime contract.
 - Changed the Hermes bootstrap env contract so the managed Hermes-facing runtime env is now emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`, while persisted non-managed `.env` keys remain intact and previously managed keys are pruned when they disappear from the runtime env surface.
