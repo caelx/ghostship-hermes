@@ -4,8 +4,16 @@ export HOME="${HOME:-/home/hermes}"
 export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 export GHOSTSHIP_DASHBOARD_HOST="${GHOSTSHIP_DASHBOARD_HOST:-127.0.0.1}"
 export GHOSTSHIP_DASHBOARD_PORT="${GHOSTSHIP_DASHBOARD_PORT:-9119}"
+. /etc/ghostship-hermes-env.sh
+ghostship_unset_hermes_excluded_env HOME HERMES_HOME PATH GHOSTSHIP_DASHBOARD_HOST GHOSTSHIP_DASHBOARD_PORT
+if [ -r /run/ghostship/hermes.env ]; then
+  set -a
+  . /run/ghostship/hermes.env
+  set +a
+fi
 if [ -r /run/ghostship/internal.env ]; then
+  set -a
   . /run/ghostship/internal.env
-  export _GHOSTSHIP_ROUTER_API_KEY
+  set +a
 fi
 exec /command/s6-setuidgid hermes /opt/hermes/venv/bin/hermes dashboard --host "$GHOSTSHIP_DASHBOARD_HOST" --port "$GHOSTSHIP_DASHBOARD_PORT" --no-open

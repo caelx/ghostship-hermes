@@ -109,18 +109,9 @@ let
     "N8N_URL"
     "N8N_API_KEY"
   ];
-  managedDiscordEnvKeys = [
-    "DISCORD_BOT_TOKEN"
-    "DISCORD_ALLOWED_USERS"
-    "GHOSTSHIP_ROUTER_CHANNEL"
-    "DISCORD_HOME_CHANNEL"
-  ];
   managedBrowserEnvKeys = [
     "HERMES_HUD_PROJECTS_DIR"
     "GHOSTSHIP_HUD_DEFAULT_PROFILE_NAME"
-  ];
-  managedWebhookEnvKeys = [
-    "WEBHOOK_SECRET"
   ];
   toolingProjectRoot = "/home/hermes/.hermes/hermes-agent";
   managedUserProfile = "/home/hermes/.local/state/nix/profiles/ghostship-managed";
@@ -734,30 +725,63 @@ EOF
       target="$1"
       target_dir="$(dirname "$target")"
       tmp_target="$(mktemp "$target_dir/.env.tmp.XXXXXX")"
+      declare -A env_values=()
+      is_hermes_passthrough_key() {
+        key="$1"
+        case "$key" in
+          GHOSTSHIP_ROUTER_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
+            return 0
+            ;;
+        esac
+        case "$key" in
+          ""|_[A-Z0-9_]*|AGENT_BROWSER_PROFILE|API_SERVER_HOST|API_SERVER_PORT|BASH_FUNC_*|CARGO_HOME|DBUS_SESSION_BUS_ADDRESS|GHOSTSHIP_DASHBOARD_HOST|GHOSTSHIP_DASHBOARD_PORT|GHOSTSHIP_HERMES_GATEWAY_SERVICE|GHOSTSHIP_HERMES_MANAGED_PROFILE|GHOSTSHIP_HERMES_PROJECT_ROOT|GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF|GHOSTSHIP_NIX_DEFAULT_PROFILE|GHOSTSHIP_ROUTER_HOST|GHOSTSHIP_ROUTER_PORT|GHOSTSHIP_ROUTER_URL|GHOSTSHIP_TERMINAL_CWD|GHOSTSHIP_TOOLING_MODE|GHOSTSHIP_TTYD_BASE_PATH|GHOSTSHIP_TTYD_SOCKET|GHOSTSHIP_WEB_PORT|GHOSTSHIP_WORKSPACE_ROOT|HERMES_HOME|HOME|HOSTNAME|LOGNAME|NIX_SSL_CERT_FILE|NPM_CONFIG_PREFIX|OPENAI_API_KEY|PATH|PWD|RUSTUP_HOME|SHELL|SHLVL|SSL_CERT_FILE|TERM|TERMINAL_CWD|USER|XDG_CACHE_HOME|XDG_CONFIG_HOME|XDG_DATA_HOME|XDG_RUNTIME_DIR|XDG_STATE_HOME)
+            return 1
+            ;;
+          API_SERVER_*|GHOSTSHIP_DASHBOARD_*|GHOSTSHIP_HERMES_*|GHOSTSHIP_HUD_*|GHOSTSHIP_ROUTER_*|GHOSTSHIP_TOOLING_*|GHOSTSHIP_TTYD_*|HERMES_HUD_*|INVOCATION_*|JOURNAL_*|LC_*|LISTEN_*|SYSTEMD_*)
+            return 1
+            ;;
+        esac
+        printf '%s' "$key" | ${pkgs.gnugrep}/bin/grep -Eq '^[A-Z][A-Z0-9_]*$'
+      }
+      append_env_value() {
+        key="$1"
+        value="$2"
+        is_hermes_passthrough_key "$key" || return 0
+        [ -n "$value" ] || return 0
+        case "$value" in
+          *$'\n'*)
+            return 0
+            ;;
+        esac
+        if [ -n "''${env_values[$key]+x}" ]; then
+          return 0
+        fi
+        env_values["$key"]="$value"
+      }
+      quote_env_value() {
+        ${pkgs.python3}/bin/python3 -c 'import shlex, sys; print(shlex.quote(sys.argv[1]))' "$1"
+      }
       cleanup_tmp() {
         rm -f "$tmp_target"
       }
       trap cleanup_tmp EXIT
       umask 077
+      env_values["TERMINAL_CWD"]="${rootTerminalCwd}"
+      while IFS='=' read -r key value; do
+        append_env_value "$key" "$value"
+      done < <(env)
+      while IFS='=' read -r key value; do
+        append_env_value "$key" "$value"
+      done < <(${pkgs.systemd}/bin/systemctl show-environment || true)
+      if [ -z "''${env_values[OPENCODE_API_KEY]+x}" ] && [ -n "''${OPENCODE_GO_API_KEY:-}" ]; then
+        env_values["OPENCODE_API_KEY"]="''${OPENCODE_GO_API_KEY}"
+      fi
+      env_values["WEBHOOK_ENABLED"]="true"
+      env_values["WEBHOOK_PORT"]="${toString managedWebhookPort}"
       {
-        printf 'TERMINAL_CWD=%s\n' "${rootTerminalCwd}"
-        for key in ${lib.escapeShellArgs managedRuntimeEnvKeys}; do
-          value="''${!key:-}"
-          if [ -n "$value" ]; then
-            printf '%s=%s\n' "$key" "$value"
-          fi
+        for key in $(${pkgs.coreutils}/bin/printf '%s\n' "''${!env_values[@]}" | ${pkgs.coreutils}/bin/sort); do
+          printf '%s=%s\n' "$key" "$(quote_env_value "''${env_values[$key]}")"
         done
-        if [ -z "''${OPENCODE_API_KEY:-}" ] && [ -n "''${OPENCODE_GO_API_KEY:-}" ]; then
-          printf 'OPENCODE_API_KEY=%s\n' "''${OPENCODE_GO_API_KEY}"
-        fi
-        for key in ${lib.escapeShellArgs (managedDiscordEnvKeys ++ managedBrowserEnvKeys ++ managedWebhookEnvKeys)}; do
-          value="''${!key:-}"
-          if [ -n "$value" ]; then
-            printf '%s=%s\n' "$key" "$value"
-          fi
-        done
-        printf 'WEBHOOK_ENABLED=true\n'
-        printf 'WEBHOOK_PORT=%s\n' "${toString managedWebhookPort}"
       } >"$tmp_target"
       chmod 0600 "$tmp_target"
       if [ -f "$target" ] && cmp -s "$tmp_target" "$target"; then
@@ -1206,7 +1230,7 @@ in
       PassEnvironment = [
         "GHOSTSHIP_HERMES_SKILLS_DIR"
         "GHOSTSHIP_HERMES_SOUL_PATH"
-      ] ++ managedRuntimeEnvKeys ++ managedDiscordEnvKeys ++ managedBrowserEnvKeys ++ managedWebhookEnvKeys;
+      ];
       ExecStart = bootstrapHermesScript;
     };
   };

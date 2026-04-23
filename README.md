@@ -120,6 +120,7 @@ Operational consequences:
 - do not install systemd units in the container
 - use `terminal.backend: local`
 - protect `:7681` with Cloudflare Access or equivalent upstream auth; the image does not add its own auth layer
+- downstream Hermes/plugin env such as `FIRECRAWL_API_KEY` is projected into the Hermes runtime by default; image-owned and other service-only env stays excluded from the Hermes service
 
 ## Run
 

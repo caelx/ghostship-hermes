@@ -145,6 +145,8 @@ run_test_container() {
     --env DISCORD_HOME_CHANNEL=2 \
     --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
     --env GHOSTSHIP_ROUTER_CHANNEL=3 \
+    --env FIRECRAWL_API_KEY=test-firecrawl \
+    --env GHOSTSHIP_ROUTER_PORT=9999 \
     --env WEBHOOK_SECRET=test-webhook-secret \
     "$image_ref" "$@"
 }
@@ -208,6 +210,14 @@ curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q '/terminal/'
 curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allow-same-origin allow-scripts allow-forms"'
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'allow-modals'
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'href:"/terminal/",target:"_blank"'
+
+run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY=test-firecrawl' /run/ghostship/hermes.env >/dev/null"
+run_in_container "$container_name" "! grep -q '^GHOSTSHIP_ROUTER_PORT=' /run/ghostship/hermes.env"
+run_in_container "$container_name" '
+gateway_pid="$(pgrep -u hermes -f "/opt/hermes/venv/bin/hermes gateway run --replace" | head -n1)"
+tr "\0" "\n" </proc/"$gateway_pid"/environ | grep -Fx "FIRECRAWL_API_KEY=test-firecrawl" >/dev/null
+! tr "\0" "\n" </proc/"$gateway_pid"/environ | grep -q "^GHOSTSHIP_ROUTER_PORT="
+'
 
 run_in_container "$container_name" '
 for cmd in \

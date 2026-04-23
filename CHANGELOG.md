@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed Hermes runtime env projection to use an exclusion list instead of a hardcoded allowlist, so downstream keys such as `FIRECRAWL_API_KEY` now flow through to Hermes automatically while router/dashboard/image-only service env stays out of the Hermes service contract.
 - Changed the managed Hermes auxiliary-task default model from `gemini-3.1-flash-lite-preview` to `gemini-2.5-flash-lite`, and updated the image smoke assertion to match the new seeded config contract.
 - Fixed `ghostship-hermes-router` OpenRouter reserve policy to use the current repo-ranked `agentic` order (`nemotron-3-super`, `minimax-m2.5`, `trinity-large-preview`, `gemma-4-31b-it`, `qwen3-coder`), corrected the rank-1 reserve-bias scoring bug in the debug payloads, added a compact `/debug/summary` tuning surface, and made `_GHOSTSHIP_ROUTER_API_KEY` optional in the router/dashboard health contract instead of treating it as required runtime auth.
 - Fixed `ghostship-hermes-router` NVIDIA free-inventory discovery to scrape the filtered `build.nvidia.com/models?filters=nimType%3Anim_type_preview` catalog page instead of the generic models index, keep deprecated free endpoints excluded, and deduplicate repeated provider/model ids before persisting inventory so router refreshes stop failing on duplicate-key writes.

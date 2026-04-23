@@ -2,8 +2,16 @@
 set -euo pipefail
 export HOME="${HOME:-/home/hermes}"
 export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+. /etc/ghostship-hermes-env.sh
+ghostship_unset_hermes_excluded_env HOME HERMES_HOME PATH
+if [ -r /run/ghostship/hermes.env ]; then
+  set -a
+  . /run/ghostship/hermes.env
+  set +a
+fi
 if [ -r /run/ghostship/internal.env ]; then
+  set -a
   . /run/ghostship/internal.env
-  export _GHOSTSHIP_ROUTER_API_KEY
+  set +a
 fi
 exec /command/s6-setuidgid hermes /opt/hermes/venv/bin/hermes gateway run --replace
