@@ -140,7 +140,6 @@ run_test_container() {
     --env OPENROUTER_API_KEY=test-openrouter \
     --env OPENCODE_GO_API_KEY=test-opencode \
     --env GOOGLE_AI_STUDIO_API_KEY=test-google \
-    --env DISCORD_BOT_TOKEN=test-discord-token \
     --env DISCORD_ALLOWED_USERS=1 \
     --env DISCORD_HOME_CHANNEL=2 \
     --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
