@@ -209,7 +209,9 @@ wait_for_http "http://127.0.0.1:${dashboard_port}/terminal/"
 wait_for_container_http "$container_name" "http://127.0.0.1:8788/readyz"
 
 status_json="$(curl -fsS "http://127.0.0.1:${dashboard_port}/api/status")"
-printf '%s' "$status_json" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data["hermes_home"] == "/home/hermes/.hermes"; assert data["gateway_state"] is not None'
+# Upstream Hermes does not guarantee that gateway_state is populated on the
+# first healthy dashboard response.
+printf '%s' "$status_json" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data["hermes_home"] == "/home/hermes/.hermes"; assert "gateway_state" in data'
 
 run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; data = json.load(urllib.request.urlopen("http://127.0.0.1:8788/readyz")); assert data["ok"] is True'\'''
 curl -fsSI "http://127.0.0.1:${dashboard_port}/terminal/" >/dev/null
