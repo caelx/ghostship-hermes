@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Pinned Hermes release updated to `v2026.4.23`.
+
 - Fixed the workstation image smoke to stop injecting a fake `DISCORD_BOT_TOKEN`, so CI no longer depends on a live Discord login path just to validate the container runtime contract.
 - Changed the Hermes bootstrap env contract so the managed Hermes-facing runtime env is now emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`, while persisted non-managed `.env` keys remain intact and previously managed keys are pruned when they disappear from the runtime env surface.
 - Fixed Hermes runtime env projection to use an exclusion list instead of a hardcoded allowlist, so downstream keys such as `FIRECRAWL_API_KEY` now flow through to Hermes automatically while router/dashboard/image-only service env stays out of the Hermes service contract.
