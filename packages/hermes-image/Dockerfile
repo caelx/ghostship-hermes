@@ -147,10 +147,17 @@ RUN mkdir -p /opt/hermes \
     && python3 -m venv /opt/hermes/venv \
     && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
     && printf '%s\n' \
+      'aiosqlite==0.22.0' \
+      'asyncpg==0.30.0' \
       'base58==2.1.1' \
+      'davey==0.1.4' \
+      'daytona==0.157.0' \
+      'Markdown==3.10.1' \
+      'mautrix==0.20.8' \
       'python-telegram-bot==22.6' \
       'slack-bolt==1.24.0' \
       'slack-sdk==3.39.0' \
+      'tornado==6.5.4' \
       > /tmp/hermes-pip-constraints.txt \
     && /opt/hermes/venv/bin/pip install --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
     && apt-get purge -y build-essential gnupg pkg-config libffi-dev libssl-dev \
@@ -188,10 +195,17 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && python3 -m venv /opt/hermes/venv \
     && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
     && printf '%s\n' \
+      'aiosqlite==0.22.0' \
+      'asyncpg==0.30.0' \
       'base58==2.1.1' \
+      'davey==0.1.4' \
+      'daytona==0.157.0' \
+      'Markdown==3.10.1' \
+      'mautrix==0.20.8' \
       'python-telegram-bot==22.6' \
       'slack-bolt==1.24.0' \
       'slack-sdk==3.39.0' \
+      'tornado==6.5.4' \
       > /tmp/hermes-pip-constraints.txt \
     && /opt/hermes/venv/bin/pip install --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
     && python3 -m venv /opt/ghostship-router/venv \

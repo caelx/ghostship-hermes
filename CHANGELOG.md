@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Pinned Hermes release updated to `v2026.4.23`.
-- Fixed Hermes image builds by constraining upstream messaging/matrix dependency leaves that made pip backtrack until `resolution-too-deep` while installing `hermes-agent[all]`.
+- Fixed Hermes image builds by constraining upstream messaging, matrix, Daytona, and browser-adjacent dependency leaves that made pip backtrack until `resolution-too-deep` while installing `hermes-agent[all]`.
 - Fixed the CloakBrowser `google-chrome` wrapper to append the managed `--user-data-dir=/home/hermes/.local/state/cloakbrowser` after caller-supplied launch args, so browser tooling cannot accidentally replace the persisted profile with a temporary one.
 - Fixed the workstation smoke browser persistence check to drive the image-owned `google-chrome`/CloakBrowser wrapper directly with Playwright, avoiding an `agent-browser open` CI hang while still proving dashboard-origin `localStorage` survives restart and recreation.
 - Fixed the workstation smoke browser persistence check to use the same public dashboard origin through `/terminal/`, avoiding a hang in `agent-browser open` on the polling dashboard root while still proving durable origin-local `localStorage`.
