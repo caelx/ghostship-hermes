@@ -81,6 +81,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - The managed Hermes runtime primary lane is Codex `gpt-5.4` with `agent.reasoning_effort = "medium"`, and the configured fallback lane is direct `opencode-go/minimax-m2.7`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.
 - Managed Hermes-facing env must be emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`; preserve unrelated persisted `.env` keys while refreshing the managed subset from current runtime env.
+- The router service must hard-code its image-owned `127.0.0.1:8788` bind target; do not let downstream `GHOSTSHIP_ROUTER_HOST` or `GHOSTSHIP_ROUTER_PORT` runtime env move it.
 
 ### Discord Routing
 

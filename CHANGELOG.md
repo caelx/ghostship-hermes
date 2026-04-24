@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Pinned Hermes release updated to `v2026.4.23`.
+- Fixed the `ghostship-router` service launcher to ignore downstream `GHOSTSHIP_ROUTER_HOST` / `GHOSTSHIP_ROUTER_PORT` runtime env overrides, preserving the image-owned `127.0.0.1:8788` router contract that the smoke test validates.
 - Fixed Hermes image builds by removing the redundant base-stage upstream Hermes install, so `hermes-agent[all]` is resolved and installed only once in the final patched image stage.
 - Fixed Hermes image builds by installing upstream `hermes-agent[all]` with `uv pip` plus constraints for upstream messaging, matrix, Daytona, OpenTelemetry, Alibaba/DingTalk, Mistral, and browser-adjacent dependency leaves that made pip backtrack until `resolution-too-deep`.
 - Fixed the CloakBrowser `google-chrome` wrapper to append the managed `--user-data-dir=/home/hermes/.local/state/cloakbrowser` after caller-supplied launch args, so browser tooling cannot accidentally replace the persisted profile with a temporary one.
