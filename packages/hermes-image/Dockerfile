@@ -136,34 +136,6 @@ RUN mkdir -p /nix \
     && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix)" /usr/local/bin/nix \
     && ln -s "$(readlink -f /home/hermes/.nix-profile/bin/nix-store)" /usr/local/bin/nix-store
 
-RUN mkdir -p /opt/hermes \
-    && curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/${HERMES_REF}.tar.gz" -o /tmp/hermes-agent.tar.gz \
-    && mkdir -p /tmp/hermes-agent \
-    && tar -xzf /tmp/hermes-agent.tar.gz -C /tmp/hermes-agent --strip-components=1 \
-    && rm -f /tmp/hermes-agent.tar.gz \
-    && cd /tmp/hermes-agent/web \
-    && npm install --include=optional --no-audit --no-fund \
-    && npm run build \
-    && python3 -m venv /opt/hermes/venv \
-    && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
-    && printf '%s\n' \
-      'aiosqlite==0.22.0' \
-      'asyncpg==0.30.0' \
-      'base58==2.1.1' \
-      'davey==0.1.4' \
-      'daytona==0.157.0' \
-      'Markdown==3.10.1' \
-      'mautrix==0.20.8' \
-      'python-telegram-bot==22.6' \
-      'slack-bolt==1.24.0' \
-      'slack-sdk==3.39.0' \
-      'tornado==6.5.4' \
-      > /tmp/hermes-pip-constraints.txt \
-    && /opt/hermes/venv/bin/pip install --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
-    && apt-get purge -y build-essential gnupg pkg-config libffi-dev libssl-dev \
-    && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent
-
 
 FROM base AS final
 
@@ -234,7 +206,7 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
       | zstd -19 -T0 -o /opt/ghostship/nix-default-tools.export.zst \
     && ln -sf /usr/bin/fdfind /opt/ghostship/bin/fd \
     && cp /src/packages/hermes-image/build/init_home.py /opt/ghostship/bin/init_home.py \
-    && apt-get purge -y build-essential pkg-config libffi-dev libssl-dev \
+    && apt-get purge -y build-essential gnupg pkg-config libffi-dev libssl-dev \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent
 
