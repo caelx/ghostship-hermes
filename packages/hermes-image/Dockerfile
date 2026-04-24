@@ -146,7 +146,13 @@ RUN mkdir -p /opt/hermes \
     && npm run build \
     && python3 -m venv /opt/hermes/venv \
     && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
-    && /opt/hermes/venv/bin/pip install "/tmp/hermes-agent[all]" \
+    && printf '%s\n' \
+      'base58==2.1.1' \
+      'python-telegram-bot==22.6' \
+      'slack-bolt==1.24.0' \
+      'slack-sdk==3.39.0' \
+      > /tmp/hermes-pip-constraints.txt \
+    && /opt/hermes/venv/bin/pip install --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
     && apt-get purge -y build-essential gnupg pkg-config libffi-dev libssl-dev \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent
@@ -181,7 +187,13 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && rm -rf /opt/hermes/venv \
     && python3 -m venv /opt/hermes/venv \
     && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
-    && /opt/hermes/venv/bin/pip install "/tmp/hermes-agent[all]" \
+    && printf '%s\n' \
+      'base58==2.1.1' \
+      'python-telegram-bot==22.6' \
+      'slack-bolt==1.24.0' \
+      'slack-sdk==3.39.0' \
+      > /tmp/hermes-pip-constraints.txt \
+    && /opt/hermes/venv/bin/pip install --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
     && python3 -m venv /opt/ghostship-router/venv \
     && /opt/ghostship-router/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/ghostship-router/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/hermes-router \
