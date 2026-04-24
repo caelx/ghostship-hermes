@@ -28,4 +28,4 @@ for arg in get_default_stealth_args():
 PY
 )
 
-exec "$binary" "${stealth_args[@]}" "--user-data-dir=${profile_root}" "$@"
+exec "$binary" "${stealth_args[@]}" "$@" "--user-data-dir=${profile_root}"

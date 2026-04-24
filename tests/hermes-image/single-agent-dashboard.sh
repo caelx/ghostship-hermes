@@ -37,9 +37,12 @@ trap cleanup EXIT
 
 dump_failure_state() {
   local exit_code="$1"
+  local failed_line="${2:-unknown}"
+  local failed_command="${3:-unknown}"
   if [ "$exit_code" -eq 0 ]; then
     return
   fi
+  echo "failed at line ${failed_line}: ${failed_command}" >&2
   if ! "$container_engine" ps -a --format '{{.Names}}' | grep -Fx "$container_name" >/dev/null 2>&1; then
     return
   fi
@@ -55,7 +58,7 @@ dump_failure_state() {
   "$container_engine" exec "$container_name" /bin/sh -lc "find /home/hermes \\! -user hermes -printf '%u:%g %y %p -> %l\\n' | sed -n '1,80p'" >&2 || true
   echo >&2
 }
-trap 'dump_failure_state "$?"' ERR
+trap 'status=$?; failed_line=$LINENO; failed_command=$BASH_COMMAND; dump_failure_state "$status" "$failed_line" "$failed_command"' ERR
 
 wait_for_http() {
   local url="$1"
@@ -218,7 +221,7 @@ start_test_container_with_retry() {
 }
 
 smoke_note() {
-  printf '== smoke: %s ==\n' "$1"
+  printf '== smoke: %s ==\n' "$1" >&2
 }
 
 mkdir -p "$home_dir" "$workspace_dir" "$nix_dir"

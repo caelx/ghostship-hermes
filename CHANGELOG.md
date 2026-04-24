@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Pinned Hermes release updated to `v2026.4.23`.
+- Fixed the CloakBrowser `google-chrome` wrapper to append the managed `--user-data-dir=/home/hermes/.local/state/cloakbrowser` after caller-supplied launch args, so browser tooling cannot accidentally replace the persisted profile with a temporary one.
 - Fixed the workstation smoke browser persistence check to drive the image-owned `google-chrome`/CloakBrowser wrapper directly with Playwright, avoiding an `agent-browser open` CI hang while still proving dashboard-origin `localStorage` survives restart and recreation.
 - Fixed the workstation smoke browser persistence check to use the same public dashboard origin through `/terminal/`, avoiding a hang in `agent-browser open` on the polling dashboard root while still proving durable origin-local `localStorage`.
 - Fixed the image prep patcher for Hermes `v2026.4.23` by teaching `prepare_upstream_hermes.py` to patch both the older and newer `gateway/run.py` turn-route helpers plus all currently supported `web/src/App.tsx` layouts, so `publish-image` no longer fails on missing upstream patch markers after the pin bump.
