@@ -258,7 +258,7 @@ run_as_hermes "$container_name" 'gcloud --help >/dev/null'
 run_as_hermes "$container_name" 'blogwatcher-cli --help >/dev/null'
 smoke_note "native browser persistence"
 run_as_hermes "$container_name" 'agent-browser close --all >/dev/null 2>&1 || true'
-run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/ >/dev/null'
+run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/terminal/ >/dev/null'
 run_as_hermes "$container_name" "agent-browser eval \"localStorage.setItem('ghostship-smoke','warm');\" >/dev/null"
 run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
 run_as_hermes "$container_name" 'agent-browser close --all >/dev/null'
@@ -342,7 +342,7 @@ run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'
 run_as_hermes "$container_name" 'blogwatcher-cli --help >/dev/null'
 smoke_note "post-restart browser profile"
-run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/ >/dev/null'
+run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/terminal/ >/dev/null'
 run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
 run_as_hermes "$container_name" 'agent-browser close --all >/dev/null'
 
@@ -358,6 +358,6 @@ run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-h
 smoke_note "post-recreate nix profile"
 wait_for_hermes_shell "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 smoke_note "post-recreate browser profile"
-run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/ >/dev/null'
+run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/terminal/ >/dev/null'
 run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
 run_as_hermes "$container_name" 'agent-browser close --all >/dev/null'

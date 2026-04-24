@@ -127,7 +127,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
   - `hermes doctor` as far as upstream supports without repo shims
   - browser profile persistence across restart and full container recreation at `/home/hermes/.local/state/cloakbrowser`
   - persistence across restart and full container recreation for `/home/hermes`, `/workspace`, and `/nix`
-- Browser persistence smoke should write and read durable state from the dashboard origin `/` with `localStorage`; do not use `/api/status` or session cookies as the persistence proof.
+- Browser persistence smoke should write and read durable state from the public dashboard origin `127.0.0.1:7681` with `localStorage`; do not use `/api/status` or session cookies as the persistence proof. Prefer `/terminal/` for the navigation target because the dashboard root continuously polls status and can make `agent-browser open` wait too long in CI.
 
 ### Python Utilities
 
