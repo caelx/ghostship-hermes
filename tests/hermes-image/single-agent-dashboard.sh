@@ -122,6 +122,44 @@ run_as_hermes() {
   "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
 }
 
+run_browser_profile_probe() {
+  local target_container="$1"
+  local mode="$2"
+
+  "$container_engine" exec -i --user 3000:3000 \
+    --env HOME=/home/hermes \
+    --env HERMES_HOME=/home/hermes/.hermes \
+    --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults \
+    --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    "$target_container" /usr/bin/timeout 90s /opt/cloakbrowser-venv/bin/python - "$mode" <<'PY'
+import sys
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+
+mode = sys.argv[1]
+profile_root = Path("/home/hermes/.local/state/cloakbrowser")
+profile_root.mkdir(parents=True, exist_ok=True)
+
+with sync_playwright() as playwright:
+    context = playwright.chromium.launch_persistent_context(
+        str(profile_root),
+        executable_path="/usr/local/bin/google-chrome",
+        headless=True,
+        args=["--disable-dev-shm-usage", "--no-sandbox"],
+    )
+    try:
+        page = context.pages[0] if context.pages else context.new_page()
+        page.goto("http://127.0.0.1:7681/terminal/", wait_until="domcontentloaded", timeout=30_000)
+        if mode == "write":
+            page.evaluate("localStorage.setItem('ghostship-smoke', 'warm')")
+        value = page.evaluate("localStorage.getItem('ghostship-smoke')")
+        assert value == "warm", value
+    finally:
+        context.close()
+PY
+}
+
 run_test_container() {
   local publish_arg=""
   if [ -n "${1:-}" ]; then
@@ -257,11 +295,7 @@ run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'
 run_as_hermes "$container_name" 'blogwatcher-cli --help >/dev/null'
 smoke_note "native browser persistence"
-run_as_hermes "$container_name" 'agent-browser close --all >/dev/null 2>&1 || true'
-run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/terminal/ >/dev/null'
-run_as_hermes "$container_name" "agent-browser eval \"localStorage.setItem('ghostship-smoke','warm');\" >/dev/null"
-run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
-run_as_hermes "$container_name" 'agent-browser close --all >/dev/null'
+run_browser_profile_probe "$container_name" write
 run_in_container "$container_name" 'test -d /home/hermes/.local/state/cloakbrowser'
 run_in_container "$container_name" 'command -v google-chrome >/dev/null'
 smoke_note "home ownership"
@@ -342,9 +376,7 @@ run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'
 run_as_hermes "$container_name" 'blogwatcher-cli --help >/dev/null'
 smoke_note "post-restart browser profile"
-run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/terminal/ >/dev/null'
-run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
-run_as_hermes "$container_name" 'agent-browser close --all >/dev/null'
+run_browser_profile_probe "$container_name" read
 
 "$container_engine" rm -f "$container_name" >/dev/null
 start_test_container_with_retry ""
@@ -358,6 +390,4 @@ run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-h
 smoke_note "post-recreate nix profile"
 wait_for_hermes_shell "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 smoke_note "post-recreate browser profile"
-run_as_hermes "$container_name" 'agent-browser open http://127.0.0.1:7681/terminal/ >/dev/null'
-run_as_hermes "$container_name" "agent-browser eval \"({localStorage: localStorage.getItem('ghostship-smoke')})\" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data[\"localStorage\"] == \"warm\"'"
-run_as_hermes "$container_name" 'agent-browser close --all >/dev/null'
+run_browser_profile_probe "$container_name" read
