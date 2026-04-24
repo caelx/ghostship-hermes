@@ -208,7 +208,7 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
       'tornado==6.5.4' \
       'tzlocal==5.3.1' \
       > /tmp/hermes-pip-constraints.txt \
-    && /opt/hermes/venv/bin/uv pip install --python /opt/hermes/venv/bin/python --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
+    && UV_EXCLUDE_NEWER=2026-04-24T00:00:00Z /opt/hermes/venv/bin/uv pip install --python /opt/hermes/venv/bin/python --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
     && python3 -m venv /opt/ghostship-router/venv \
     && /opt/ghostship-router/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/ghostship-router/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/hermes-router \
