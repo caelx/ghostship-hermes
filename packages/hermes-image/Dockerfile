@@ -165,21 +165,50 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && npm run build \
     && rm -rf /opt/hermes/venv \
     && python3 -m venv /opt/hermes/venv \
-    && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel \
+    && /opt/hermes/venv/bin/pip install --upgrade pip setuptools wheel uv \
     && printf '%s\n' \
       'aiosqlite==0.22.0' \
+      'alibabacloud-credentials-api==1.0.0' \
+      'alibabacloud-dingtalk==2.2.44' \
+      'alibabacloud-endpoint-util==0.0.4' \
+      'alibabacloud-gateway-dingtalk==1.0.2' \
+      'alibabacloud-gateway-spi==0.0.3' \
+      'alibabacloud-openapi-util==0.2.4' \
+      'alibabacloud-tea-openapi==0.4.4' \
+      'alibabacloud-tea-util==0.3.14' \
+      'APScheduler==3.11.2' \
       'asyncpg==0.30.0' \
+      'alibabacloud-tea==0.4.3' \
+      'alibabacloud-tea-xml==0.0.3' \
+      'alibabacloud_credentials==1.0.8' \
       'base58==2.1.1' \
+      'cryptography==46.0.6' \
+      'darabonba-core==1.0.5' \
       'davey==0.1.4' \
       'daytona==0.157.0' \
+      'honcho-ai==2.1.1' \
+      'lark-oapi==1.5.5' \
       'Markdown==3.10.1' \
       'mautrix==0.20.8' \
+      'mistralai==2.4.2' \
+      'opentelemetry-api==1.39.1' \
+      'opentelemetry-exporter-otlp-proto-common==1.39.1' \
+      'opentelemetry-exporter-otlp-proto-http==1.39.1' \
+      'opentelemetry-instrumentation==0.60b1' \
+      'opentelemetry-instrumentation-aiohttp-client==0.60b1' \
+      'opentelemetry-proto==1.39.1' \
+      'opentelemetry-sdk==1.39.1' \
+      'opentelemetry-semantic-conventions==0.60b1' \
+      'opentelemetry-util-http==0.60b1' \
+      'pypng==0.20220715.0' \
       'python-telegram-bot==22.6' \
+      'qrcode==7.4.2' \
       'slack-bolt==1.24.0' \
       'slack-sdk==3.39.0' \
       'tornado==6.5.4' \
+      'tzlocal==5.3.1' \
       > /tmp/hermes-pip-constraints.txt \
-    && /opt/hermes/venv/bin/pip install --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
+    && /opt/hermes/venv/bin/uv pip install --python /opt/hermes/venv/bin/python --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
     && python3 -m venv /opt/ghostship-router/venv \
     && /opt/ghostship-router/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/ghostship-router/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/hermes-router \
