@@ -65,7 +65,7 @@ EXPECTED_KEYS = [
     ('GOOGLE_AI_STUDIO_API_KEY', 'env', 'Auxiliary task provider', True),
     ('OPENROUTER_API_KEY', 'env', 'Optional fallback provider', True),
     ('DISCORD_TOKEN', 'env', 'Messaging gateway bot token', True),
-    ('BWS_ACCESS_TOKEN', 'env', 'Bitwarden-backed workflow secrets', True),
+    ('BITWARDENCLI_APPDATA_DIR', 'env', 'Bitwarden CLI state path', True),
 ]
 
 

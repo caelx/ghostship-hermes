@@ -12,12 +12,12 @@ The default Hermes skill inventory SHALL include a repo-managed `changedetection
 - **WHEN** a `changedetection` skill directory already exists in `~/.hermes/skills`
 - **THEN** runtime skill seeding leaves the existing directory unchanged
 
-### Requirement: The changedetection skill SHALL teach the `bws` to `ghostship-changedetection` workflow
-The repo-managed `changedetection` skill SHALL instruct agents to retrieve `changedetection.io` credentials through Bitwarden Secrets Manager and then operate the service with `ghostship-changedetection`.
+### Requirement: The changedetection skill SHALL teach the `bw` to `ghostship-changedetection` workflow
+The repo-managed `changedetection` skill SHALL instruct agents to retrieve `changedetection.io` credentials through Bitwarden and then operate the service with `ghostship-changedetection`.
 
 #### Scenario: Skill names the secret retrieval prerequisites
 - **WHEN** maintainers inspect the changedetection skill content
-- **THEN** the skill identifies Bitwarden Secrets Manager as the supported credential source
+- **THEN** the skill identifies Bitwarden as the supported credential source
 - **AND** the skill names `CHANGEDETECTION_URL` and `CHANGEDETECTION_API_KEY` as the service configuration values Hermes needs before using the CLI
 
 #### Scenario: Skill directs agents to use the dedicated CLI surface

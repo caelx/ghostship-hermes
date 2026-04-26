@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: bw-unlock
+
+Logs in to Bitwarden CLI with BW_CLIENTID/BW_CLIENTSECRET when needed,
+unlocks the vault with BW_PASSWORD, and writes a runtime BW_SESSION file.
+EOF
+}
+
+json_error() {
+  printf '{"ok":false,"error":"%s"}\n' "$1"
+}
+
+json_ok() {
+  printf '{"ok":true,"status":"%s","session_file":"%s"}\n' "$1" "$session_file"
+}
+
+shell_quote() {
+  local value="$1"
+  printf "'"
+  printf '%s' "$value" | sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
+status_value() {
+  bw status 2>/dev/null | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1
+}
+
+write_session_file() {
+  local session="$1"
+
+  if [ -z "$session" ]; then
+    json_error "empty_session"
+    exit 1
+  fi
+
+  install -d -m 0700 "$session_dir"
+  umask 077
+  {
+    printf 'export BW_SESSION='
+    shell_quote "$session"
+    printf '\n'
+  } > "$session_file"
+  chmod 0600 "$session_file"
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  "")
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+export HOME="${HOME:-/home/hermes}"
+export BITWARDENCLI_APPDATA_DIR="${BITWARDENCLI_APPDATA_DIR:-$HOME/.local/state/bitwarden-cli}"
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/3000}"
+session_dir="$runtime_dir/ghostship-bitwarden"
+session_file="$session_dir/session.env"
+
+if ! command -v bw >/dev/null 2>&1; then
+  json_error "bw_not_found"
+  exit 127
+fi
+
+if [ -z "${BW_SESSION:-}" ] && [ -f "$session_file" ]; then
+  # shellcheck disable=SC1090
+  . "$session_file"
+  export BW_SESSION="${BW_SESSION:-}"
+fi
+
+status="$(status_value)"
+case "$status" in
+  unauthenticated)
+    if [ -z "${BW_CLIENTID:-}" ] || [ -z "${BW_CLIENTSECRET:-}" ]; then
+      json_error "missing_bw_api_key_env"
+      exit 1
+    fi
+    bw login --apikey >/dev/null
+    status="$(status_value)"
+    case "$status" in
+      locked|unlocked)
+        ;;
+      *)
+        json_error "bw_login_failed"
+        exit 1
+        ;;
+    esac
+    ;;
+  locked|unlocked)
+    ;;
+  *)
+    json_error "bw_status_failed"
+    exit 1
+    ;;
+esac
+
+if [ "$status" = "unlocked" ] && [ -n "${BW_SESSION:-}" ]; then
+  write_session_file "$BW_SESSION"
+  json_ok "unlocked"
+  exit 0
+fi
+
+if [ -z "${BW_PASSWORD:-}" ]; then
+  json_error "missing_bw_password_env"
+  exit 1
+fi
+
+session="$(bw unlock --passwordenv BW_PASSWORD --raw)"
+write_session_file "$session"
+json_ok "unlocked"

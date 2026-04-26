@@ -42,7 +42,10 @@ def _direct_gemini() -> dict[str, str]:
 DEFAULT_CONFIG = {
     "model": {
         "provider": "openai-codex",
-        "default": "gpt-5.4",
+        "default": "gpt-5.5",
+    },
+    "web": {
+        "backend": "firecrawl",
     },
     "memory": {
         "provider": "holographic",
@@ -284,7 +287,14 @@ def _normalize_managed_model_contract(config: object) -> bool:
         and model.get("default") == "minimax-m2.7"
     ):
         model["provider"] = "openai-codex"
-        model["default"] = "gpt-5.4"
+        model["default"] = "gpt-5.5"
+        changed = True
+    elif (
+        isinstance(model, dict)
+        and model.get("provider") == "openai-codex"
+        and model.get("default") == "gpt-5.4"
+    ):
+        model["default"] = "gpt-5.5"
         changed = True
 
     fallback_model = config.get("fallback_model")
@@ -300,6 +310,14 @@ def _normalize_managed_model_contract(config: object) -> bool:
     agent = config.get("agent")
     if isinstance(agent, dict) and agent.get("reasoning_effort") == "high":
         agent["reasoning_effort"] = "medium"
+        changed = True
+
+    web = config.get("web")
+    if not isinstance(web, dict):
+        config["web"] = {"backend": "firecrawl"}
+        changed = True
+    elif web.get("backend") != "firecrawl":
+        web["backend"] = "firecrawl"
         changed = True
 
     return changed

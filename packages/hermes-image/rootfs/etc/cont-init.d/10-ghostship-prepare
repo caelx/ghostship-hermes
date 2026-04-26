@@ -16,9 +16,10 @@ persisted_hermes_env_keys_file="$HERMES_HOME/.ghostship-managed-env.keys"
 
 . /etc/ghostship-hermes-env.sh
 
-mkdir -p "$HOME" "$HERMES_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$HOME/.local/bin" "$HOME/.local/state" "$HOME/.local/state/tmux" "$HOME/.local/state/ghostship-hermes/ttyd" "$HOME/.npm" "$HOME/.cargo" "$HOME/.rustup" "$HOME/.ssh" "$GHOSTSHIP_WORKSPACE_ROOT" /run/user/3000 "$internal_env_dir"
+mkdir -p "$HOME" "$HERMES_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$HOME/.local/bin" "$HOME/.local/state" "$HOME/.local/state/tmux" "$HOME/.local/state/ghostship-hermes/ttyd" "$HOME/.npm" "$HOME/.cargo" "$HOME/.rustup" "$HOME/.ssh" "$GHOSTSHIP_WORKSPACE_ROOT" /run/user/3000 /run/user/3000/ghostship-bitwarden "$internal_env_dir"
 chown -R 3000:3000 "$HOME" "$GHOSTSHIP_WORKSPACE_ROOT" /run/user/3000 "$internal_env_dir"
 chmod 0700 /run/user/3000
+chmod 0700 /run/user/3000/ghostship-bitwarden
 
 # Pre-create the supported persisted browser profile root as hermes.
 mkdir -p "$HOME/.local/state/cloakbrowser"

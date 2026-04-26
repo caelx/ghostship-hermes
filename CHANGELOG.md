@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Breaking: changed the managed Hermes primary lane to `openai-codex/gpt-5.5`, set the managed web backend to Firecrawl, and replaced the image-managed Bitwarden Secrets Manager `bws` contract with the Password Manager CLI `bw` using persisted state under `/home/hermes/.local/state/bitwarden-cli`.
+- Added `bw-unlock` and `bw-lock` wrappers for the image-managed Bitwarden CLI; `bw-unlock` performs API-key login plus password unlock and writes a runtime `BW_SESSION`, while `bw-lock` removes the session without logging out.
 - Pinned Hermes release updated to `v2026.4.23`.
 - Fixed the `ghostship-router` service launcher to ignore downstream `GHOSTSHIP_ROUTER_HOST` / `GHOSTSHIP_ROUTER_PORT` runtime env overrides, preserving the image-owned `127.0.0.1:8788` router contract that the smoke test validates.
 - Fixed the workstation smoke managed-env assertion to expect the shell-quoted values that both generated Hermes env files now use.

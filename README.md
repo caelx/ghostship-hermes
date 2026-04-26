@@ -63,7 +63,7 @@ Package ownership split:
 
 - image: Hermes core, router, full repo `ghostship-*` CLI layer, and the operator utility bundle for the workstation contract
 - native npm seed in persisted home: `codex`, `gemini-cli`, `agent-browser`, `opencode`
-- image-managed Nix defaults: `bws`, `gh`, `gcloud`, `gws`, `blogwatcher-cli`
+- image-managed Nix defaults: `bw`, `bw-unlock`, `bw-lock`, `gh`, `gcloud`, `gws`, `blogwatcher-cli`
 - image-managed local browser tooling: native CloakBrowser under `/opt/ghostship` launched through `agent-browser`, with the persistent Chrome profile rooted at `/home/hermes/.local/state/cloakbrowser`
 - persisted Nix user profile: extra downstream or Hermes-installed packages on top of the image defaults
 
@@ -300,12 +300,12 @@ Required when Discord gateway is enabled:
 Recommended optional operator env:
 
 - `WEBHOOK_SECRET`
-- `BWS_ACCESS_TOKEN`
+- `BW_CLIENTID`, `BW_CLIENTSECRET`, and `BW_PASSWORD` when using `bw-unlock`
+- `BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli`
 - `GITHUB_TOKEN`
 
 Supported but not recommended for downstream:
 
-- `BWS_SERVER_URL`
 - `BROWSERBASE_API_KEY`
 - `BROWSERBASE_PROJECT_ID`
 - `BROWSER_USE_API_KEY`
@@ -327,7 +327,7 @@ Important behavior:
 - `/model` cannot override the router-pinned forced channel
 - `_GHOSTSHIP_ROUTER_API_KEY` is optional internal router auth. The image may still auto-generate it for Hermes integration, but the router does not require it to run.
 
-Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume and backs the default `openai-codex/gpt-5.4` primary lane.
+Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume and backs the default `openai-codex/gpt-5.5` primary lane.
 
 The full fixed env contract is also documented in [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/docs/runtime-env.md).
 
@@ -343,7 +343,8 @@ Router:
 
 - `ghostship-hermes-router` is mandatory
 - it listens on `127.0.0.1:8788`
-- Hermes default config uses Codex `gpt-5.4` as the primary lane and `opencode-go/minimax-m2.7` as the configured fallback
+- Hermes default config uses Codex `gpt-5.5` as the primary lane and `opencode-go/minimax-m2.7` as the configured fallback
+- Hermes default config sets `web.backend: firecrawl`
 - the managed Hermes config also exposes `ghostship-router` as a local custom provider pinned to alias `agentic`
 - when configured, NVIDIA Build participates through live free-endpoint catalog discovery and outranks Zen/OpenRouter by default
 - router normal routing is `agentic`-only, keeps a top-five reserve per provider, and uses the best three currently eligible models from that reserve
@@ -390,8 +391,9 @@ Expected config shape after first boot:
 - Hermes home at `/home/hermes/.hermes`
 - `terminal.backend: local`
 - `terminal.cwd: /workspace`
-- root model uses direct `opencode-go/minimax-m2.7`
-- `fallback_model` uses Codex `gpt-5.4-mini`
+- root model uses Codex `gpt-5.5`
+- `fallback_model` uses direct `opencode-go/minimax-m2.7`
+- `web.backend` is `firecrawl`
 - `custom_providers` includes `ghostship-router` pinned to `agentic`
 - Discord forced-channel behavior controlled by runtime env, not by hardcoding channel ids into `config.yaml`
 
@@ -408,7 +410,7 @@ Useful live checks:
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
 curl -fsS http://127.0.0.1:7681/terminal/ >/dev/null
-docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bws gcloud blogwatcher-cli agent-browser ghostship-sonarr ghostship-hermes-router'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw bw-unlock bw-lock gcloud blogwatcher-cli agent-browser ghostship-sonarr ghostship-hermes-router'
 docker exec ghostship-hermes sh -lc 'test -d /home/hermes/.local/state/cloakbrowser && command -v google-chrome'
 docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
 docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
@@ -451,7 +453,9 @@ Current bundled family:
 Additional baked operator utilities:
 
 - `blogwatcher-cli`
-- `bws`
+- `bw`
+- `bw-unlock`
+- `bw-lock`
 - `fd`
 - `gcloud`
 - `gh`

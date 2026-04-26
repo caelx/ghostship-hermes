@@ -137,12 +137,12 @@ Channel behavior:
 ### Recommended Optional Operator Env
 
 - `WEBHOOK_SECRET`
-- `BWS_ACCESS_TOKEN`
+- `BW_CLIENTID`, `BW_CLIENTSECRET`, and `BW_PASSWORD` when using `bw-unlock`
+- `BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli`
 - `GITHUB_TOKEN`
 
 ### Supported But Not Recommended For Downstream
 
-- `BWS_SERVER_URL`
 - `BROWSERBASE_API_KEY`
 - `BROWSERBASE_PROJECT_ID`
 - `BROWSER_USE_API_KEY`
@@ -225,7 +225,9 @@ These commands are expected to exist in the image without downstream installatio
 
 - all repo `ghostship-*` CLIs
 - `blogwatcher-cli`
-- `bws`
+- `bw`
+- `bw-unlock`
+- `bw-lock`
 - `codex`
 - `gemini`
 - `agent-browser`

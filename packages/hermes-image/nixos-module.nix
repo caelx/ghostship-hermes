@@ -55,8 +55,7 @@ let
     "GITHUB_TOKEN"
     "HASS_TOKEN"
     "HASS_URL"
-    "BWS_ACCESS_TOKEN"
-    "BWS_SERVER_URL"
+    "BITWARDENCLI_APPDATA_DIR"
     "BROWSERBASE_API_KEY"
     "BROWSERBASE_PROJECT_ID"
     "BROWSER_USE_API_KEY"
@@ -203,7 +202,10 @@ let
     {
       model = {
         provider = "openai-codex";
-        default = "gpt-5.4";
+        default = "gpt-5.5";
+      };
+      web = {
+        backend = "firecrawl";
       };
       memory = {
         provider = "holographic";
@@ -367,6 +369,7 @@ let
     export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
     export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}"
     export GHOSTSHIP_AGENT_TOOLS_PREFIX="''${GHOSTSHIP_AGENT_TOOLS_PREFIX:-$HOME/.local/share/ghostship-agent-tools/npm}"
+    export BITWARDENCLI_APPDATA_DIR="''${BITWARDENCLI_APPDATA_DIR:-$HOME/.local/state/bitwarden-cli}"
 
     ensure_dir() {
       local path="$1"
@@ -397,11 +400,14 @@ let
     ensure_dir "$HERMES_HOME" 0750
     ensure_dir "$GHOSTSHIP_DASHBOARD_STATE_DIR" 0750
     ensure_dir "$GHOSTSHIP_ROUTER_STATE_DIR" 0750
+    ensure_dir "/run/user/$HERMES_UID" 0700
+    ensure_dir "/run/user/$HERMES_UID/ghostship-bitwarden" 0700
 
     prepare_nix_profile_state
     ensure_dir "$XDG_CONFIG_HOME" 0750
     ensure_dir "$XDG_DATA_HOME" 0750
     ensure_dir "$XDG_STATE_HOME" 0750
+    ensure_dir "$BITWARDENCLI_APPDATA_DIR" 0700
     ensure_dir "$XDG_CACHE_HOME" 0750
     ensure_dir "$HOME/.local/bin" 0750
     ensure_dir "$GHOSTSHIP_AGENT_TOOLS_PREFIX" 0750
@@ -611,58 +617,90 @@ EOF
 
       tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
       ${pkgs.gawk}/bin/awk '
-        BEGIN { in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0 }
+        BEGIN { in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0; in_web = 0; seen_web = 0; seen_web_backend = 0 }
         /^model:[[:space:]]*$/ {
           in_model = 1
           in_fallback_model = 0
           in_discord = 0
           in_custom = 0
           in_agent = 0
+          in_web = 0
+          print
+          next
+        }
+        /^web:[[:space:]]*$/ {
+          in_model = 0
+          in_fallback_model = 0
+          in_discord = 0
+          in_custom = 0
+          in_agent = 0
+          in_web = 1
+          seen_web = 1
           print
           next
         }
         /^fallback_model:[[:space:]]*$/ {
+          if (in_web && !seen_web_backend) {
+            print "  backend: firecrawl"
+          }
           in_model = 0
           in_fallback_model = 1
           in_discord = 0
           in_custom = 0
           in_agent = 0
+          in_web = 0
           print
           next
         }
         /^discord:[[:space:]]*$/ {
+          if (in_web && !seen_web_backend) {
+            print "  backend: firecrawl"
+          }
           in_model = 0
           in_fallback_model = 0
           in_discord = 1
           in_custom = 0
           in_agent = 0
+          in_web = 0
           print
           next
         }
         /^custom_providers:[[:space:]]*$/ {
+          if (in_web && !seen_web_backend) {
+            print "  backend: firecrawl"
+          }
           in_model = 0
           in_fallback_model = 0
           in_discord = 0
           in_custom = 1
           in_agent = 0
+          in_web = 0
           print
           next
         }
         /^agent:[[:space:]]*$/ {
+          if (in_web && !seen_web_backend) {
+            print "  backend: firecrawl"
+          }
           in_model = 0
           in_fallback_model = 0
           in_discord = 0
           in_custom = 0
           in_agent = 1
+          in_web = 0
           print
           next
         }
-        (in_model || in_fallback_model || in_discord || in_custom || in_agent) && /^[^[:space:]]/ {
+        (in_model || in_fallback_model || in_discord || in_custom || in_agent || in_web) && /^[^[:space:]]/ {
+          if (in_web && !seen_web_backend) {
+            print "  backend: firecrawl"
+          }
           in_model = 0
           in_fallback_model = 0
           in_discord = 0
           in_custom = 0
           in_agent = 0
+          in_web = 0
         }
         in_model && $0 == "  base_url: http://127.0.0.1:8788/v1" {
           next
@@ -672,7 +710,11 @@ EOF
           next
         }
         in_model && $0 == "  default: minimax-m2.7" {
-          print "  default: gpt-5.4"
+          print "  default: gpt-5.5"
+          next
+        }
+        in_model && $0 == "  default: gpt-5.4" {
+          print "  default: gpt-5.5"
           next
         }
         in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
@@ -690,6 +732,11 @@ EOF
           print "  reasoning_effort: medium"
           next
         }
+        in_web && $0 ~ /^  backend:[[:space:]]/ {
+          print "  backend: firecrawl"
+          seen_web_backend = 1
+          next
+        }
         in_discord && $0 ~ /^  require_mention:[[:space:]]/ {
           print "  require_mention: false"
           next
@@ -702,6 +749,14 @@ EOF
           next
         }
         { print }
+        END {
+          if (!seen_web) {
+            print "web:"
+            print "  backend: firecrawl"
+          } else if (in_web && !seen_web_backend) {
+            print "  backend: firecrawl"
+          }
+        }
       ' "$config_path" >"$tmp_path"
       chmod 0600 "$tmp_path"
       if ! cmp -s "$tmp_path" "$config_path"; then
@@ -767,6 +822,7 @@ EOF
       trap cleanup_tmp EXIT
       umask 077
       env_values["TERMINAL_CWD"]="${rootTerminalCwd}"
+      env_values["BITWARDENCLI_APPDATA_DIR"]="/home/hermes/.local/state/bitwarden-cli"
       while IFS='=' read -r key value; do
         append_env_value "$key" "$value"
       done < <(env)

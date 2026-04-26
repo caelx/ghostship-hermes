@@ -53,8 +53,10 @@ Python utilities in this repo should:
 
 New `ghostship-*` utilities should follow this split:
 
-- `BWS_ACCESS_TOKEN` is the operator-injected bootstrap secret for Bitwarden Secrets Manager.
-- Service credentials and automation-compatible website credentials belong in Bitwarden Secrets Manager by default.
+- `bw` is the image-managed Bitwarden CLI for operator-managed vault access; `bw-unlock` and `bw-lock` are the supported session wrappers.
+- `BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli` is the persisted Bitwarden CLI state path.
+- `bw-lock` locks/removes the active runtime session but does not log out of the persisted Bitwarden account.
+- Service credentials and automation-compatible website credentials belong in Bitwarden by default.
 - Service URLs, hostnames, ports, profile names, workspace paths, and similar local topology belong in env/config by default unless the value itself contains credential material.
 - If a utility still consumes secrets through env vars, treat those env vars as the runtime interface only. Do not document them as the preferred durable storage location for secrets.
 - Prefer examples that materialize only the secret values needed for one command or workflow rather than exporting a large long-lived shell environment.

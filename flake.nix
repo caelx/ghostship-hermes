@@ -81,6 +81,7 @@
           ghostshipN8n = mkGhostshipPythonUtility ./packages/n8n-cli/package.nix;
           ghostshipChaptarr = mkGhostshipPythonUtility ./packages/chaptarr-cli/package.nix;
           agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
+          ghostshipBitwardenWrappers = pkgs.callPackage ./packages/bitwarden-wrappers/package.nix { };
           blogwatcher = pkgs.callPackage ./packages/blogwatcher/package.nix { };
           upstreamHermesAgent = hermes-agent.packages.${system}.default;
           wrappedHermesAgent = pkgs.callPackage ./packages/hermes-agent-wrapped/package.nix {
@@ -136,7 +137,8 @@
           ghostshipDefaultTools = pkgs.buildEnv {
             name = "ghostship-default-tools";
             paths = [
-              pkgs.bws
+              pkgs.bitwarden-cli
+              ghostshipBitwardenWrappers
               pkgs.gh
               pkgs.google-cloud-sdk
               blogwatcher
@@ -147,7 +149,8 @@
           };
 
           baseUtilityPackages = [
-            pkgs.bws
+            pkgs.bitwarden-cli
+            ghostshipBitwardenWrappers
             pkgs.google-cloud-sdk
             agentBrowser
             googleWorkspaceCli
@@ -256,7 +259,8 @@
         in
         {
           ghostship-default-tools = ghostshipDefaultTools;
-          bws = pkgs.bws;
+          bw = pkgs.bitwarden-cli;
+          ghostship-bitwarden-wrappers = ghostshipBitwardenWrappers;
           gcloud = pkgs.google-cloud-sdk;
           tirith = pkgs.tirith;
           agent-browser = agentBrowser;
@@ -305,7 +309,8 @@
         in
         {
           inherit (self.packages.${system})
-            bws
+            bw
+            ghostship-bitwarden-wrappers
             gcloud
             tirith
             agent-browser

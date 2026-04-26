@@ -38,7 +38,7 @@ First-boot behavior:
 - every boot reconciles the image-managed default Nix profile at `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults` if the current image expects store paths that are missing from a reused non-empty `/nix`
 
 That means downstream does not need a separate manual `/nix` bootstrap step for a brand-new empty persistent volume.
-It also means existing non-empty `/nix` mounts are a supported upgrade path for image-managed defaults like `bws`, `gh`, `gcloud`, `gws`, and `blogwatcher-cli`, while image-managed CloakBrowser binaries stay under `/opt/ghostship` and the persistent browser profile stays under `/home/hermes/.local/state/cloakbrowser`.
+It also means existing non-empty `/nix` mounts are a supported upgrade path for image-managed defaults like `bw`, `gh`, `gcloud`, `gws`, and `blogwatcher-cli`, while image-managed CloakBrowser binaries stay under `/opt/ghostship` and the persistent browser profile stays under `/home/hermes/.local/state/cloakbrowser`.
 
 ## Required Vs Fixed Environment Variables
 
@@ -166,7 +166,7 @@ Quick smoke:
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
 docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
-docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bws gcloud blogwatcher-cli agent-browser ghostship-sonarr ghostship-hermes-router'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw gcloud blogwatcher-cli agent-browser ghostship-sonarr ghostship-hermes-router'
 docker exec ghostship-hermes sh -lc 'test -d /home/hermes/.local/state/cloakbrowser && command -v google-chrome'
 ```
 

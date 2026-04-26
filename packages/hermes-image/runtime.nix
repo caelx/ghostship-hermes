@@ -48,6 +48,7 @@ writeShellApplication {
     export XDG_DATA_HOME="''${XDG_DATA_HOME:-$HOME/.local/share}"
     export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
     export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}"
+    export BITWARDENCLI_APPDATA_DIR="''${BITWARDENCLI_APPDATA_DIR:-$HOME/.local/state/bitwarden-cli}"
     export PATH="$GHOSTSHIP_AGENT_TOOLS_PREFIX/bin:$HOME/.local/bin:$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
 
     ensure_dir() {
@@ -80,11 +81,14 @@ writeShellApplication {
       ensure_dir "$HERMES_HOME" 0750
       ensure_dir "$GHOSTSHIP_DASHBOARD_STATE_DIR" 0750
       ensure_dir "$GHOSTSHIP_ROUTER_STATE_DIR" 0750
+      ensure_dir "/run/user/$HERMES_UID" 0700
+      ensure_dir "/run/user/$HERMES_UID/ghostship-bitwarden" 0700
 
       prepare_nix_profile_state
       ensure_dir "$XDG_CONFIG_HOME" 0750
       ensure_dir "$XDG_DATA_HOME" 0750
       ensure_dir "$XDG_STATE_HOME" 0750
+      ensure_dir "$BITWARDENCLI_APPDATA_DIR" 0700
       ensure_dir "$XDG_CACHE_HOME" 0750
       ensure_dir "$HOME/.local/bin" 0750
       ensure_dir "$GHOSTSHIP_AGENT_TOOLS_PREFIX" 0750

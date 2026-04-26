@@ -2,7 +2,7 @@
 
 The current workstation image already uses Nix in two distinct ways:
 
-- the image build resolves baseline helper utilities such as `bws`, `gws`, `gh`, `gcloud`, and `blogtato` from Nix
+- the image build resolves baseline helper utilities such as `bw`, `gws`, `gh`, `gcloud`, and `blogtato` from Nix
 - the running workstation exposes persisted `/nix` so Hermes or downstream operators can install additional userland packages that survive container replacement
 
 Today those two lanes are coupled too loosely. The final image stage resolves baseline tools to concrete `/nix/store/...` paths at build time and creates `/opt/ghostship/bin/*` symlinks to those store objects. The boot sequence only seeds `/nix` when the mounted path is empty. On a reused non-empty `/nix` mount, the image upgrades but the persisted store does not automatically gain the new build's expected objects, so the shipped helper symlinks become broken.
@@ -28,7 +28,7 @@ The change therefore needs to fit the existing image/runtime model instead of in
 
 **Non-Goals:**
 - Replacing persisted `/nix` with an immutable-only tool layer.
-- Reverting `bws`, `gws`, `gh`, or `gcloud` to downstream-only manual installs.
+- Reverting `bw`, `gws`, `gh`, or `gcloud` to downstream-only manual installs.
 - Running `nix profile install` against the network during every container boot.
 - Garbage-collecting user-managed `/nix` content automatically on every start.
 

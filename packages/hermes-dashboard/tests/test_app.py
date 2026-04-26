@@ -12,7 +12,9 @@ def _load_app_module(monkeypatch, tmp_path: Path):
     (managed_home / 'config.yaml').write_text(
         """model:
   provider: openai-codex
-  default: gpt-5.4
+  default: gpt-5.5
+web:
+  backend: firecrawl
 fallback_model:
   provider: opencode-go
   model: minimax-m2.7
@@ -108,7 +110,7 @@ def test_health_treats_router_bearer_token_as_optional(monkeypatch, tmp_path: Pa
     monkeypatch.setenv('GOOGLE_AI_STUDIO_API_KEY', 'test-google')
     monkeypatch.setenv('OPENROUTER_API_KEY', 'test-openrouter')
     monkeypatch.setenv('DISCORD_TOKEN', 'test-discord')
-    monkeypatch.setenv('BWS_ACCESS_TOKEN', 'test-bws')
+    monkeypatch.setenv('BITWARDENCLI_APPDATA_DIR', str(tmp_path / '.local' / 'state' / 'bitwarden-cli'))
     monkeypatch.delenv('_GHOSTSHIP_ROUTER_API_KEY', raising=False)
     monkeypatch.setattr(
         health_module,

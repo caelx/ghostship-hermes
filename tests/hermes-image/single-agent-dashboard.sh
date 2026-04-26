@@ -281,7 +281,7 @@ tr "\0" "\n" </proc/"$gateway_pid"/environ | grep -Fx "FIRECRAWL_API_KEY=test-fi
 
 run_in_container "$container_name" '
 for cmd in \
-  nix git rg ttyd tmux tirith jq fd yq uv gh gws bws gcloud blogwatcher-cli \
+  nix git rg ttyd tmux tirith jq fd yq uv gh gws bw bw-unlock bw-lock gcloud blogwatcher-cli \
   codex gemini agent-browser opencode \
   ghostship-bazarr ghostship-bookstack ghostship-changedetection ghostship-chaptarr \
   ghostship-flaresolverr ghostship-grimmory ghostship-n8n ghostship-nzbget ghostship-plex ghostship-pricebuddy \
@@ -291,8 +291,15 @@ do
   command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }
 done
 '
-run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
-run_as_hermes "$container_name" 'bws --help >/dev/null'
+run_as_hermes "$container_name" 'for cmd in bw bw-unlock bw-lock gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
+run_as_hermes "$container_name" 'bw --help >/dev/null'
+run_as_hermes "$container_name" 'bw-unlock --help >/dev/null'
+run_as_hermes "$container_name" 'bw-lock --help >/dev/null'
+run_as_hermes "$container_name" 'test -d /home/hermes/.local/state/bitwarden-cli'
+run_in_container "$container_name" 'test -d /run/user/3000'
+run_in_container "$container_name" "stat -c '%U:%G %a' /run/user/3000/ghostship-bitwarden | grep -Fx 'hermes:hermes 700' >/dev/null"
+run_in_container "$container_name" "grep -E \"^BITWARDENCLI_APPDATA_DIR='?/home/hermes/.local/state/bitwarden-cli'?$\" /home/hermes/.hermes/.env >/dev/null"
+run_in_container "$container_name" "! grep -Eq '^(BW_CLIENTSECRET|BW_PASSWORD|BW_SESSION)=' /home/hermes/.hermes/.env"
 run_as_hermes "$container_name" 'gws --help >/dev/null'
 run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'
@@ -309,7 +316,8 @@ smoke_note "gateway status"
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
 smoke_note "config assertions"
 run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.4" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.5" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
@@ -372,8 +380,11 @@ run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-h
 smoke_note "post-restart nix profile"
 wait_for_hermes_shell "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 smoke_note "post-restart managed tools"
-run_as_hermes "$container_name" 'for cmd in bws gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
-run_as_hermes "$container_name" 'bws --help >/dev/null'
+run_as_hermes "$container_name" 'for cmd in bw bw-unlock bw-lock gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
+run_as_hermes "$container_name" 'bw --help >/dev/null'
+run_as_hermes "$container_name" 'bw-unlock --help >/dev/null'
+run_as_hermes "$container_name" 'bw-lock --help >/dev/null'
+run_as_hermes "$container_name" 'test -d /home/hermes/.local/state/bitwarden-cli'
 run_as_hermes "$container_name" 'gws --help >/dev/null'
 run_as_hermes "$container_name" 'gh --help >/dev/null'
 run_as_hermes "$container_name" 'gcloud --help >/dev/null'

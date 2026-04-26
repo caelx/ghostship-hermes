@@ -5,8 +5,8 @@ The repo SHALL define a distinct policy for bootstrap secret inputs, Bitwarden-m
 
 #### Scenario: Bootstrap secret is defined separately from service credentials
 - **WHEN** maintainers inspect the repo policy docs
-- **THEN** the policy identifies `BWS_ACCESS_TOKEN` as an operator-injected bootstrap secret
-- **AND** the policy identifies `BWS_SERVER_URL` as optional runtime configuration for self-hosted Bitwarden rather than a managed service credential
+- **THEN** the policy identifies `BITWARDENCLI_APPDATA_DIR` as the persisted Bitwarden CLI state path
+- **AND** the policy identifies Bitwarden authentication state as operator-managed local state rather than a service credential
 
 #### Scenario: Local topology stays outside Bitwarden by default
 - **WHEN** maintainers inspect the repo policy docs
@@ -14,7 +14,7 @@ The repo SHALL define a distinct policy for bootstrap secret inputs, Bitwarden-m
 - **AND** the policy does not describe those values as Bitwarden-managed secrets unless they contain credential material
 
 ### Requirement: Bitwarden is the source of truth for machine-manageable credentials
-The repo SHALL treat Bitwarden Secrets Manager as the source of truth for service credentials and website automation credentials that fit a machine-account or scripted workflow.
+The repo SHALL treat Bitwarden as the source of truth for service credentials and website automation credentials that fit an operator-managed vault workflow.
 
 #### Scenario: Service credentials are sourced from Bitwarden
 - **WHEN** maintainers inspect the repo policy docs

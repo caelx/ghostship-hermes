@@ -24,7 +24,7 @@ The workstation SHALL keep only the minimum immutable image layer needed for Ubu
 
 #### Scenario: Immutable core excludes convenience tooling without a core call site
 - **WHEN** maintainers inspect the immutable image contents after this change
-- **THEN** convenience CLIs such as `jq`, `fd`, `gh`, `gcloud`, `gws`, `bws`, `uv`, and `yq` are not kept in the immutable layer unless a documented core boot/runtime call site requires them
+- **THEN** convenience CLIs such as `jq`, `fd`, `gh`, `gcloud`, `gws`, `bw`, `uv`, and `yq` are not kept in the immutable layer unless a documented core boot/runtime call site requires them
 - **AND** those tools instead belong to optional persisted userland layers
 
 #### Scenario: Immutable core keeps required package-manager/runtime surfaces

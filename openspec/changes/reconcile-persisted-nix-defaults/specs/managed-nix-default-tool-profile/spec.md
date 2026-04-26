@@ -35,5 +35,5 @@ The workstation SHALL expose the guaranteed baseline Nix-backed helper tools thr
 
 #### Scenario: Baseline helper tools remain callable after image replacement
 - **WHEN** a workstation container is replaced with a newer image while reusing the same persisted `/nix`
-- **THEN** guaranteed baseline helper tools such as `bws`, `gws`, `gh`, `gcloud`, and `blogtato` resolve on the Hermes-user `PATH`
+- **THEN** guaranteed baseline helper tools such as `bw`, `gws`, `gh`, `gcloud`, and `blogtato` resolve on the Hermes-user `PATH`
 - **AND** those commands do not fail only because a stale raw `/nix/store/...` symlink points to a missing store path

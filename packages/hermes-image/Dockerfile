@@ -240,7 +240,7 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent
 
 RUN mkdir -p /opt/ghostship/home-seed/.hermes /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/nixpkgs \
-    && printf '%s\n' '{ allowUnfreePredicate = pkg: builtins.elem (builtins.parseDrvName pkg.name).name [ "bws" ]; }' > /opt/ghostship/home-seed/.config/nixpkgs/config.nix \
+    && printf '%s\n' '{ allowUnfreePredicate = pkg: builtins.elem (builtins.parseDrvName pkg.name).name [ "bitwarden-cli" ]; }' > /opt/ghostship/home-seed/.config/nixpkgs/config.nix \
     && printf '%s\n' \
       'set -g status-style bg=#041C1C,fg=#FFE6CB' \
       'set -g message-style bg=#0C3838,fg=#FFE6CB' \

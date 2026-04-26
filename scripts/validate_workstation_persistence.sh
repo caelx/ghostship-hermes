@@ -194,7 +194,8 @@ assert_router_inventory() {
 assert_model_config() {
   local target_container="$1"
   run_as_hermes "$target_container" 'hermes config show | grep -F "provider: openai-codex" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "default: gpt-5.4" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "default: gpt-5.5" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
   run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
@@ -206,7 +207,7 @@ assert_model_config() {
 assert_config_migration() {
   local target_container="$1"
   run_as_hermes "$target_container" 'sed -i "/^model:/,/^[^ ]/s/^  provider: openai-codex$/  provider: opencode-go/" /home/hermes/.hermes/config.yaml'
-  run_as_hermes "$target_container" 'sed -i "/^model:/,/^[^ ]/s/^  default: gpt-5.4$/  default: minimax-m2.7/" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -i "/^model:/,/^[^ ]/s/^  default: gpt-5.5$/  default: minimax-m2.7/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^model:$/a\  base_url: http://127.0.0.1:8788/v1" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  provider: opencode-go$/  provider: openai-codex/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  model: minimax-m2.7$/  model: gpt-5.4-mini/" /home/hermes/.hermes/config.yaml'
@@ -220,7 +221,8 @@ assert_config_migration() {
   run_in_container "$target_container" 'systemctl start ghostship-hermes-bootstrap.service >/dev/null'
   run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.4" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.5" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
@@ -274,7 +276,7 @@ wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/health"
 wait_for_http "${dashboard_base_url}/api/profiles"
 wait_for_http "${dashboard_base_url}/api/projects"
-curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "gpt-5.4" and .config_provider == "openai-codex" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "gpt-5.5" and .config_provider == "openai-codex" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/profiles" | jq -e ' .profiles[0].name == "Managed Agent" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/projects" | jq -e ' .projects_dir == "/workspace" ' >/dev/null
 
@@ -296,6 +298,14 @@ run_as_hermes "$container_one" 'test -w /home/hermes/.hermes/skills/workflow-sin
 run_as_hermes "$container_one" '! test -e /home/hermes/.hermes/profiles/assistant/skills/workflow-single/SKILL.md'
 run_as_hermes "$container_one" 'grep -Fx "seed-soul-v1" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_one" 'printf "{\"provider\":\"codex\"}\n" > /home/hermes/.hermes/auth.json'
+run_as_hermes "$container_one" 'for cmd in bw bw-unlock bw-lock; do command -v "$cmd" >/dev/null || exit 1; done'
+run_as_hermes "$container_one" 'bw --help >/dev/null'
+run_as_hermes "$container_one" 'bw-unlock --help >/dev/null'
+run_as_hermes "$container_one" 'bw-lock --help >/dev/null'
+run_as_hermes "$container_one" 'test -d /home/hermes/.local/state/bitwarden-cli'
+run_in_container "$container_one" "stat -c '%U:%G %a' /run/user/3000/ghostship-bitwarden | grep -Fx 'hermes:hermes 700' >/dev/null"
+run_as_hermes "$container_one" 'grep -E "^BITWARDENCLI_APPDATA_DIR='\''?/home/hermes/.local/state/bitwarden-cli'\''?$" /home/hermes/.hermes/.env >/dev/null'
+run_as_hermes "$container_one" '! grep -Eq "^(BW_CLIENTSECRET|BW_PASSWORD|BW_SESSION)=" /home/hermes/.hermes/.env'
 assert_router_inventory "$container_one"
 assert_model_config "$container_one"
 assert_config_migration "$container_one"
@@ -400,7 +410,7 @@ wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/health"
 wait_for_http "${dashboard_base_url}/api/profiles"
 wait_for_http "${dashboard_base_url}/api/projects"
-curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "gpt-5.4" and .config_provider == "openai-codex" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "gpt-5.5" and .config_provider == "openai-codex" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/profiles" | jq -e ' .profiles[0].name == "Managed Agent" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/projects" | jq -e ' .projects_dir == "/workspace" ' >/dev/null
 
@@ -427,6 +437,9 @@ run_as_hermes "$container_two" '! test -e /home/hermes/.hermes/profiles/assistan
 run_as_hermes "$container_two" '! grep -Fx "seed-skill-v2" /home/hermes/.hermes/skills/workflow-single/SKILL.md >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "user-soul-v2" /home/hermes/.hermes/SOUL.md >/dev/null'
 run_as_hermes "$container_two" '! grep -Fx "seed-soul-v2" /home/hermes/.hermes/SOUL.md >/dev/null'
+run_as_hermes "$container_two" 'for cmd in bw bw-unlock bw-lock; do command -v "$cmd" >/dev/null || exit 1; done'
+run_as_hermes "$container_two" 'bw-unlock --help >/dev/null'
+run_as_hermes "$container_two" 'bw-lock --help >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "config" ~/.config/opencode/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "share" ~/.local/share/opencode/persist.txt >/dev/null'
 run_as_hermes "$container_two" 'grep -Fx "state" ~/.local/state/opencode/persist.txt >/dev/null'

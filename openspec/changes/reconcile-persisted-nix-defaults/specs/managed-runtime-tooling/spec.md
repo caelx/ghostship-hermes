@@ -21,5 +21,5 @@ The workstation validation suite SHALL prove that guaranteed Nix-backed helper t
 
 #### Scenario: Smoke validation exercises baseline managed Nix tools after replacement
 - **WHEN** maintainers run the workstation image validation suite against a reused persisted `/nix`
-- **THEN** the suite executes representative baseline helper commands such as `bws`, `gws`, `gh`, `gcloud`, and `blogtato`
+- **THEN** the suite executes representative baseline helper commands such as `bw`, `gws`, `gh`, `gcloud`, and `blogtato`
 - **AND** the suite fails if those commands are present only as broken symlinks to missing `/nix/store/...` paths

@@ -13,12 +13,12 @@
 ## 3. Validate upgrade and runtime behavior
 
 - [x] 3.1 Update the smoke test to execute baseline managed Nix helper commands after first boot, restart, and full container replacement with a reused `/nix`.
-- [x] 3.2 Add focused validation for the repaired live failure mode where `bws`, `gws`, `gh`, `gcloud`, or `blogtato` would otherwise exist only as broken symlinks.
+- [x] 3.2 Add focused validation for the repaired live failure mode where `bw`, `gws`, `gh`, `gcloud`, or `blogtato` would otherwise exist only as broken symlinks.
 - [x] 3.3 Validate the new behavior against a reused persisted `/nix` deployment path such as `chill-penguin`.
 
 ## 4. Document the new `/nix` contract
 
 - [x] 4.1 Update workstation docs and README to explain the managed Nix default profile, the user-managed Nix profile, and the supported reuse flow for existing non-empty `/nix` mounts.
-- [x] 4.2 Update the tool-specific runtime docs/spec-linked guidance for `bws`, `gh`, `gcloud`, and `gws` so they match the shipped image-managed baseline.
+- [x] 4.2 Update the tool-specific runtime docs/spec-linked guidance for `bw`, `gh`, `gcloud`, and `gws` so they match the shipped image-managed baseline.
 - [x] 4.3 Document how this design fits the current two-phase image build: base Hermes/system layer first, Ghostship utility/profile export second.
 - [x] 4.4 Keep the embedded `Terminal` tab patched in after `Keys`, as the final upstream dashboard tab.
