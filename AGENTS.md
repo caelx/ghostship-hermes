@@ -80,6 +80,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
 - The managed Hermes runtime primary lane is Codex `gpt-5.5` with `agent.reasoning_effort = "medium"`, the configured fallback lane is direct `opencode-go/minimax-m2.7`, and the managed web backend is `firecrawl`.
 - The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Use `bw-unlock` and `bw-lock` for the normal Hermes session workflow; `bw-lock` must not log out.
+- Export `BITWARDENCLI_APPDATA_DIR` at the image/global env layer too; raw `bw` commands otherwise fall back to `~/.config/Bitwarden CLI`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.
 - Managed Hermes-facing env must be emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`; preserve unrelated persisted `.env` keys while refreshing the managed subset from current runtime env.
 - The router service must hard-code its image-owned `127.0.0.1:8788` bind target; do not let downstream `GHOSTSHIP_ROUTER_HOST` or `GHOSTSHIP_ROUTER_PORT` runtime env move it.

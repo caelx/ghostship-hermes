@@ -1061,6 +1061,7 @@ PY2
   serviceEnvironment = {
     HERMES_HOME = "/home/hermes/.hermes";
     TERMINAL_CWD = "/workspace";
+    BITWARDENCLI_APPDATA_DIR = "/home/hermes/.local/state/bitwarden-cli";
     SSL_CERT_FILE = certificateFile;
     NIX_SSL_CERT_FILE = certificateFile;
   } // lib.optionalAttrs includeManagedRuntime {
@@ -1156,6 +1157,7 @@ in
       fi
       ${lib.optionalString includeManagedRuntime "export GHOSTSHIP_HERMES_PROJECT_ROOT=${toolingProjectRoot}"}
       export TERMINAL_CWD=/workspace
+      export BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli
       export SSL_CERT_FILE=${certificateFile}
       export NIX_SSL_CERT_FILE=${certificateFile}
     fi

@@ -136,6 +136,7 @@ run_as_hermes() {
     -u 3000:3000 \
     -e HOME=/home/hermes \
     -e HERMES_HOME=/home/hermes/.hermes \
+    -e BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli \
     -e TERMINAL_CWD=/home/hermes \
     -e XDG_RUNTIME_DIR=/run/user/3000 \
     -e DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3000/bus \
@@ -303,6 +304,7 @@ run_as_hermes "$container_one" 'bw --help >/dev/null'
 run_as_hermes "$container_one" 'bw-unlock --help >/dev/null'
 run_as_hermes "$container_one" 'bw-lock --help >/dev/null'
 run_as_hermes "$container_one" 'test -d /home/hermes/.local/state/bitwarden-cli'
+run_as_hermes "$container_one" '! test -e "/home/hermes/.config/Bitwarden CLI"'
 run_in_container "$container_one" "stat -c '%U:%G %a' /run/user/3000/ghostship-bitwarden | grep -Fx 'hermes:hermes 700' >/dev/null"
 run_as_hermes "$container_one" 'grep -E "^BITWARDENCLI_APPDATA_DIR='\''?/home/hermes/.local/state/bitwarden-cli'\''?$" /home/hermes/.hermes/.env >/dev/null'
 run_as_hermes "$container_one" '! grep -Eq "^(BW_CLIENTSECRET|BW_PASSWORD|BW_SESSION)=" /home/hermes/.hermes/.env'

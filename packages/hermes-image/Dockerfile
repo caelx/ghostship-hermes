@@ -38,6 +38,7 @@ ENV HOME=/home/hermes \
     GHOSTSHIP_TTYD_BASE_PATH=/terminal \
     GHOSTSHIP_TERMINAL_CWD=/workspace \
     AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser \
+    BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli \
     PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
 

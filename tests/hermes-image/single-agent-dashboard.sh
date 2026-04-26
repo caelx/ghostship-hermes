@@ -122,7 +122,7 @@ run_in_container() {
 run_as_hermes() {
   local target_container="$1"
   shift
-  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
+  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
 }
 
 run_browser_profile_probe() {
@@ -296,6 +296,7 @@ run_as_hermes "$container_name" 'bw --help >/dev/null'
 run_as_hermes "$container_name" 'bw-unlock --help >/dev/null'
 run_as_hermes "$container_name" 'bw-lock --help >/dev/null'
 run_as_hermes "$container_name" 'test -d /home/hermes/.local/state/bitwarden-cli'
+run_as_hermes "$container_name" '! test -e "/home/hermes/.config/Bitwarden CLI"'
 run_in_container "$container_name" 'test -d /run/user/3000'
 run_in_container "$container_name" "stat -c '%U:%G %a' /run/user/3000/ghostship-bitwarden | grep -Fx 'hermes:hermes 700' >/dev/null"
 run_in_container "$container_name" "grep -E \"^BITWARDENCLI_APPDATA_DIR='?/home/hermes/.local/state/bitwarden-cli'?$\" /home/hermes/.hermes/.env >/dev/null"
