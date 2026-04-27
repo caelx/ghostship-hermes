@@ -201,8 +201,8 @@ let
     in
     {
       model = {
-        provider = "openai-codex";
-        default = "gpt-5.5";
+        provider = "opencode-go";
+        default = "deepseek-v4-pro";
       };
       web = {
         backend = "firecrawl";
@@ -726,16 +726,20 @@ EOF
         in_model && $0 == "  base_url: http://127.0.0.1:8788/v1" {
           next
         }
-        in_model && $0 == "  provider: opencode-go" {
-          print "  provider: openai-codex"
+        in_model && $0 == "  provider: openai-codex" {
+          print "  provider: opencode-go"
           next
         }
-        in_model && $0 == "  default: minimax-m2.7" {
-          print "  default: gpt-5.5"
+        in_model && $0 == "  default: gpt-5.5" {
+          print "  default: deepseek-v4-pro"
           next
         }
         in_model && $0 == "  default: gpt-5.4" {
-          print "  default: gpt-5.5"
+          print "  default: deepseek-v4-pro"
+          next
+        }
+        in_model && $0 == "  default: minimax-m2.7" {
+          print "  default: deepseek-v4-pro"
           next
         }
         in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
@@ -746,6 +750,18 @@ EOF
           next
         }
         in_fallback_model && $0 == "  model: gpt-5.4-mini" {
+          print "  model: minimax-m2.7"
+          next
+        }
+        in_fallback_model && $0 == "  model: gpt-5.5" {
+          print "  model: minimax-m2.7"
+          next
+        }
+        in_fallback_model && $0 == "  model: gpt-5.4" {
+          print "  model: minimax-m2.7"
+          next
+        }
+        in_fallback_model && $0 == "  model: deepseek-v4-pro" {
           print "  model: minimax-m2.7"
           next
         }

@@ -82,7 +82,7 @@ Internal-only runtime auth may be auto-generated for Hermes compatibility:
 
 - `_GHOSTSHIP_ROUTER_API_KEY`
 
-Codex OAuth is not set by env var. Authenticate once inside the persisted home for the default primary lane:
+Codex OAuth is not set by env var. The default runtime uses OpenCode Go; authenticate Codex only when an operator intentionally switches a session to Codex:
 
 ```fish
 docker exec -it --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'

@@ -11,8 +11,8 @@ def _load_app_module(monkeypatch, tmp_path: Path):
     managed_home.mkdir(parents=True)
     (managed_home / 'config.yaml').write_text(
         """model:
-  provider: openai-codex
-  default: gpt-5.5
+  provider: opencode-go
+  default: deepseek-v4-pro
 web:
   backend: firecrawl
 fallback_model:

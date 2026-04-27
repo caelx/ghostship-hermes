@@ -112,10 +112,10 @@ The local router can additionally use any configured provider credential:
 Notes:
 
 - `NVIDIA_BUILD_API_KEY` enables the prioritized curated free-only NVIDIA Build inventory in the local router.
-- `OPENCODE_GO_API_KEY` backs the configured `opencode-go/minimax-m2.7` fallback lane.
+- `OPENCODE_GO_API_KEY` backs the configured `opencode-go/deepseek-v4-pro` primary lane and `opencode-go/minimax-m2.7` fallback lane.
 - `OPENROUTER_API_KEY` enables OpenRouter-backed candidates in the local router.
 - `GOOGLE_AI_STUDIO_API_KEY` is required because the runtime uses Gemini-backed supplemental tasks.
-- Codex primary auth is not an env var; it is persisted in `/home/hermes/.hermes/auth.json`.
+- Codex auth is not part of the default runtime lane; it is persisted in `/home/hermes/.hermes/auth.json` only when an operator intentionally uses Codex.
 
 ### Required When Discord Gateway Is Enabled
 
@@ -214,9 +214,7 @@ Codex OAuth is persisted in:
 
 - `/home/hermes/.hermes/auth.json`
 
-That file survives container replacement as long as `/home/hermes` is persisted.
-
-The default Codex primary lane depends on that persisted auth. It does not use a downstream env key.
+That file survives container replacement as long as `/home/hermes` is persisted. The default runtime uses OpenCode Go, so Codex auth is optional unless an operator manually switches to Codex.
 
 ## No In-Container Auth Layer
 

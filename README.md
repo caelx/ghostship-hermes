@@ -329,7 +329,7 @@ Important behavior:
 - Closed, archived, locked, deleted, or inaccessible Discord thread sessions are retired by the managed gateway after 05:00 local Hermes time; historical SQLite transcripts are preserved.
 - `_GHOSTSHIP_ROUTER_API_KEY` is optional internal router auth. The image may still auto-generate it for Hermes integration, but the router does not require it to run.
 
-Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume and backs the default `openai-codex/gpt-5.5` primary lane.
+Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container only when you intentionally switch a session to Codex. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume.
 
 The full fixed env contract is also documented in [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/docs/runtime-env.md).
 
@@ -345,7 +345,7 @@ Router:
 
 - `ghostship-hermes-router` is mandatory
 - it listens on `127.0.0.1:8788`
-- Hermes default config uses Codex `gpt-5.5` as the primary lane and `opencode-go/minimax-m2.7` as the configured fallback
+- Hermes default config uses `opencode-go/deepseek-v4-pro` as the primary lane and `opencode-go/minimax-m2.7` as the configured fallback
 - Hermes default config sets `web.backend: firecrawl`
 - the managed Hermes config also exposes `ghostship-router` as a local custom provider pinned to alias `agentic`
 - when configured, NVIDIA Build participates through live free-endpoint catalog discovery and outranks Zen/OpenRouter by default
@@ -372,17 +372,15 @@ Do not use `hermes gateway install` inside the container. `s6` already supervise
 
 After the first successful container boot:
 
-1. authenticate Codex so the default primary lane can run
+1. verify `OPENCODE_GO_API_KEY` is present so the default primary and fallback lanes can run
 2. verify provider and gateway env are present in both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`
-3. inspect `config.yaml` once and confirm the expected Codex-primary and OpenCode-fallback defaults
+3. inspect `config.yaml` once and confirm the expected OpenCode primary and fallback defaults
 4. run `hermes doctor`
 5. open the dashboard and confirm `/terminal/` works through the same origin
 
 Recommended post-setup flow:
 
 ```fish
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
-
 docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
 
 docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'sed -n "1,220p" /home/hermes/.hermes/config.yaml'
@@ -393,7 +391,7 @@ Expected config shape after first boot:
 - Hermes home at `/home/hermes/.hermes`
 - `terminal.backend: local`
 - `terminal.cwd: /workspace`
-- root model uses Codex `gpt-5.5`
+- root model uses `opencode-go/deepseek-v4-pro`
 - `fallback_model` uses direct `opencode-go/minimax-m2.7`
 - `web.backend` is `firecrawl`
 - `custom_providers` includes `ghostship-router` pinned to `agentic`

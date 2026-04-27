@@ -78,7 +78,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Do not install upstream Hermes in the Dockerfile base stage; the final stage owns the repo-patched Hermes install, and duplicating it doubles resolver/build exposure.
 - Build `tirith` from the repo flake's pinned `.#tirith` package, not from ad-hoc `nixpkgs#tirith`, so exact-source Docker builds stay deterministic and do not depend on live `nixpkgs-unstable` GitHub API lookups.
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
-- The managed Hermes runtime primary lane is Codex `gpt-5.5` with `agent.reasoning_effort = "medium"`, the configured fallback lane is direct `opencode-go/minimax-m2.7`, and the managed web backend is `firecrawl`.
+- The managed Hermes runtime primary lane is direct `opencode-go/deepseek-v4-pro`, the configured fallback lane is direct `opencode-go/minimax-m2.7`, and the managed web backend is `firecrawl`.
 - The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Use `bw-unlock` and `bw-lock` for the normal Hermes session workflow; `bw-lock` must not log out.
 - Export `BITWARDENCLI_APPDATA_DIR` at the image/global env layer too; raw `bw` commands otherwise fall back to `~/.config/Bitwarden CLI`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.
@@ -95,7 +95,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Keep the managed Discord defaults at `require_mention = false` and `reactions = false`. Do not flip them back unless the user explicitly changes the contract.
 - `DISCORD_REACTIONS=false`, `DISCORD_REQUIRE_MENTION=false`, and `DISCORD_AUTO_THREAD=true` are image-owned defaults. Treat them as optional for downstream and do not make downstream set them unless the contract changes.
 - The managed gateway retires closed Discord thread sessions after 05:00 local Hermes time by removing only the live `sessions.json` mapping and preserving SQLite transcripts.
-- The default Codex primary lane depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
+- Codex OAuth in `/home/hermes/.hermes/auth.json` is optional persisted state, not part of the default runtime lane.
 - Do not use `OPENAI_API_KEY` anywhere in this repo's active runtime contract.
 - Do not expose router auth as a downstream env knob. If Hermes uses a router token, keep it internal as an underscore-prefixed env such as `_GHOSTSHIP_ROUTER_API_KEY`; the router itself must treat that auth as optional.
 

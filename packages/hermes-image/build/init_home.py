@@ -41,8 +41,8 @@ def _direct_gemini() -> dict[str, str]:
 
 DEFAULT_CONFIG = {
     "model": {
-        "provider": "openai-codex",
-        "default": "gpt-5.5",
+        "provider": "opencode-go",
+        "default": "deepseek-v4-pro",
     },
     "web": {
         "backend": "firecrawl",
@@ -281,27 +281,28 @@ def _normalize_managed_model_contract(config: object) -> bool:
     changed = False
 
     model = config.get("model")
-    if (
-        isinstance(model, dict)
-        and model.get("provider") == "opencode-go"
-        and model.get("default") == "minimax-m2.7"
+    if isinstance(model, dict) and (
+        (
+            model.get("provider") == "openai-codex"
+            and model.get("default") in {"gpt-5.5", "gpt-5.4"}
+        )
+        or (
+            model.get("provider") == "opencode-go"
+            and model.get("default") == "minimax-m2.7"
+        )
     ):
-        model["provider"] = "openai-codex"
-        model["default"] = "gpt-5.5"
-        changed = True
-    elif (
-        isinstance(model, dict)
-        and model.get("provider") == "openai-codex"
-        and model.get("default") == "gpt-5.4"
-    ):
-        model["default"] = "gpt-5.5"
+        model["provider"] = "opencode-go"
+        model["default"] = "deepseek-v4-pro"
         changed = True
 
     fallback_model = config.get("fallback_model")
     if (
         isinstance(fallback_model, dict)
-        and fallback_model.get("provider") == "openai-codex"
-        and fallback_model.get("model") == "gpt-5.4-mini"
+        and (
+            fallback_model.get("provider") == "openai-codex"
+            or fallback_model.get("model")
+            in {"gpt-5.4-mini", "gpt-5.5", "gpt-5.4", "deepseek-v4-pro"}
+        )
     ):
         fallback_model["provider"] = "opencode-go"
         fallback_model["model"] = "minimax-m2.7"

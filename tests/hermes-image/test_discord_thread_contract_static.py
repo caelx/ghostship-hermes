@@ -23,6 +23,18 @@ def test_managed_discord_defaults_are_threaded_and_daily() -> None:
     assert "DISCORD_WEBHOOK_CHANNEL" in module
 
 
+def test_managed_model_contract_uses_opencode_deepseek_primary() -> None:
+    init_home = read("packages/hermes-image/build/init_home.py")
+    assert '"provider": "opencode-go"' in init_home
+    assert '"default": "deepseek-v4-pro"' in init_home
+    assert '"model": "minimax-m2.7"' in init_home
+
+    module = read("packages/hermes-image/nixos-module.nix")
+    assert 'provider = "opencode-go";' in module
+    assert 'default = "deepseek-v4-pro";' in module
+    assert 'model = "minimax-m2.7";' in module
+
+
 def test_upstream_patch_paths_keep_router_pin_through_discord_thread_parent() -> None:
     for path in (
         "packages/hermes-agent-wrapped/package.nix",
