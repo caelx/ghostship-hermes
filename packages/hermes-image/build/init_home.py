@@ -76,7 +76,7 @@ DEFAULT_CONFIG = {
     ],
     "timezone": "Pacific/Honolulu",
     "agent": {
-        "max_turns": 110,
+        "max_turns": 500,
         "reasoning_effort": "medium",
         "verbose": False,
     },
@@ -309,9 +309,13 @@ def _normalize_managed_model_contract(config: object) -> bool:
         changed = True
 
     agent = config.get("agent")
-    if isinstance(agent, dict) and agent.get("reasoning_effort") == "high":
-        agent["reasoning_effort"] = "medium"
-        changed = True
+    if isinstance(agent, dict):
+        if agent.get("max_turns") != 500:
+            agent["max_turns"] = 500
+            changed = True
+        if agent.get("reasoning_effort") == "high":
+            agent["reasoning_effort"] = "medium"
+            changed = True
 
     web = config.get("web")
     if not isinstance(web, dict):

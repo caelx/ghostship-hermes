@@ -79,6 +79,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Build `tirith` from the repo flake's pinned `.#tirith` package, not from ad-hoc `nixpkgs#tirith`, so exact-source Docker builds stay deterministic and do not depend on live `nixpkgs-unstable` GitHub API lookups.
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
 - The managed Hermes runtime primary lane is direct `opencode-go/deepseek-v4-pro`, the configured fallback lane is direct `opencode-go/minimax-m2.7`, and the managed web backend is `firecrawl`.
+- The managed Hermes agent iteration budget is `agent.max_turns = 500`; upstream labels this as max iterations in setup and CLI help.
 - The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Use `bw-unlock` and `bw-lock` for the normal Hermes session workflow; `bw-lock` must not log out.
 - Export `BITWARDENCLI_APPDATA_DIR` at the image/global env layer too; raw `bw` commands otherwise fall back to `~/.config/Bitwarden CLI`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.

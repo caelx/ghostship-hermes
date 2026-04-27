@@ -346,6 +346,7 @@ Router:
 - `ghostship-hermes-router` is mandatory
 - it listens on `127.0.0.1:8788`
 - Hermes default config uses `opencode-go/deepseek-v4-pro` as the primary lane and `opencode-go/minimax-m2.7` as the configured fallback
+- Hermes default config sets `agent.max_turns: 500`, which upstream Hermes uses as the max tool-calling iterations per turn
 - Hermes default config sets `web.backend: firecrawl`
 - the managed Hermes config also exposes `ghostship-router` as a local custom provider pinned to alias `agentic`
 - when configured, NVIDIA Build participates through live free-endpoint catalog discovery and outranks Zen/OpenRouter by default
@@ -393,6 +394,7 @@ Expected config shape after first boot:
 - `terminal.cwd: /workspace`
 - root model uses `opencode-go/deepseek-v4-pro`
 - `fallback_model` uses direct `opencode-go/minimax-m2.7`
+- `agent.max_turns` is `500`
 - `web.backend` is `firecrawl`
 - `custom_providers` includes `ghostship-router` pinned to `agentic`
 - Discord forced-channel behavior controlled by runtime env, not by hardcoding channel ids into `config.yaml`

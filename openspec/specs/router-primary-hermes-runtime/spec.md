@@ -46,4 +46,5 @@ The Hermes image SHALL set the repo-owned managed agent defaults so the primary 
 #### Scenario: Managed config seeds medium reasoning effort
 - **WHEN** the image bootstraps the managed Hermes config
 - **THEN** the managed config sets `agent.reasoning_effort` to `medium`
+- **AND** the managed config sets `agent.max_turns` to `500`
 - **AND** the managed runtime does not keep the retired managed default of `high`

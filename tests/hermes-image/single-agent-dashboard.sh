@@ -325,6 +325,7 @@ run_as_hermes "$container_name" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
 import yaml
 from pathlib import Path

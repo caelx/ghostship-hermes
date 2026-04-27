@@ -35,6 +35,11 @@ def test_managed_model_contract_uses_opencode_deepseek_primary() -> None:
     assert 'model = "minimax-m2.7";' in module
 
 
+def test_managed_agent_max_iterations_defaults_to_500() -> None:
+    assert '"max_turns": 500' in read("packages/hermes-image/build/init_home.py")
+    assert "max_turns = 500;" in read("packages/hermes-image/nixos-module.nix")
+
+
 def test_upstream_patch_paths_keep_router_pin_through_discord_thread_parent() -> None:
     for path in (
         "packages/hermes-agent-wrapped/package.nix",

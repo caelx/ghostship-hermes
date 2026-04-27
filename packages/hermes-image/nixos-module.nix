@@ -231,7 +231,7 @@ let
       ];
       timezone = "Pacific/Honolulu";
       agent = {
-        max_turns = 110;
+        max_turns = 500;
         reasoning_effort = "medium";
         verbose = false;
       };
@@ -767,6 +767,10 @@ EOF
         }
         in_agent && $0 == "  reasoning_effort: high" {
           print "  reasoning_effort: medium"
+          next
+        }
+        in_agent && $0 ~ /^  max_turns:[[:space:]]/ {
+          print "  max_turns: 500"
           next
         }
         in_web && $0 ~ /^  backend:[[:space:]]/ {
