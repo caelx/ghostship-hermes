@@ -608,6 +608,32 @@ if "def resolve_custom_provider(" not in providers_text:
     providers_text = providers_text[:providers_start] + "\n".join(provider_lines) + "\n" + providers_text[providers_end:]
     if 'source=\"custom-provider\"' not in providers_text:
         raise RuntimeError("failed to add custom_providers support to resolve_user_provider")
+else:
+    custom_provider_api_key_marker = """        return ProviderDef(
+            id=slug,
+            name=display_name,
+            transport="openai_chat",
+            api_key_env_vars=(),
+"""
+    custom_provider_api_key_replacement = """        key_env = (
+            entry.get("api_key_env", "")
+            or entry.get("key_env", "")
+            or ""
+        )
+        env_vars: List[str] = []
+        if key_env:
+            env_vars.append(str(key_env).strip())
+
+        return ProviderDef(
+            id=slug,
+            name=display_name,
+            transport="openai_chat",
+            api_key_env_vars=tuple(env_vars),
+"""
+    if custom_provider_api_key_marker in providers_text:
+        providers_text = providers_text.replace(custom_provider_api_key_marker, custom_provider_api_key_replacement, 1)
+    if 'entry.get("api_key_env", "")' not in providers_text:
+        raise RuntimeError("failed to teach custom_providers to honor api_key_env")
 providers.write_text(providers_text)
 
 model_switch_text = model_switch.read_text()

@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed Hermes custom provider auth so `custom_providers[].api_key_env` is honored for the local Ghostship Router, preventing unauthenticated `custom:ghostship-router` requests from failing with router 401s.
 - Breaking: made Ghostship Router the managed Hermes primary provider with `deepseek-v4-pro` default, `minimax-m2.7` fallback, high reasoning, and 500 max turns; added `opencode-go` as the router paid fallback catalog, kept `opencode-zen` as a free provider, added ZenMux and Electron Hub free-provider lanes, exposed only OpenCode Go model ids with explicit free equivalents, replaced the old alias/family/top-five selection path with RPM-aware free-provider round robin, and changed `#foodstamps` to the threaded `GHOSTSHIP_CODEX_CHANNEL` for `openai-codex/gpt-5.5`.
 - Breaking: retired the old service-specific `ghostship-*` utility/API platform, removed `packages/ghostship-cli-contract`, removed the legacy service CLI packages and active `docs/api` surfaces, dropped `/opt/ghostship-utils` from the image, and moved the router's remaining HTTP helper surface into `packages/hermes-router`.
 - Breaking: removed the image-owned `bw-unlock` and `bw-lock` wrappers while keeping upstream `bw`, `BITWARDENCLI_APPDATA_DIR`, and the `BW_CLIENTID` / `BW_CLIENTSECRET` / `BW_PASSWORD` environment contract for model-authored Bitwarden workflows.

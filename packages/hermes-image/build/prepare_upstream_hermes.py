@@ -699,6 +699,37 @@ def main() -> None:
     )
     webhook_cli.write_text(webhook_text, encoding="utf-8")
 
+    providers_py = root / "hermes_cli" / "providers.py"
+    providers_text = providers_py.read_text(encoding="utf-8")
+    custom_provider_api_key_marker = '''        return ProviderDef(
+            id=slug,
+            name=display_name,
+            transport="openai_chat",
+            api_key_env_vars=(),
+'''
+    custom_provider_api_key_replacement = '''        key_env = (
+            entry.get("api_key_env", "")
+            or entry.get("key_env", "")
+            or ""
+        )
+        env_vars: List[str] = []
+        if key_env:
+            env_vars.append(str(key_env).strip())
+
+        return ProviderDef(
+            id=slug,
+            name=display_name,
+            transport="openai_chat",
+            api_key_env_vars=tuple(env_vars),
+'''
+    providers_text = replace_once(
+        providers_text,
+        custom_provider_api_key_marker,
+        custom_provider_api_key_replacement,
+        path=providers_py,
+    )
+    providers_py.write_text(providers_text, encoding="utf-8")
+
     app_tsx = root / "web" / "src" / "App.tsx"
     app_text = app_tsx.read_text(encoding="utf-8")
     if 'const BUILTIN_ROUTES: Record<string, React.ComponentType> = {' in app_text:

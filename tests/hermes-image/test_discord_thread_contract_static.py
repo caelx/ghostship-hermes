@@ -51,6 +51,16 @@ def test_webhook_discord_delivery_defaults_to_webhook_channel() -> None:
         assert 'route["deliver_extra"] = {"chat_id": deliver_chat_id}' in text
 
 
+def test_custom_provider_api_key_env_is_patched_for_router_auth() -> None:
+    for path in (
+        "packages/hermes-agent-wrapped/package.nix",
+        "packages/hermes-image/build/prepare_upstream_hermes.py",
+    ):
+        text = read(path)
+        assert 'entry.get("api_key_env", "")' in text
+        assert "api_key_env_vars=tuple(env_vars)" in text
+
+
 def test_closed_discord_thread_retirement_is_patched_into_gateway() -> None:
     for path in (
         "packages/hermes-agent-wrapped/package.nix",
