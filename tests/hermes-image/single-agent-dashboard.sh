@@ -264,10 +264,10 @@ curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allo
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'href:"/terminal/",target:"_blank"'
 
 run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY='\''test-firecrawl'\''' /run/ghostship/hermes.env >/dev/null"
-run_in_container "$container_name" "grep -Fx 'DISCORD_WEBHOOK_CHANNEL=webhooks-channel' /run/ghostship/hermes.env >/dev/null"
+run_in_container "$container_name" "grep -E \"^DISCORD_WEBHOOK_CHANNEL='?webhooks-channel'?$\" /run/ghostship/hermes.env >/dev/null"
 run_in_container "$container_name" "! grep -q '^GHOSTSHIP_ROUTER_PORT=' /run/ghostship/hermes.env"
 run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY='\''test-firecrawl'\''' /home/hermes/.hermes/.env >/dev/null"
-run_in_container "$container_name" "grep -Fx 'DISCORD_WEBHOOK_CHANNEL=webhooks-channel' /home/hermes/.hermes/.env >/dev/null"
+run_in_container "$container_name" "grep -E \"^DISCORD_WEBHOOK_CHANNEL='?webhooks-channel'?$\" /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "grep -Fx 'CUSTOM_DOWNSTREAM_KEY=keep-me' /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "grep -Fx 'STALE_ONLY_KEY=keep-me-too' /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "! grep -q '^FIRECRAWL_API_KEY=stale-firecrawl$' /home/hermes/.hermes/.env"
