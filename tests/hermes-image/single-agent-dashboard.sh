@@ -181,10 +181,11 @@ run_test_container() {
     --env OPENROUTER_API_KEY=test-openrouter \
     --env OPENCODE_GO_API_KEY=test-opencode \
     --env GOOGLE_AI_STUDIO_API_KEY=test-google \
-    --env DISCORD_ALLOWED_USERS=1 \
-    --env DISCORD_HOME_CHANNEL=2 \
-    --env DISCORD_FREE_RESPONSE_CHANNELS=3 \
-    --env GHOSTSHIP_ROUTER_CHANNEL=3 \
+    --env DISCORD_ALLOWED_USERS=test-user \
+    --env DISCORD_HOME_CHANNEL=assistant-channel \
+    --env DISCORD_FREE_RESPONSE_CHANNELS=foodstamps-channel \
+    --env GHOSTSHIP_ROUTER_CHANNEL=foodstamps-channel \
+    --env DISCORD_WEBHOOK_CHANNEL=webhooks-channel \
     --env FIRECRAWL_API_KEY=test-firecrawl \
     --env GHOSTSHIP_ROUTER_PORT=9999 \
     --env WEBHOOK_SECRET=test-webhook-secret \
@@ -263,8 +264,10 @@ curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allo
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'href:"/terminal/",target:"_blank"'
 
 run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY='\''test-firecrawl'\''' /run/ghostship/hermes.env >/dev/null"
+run_in_container "$container_name" "grep -Fx 'DISCORD_WEBHOOK_CHANNEL=webhooks-channel' /run/ghostship/hermes.env >/dev/null"
 run_in_container "$container_name" "! grep -q '^GHOSTSHIP_ROUTER_PORT=' /run/ghostship/hermes.env"
 run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY='\''test-firecrawl'\''' /home/hermes/.hermes/.env >/dev/null"
+run_in_container "$container_name" "grep -Fx 'DISCORD_WEBHOOK_CHANNEL=webhooks-channel' /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "grep -Fx 'CUSTOM_DOWNSTREAM_KEY=keep-me' /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "grep -Fx 'STALE_ONLY_KEY=keep-me-too' /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "! grep -q '^FIRECRAWL_API_KEY=stale-firecrawl$' /home/hermes/.hermes/.env"
@@ -354,6 +357,9 @@ run_as_hermes "$container_name" 'sed -n "/^browser:/,/^[^ ]/p" /home/hermes/.her
 run_as_hermes "$container_name" '! sed -n "/^browser:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "camofox" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reactions: false" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  auto_thread: true" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^session_reset:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  mode: daily" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^session_reset:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  at_hour: 4" >/dev/null'
 run_as_hermes "$container_name" 'grep -F "unauthorized_dm_behavior: ignore" /home/hermes/.hermes/config.yaml >/dev/null'
 run_in_container "$container_name" 'test -f /home/hermes/.hermes/skills/custom/SKILL.md'
 run_in_container "$container_name" 'test -f /home/hermes/.hermes/skills/autonomous-ai-agents/codex/SKILL.md'

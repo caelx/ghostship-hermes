@@ -504,9 +504,9 @@ def main() -> None:
     gateway_run = root / "gateway" / "run.py"
     gateway_text = gateway_run.read_text(encoding="utf-8")
     turn_route_marker_old = """    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:\n        from agent.smart_model_routing import resolve_turn_route\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        primary = {\n            \"model\": model,\n            \"api_key\": runtime_kwargs.get(\"api_key\"),\n            \"base_url\": runtime_kwargs.get(\"base_url\"),\n            \"provider\": runtime_kwargs.get(\"provider\"),\n            \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n            \"command\": runtime_kwargs.get(\"command\"),\n            \"args\": list(runtime_kwargs.get(\"args\") or []),\n            \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n        }\n        route = resolve_turn_route(user_message, getattr(self, \"_smart_model_routing\", {}), primary)\n"""
-    turn_route_replacement_old = """    @staticmethod\n    def _ghostship_discord_forced_channel(source) -> str | None:\n        if source is None:\n            return None\n        platform = getattr(source, \"platform\", None)\n        platform_value = getattr(platform, \"value\", platform)\n        if platform_value != \"discord\":\n            return None\n        if getattr(source, \"chat_type\", None) in {\"dm\", \"thread\"}:\n            return None\n        chat_id = getattr(source, \"chat_id\", None)\n        if chat_id == os.getenv(\"GHOSTSHIP_ROUTER_CHANNEL\", \"\").strip():\n            return \"router\"\n        return None\n\n    @staticmethod\n    def _ghostship_force_discord_router_channel_route(runtime_kwargs: dict) -> dict:\n        forced_runtime = dict(runtime_kwargs)\n        forced_runtime[\"base_url\"] = \"http://127.0.0.1:8788/v1\"\n        forced_runtime[\"provider\"] = \"custom\"\n        forced_runtime[\"api_mode\"] = \"chat_completions\"\n        forced_runtime[\"command\"] = None\n        forced_runtime[\"args\"] = []\n        forced_runtime[\"api_key\"] = os.getenv(\"_GHOSTSHIP_ROUTER_API_KEY\")\n        forced_runtime[\"credential_pool\"] = None\n        return forced_runtime\n\n    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:\n        from agent.smart_model_routing import resolve_turn_route\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        forced_channel = self._ghostship_discord_forced_channel(source)\n        if forced_channel == \"router\":\n            primary = {\n                \"model\": \"agentic\",\n                \"base_url\": \"http://127.0.0.1:8788/v1\",\n                \"provider\": \"custom\",\n                \"api_mode\": \"chat_completions\",\n                \"command\": None,\n                \"args\": [],\n                \"api_key\": os.getenv(\"_GHOSTSHIP_ROUTER_API_KEY\"),\n                \"credential_pool\": None,\n            }\n            route = resolve_turn_route(user_message, getattr(self, \"_smart_model_routing\", {}), primary)\n            route[\"model\"] = \"agentic\"\n            route[\"runtime\"] = self._ghostship_force_discord_router_channel_route(route.get(\"runtime\", {}))\n            route[\"label\"] = \"ghostship discord router channel pin\"\n            route[\"request_overrides\"] = None\n            route[\"reasoning_config\"] = None\n            route[\"service_tier\"] = None\n            route[\"signature\"] = (\n                route[\"model\"],\n                route[\"runtime\"].get(\"provider\"),\n                route[\"runtime\"].get(\"base_url\"),\n                route[\"runtime\"].get(\"api_mode\"),\n                route[\"runtime\"].get(\"command\"),\n                tuple(route[\"runtime\"].get(\"args\") or ()),\n            )\n        else:\n            primary = {\n                \"model\": model,\n                \"api_key\": runtime_kwargs.get(\"api_key\"),\n                \"base_url\": runtime_kwargs.get(\"base_url\"),\n                \"provider\": runtime_kwargs.get(\"provider\"),\n                \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n                \"command\": runtime_kwargs.get(\"command\"),\n                \"args\": list(runtime_kwargs.get(\"args\") or []),\n                \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n            }\n            route = resolve_turn_route(user_message, getattr(self, \"_smart_model_routing\", {}), primary)\n"""
+    turn_route_replacement_old = """    @staticmethod\n    def _ghostship_discord_forced_channel(source) -> str | None:\n        if source is None:\n            return None\n        platform = getattr(source, \"platform\", None)\n        platform_value = getattr(platform, \"value\", platform)\n        if platform_value != \"discord\":\n            return None\n        if getattr(source, \"chat_type\", None) == \"dm\":\n            return None\n        router_channel = os.getenv(\"GHOSTSHIP_ROUTER_CHANNEL\", \"\").strip()\n        if not router_channel:\n            return None\n        chat_id = getattr(source, \"chat_id\", None)\n        parent_chat_id = getattr(source, \"chat_id_alt\", None)\n        if chat_id == router_channel or parent_chat_id == router_channel:\n            return \"router\"\n        return None\n\n    @staticmethod\n    def _ghostship_force_discord_router_channel_route(runtime_kwargs: dict) -> dict:\n        forced_runtime = dict(runtime_kwargs)\n        forced_runtime[\"base_url\"] = \"http://127.0.0.1:8788/v1\"\n        forced_runtime[\"provider\"] = \"custom\"\n        forced_runtime[\"api_mode\"] = \"chat_completions\"\n        forced_runtime[\"command\"] = None\n        forced_runtime[\"args\"] = []\n        forced_runtime[\"api_key\"] = os.getenv(\"_GHOSTSHIP_ROUTER_API_KEY\")\n        forced_runtime[\"credential_pool\"] = None\n        return forced_runtime\n\n    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:\n        from agent.smart_model_routing import resolve_turn_route\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        forced_channel = self._ghostship_discord_forced_channel(source)\n        if forced_channel == \"router\":\n            primary = {\n                \"model\": \"agentic\",\n                \"base_url\": \"http://127.0.0.1:8788/v1\",\n                \"provider\": \"custom\",\n                \"api_mode\": \"chat_completions\",\n                \"command\": None,\n                \"args\": [],\n                \"api_key\": os.getenv(\"_GHOSTSHIP_ROUTER_API_KEY\"),\n                \"credential_pool\": None,\n            }\n            route = resolve_turn_route(user_message, getattr(self, \"_smart_model_routing\", {}), primary)\n            route[\"model\"] = \"agentic\"\n            route[\"runtime\"] = self._ghostship_force_discord_router_channel_route(route.get(\"runtime\", {}))\n            route[\"label\"] = \"ghostship discord router channel pin\"\n            route[\"request_overrides\"] = None\n            route[\"reasoning_config\"] = None\n            route[\"service_tier\"] = None\n            route[\"signature\"] = (\n                route[\"model\"],\n                route[\"runtime\"].get(\"provider\"),\n                route[\"runtime\"].get(\"base_url\"),\n                route[\"runtime\"].get(\"api_mode\"),\n                route[\"runtime\"].get(\"command\"),\n                tuple(route[\"runtime\"].get(\"args\") or ()),\n            )\n        else:\n            primary = {\n                \"model\": model,\n                \"api_key\": runtime_kwargs.get(\"api_key\"),\n                \"base_url\": runtime_kwargs.get(\"base_url\"),\n                \"provider\": runtime_kwargs.get(\"provider\"),\n                \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n                \"command\": runtime_kwargs.get(\"command\"),\n                \"args\": list(runtime_kwargs.get(\"args\") or []),\n                \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n            }\n            route = resolve_turn_route(user_message, getattr(self, \"_smart_model_routing\", {}), primary)\n"""
     turn_route_marker_new = """    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:\n        \"\"\"Build the effective model/runtime config for a single turn.\n\n        Always uses the session's primary model/provider.  If `/fast` is\n        enabled and the model supports Priority Processing / Anthropic fast\n        mode, attach `request_overrides` so the API call is marked\n        accordingly.\n        \"\"\"\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        runtime = {\n            \"api_key\": runtime_kwargs.get(\"api_key\"),\n            \"base_url\": runtime_kwargs.get(\"base_url\"),\n            \"provider\": runtime_kwargs.get(\"provider\"),\n            \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n            \"command\": runtime_kwargs.get(\"command\"),\n            \"args\": list(runtime_kwargs.get(\"args\") or []),\n            \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n        }\n        route = {\n            \"model\": model,\n            \"runtime\": runtime,\n            \"signature\": (\n                model,\n                runtime[\"provider\"],\n                runtime[\"base_url\"],\n                runtime[\"api_mode\"],\n                runtime[\"command\"],\n                tuple(runtime[\"args\"]),\n            ),\n        }\n"""
-    turn_route_replacement_new = """    @staticmethod\n    def _ghostship_discord_forced_channel(source) -> str | None:\n        if source is None:\n            return None\n        platform = getattr(source, \"platform\", None)\n        platform_value = getattr(platform, \"value\", platform)\n        if platform_value != \"discord\":\n            return None\n        if getattr(source, \"chat_type\", None) in {\"dm\", \"thread\"}:\n            return None\n        chat_id = getattr(source, \"chat_id\", None)\n        if chat_id == os.getenv(\"GHOSTSHIP_ROUTER_CHANNEL\", \"\").strip():\n            return \"router\"\n        return None\n\n    @staticmethod\n    def _ghostship_force_discord_router_channel_route(runtime_kwargs: dict) -> dict:\n        forced_runtime = dict(runtime_kwargs)\n        forced_runtime[\"base_url\"] = \"http://127.0.0.1:8788/v1\"\n        forced_runtime[\"provider\"] = \"custom\"\n        forced_runtime[\"api_mode\"] = \"chat_completions\"\n        forced_runtime[\"command\"] = None\n        forced_runtime[\"args\"] = []\n        forced_runtime[\"api_key\"] = os.getenv(\"_GHOSTSHIP_ROUTER_API_KEY\")\n        forced_runtime[\"credential_pool\"] = None\n        return forced_runtime\n\n    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:\n        \"\"\"Build the effective model/runtime config for a single turn.\n\n        Always uses the session's primary model/provider.  If `/fast` is\n        enabled and the model supports Priority Processing / Anthropic fast\n        mode, attach `request_overrides` so the API call is marked\n        accordingly.\n        \"\"\"\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        forced_channel = self._ghostship_discord_forced_channel(source)\n        if forced_channel == \"router\":\n            runtime = self._ghostship_force_discord_router_channel_route(runtime_kwargs)\n            route = {\n                \"model\": \"agentic\",\n                \"runtime\": runtime,\n                \"signature\": (\n                    \"agentic\",\n                    runtime[\"provider\"],\n                    runtime[\"base_url\"],\n                    runtime[\"api_mode\"],\n                    runtime[\"command\"],\n                    tuple(runtime[\"args\"]),\n                ),\n            }\n            route[\"label\"] = \"ghostship discord router channel pin\"\n            route[\"request_overrides\"] = None\n            route[\"reasoning_config\"] = None\n            route[\"service_tier\"] = None\n            return route\n\n        runtime = {\n            \"api_key\": runtime_kwargs.get(\"api_key\"),\n            \"base_url\": runtime_kwargs.get(\"base_url\"),\n            \"provider\": runtime_kwargs.get(\"provider\"),\n            \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n            \"command\": runtime_kwargs.get(\"command\"),\n            \"args\": list(runtime_kwargs.get(\"args\") or []),\n            \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n        }\n        route = {\n            \"model\": model,\n            \"runtime\": runtime,\n            \"signature\": (\n                model,\n                runtime[\"provider\"],\n                runtime[\"base_url\"],\n                runtime[\"api_mode\"],\n                runtime[\"command\"],\n                tuple(runtime[\"args\"]),\n            ),\n        }\n"""
+    turn_route_replacement_new = """    @staticmethod\n    def _ghostship_discord_forced_channel(source) -> str | None:\n        if source is None:\n            return None\n        platform = getattr(source, \"platform\", None)\n        platform_value = getattr(platform, \"value\", platform)\n        if platform_value != \"discord\":\n            return None\n        if getattr(source, \"chat_type\", None) == \"dm\":\n            return None\n        router_channel = os.getenv(\"GHOSTSHIP_ROUTER_CHANNEL\", \"\").strip()\n        if not router_channel:\n            return None\n        chat_id = getattr(source, \"chat_id\", None)\n        parent_chat_id = getattr(source, \"chat_id_alt\", None)\n        if chat_id == router_channel or parent_chat_id == router_channel:\n            return \"router\"\n        return None\n\n    @staticmethod\n    def _ghostship_force_discord_router_channel_route(runtime_kwargs: dict) -> dict:\n        forced_runtime = dict(runtime_kwargs)\n        forced_runtime[\"base_url\"] = \"http://127.0.0.1:8788/v1\"\n        forced_runtime[\"provider\"] = \"custom\"\n        forced_runtime[\"api_mode\"] = \"chat_completions\"\n        forced_runtime[\"command\"] = None\n        forced_runtime[\"args\"] = []\n        forced_runtime[\"api_key\"] = os.getenv(\"_GHOSTSHIP_ROUTER_API_KEY\")\n        forced_runtime[\"credential_pool\"] = None\n        return forced_runtime\n\n    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:\n        \"\"\"Build the effective model/runtime config for a single turn.\n\n        Always uses the session's primary model/provider.  If `/fast` is\n        enabled and the model supports Priority Processing / Anthropic fast\n        mode, attach `request_overrides` so the API call is marked\n        accordingly.\n        \"\"\"\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        forced_channel = self._ghostship_discord_forced_channel(source)\n        if forced_channel == \"router\":\n            runtime = self._ghostship_force_discord_router_channel_route(runtime_kwargs)\n            route = {\n                \"model\": \"agentic\",\n                \"runtime\": runtime,\n                \"signature\": (\n                    \"agentic\",\n                    runtime[\"provider\"],\n                    runtime[\"base_url\"],\n                    runtime[\"api_mode\"],\n                    runtime[\"command\"],\n                    tuple(runtime[\"args\"]),\n                ),\n            }\n            route[\"label\"] = \"ghostship discord router channel pin\"\n            route[\"request_overrides\"] = None\n            route[\"reasoning_config\"] = None\n            route[\"service_tier\"] = None\n            return route\n\n        runtime = {\n            \"api_key\": runtime_kwargs.get(\"api_key\"),\n            \"base_url\": runtime_kwargs.get(\"base_url\"),\n            \"provider\": runtime_kwargs.get(\"provider\"),\n            \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n            \"command\": runtime_kwargs.get(\"command\"),\n            \"args\": list(runtime_kwargs.get(\"args\") or []),\n            \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n        }\n        route = {\n            \"model\": model,\n            \"runtime\": runtime,\n            \"signature\": (\n                model,\n                runtime[\"provider\"],\n                runtime[\"base_url\"],\n                runtime[\"api_mode\"],\n                runtime[\"command\"],\n                tuple(runtime[\"args\"]),\n            ),\n        }\n"""
     if turn_route_marker_old in gateway_text:
         gateway_text = replace_once(gateway_text, turn_route_marker_old, turn_route_replacement_old, path=gateway_run)
     else:
@@ -538,7 +538,166 @@ def main() -> None:
         ),
     ):
         gateway_text = replace_once(gateway_text, old, new, path=gateway_run)
+    gateway_text = replace_once(
+        gateway_text,
+        "    async def _session_expiry_watcher(self, interval: int = 300):\n",
+        '''    async def _ghostship_discord_thread_is_dead(self, adapter, thread_id: str) -> bool:
+        client = getattr(adapter, "_client", None)
+        if client is None:
+            return False
+        try:
+            thread_int = int(thread_id)
+        except (TypeError, ValueError):
+            return False
+        try:
+            thread = client.get_channel(thread_int)
+            if thread is None:
+                thread = await client.fetch_channel(thread_int)
+        except Exception:
+            return True
+        if thread is None:
+            return True
+        return bool(getattr(thread, "archived", False) or getattr(thread, "locked", False))
+
+    @staticmethod
+    def _ghostship_discord_thread_id_for_entry(session_key: str, entry) -> str | None:
+        origin = getattr(entry, "origin", None)
+        thread_id = getattr(origin, "thread_id", None)
+        if thread_id:
+            return str(thread_id)
+        parsed = _parse_session_key(session_key)
+        if parsed and parsed.get("platform") == "discord" and parsed.get("chat_type") == "thread":
+            return parsed.get("thread_id") or parsed.get("chat_id")
+        return None
+
+    async def _ghostship_retire_closed_discord_threads(self) -> int:
+        now = datetime.now()
+        if now.hour < 5:
+            return 0
+        marker = now.date().isoformat()
+        if getattr(self, "_ghostship_last_discord_thread_retire_date", None) == marker:
+            return 0
+        adapter = self.adapters.get(Platform.DISCORD)
+        if adapter is None:
+            return 0
+
+        self.session_store._ensure_loaded()
+        retired = 0
+        for key, entry in list(self.session_store._entries.items()):
+            platform = getattr(entry, "platform", None)
+            platform_value = getattr(platform, "value", platform)
+            if platform_value != "discord":
+                continue
+            if getattr(entry, "chat_type", None) != "thread":
+                continue
+            if key in self._running_agents:
+                continue
+            active_processes = getattr(self.session_store, "_has_active_processes_fn", None)
+            if active_processes is not None:
+                try:
+                    if active_processes(key):
+                        continue
+                except Exception as exc:
+                    logger.debug("Discord thread retirement process check failed for %s: %s", key, exc)
+                    continue
+            thread_id = self._ghostship_discord_thread_id_for_entry(key, entry)
+            if not thread_id:
+                continue
+            if not await self._ghostship_discord_thread_is_dead(adapter, thread_id):
+                continue
+            if not getattr(entry, "memory_flushed", False):
+                try:
+                    await self._async_flush_memories(entry.session_id, key)
+                except Exception as exc:
+                    logger.debug("Discord thread retirement memory flush failed for %s: %s", key, exc)
+
+            cached_agent = None
+            cache_lock = getattr(self, "_agent_cache_lock", None)
+            if cache_lock is not None:
+                with cache_lock:
+                    cached = self._agent_cache.get(key)
+                    cached_agent = cached[0] if isinstance(cached, tuple) else cached if cached else None
+            if cached_agent and cached_agent is not _AGENT_PENDING_SENTINEL:
+                self._cleanup_agent_resources(cached_agent)
+            self._evict_cached_agent(key)
+            self._session_model_overrides.pop(key, None)
+
+            with self.session_store._lock:
+                if self.session_store._entries.get(key) is entry:
+                    self.session_store._entries.pop(key, None)
+                    self.session_store._save()
+                    retired += 1
+
+        self._ghostship_last_discord_thread_retire_date = marker
+        if retired:
+            logger.info("Retired %d closed Discord thread session(s)", retired)
+        return retired
+
+    async def _session_expiry_watcher(self, interval: int = 300):
+''',
+        path=gateway_run,
+    )
+    gateway_text = replace_once(
+        gateway_text,
+        '''                # Periodically prune stale SessionStore entries.  The
+                # in-memory dict (and sessions.json) would otherwise grow
+''',
+        '''                try:
+                    await self._ghostship_retire_closed_discord_threads()
+                except Exception as _e:
+                    logger.debug("Discord closed-thread retirement failed: %s", _e)
+
+                # Periodically prune stale SessionStore entries.  The
+                # in-memory dict (and sessions.json) would otherwise grow
+''',
+        path=gateway_run,
+    )
     gateway_run.write_text(gateway_text, encoding="utf-8")
+
+    discord_platform = root / "gateway" / "platforms" / "discord.py"
+    discord_text = discord_platform.read_text(encoding="utf-8")
+    for old, new in (
+        (
+            "        thread_id = None\n\n        if is_dm:\n",
+            "        thread_id = None\n        parent_channel_id = self._get_parent_channel_id(interaction.channel) if is_thread else None\n\n        if is_dm:\n",
+        ),
+        (
+            "            thread_id=thread_id,\n            chat_topic=chat_topic,\n",
+            "            thread_id=thread_id,\n            chat_id_alt=parent_channel_id,\n            chat_topic=chat_topic,\n",
+        ),
+        (
+            "        source = self.build_source(\n            chat_id=thread_id,\n",
+            "        _parent_channel = self._thread_parent_channel(getattr(interaction, \"channel\", None))\n        _parent_id = str(getattr(_parent_channel, \"id\", \"\") or \"\")\n\n        source = self.build_source(\n            chat_id=thread_id,\n",
+        ),
+        (
+            "            thread_id=thread_id,\n            chat_topic=chat_topic,\n        )\n\n        _parent_channel = self._thread_parent_channel(getattr(interaction, \"channel\", None))\n        _parent_id = str(getattr(_parent_channel, \"id\", \"\") or \"\")\n",
+            "            thread_id=thread_id,\n            chat_id_alt=_parent_id or None,\n            chat_topic=chat_topic,\n        )\n\n",
+        ),
+        (
+            "            skip_thread = bool(channel_ids & no_thread_channels) or is_free_channel\n",
+            "            skip_thread = bool(channel_ids & no_thread_channels)\n",
+        ),
+        (
+            "                    thread_id = str(thread.id)\n                    auto_threaded_channel = thread\n",
+            "                    thread_id = str(thread.id)\n                    parent_channel_id = str(message.channel.id)\n                    auto_threaded_channel = thread\n",
+        ),
+        (
+            "            thread_id=thread_id,\n            chat_topic=chat_topic,\n            is_bot=getattr(message.author, \"bot\", False),\n",
+            "            thread_id=thread_id,\n            chat_id_alt=parent_channel_id if is_thread else None,\n            chat_topic=chat_topic,\n            is_bot=getattr(message.author, \"bot\", False),\n",
+        ),
+    ):
+        discord_text = replace_once(discord_text, old, new, path=discord_platform)
+    discord_platform.write_text(discord_text, encoding="utf-8")
+
+    webhook_cli = root / "hermes_cli" / "webhook.py"
+    webhook_text = webhook_cli.read_text(encoding="utf-8")
+    webhook_text = replace_once(
+        webhook_text,
+        '    if args.deliver_chat_id:\n        route["deliver_extra"] = {"chat_id": args.deliver_chat_id}\n',
+        '    deliver_chat_id = args.deliver_chat_id\n    if not deliver_chat_id and route["deliver"] == "discord":\n        deliver_chat_id = os.getenv("DISCORD_WEBHOOK_CHANNEL", "").strip()\n    if deliver_chat_id:\n        route["deliver_extra"] = {"chat_id": deliver_chat_id}\n',
+        path=webhook_cli,
+    )
+    webhook_cli.write_text(webhook_text, encoding="utf-8")
 
     app_tsx = root / "web" / "src" / "App.tsx"
     app_text = app_tsx.read_text(encoding="utf-8")

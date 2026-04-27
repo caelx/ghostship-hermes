@@ -65,16 +65,18 @@ The common downstream set for the default Ghostship runtime is:
 - `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
+- `DISCORD_WEBHOOK_CHANNEL`
 - `WEBHOOK_SECRET`
 
 Discord channel contract:
 
-- `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
-- `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` default to `false` inside the image. Downstream can omit them unless the runtime contract intentionally changes.
+- `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id; set it to `#assistant`.
+- `DISCORD_REACTIONS` and `DISCORD_REQUIRE_MENTION` default to `false`; `DISCORD_AUTO_THREAD` defaults to `true` inside the image.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
-- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned free-response channel.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins one free-response channel to the local router `agentic` lane.
-- `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
+- `GHOSTSHIP_ROUTER_CHANNEL` pins `#foodstamps`, including its Discord threads, to the local router `agentic` lane.
+- `DISCORD_FREE_RESPONSE_CHANNELS` must include the `#foodstamps` channel id.
+- `DISCORD_WEBHOOK_CHANNEL` points at `#webhooks` and is the default channel used when Hermes creates a Discord webhook subscription without an explicit `--deliver-chat-id`.
+- The managed gateway retires closed Discord thread sessions after 05:00 local Hermes time and keeps their historical SQLite transcripts.
 
 Internal-only runtime auth may be auto-generated for Hermes compatibility:
 

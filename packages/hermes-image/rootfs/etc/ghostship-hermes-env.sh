@@ -4,7 +4,7 @@ ghostship_is_hermes_passthrough_key() {
   local key="${1:-}"
 
   case "$key" in
-    GHOSTSHIP_ROUTER_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
+    DISCORD_WEBHOOK_CHANNEL|GHOSTSHIP_ROUTER_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
       return 0
       ;;
   esac

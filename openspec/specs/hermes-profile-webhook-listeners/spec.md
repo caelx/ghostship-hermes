@@ -23,3 +23,16 @@ The Hermes image SHALL map the deployment-provided webhook secret source to the 
 - **WHEN** the container provides `WEBHOOK_SECRET` during managed bootstrap
 - **THEN** the managed `.env` receives `WEBHOOK_SECRET`
 - **AND** the managed gateway loads that secret through the managed runtime env contract
+
+### Requirement: Discord webhook subscriptions default to the managed webhook channel
+The Hermes image SHALL support `DISCORD_WEBHOOK_CHANNEL` as the default Discord delivery destination for Hermes-created webhook subscriptions.
+
+#### Scenario: Discord delivery omits explicit chat id
+- **WHEN** an operator runs `hermes webhook subscribe --deliver discord` without `--deliver-chat-id`
+- **AND** `DISCORD_WEBHOOK_CHANNEL` is set in the managed runtime env
+- **THEN** the created subscription stores that value as `deliver_extra.chat_id`
+
+#### Scenario: Explicit Discord delivery chat id wins
+- **WHEN** an operator runs `hermes webhook subscribe --deliver discord --deliver-chat-id <channel-id>`
+- **AND** `DISCORD_WEBHOOK_CHANNEL` is also set
+- **THEN** the created subscription stores the explicit `--deliver-chat-id` value as `deliver_extra.chat_id`

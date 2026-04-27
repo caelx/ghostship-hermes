@@ -87,12 +87,14 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 
 ### Discord Routing
 
-- `DISCORD_HOME_CHANNEL` is part of the downstream Discord contract.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `agentic` lane.
-- `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the router-pinned free-response channel.
+- `DISCORD_HOME_CHANNEL` is part of the downstream Discord contract and should point at `#assistant`.
+- `GHOSTSHIP_ROUTER_CHANNEL` pins `#foodstamps` replies to the local router `agentic` lane, including replies in Discord threads whose parent channel is `#foodstamps`.
+- `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the `#foodstamps` router-pinned channel.
+- `DISCORD_WEBHOOK_CHANNEL` is part of the downstream Discord contract and defaults Hermes-created Discord webhook subscriptions to `#webhooks`.
 - The router-pinned forced channel must ignore per-session `/model` overrides.
 - Keep the managed Discord defaults at `require_mention = false` and `reactions = false`. Do not flip them back unless the user explicitly changes the contract.
-- `DISCORD_REACTIONS=false`, `DISCORD_REQUIRE_MENTION=false`, and `DISCORD_AUTO_THREAD=false` are image-owned defaults. Treat them as optional for downstream and do not make downstream set them unless the contract changes.
+- `DISCORD_REACTIONS=false`, `DISCORD_REQUIRE_MENTION=false`, and `DISCORD_AUTO_THREAD=true` are image-owned defaults. Treat them as optional for downstream and do not make downstream set them unless the contract changes.
+- The managed gateway retires closed Discord thread sessions after 05:00 local Hermes time by removing only the live `sessions.json` mapping and preserving SQLite transcripts.
 - The default Codex primary lane depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
 - Do not use `OPENAI_API_KEY` anywhere in this repo's active runtime contract.
 - Do not expose router auth as a downstream env knob. If Hermes uses a router token, keep it internal as an underscore-prefixed env such as `_GHOSTSHIP_ROUTER_API_KEY`; the router itself must treat that auth as optional.

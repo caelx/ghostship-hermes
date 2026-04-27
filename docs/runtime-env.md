@@ -38,7 +38,7 @@ These are internal image-owned variables. They are already set in the image, and
 - `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
 - `DISCORD_REACTIONS=false`
 - `DISCORD_REQUIRE_MENTION=false`
-- `DISCORD_AUTO_THREAD=false`
+- `DISCORD_AUTO_THREAD=true`
 - `GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock`
 - `GHOSTSHIP_TTYD_BASE_PATH=/terminal`
 - `GHOSTSHIP_TERMINAL_CWD=/workspace`
@@ -124,15 +124,18 @@ Notes:
 - `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
+- `DISCORD_WEBHOOK_CHANNEL`
 
 Channel behavior:
 
-- `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
-- `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` are image-owned and default to `false`. Treat them as optional for downstream because the image already sets the defaults.
+- `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id; set it to `#assistant`.
+- `DISCORD_REACTIONS` and `DISCORD_REQUIRE_MENTION` are image-owned and default to `false`; `DISCORD_AUTO_THREAD` is image-owned and defaults to `true`.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `coding`.
-- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned free-response channel.
-- `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`.
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `agentic`; set it to `#foodstamps`.
+- `DISCORD_FREE_RESPONSE_CHANNELS` must include the `#foodstamps` channel id.
+- `DISCORD_WEBHOOK_CHANNEL` defaults Hermes-created Discord webhook subscriptions to `#webhooks` when `hermes webhook subscribe --deliver discord` omits `--deliver-chat-id`.
+- `/model` cannot override router-pinned `#foodstamps` sessions, including sessions inside Discord threads.
+- The managed gateway retires closed, archived, locked, deleted, or inaccessible Discord thread sessions after 05:00 local Hermes time while preserving historical SQLite transcripts.
 
 ### Recommended Optional Operator Env
 

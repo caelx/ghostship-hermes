@@ -242,7 +242,7 @@ let
         protect_last_n = 20;
       };
       session_reset = {
-        mode = "both";
+        mode = "daily";
         idle_minutes = 240;
         at_hour = 4;
       };
@@ -295,7 +295,7 @@ let
       };
       discord = {
         require_mention = false;
-        auto_thread = false;
+        auto_thread = true;
         reactions = false;
       };
       unauthorized_dm_behavior = "ignore";
@@ -617,7 +617,7 @@ EOF
 
       tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
       ${pkgs.gawk}/bin/awk '
-        BEGIN { in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0; in_web = 0; seen_web = 0; seen_web_backend = 0 }
+        BEGIN { in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0; in_web = 0; in_session_reset = 0; seen_web = 0; seen_web_backend = 0 }
         /^model:[[:space:]]*$/ {
           in_model = 1
           in_fallback_model = 0
@@ -625,6 +625,7 @@ EOF
           in_custom = 0
           in_agent = 0
           in_web = 0
+          in_session_reset = 0
           print
           next
         }
@@ -635,6 +636,7 @@ EOF
           in_custom = 0
           in_agent = 0
           in_web = 1
+          in_session_reset = 0
           seen_web = 1
           print
           next
@@ -649,6 +651,7 @@ EOF
           in_custom = 0
           in_agent = 0
           in_web = 0
+          in_session_reset = 0
           print
           next
         }
@@ -662,6 +665,21 @@ EOF
           in_custom = 0
           in_agent = 0
           in_web = 0
+          in_session_reset = 0
+          print
+          next
+        }
+        /^session_reset:[[:space:]]*$/ {
+          if (in_web && !seen_web_backend) {
+            print "  backend: firecrawl"
+          }
+          in_model = 0
+          in_fallback_model = 0
+          in_discord = 0
+          in_custom = 0
+          in_agent = 0
+          in_web = 0
+          in_session_reset = 1
           print
           next
         }
@@ -675,6 +693,7 @@ EOF
           in_custom = 1
           in_agent = 0
           in_web = 0
+          in_session_reset = 0
           print
           next
         }
@@ -688,10 +707,11 @@ EOF
           in_custom = 0
           in_agent = 1
           in_web = 0
+          in_session_reset = 0
           print
           next
         }
-        (in_model || in_fallback_model || in_discord || in_custom || in_agent || in_web) && /^[^[:space:]]/ {
+        (in_model || in_fallback_model || in_discord || in_custom || in_agent || in_web || in_session_reset) && /^[^[:space:]]/ {
           if (in_web && !seen_web_backend) {
             print "  backend: firecrawl"
           }
@@ -701,6 +721,7 @@ EOF
           in_custom = 0
           in_agent = 0
           in_web = 0
+          in_session_reset = 0
         }
         in_model && $0 == "  base_url: http://127.0.0.1:8788/v1" {
           next
@@ -745,6 +766,18 @@ EOF
           print "  reactions: false"
           next
         }
+        in_discord && $0 ~ /^  auto_thread:[[:space:]]/ {
+          print "  auto_thread: true"
+          next
+        }
+        in_session_reset && $0 ~ /^  mode:[[:space:]]/ {
+          print "  mode: daily"
+          next
+        }
+        in_session_reset && $0 ~ /^  at_hour:[[:space:]]/ {
+          print "  at_hour: 4"
+          next
+        }
         in_custom && $0 ~ /^[[:space:]]+api_key:[[:space:]]/ {
           next
         }
@@ -784,7 +817,7 @@ EOF
       is_hermes_passthrough_key() {
         key="$1"
         case "$key" in
-          GHOSTSHIP_ROUTER_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
+          DISCORD_WEBHOOK_CHANNEL|GHOSTSHIP_ROUTER_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
             return 0
             ;;
         esac

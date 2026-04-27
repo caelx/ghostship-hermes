@@ -28,7 +28,7 @@ def _env_flag(name: str, default: str) -> bool:
 
 DISCORD_REACTIONS = _env_flag("DISCORD_REACTIONS", "false")
 DISCORD_REQUIRE_MENTION = _env_flag("DISCORD_REQUIRE_MENTION", "false")
-DISCORD_AUTO_THREAD = _env_flag("DISCORD_AUTO_THREAD", "false")
+DISCORD_AUTO_THREAD = _env_flag("DISCORD_AUTO_THREAD", "true")
 
 
 def _direct_gemini() -> dict[str, str]:
@@ -87,7 +87,7 @@ DEFAULT_CONFIG = {
         "protect_last_n": 20,
     },
     "session_reset": {
-        "mode": "both",
+        "mode": "daily",
         "idle_minutes": 240,
         "at_hour": 4,
     },

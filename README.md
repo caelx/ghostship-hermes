@@ -244,7 +244,7 @@ These are internal image-owned variables. Downstream must not set or override th
 - `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
 - `DISCORD_REACTIONS=false`
 - `DISCORD_REQUIRE_MENTION=false`
-- `DISCORD_AUTO_THREAD=false`
+- `DISCORD_AUTO_THREAD=true`
 - `GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock`
 - `GHOSTSHIP_TTYD_BASE_PATH=/terminal`
 - `GHOSTSHIP_TERMINAL_CWD=/workspace`
@@ -296,6 +296,7 @@ Required when Discord gateway is enabled:
 - `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
 - `GHOSTSHIP_ROUTER_CHANNEL`
+- `DISCORD_WEBHOOK_CHANNEL`
 
 Recommended optional operator env:
 
@@ -318,13 +319,14 @@ Internal-only runtime env:
 
 Important behavior:
 
-- `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id.
-- `DISCORD_REACTIONS`, `DISCORD_REQUIRE_MENTION`, and `DISCORD_AUTO_THREAD` default to `false` in the image. Downstream normally should not set them unless the contract intentionally changes.
+- `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id; set it to `#assistant`.
+- `DISCORD_REACTIONS` and `DISCORD_REQUIRE_MENTION` default to `false`; `DISCORD_AUTO_THREAD` defaults to `true` so Discord sessions run in threads by default.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to router alias `agentic`
-- `DISCORD_FREE_RESPONSE_CHANNELS` should include the router-pinned free-response channel.
-- `GHOSTSHIP_ROUTER_CHANNEL` must be included in `DISCORD_FREE_RESPONSE_CHANNELS`
-- `/model` cannot override the router-pinned forced channel
+- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to router alias `agentic`; set it to `#foodstamps`.
+- `DISCORD_FREE_RESPONSE_CHANNELS` must include the `#foodstamps` channel id.
+- `DISCORD_WEBHOOK_CHANNEL` is the default Discord destination for `hermes webhook subscribe --deliver discord` when `--deliver-chat-id` is omitted; set it to `#webhooks`.
+- `/model` cannot override the router-pinned `#foodstamps` sessions, including sessions inside Discord threads.
+- Closed, archived, locked, deleted, or inaccessible Discord thread sessions are retired by the managed gateway after 05:00 local Hermes time; historical SQLite transcripts are preserved.
 - `_GHOSTSHIP_ROUTER_API_KEY` is optional internal router auth. The image may still auto-generate it for Hermes integration, but the router does not require it to run.
 
 Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume and backs the default `openai-codex/gpt-5.5` primary lane.
@@ -351,7 +353,7 @@ Router:
 
 Forced Discord channels:
 
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to the local router `agentic` lane
+- `GHOSTSHIP_ROUTER_CHANNEL` pins `#foodstamps` replies, including thread replies, to the local router `agentic` lane.
 - `/model` does not override that forced channel
 
 ## Native Hermes Management

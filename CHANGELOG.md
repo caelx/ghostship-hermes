@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Changed managed Discord to thread by default, made `session_reset` daily at 04:00, added 05:00 closed-thread session retirement, documented the `#assistant` / `#foodstamps` / `#webhooks` channel-name contract, and added `DISCORD_WEBHOOK_CHANNEL` as the default Discord destination for Hermes-created webhook subscriptions.
 - Breaking: changed the managed Hermes primary lane to `openai-codex/gpt-5.5`, set the managed web backend to Firecrawl, and replaced the image-managed Bitwarden Secrets Manager `bws` contract with the Password Manager CLI `bw` using persisted state under `/home/hermes/.local/state/bitwarden-cli`.
 - Added `bw-unlock` and `bw-lock` wrappers for the image-managed Bitwarden CLI; `bw-unlock` performs API-key login plus password unlock and writes a runtime `BW_SESSION`, while `bw-lock` removes the session without logging out.
 - Fixed raw `bw` invocations to inherit `BITWARDENCLI_APPDATA_DIR`, keeping Bitwarden CLI state out of the upstream `~/.config/Bitwarden CLI` fallback path.
