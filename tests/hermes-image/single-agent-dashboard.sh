@@ -122,7 +122,7 @@ run_in_container() {
 run_as_hermes() {
   local target_container="$1"
   shift
-  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
+  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
 }
 
 run_browser_profile_probe() {
@@ -133,7 +133,7 @@ run_browser_profile_probe() {
     --env HOME=/home/hermes \
     --env HERMES_HOME=/home/hermes/.hermes \
     --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults \
-    --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     "$target_container" /usr/bin/timeout 90s /opt/cloakbrowser-venv/bin/python - "$mode" <<'PY'
 import sys
 from pathlib import Path
@@ -263,11 +263,11 @@ curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allo
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'allow-modals'
 ! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'href:"/terminal/",target:"_blank"'
 
-run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY='\''test-firecrawl'\''' /run/ghostship/hermes.env >/dev/null"
-run_in_container "$container_name" "grep -Fx 'DISCORD_WEBHOOK_CHANNEL=webhooks-channel' /run/ghostship/hermes.env >/dev/null"
+run_in_container "$container_name" '. /run/ghostship/hermes.env; [ "${FIRECRAWL_API_KEY:-}" = test-firecrawl ]'
+run_in_container "$container_name" '. /run/ghostship/hermes.env; [ "${DISCORD_WEBHOOK_CHANNEL:-}" = webhooks-channel ]'
 run_in_container "$container_name" "! grep -q '^GHOSTSHIP_ROUTER_PORT=' /run/ghostship/hermes.env"
-run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY='\''test-firecrawl'\''' /home/hermes/.hermes/.env >/dev/null"
-run_in_container "$container_name" "grep -Fx 'DISCORD_WEBHOOK_CHANNEL=webhooks-channel' /home/hermes/.hermes/.env >/dev/null"
+run_in_container "$container_name" '. /home/hermes/.hermes/.env; [ "${FIRECRAWL_API_KEY:-}" = test-firecrawl ]'
+run_in_container "$container_name" '. /home/hermes/.hermes/.env; [ "${DISCORD_WEBHOOK_CHANNEL:-}" = webhooks-channel ]'
 run_in_container "$container_name" "grep -Fx 'CUSTOM_DOWNSTREAM_KEY=keep-me' /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "grep -Fx 'STALE_ONLY_KEY=keep-me-too' /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "! grep -q '^FIRECRAWL_API_KEY=stale-firecrawl$' /home/hermes/.hermes/.env"
@@ -276,32 +276,34 @@ run_in_container "$container_name" "! grep -q '^GHOSTSHIP_ROUTER_PORT=' /home/he
 run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY' /home/hermes/.hermes/.ghostship-managed-env.keys >/dev/null"
 run_in_container "$container_name" "stat -c '%U:%G %a' /home/hermes/.hermes/.env | grep -Fx 'hermes:hermes 600' >/dev/null"
 run_in_container "$container_name" "stat -c '%U:%G %a' /home/hermes/.hermes/.ghostship-managed-env.keys | grep -Fx 'hermes:hermes 600' >/dev/null"
-run_in_container "$container_name" '
-gateway_pid="$(pgrep -u hermes -f "/opt/hermes/venv/bin/hermes gateway run --replace" | head -n1)"
-tr "\0" "\n" </proc/"$gateway_pid"/environ | grep -Fx "FIRECRAWL_API_KEY=test-firecrawl" >/dev/null
-! tr "\0" "\n" </proc/"$gateway_pid"/environ | grep -q "^GHOSTSHIP_ROUTER_PORT="
+run_as_hermes "$container_name" '
+gateway_pid="$(ps -u hermes -o pid=,args= | awk "/hermes gateway run --replace/ { print \$1; exit }")"
+if [ -z "$gateway_pid" ]; then
+  ps -u hermes -o pid=,args= >&2
+  exit 1
+fi
+gateway_env="$(tr "\0" "\n" </proc/"$gateway_pid"/environ)"
+printf "%s\n" "$gateway_env" | grep -Fx "FIRECRAWL_API_KEY=test-firecrawl" >/dev/null || {
+  printf "%s\n" "$gateway_env" >&2
+  exit 1
+}
+! printf "%s\n" "$gateway_env" | grep -q "^GHOSTSHIP_ROUTER_PORT="
 '
 
 run_in_container "$container_name" '
-for cmd in \
-  nix git rg ttyd tmux tirith jq fd yq uv gh gws bw bw-unlock bw-lock gcloud blogwatcher-cli \
-  codex gemini agent-browser opencode \
-  ghostship-bazarr ghostship-bookstack ghostship-changedetection ghostship-chaptarr \
-  ghostship-flaresolverr ghostship-grimmory ghostship-n8n ghostship-nzbget ghostship-plex ghostship-pricebuddy \
-  ghostship-prowlarr ghostship-pyload-ng ghostship-qbittorrent ghostship-radarr ghostship-romm ghostship-rss-bridge \
-  ghostship-searxng ghostship-sonarr ghostship-synology ghostship-tautulli ghostship-hermes-router
+	for cmd in \
+	  nix git rg ttyd tmux tirith jq fd yq uv gh gws bw gcloud blogwatcher-cli \
+	  codex gemini agent-browser opencode \
+	  ghostship-hermes-router
 do
   command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }
 done
 '
-run_as_hermes "$container_name" 'for cmd in bw bw-unlock bw-lock gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
-run_as_hermes "$container_name" 'bw --help >/dev/null'
-run_as_hermes "$container_name" 'bw-unlock --help >/dev/null'
-run_as_hermes "$container_name" 'bw-lock --help >/dev/null'
+	run_as_hermes "$container_name" 'for cmd in bw gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
+	run_as_hermes "$container_name" 'bw --help >/dev/null'
 run_as_hermes "$container_name" 'test -d /home/hermes/.local/state/bitwarden-cli'
 run_as_hermes "$container_name" '! test -e "/home/hermes/.config/Bitwarden CLI"'
 run_in_container "$container_name" 'test -d /run/user/3000'
-run_in_container "$container_name" "stat -c '%U:%G %a' /run/user/3000/ghostship-bitwarden | grep -Fx 'hermes:hermes 700' >/dev/null"
 run_in_container "$container_name" "grep -E \"^BITWARDENCLI_APPDATA_DIR='?/home/hermes/.local/state/bitwarden-cli'?$\" /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "! grep -Eq '^(BW_CLIENTSECRET|BW_PASSWORD|BW_SESSION)=' /home/hermes/.hermes/.env"
 run_as_hermes "$container_name" 'gws --help >/dev/null'
@@ -389,10 +391,8 @@ run_in_container "$container_name" 'grep -Fx "smoke-home" /home/hermes/persist-h
 smoke_note "post-restart nix profile"
 wait_for_hermes_shell "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 smoke_note "post-restart managed tools"
-run_as_hermes "$container_name" 'for cmd in bw bw-unlock bw-lock gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
-run_as_hermes "$container_name" 'bw --help >/dev/null'
-run_as_hermes "$container_name" 'bw-unlock --help >/dev/null'
-run_as_hermes "$container_name" 'bw-lock --help >/dev/null'
+	run_as_hermes "$container_name" 'for cmd in bw gws gh gcloud blogwatcher-cli; do command -v "$cmd" >/dev/null || exit 1; done'
+	run_as_hermes "$container_name" 'bw --help >/dev/null'
 run_as_hermes "$container_name" 'test -d /home/hermes/.local/state/bitwarden-cli'
 run_as_hermes "$container_name" 'gws --help >/dev/null'
 run_as_hermes "$container_name" 'gh --help >/dev/null'

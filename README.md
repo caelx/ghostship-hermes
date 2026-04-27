@@ -61,9 +61,9 @@ Persistent downstream-owned layer:
 
 Package ownership split:
 
-- image: Hermes core, router, full repo `ghostship-*` CLI layer, and the operator utility bundle for the workstation contract
+- image: Hermes core, router, dashboard/runtime services, and the small operator utility bundle for the workstation contract
 - native npm seed in persisted home: `codex`, `gemini-cli`, `agent-browser`, `opencode`
-- image-managed Nix defaults: `bw`, `bw-unlock`, `bw-lock`, `gh`, `gcloud`, `gws`, `blogwatcher-cli`
+- image-managed Nix defaults: `bw`, `gh`, `gcloud`, `gws`, `blogwatcher-cli`
 - image-managed local browser tooling: native CloakBrowser under `/opt/ghostship` launched through `agent-browser`, with the persistent Chrome profile rooted at `/home/hermes/.local/state/cloakbrowser`
 - persisted Nix user profile: extra downstream or Hermes-installed packages on top of the image defaults
 
@@ -89,14 +89,6 @@ Or use the helper:
 
 ```fish
 scripts/export_publishable_image.sh ghostship-hermes:dev
-```
-
-Python utility build/test flow stays unchanged:
-
-```fish
-python3 scripts/python_utility.py lock packages/searxng-cli
-python3 scripts/python_utility.py test packages/searxng-cli
-python3 scripts/python_utility.py build packages/searxng-cli
 ```
 
 ## How The Container Runs
@@ -257,7 +249,6 @@ The image `PATH` prefers:
 - `/home/hermes/.cargo/bin`
 - `/home/hermes/.nix-profile/bin`
 - `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin`
-- `/opt/ghostship-utils/venv/bin`
 - `/opt/ghostship/bin`
 - `/opt/hermes/venv/bin`
 - `/opt/ghostship-router/venv/bin`
@@ -279,7 +270,7 @@ Important rule:
 
 ### Downstream Operator Env Summary
 
-Required for the default direct runtime lane:
+Required for the default router-backed runtime lane:
 
 - `OPENCODE_GO_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
@@ -287,6 +278,9 @@ Required for the default direct runtime lane:
 Optional router-provider credentials:
 
 - `NVIDIA_BUILD_API_KEY`
+- `OPENCODE_ZEN_API_KEY` or legacy `OPENCODE_API_KEY`
+- `ZENMUX_API_KEY`
+- `ELECTRON_HUB_API_KEY`
 - `OPENROUTER_API_KEY`
 
 Required when Discord gateway is enabled:
@@ -301,7 +295,7 @@ Required when Discord gateway is enabled:
 Recommended optional operator env:
 
 - `WEBHOOK_SECRET`
-- `BW_CLIENTID`, `BW_CLIENTSECRET`, and `BW_PASSWORD` when using `bw-unlock`
+- `BW_CLIENTID`, `BW_CLIENTSECRET`, and `BW_PASSWORD` for model-authored Bitwarden workflows
 - `BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli`
 - `GITHUB_TOKEN`
 
@@ -310,8 +304,6 @@ Supported but not recommended for downstream:
 - `BROWSERBASE_API_KEY`
 - `BROWSERBASE_PROJECT_ID`
 - `BROWSER_USE_API_KEY`
-
-Other service-specific `ghostship-*` utility vars are optional and recommended only when that service integration is actually in use.
 
 Internal-only runtime env:
 
@@ -372,7 +364,7 @@ Do not use `hermes gateway install` inside the container. `s6` already supervise
 
 After the first successful container boot:
 
-1. authenticate Codex so the default primary lane can run
+1. authenticate Codex if you use the forced `#foodstamps` Codex channel
 2. verify provider and gateway env are present in both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`
 3. inspect `config.yaml` once and confirm the expected router-primary defaults
 4. run `hermes doctor`
@@ -381,11 +373,11 @@ After the first successful container boot:
 Recommended post-setup flow:
 
 ```fish
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
 
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
 
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'sed -n "1,220p" /home/hermes/.hermes/config.yaml'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'sed -n "1,220p" /home/hermes/.hermes/config.yaml'
 ```
 
 Expected config shape after first boot:
@@ -412,52 +404,27 @@ Useful live checks:
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
 curl -fsS http://127.0.0.1:7681/terminal/ >/dev/null
-docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw bw-unlock bw-lock gcloud blogwatcher-cli agent-browser ghostship-sonarr ghostship-hermes-router'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw gcloud blogwatcher-cli agent-browser ghostship-hermes-router'
 docker exec ghostship-hermes sh -lc 'test -d /home/hermes/.local/state/cloakbrowser && command -v google-chrome'
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
 ```
 
 ## CI And Release
 
-- `ci.yml` evaluates the flake for repo package wiring, runs Python utility tests/builds, builds the Ubuntu Docker image, and runs the smoke test.
+- `ci.yml` evaluates the flake for repo package wiring, runs focused Python tests, builds the Ubuntu Docker image, and runs the smoke test.
 - `publish-image.yml` builds and pushes `amd64` and `arm64` images from `packages/hermes-image/Dockerfile` and then publishes the multi-arch manifest tags.
 - `main` publishes `latest`, `sha-*`, and `hermes-*` tags.
 - non-`main` manual publish runs publish only immutable `sha-*` tags.
 
-## Ghostship Utilities
+## Baked Operator Utilities
 
-The image ships the full `ghostship-*` CLI utility layer. They remain JSON-first and keep their repo-owned API docs under `docs/api/`.
+The old service-specific `ghostship-*` CLI layer and shared API wrapper platform are retired. Agents can create service-specific tools in persisted home or workspace state when they need them.
 
-Current bundled family:
-
-- `ghostship-bazarr`
-- `ghostship-bookstack`
-- `ghostship-changedetection`
-- `ghostship-chaptarr`
-- `ghostship-flaresolverr`
-- `ghostship-grimmory`
-- `ghostship-n8n`
-- `ghostship-nzbget`
-- `ghostship-plex`
-- `ghostship-pricebuddy`
-- `ghostship-prowlarr`
-- `ghostship-pyload-ng`
-- `ghostship-qbittorrent`
-- `ghostship-radarr`
-- `ghostship-romm`
-- `ghostship-rss-bridge`
-- `ghostship-searxng`
-- `ghostship-sonarr`
-- `ghostship-synology`
-- `ghostship-tautulli`
-
-Additional baked operator utilities:
+Current baked operator utilities:
 
 - `blogwatcher-cli`
 - `bw`
-- `bw-unlock`
-- `bw-lock`
 - `fd`
 - `gcloud`
 - `gh`

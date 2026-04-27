@@ -49,39 +49,10 @@
             }
           );
 
-          # Utility packages
-          ghostshipCliContract = pkgs.callPackage ./packages/ghostship-cli-contract/package.nix {
-            python311Packages = routerPython311Packages;
-          };
-          mkGhostshipPythonUtility = packagePath: pkgs.callPackage packagePath {
-            python311Packages = routerPython311Packages;
-            inherit ghostshipCliContract;
-          };
           hermesDashboard = pkgs.callPackage ./packages/hermes-dashboard/package.nix {
             python311Packages = routerPython311Packages;
           };
-          ghostshipSearxng = mkGhostshipPythonUtility ./packages/searxng-cli/package.nix;
-          ghostshipSonarr = mkGhostshipPythonUtility ./packages/sonarr-cli/package.nix;
-          ghostshipRadarr = mkGhostshipPythonUtility ./packages/radarr-cli/package.nix;
-          ghostshipProwlarr = mkGhostshipPythonUtility ./packages/prowlarr-cli/package.nix;
-          ghostshipPlex = mkGhostshipPythonUtility ./packages/plex-cli/package.nix;
-          ghostshipRomm = mkGhostshipPythonUtility ./packages/romm-cli/package.nix;
-          ghostshipNzbget = mkGhostshipPythonUtility ./packages/nzbget-cli/package.nix;
-          ghostshipQbittorrent = mkGhostshipPythonUtility ./packages/qbittorrent-cli/package.nix;
-          ghostshipGrimmory = mkGhostshipPythonUtility ./packages/grimmory-cli/package.nix;
-          ghostshipTautulli = mkGhostshipPythonUtility ./packages/tautulli-cli/package.nix;
-          ghostshipBazarr = mkGhostshipPythonUtility ./packages/bazarr-cli/package.nix;
-          ghostshipSynology = mkGhostshipPythonUtility ./packages/synology-cli/package.nix;
-          ghostshipFlaresolverr = mkGhostshipPythonUtility ./packages/flaresolverr-cli/package.nix;
-          ghostshipPyloadNg = mkGhostshipPythonUtility ./packages/pyload-ng-cli/package.nix;
-          ghostshipPricebuddy = mkGhostshipPythonUtility ./packages/pricebuddy-cli/package.nix;
-          ghostshipRssBridge = mkGhostshipPythonUtility ./packages/rss-bridge-cli/package.nix;
-          ghostshipChangedetection = mkGhostshipPythonUtility ./packages/changedetection-cli/package.nix;
-          ghostshipBookStack = mkGhostshipPythonUtility ./packages/bookstack-cli/package.nix;
-          ghostshipN8n = mkGhostshipPythonUtility ./packages/n8n-cli/package.nix;
-          ghostshipChaptarr = mkGhostshipPythonUtility ./packages/chaptarr-cli/package.nix;
           agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
-          ghostshipBitwardenWrappers = pkgs.callPackage ./packages/bitwarden-wrappers/package.nix { };
           blogwatcher = pkgs.callPackage ./packages/blogwatcher/package.nix { };
           upstreamHermesAgent = hermes-agent.packages.${system}.default;
           wrappedHermesAgent = pkgs.callPackage ./packages/hermes-agent-wrapped/package.nix {
@@ -91,9 +62,7 @@
           ghostshipSharedPython = pkgs.buildEnv {
             name = "ghostship-shared-python-deps";
             paths = with routerPython311Packages; [
-              ghostshipCliContract
               httpx
-              typer
               fastapi
               uvicorn
               websockets
@@ -127,7 +96,6 @@
           };
           ghostshipHermesRouter = pkgs.callPackage ./packages/hermes-router/package.nix {
             python311Packages = routerPython311Packages;
-            inherit ghostshipCliContract;
           };
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
@@ -138,7 +106,6 @@
             name = "ghostship-default-tools";
             paths = [
               pkgs.bitwarden-cli
-              ghostshipBitwardenWrappers
               pkgs.gh
               pkgs.google-cloud-sdk
               blogwatcher
@@ -148,42 +115,18 @@
             ignoreCollisions = true;
           };
 
-          baseUtilityPackages = [
+          baseToolPackages = [
             pkgs.bitwarden-cli
-            ghostshipBitwardenWrappers
             pkgs.google-cloud-sdk
             agentBrowser
             googleWorkspaceCli
-          ];
-
-          allUtilities = baseUtilityPackages ++ [
-            ghostshipSearxng
-            ghostshipSonarr
-            ghostshipRadarr
-            ghostshipProwlarr
-            ghostshipPlex
-            ghostshipRomm
-            ghostshipNzbget
-            ghostshipQbittorrent
-            ghostshipGrimmory
-            ghostshipTautulli
-            ghostshipBazarr
-            ghostshipSynology
-            ghostshipFlaresolverr
-            ghostshipPyloadNg
-            ghostshipPricebuddy
-            ghostshipRssBridge
-            ghostshipChangedetection
-            ghostshipBookStack
-            ghostshipChaptarr
-            ghostshipN8n
           ];
 
           overlayUtilities = [
             ghostshipHermesRouter
             ghostshipHermesRuntime
             hermesDashboard
-          ] ++ allUtilities;
+          ] ++ baseToolPackages;
           overlayUtilityEnv = pkgs.buildEnv {
             name = "ghostship-hermes-overlay";
             paths = overlayUtilities;
@@ -213,7 +156,7 @@
             modulePath = ./packages/hermes-image/nixos-base-module.nix;
             extraSpecialArgs = {
               hermesAgentPackage = upstreamHermesAgent;
-              sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseUtilityPackages;
+              sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseToolPackages;
             };
           };
           ghostshipHermesSystem = mkHermesSystem {
@@ -227,8 +170,7 @@
                 ;
               blogwatcherPackage = blogwatcher;
               hermesAgentPackage = wrappedHermesAgent;
-              ghostshipUtilities = allUtilities;
-              sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseUtilityPackages;
+              sharedGhostshipDependencyPackages = [ ghostshipSharedPython ] ++ baseToolPackages;
             };
           };
           ghostshipHermesOverlayBundle = pkgs.callPackage ./packages/hermes-image/overlay-bundle.nix {
@@ -260,34 +202,12 @@
         {
           ghostship-default-tools = ghostshipDefaultTools;
           bw = pkgs.bitwarden-cli;
-          ghostship-bitwarden-wrappers = ghostshipBitwardenWrappers;
           gcloud = pkgs.google-cloud-sdk;
           tirith = pkgs.tirith;
           agent-browser = agentBrowser;
           blogwatcher = blogwatcher;
           gws = googleWorkspaceCli;
           hermes-dashboard = hermesDashboard;
-          ghostship-cli-contract = ghostshipCliContract;
-          ghostship-searxng = ghostshipSearxng;
-          ghostship-sonarr = ghostshipSonarr;
-          ghostship-radarr = ghostshipRadarr;
-          ghostship-prowlarr = ghostshipProwlarr;
-          ghostship-plex = ghostshipPlex;
-          ghostship-romm = ghostshipRomm;
-          ghostship-nzbget = ghostshipNzbget;
-          ghostship-qbittorrent = ghostshipQbittorrent;
-          ghostship-grimmory = ghostshipGrimmory;
-          ghostship-tautulli = ghostshipTautulli;
-          ghostship-bazarr = ghostshipBazarr;
-          ghostship-synology = ghostshipSynology;
-          ghostship-flaresolverr = ghostshipFlaresolverr;
-          ghostship-pyload-ng = ghostshipPyloadNg;
-          ghostship-pricebuddy = ghostshipPricebuddy;
-          ghostship-rss-bridge = ghostshipRssBridge;
-          ghostship-changedetection = ghostshipChangedetection;
-          ghostship-bookstack = ghostshipBookStack;
-          ghostship-chaptarr = ghostshipChaptarr;
-          ghostship-n8n = ghostshipN8n;
           ghostship-hermes-router = ghostshipHermesRouter;
           ghostship-hermes-runtime = ghostshipHermesRuntime;
           hermes-agent-wrapped = wrappedHermesAgent;
@@ -310,34 +230,12 @@
         {
           inherit (self.packages.${system})
             bw
-            ghostship-bitwarden-wrappers
             gcloud
             tirith
             agent-browser
             blogwatcher
             gws
             hermes-dashboard
-            ghostship-cli-contract
-            ghostship-searxng
-            ghostship-sonarr
-            ghostship-radarr
-            ghostship-prowlarr
-            ghostship-plex
-            ghostship-romm
-            ghostship-nzbget
-            ghostship-qbittorrent
-            ghostship-grimmory
-            ghostship-tautulli
-            ghostship-bazarr
-            ghostship-synology
-            ghostship-flaresolverr
-            ghostship-pyload-ng
-            ghostship-pricebuddy
-            ghostship-rss-bridge
-            ghostship-changedetection
-            ghostship-bookstack
-            ghostship-chaptarr
-            ghostship-n8n
             ghostship-hermes-router
             ghostship-hermes-runtime
             hermes-agent-wrapped
@@ -403,7 +301,7 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/ghostship-cli-contract/src:$PWD/packages/searxng-cli/src:$PWD/packages/sonarr-cli/src:$PWD/packages/radarr-cli/src:$PWD/packages/prowlarr-cli/src:$PWD/packages/plex-cli/src:$PWD/packages/romm-cli/src:$PWD/packages/nzbget-cli/src:$PWD/packages/qbittorrent-cli/src:$PWD/packages/grimmory-cli/src:$PWD/packages/tautulli-cli/src:$PWD/packages/bazarr-cli/src:$PWD/packages/synology-cli/src:$PWD/packages/flaresolverr-cli/src:$PWD/packages/pyload-ng-cli/src:$PWD/packages/pricebuddy-cli/src:$PWD/packages/rss-bridge-cli/src:$PWD/packages/changedetection-cli/src:$PWD/packages/bookstack-cli/src:$PWD/packages/hermes-router/src${PYTHONPATH:+:$PYTHONPATH}"
+              export PYTHONPATH="$PWD/packages/hermes-router/src${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }

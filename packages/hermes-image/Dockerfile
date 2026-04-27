@@ -39,7 +39,7 @@ ENV HOME=/home/hermes \
     GHOSTSHIP_TERMINAL_CWD=/workspace \
     AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser \
     BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli \
-    PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -150,7 +150,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship /opt/ghostship-router /opt/ghostship-utils
+RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship /opt/ghostship-router
 COPY flake.nix /src/
 COPY flake.lock /src/
 COPY packages /src/packages
@@ -212,11 +212,7 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && UV_EXCLUDE_NEWER=2026-04-24T00:00:00Z /opt/hermes/venv/bin/uv pip install --python /opt/hermes/venv/bin/python --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
     && python3 -m venv /opt/ghostship-router/venv \
     && /opt/ghostship-router/venv/bin/pip install --upgrade pip setuptools wheel \
-    && /opt/ghostship-router/venv/bin/pip install /src/packages/ghostship-cli-contract /src/packages/hermes-router \
-    && python3 -m venv /opt/ghostship-utils/venv \
-    && /opt/ghostship-utils/venv/bin/pip install --upgrade pip setuptools wheel \
-    && cli_packages="$(for pkg in /src/packages/*-cli; do [ -f "$pkg/pyproject.toml" ] && printf '%s ' "$pkg"; done)" \
-    && /opt/ghostship-utils/venv/bin/pip install /src/packages/ghostship-cli-contract uv $cli_packages \
+    && /opt/ghostship-router/venv/bin/pip install /src/packages/hermes-router \
     && python3 -m venv /opt/cloakbrowser-venv \
     && /opt/cloakbrowser-venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/cloakbrowser-venv/bin/pip install "cloakbrowser==0.3.25" \

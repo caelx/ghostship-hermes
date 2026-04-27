@@ -6,6 +6,6 @@ updates:
       interval: "weekly"
 
   - package-ecosystem: "pip"
-    directory: "/packages/searxng-cli"
+    directory: "/packages/hermes-router"
     schedule:
       interval: "weekly"

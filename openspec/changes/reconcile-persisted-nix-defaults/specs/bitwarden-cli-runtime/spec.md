@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Hermes image ships the official Bitwarden CLI
-The workstation contract SHALL document the official `bw` Bitwarden Password Manager CLI plus `bw-unlock` and `bw-lock` as part of the baseline image-managed helper set delivered through the reconciled managed Nix default profile. The runtime docs SHALL still describe its persisted home-state conventions under `/home/hermes` and runtime session file under `/run/user/3000/ghostship-bitwarden/session.env`.
+The workstation contract SHALL document the official `bw` Bitwarden Password Manager CLI as part of the baseline image-managed helper set delivered through the reconciled managed Nix default profile. The runtime docs SHALL still describe its persisted home-state convention under `/home/hermes/.local/state/bitwarden-cli`.
 
 #### Scenario: Docs describe the shipped `bw` runtime path
 - **WHEN** maintainers inspect the runtime docs

@@ -88,10 +88,10 @@ Internal-only runtime auth may be auto-generated for Hermes compatibility:
 
 Router free-provider defaults are RPM-limited before the paid OpenCode Go fallback: NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20. Override with `GHOSTSHIP_ROUTER_PROVIDER_RPM_NVIDIA_BUILD`, `GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENCODE_ZEN`, `GHOSTSHIP_ROUTER_PROVIDER_RPM_ZENMUX`, `GHOSTSHIP_ROUTER_PROVIDER_RPM_ELECTRON_HUB`, or `GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENROUTER`.
 
-Codex OAuth is not set by env var. Authenticate once inside the persisted home for the default primary lane:
+Codex OAuth is not set by env var. Authenticate once inside the persisted home for the forced `#foodstamps` Codex channel:
 
 ```fish
-docker exec -it --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
+docker exec -it --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
 ```
 
 That writes `/home/hermes/.hermes/auth.json`, which persists with the home volume.
@@ -173,8 +173,8 @@ Quick smoke:
 
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship-utils/venv/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
-docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw gcloud blogwatcher-cli agent-browser ghostship-sonarr ghostship-hermes-router'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw gcloud blogwatcher-cli agent-browser ghostship-hermes-router'
 docker exec ghostship-hermes sh -lc 'test -d /home/hermes/.local/state/cloakbrowser && command -v google-chrome'
 ```
 
@@ -192,7 +192,7 @@ Replace the container with the same `/home/hermes`, `/workspace`, and `/nix` mou
 Default image behavior:
 
 - Hermes/runtime-required Linux tools ship in the image.
-- The full repo `ghostship-*` CLI layer ships in the image.
+- The old service-specific `ghostship-*` CLI layer is retired from the image.
 - The operator utility bundle ships as an image-managed Nix default profile exported from the Ghostship-specific final image phase and reconciled into persisted `/nix` on every boot.
 - native CloakBrowser ships in the image and is exposed as the standard `google-chrome` binary that `agent-browser` already probes on Linux, with the persistent browser profile rooted at `/home/hermes/.local/state/cloakbrowser`.
 - Node-native agent tools ship through npm in persisted home state.

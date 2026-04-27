@@ -5,7 +5,6 @@
   pkgs,
   ghostshipHermesRouter ? null,
   ghostshipHermesRuntime ? null,
-  ghostshipUtilities ? [ ],
   hermesDashboard ? null,
   hermesRelease,
   includeRepoContent ? false,
@@ -358,7 +357,6 @@ let
       ghostshipHermesRuntime
       hermesDashboard
     ]
-    ++ ghostshipUtilities
   );
 
   systemPackages = sharedDependencyPackages ++ repoCommandPackages;
@@ -415,7 +413,6 @@ let
     ensure_dir "$GHOSTSHIP_DASHBOARD_STATE_DIR" 0750
     ensure_dir "$GHOSTSHIP_ROUTER_STATE_DIR" 0750
     ensure_dir "/run/user/$HERMES_UID" 0700
-    ensure_dir "/run/user/$HERMES_UID/ghostship-bitwarden" 0700
 
     prepare_nix_profile_state
     ensure_dir "$XDG_CONFIG_HOME" 0750
@@ -1273,7 +1270,7 @@ in
       TERMINAL_CWD = "/workspace";
     };
     settings = { } // managedAgentConfig;
-    extraPackages = [ pkgs.nix ] ++ lib.optionals includeRepoContent ghostshipUtilities;
+    extraPackages = [ pkgs.nix ];
   };
 
   systemd.services.ghostship-storage = {

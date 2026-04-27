@@ -20,16 +20,24 @@ stdenvNoCC.mkDerivation {
     rm -rf "$out/lib64"
     patchShebangs "$out/bin"
 
-    site_packages="$out/lib/python3.11/site-packages"
-    if [ ! -d "$site_packages" ]; then
+    site_packages=$(find "$out/lib" -mindepth 2 -maxdepth 2 -type d -path '*/site-packages' | sort | head -n1)
+    if [ -z "$site_packages" ] || [ ! -d "$site_packages" ]; then
       echo "failed to locate site-packages in wrapped Hermes env output" >&2
+      find "$out" -maxdepth 4 -type d >&2 || true
+      exit 1
+    fi
+
+    python_bin=$(find "$out/bin" -maxdepth 1 -type f \( -name 'python3.*' -o -name python3 -o -name python \) | sort | head -n1)
+    if [ -z "$python_bin" ] || [ ! -x "$python_bin" ]; then
+      echo "failed to locate python in wrapped Hermes env output" >&2
+      find "$out/bin" -maxdepth 1 -type f >&2 || true
       exit 1
     fi
 
     mkdir -p "$site_packages/node_modules"
     ln -s ${agentBrowserPackage}/share/agent-browser/package "$site_packages/node_modules/agent-browser"
 
-    SITE_PACKAGES="$site_packages" "$out/bin/python3.11" - <<'PATCH'
+    SITE_PACKAGES="$site_packages" "$python_bin" - <<'PATCH'
 from pathlib import Path
 import os
 
@@ -138,7 +146,51 @@ turn_route_marker = """    def _resolve_turn_agent_config(self, user_message: st
         route["request_overrides"] = overrides
         return route
 """
-turn_route_replacement = """    @staticmethod
+turn_route_direct_marker = """    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:
+        \"\"\"Build the effective model/runtime config for a single turn.
+
+        Always uses the session's primary model/provider.  If `/fast` is
+        enabled and the model supports Priority Processing / Anthropic fast
+        mode, attach `request_overrides` so the API call is marked
+        accordingly.
+        \"\"\"
+        from hermes_cli.models import resolve_fast_mode_overrides
+
+        runtime = {
+            "api_key": runtime_kwargs.get("api_key"),
+            "base_url": runtime_kwargs.get("base_url"),
+            "provider": runtime_kwargs.get("provider"),
+            "api_mode": runtime_kwargs.get("api_mode"),
+            "command": runtime_kwargs.get("command"),
+            "args": list(runtime_kwargs.get("args") or []),
+            "credential_pool": runtime_kwargs.get("credential_pool"),
+        }
+        route = {
+            "model": model,
+            "runtime": runtime,
+            "signature": (
+                model,
+                runtime["provider"],
+                runtime["base_url"],
+                runtime["api_mode"],
+                runtime["command"],
+                tuple(runtime["args"]),
+            ),
+        }
+
+        service_tier = getattr(self, "_service_tier", None)
+        if not service_tier:
+            route["request_overrides"] = None
+            return route
+
+        try:
+            overrides = resolve_fast_mode_overrides(route["model"])
+        except Exception:
+            overrides = None
+        route["request_overrides"] = overrides
+        return route
+"""
+turn_route_helpers = """    @staticmethod
     def _ghostship_is_discord_codex_channel(source) -> bool:
         if source is None:
             return False
@@ -166,7 +218,8 @@ turn_route_replacement = """    @staticmethod
         forced_runtime["credential_pool"] = None
         return forced_runtime
 
-    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:
+"""
+turn_route_smart_replacement = turn_route_helpers + """    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:
         from agent.smart_model_routing import resolve_turn_route
         from hermes_cli.models import resolve_fast_mode_overrides
 
@@ -217,8 +270,63 @@ turn_route_replacement = """    @staticmethod
         route["request_overrides"] = overrides
         return route
 """
-gateway_run_text = gateway_run_text.replace(turn_route_marker, turn_route_replacement, 1)
-if turn_route_replacement not in gateway_run_text:
+turn_route_direct_replacement = turn_route_helpers + """    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:
+        from hermes_cli.models import resolve_fast_mode_overrides
+
+        if self._ghostship_is_discord_codex_channel(source):
+            runtime = self._ghostship_force_discord_codex_channel_route({})
+            route = {
+                "model": "gpt-5.5",
+                "runtime": runtime,
+                "label": "ghostship discord codex channel pin",
+                "signature": (
+                    "gpt-5.5",
+                    runtime.get("provider"),
+                    runtime.get("base_url"),
+                    runtime.get("api_mode"),
+                    runtime.get("command"),
+                    tuple(runtime.get("args") or ()),
+                ),
+            }
+        else:
+            runtime = {
+                "api_key": runtime_kwargs.get("api_key"),
+                "base_url": runtime_kwargs.get("base_url"),
+                "provider": runtime_kwargs.get("provider"),
+                "api_mode": runtime_kwargs.get("api_mode"),
+                "command": runtime_kwargs.get("command"),
+                "args": list(runtime_kwargs.get("args") or []),
+                "credential_pool": runtime_kwargs.get("credential_pool"),
+            }
+            route = {
+                "model": model,
+                "runtime": runtime,
+                "signature": (
+                    model,
+                    runtime["provider"],
+                    runtime["base_url"],
+                    runtime["api_mode"],
+                    runtime["command"],
+                    tuple(runtime["args"]),
+                ),
+            }
+
+        service_tier = getattr(self, "_service_tier", None)
+        if not service_tier:
+            route["request_overrides"] = None
+            return route
+
+        try:
+            overrides = resolve_fast_mode_overrides(route.get("model"))
+        except Exception:
+            overrides = None
+        route["request_overrides"] = overrides
+        return route
+"""
+gateway_run_text = gateway_run_text.replace(turn_route_marker, turn_route_smart_replacement, 1)
+if "_ghostship_is_discord_codex_channel" not in gateway_run_text:
+    gateway_run_text = gateway_run_text.replace(turn_route_direct_marker, turn_route_direct_replacement, 1)
+if "_ghostship_is_discord_codex_channel" not in gateway_run_text:
     raise RuntimeError("failed to inject ghostship discord codex channel pin into gateway.run")
 
 gateway_run_text = gateway_run_text.replace(

@@ -24,11 +24,14 @@ jobs:
       - name: Validate flake evaluation
         run: nix flake check --no-build
 
-      - name: Run Python utility tests
-        run: nix develop -c python3 scripts/python_utility.py test packages/searxng-cli
+      - name: Install uv
+        run: python3 -m pip install --user uv
 
-      - name: Build Python utility package
-        run: nix develop -c python3 scripts/python_utility.py build packages/searxng-cli
+      - name: Run router tests
+        run: cd packages/hermes-router && ~/.local/bin/uv run --extra dev python -m pytest tests -q -s
+
+      - name: Run dashboard tests
+        run: cd packages/hermes-dashboard && ~/.local/bin/uv run --extra dev python -m pytest tests -q -s
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

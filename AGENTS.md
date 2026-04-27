@@ -3,7 +3,7 @@
 ## Purpose
 
 - Build and publish `ghcr.io/caelx/ghostship-hermes`.
-- Treat this repo as a monorepo for the Hermes workstation image and the `ghostship-*` Python CLIs.
+- Treat this repo as a monorepo for the Hermes workstation image, Ghostship Router, and supporting runtime packages.
 
 ## Project Invariants
 
@@ -26,15 +26,11 @@
 - Do not add extra Hermes service/doctor compatibility patches unless upstream behavior changes and there is no cleaner workaround.
 - Do not use `hermes gateway install` inside the container runtime. `s6` owns service supervision.
 - Use Cloudflare Access or another outer layer for access control. Do not add in-container basic auth.
-- Keep repo-owned utilities prefixed with `ghostship-`.
-- All CLI utilities emit JSON by default.
+- Keep repo-owned runtime commands prefixed with `ghostship-`.
 
 ## Build And Test Commands
 
 ```fish
-python3 scripts/python_utility.py lock packages/searxng-cli
-python3 scripts/python_utility.py test packages/searxng-cli
-python3 scripts/python_utility.py build packages/searxng-cli
 docker build --build-arg HERMES_REF=(string trim < packages/hermes-image/hermes-release.txt) --tag ghostship-hermes:dev --file packages/hermes-image/Dockerfile .
 tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ```
@@ -79,7 +75,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Build `tirith` from the repo flake's pinned `.#tirith` package, not from ad-hoc `nixpkgs#tirith`, so exact-source Docker builds stay deterministic and do not depend on live `nixpkgs-unstable` GitHub API lookups.
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
 - The managed Hermes runtime primary lane is `custom:ghostship-router/deepseek-v4-pro`, fallback is `custom:ghostship-router/minimax-m2.7`, and managed agent defaults are `reasoning_effort = "high"` and `max_turns = 500`.
-- The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Use `bw-unlock` and `bw-lock` for the normal Hermes session workflow; `bw-lock` must not log out.
+- The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Higher-level Bitwarden workflow helpers are model-authored, not image-owned.
 - Export `BITWARDENCLI_APPDATA_DIR` at the image/global env layer too; raw `bw` commands otherwise fall back to `~/.config/Bitwarden CLI`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.
 - Managed Hermes-facing env must be emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`; preserve unrelated persisted `.env` keys while refreshing the managed subset from current runtime env.
@@ -139,8 +135,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
   - persistence across restart and full container recreation for `/home/hermes`, `/workspace`, and `/nix`
 - Browser persistence smoke should write and read durable state from the public dashboard origin `127.0.0.1:7681` with `localStorage`; do not use `/api/status` or session cookies as the persistence proof. Drive the image-owned `google-chrome`/CloakBrowser wrapper directly for this probe because `agent-browser open` can wait too long in CI.
 
-### Python Utilities
+### Retired Utility Platform
 
-- Build the shared `ghostship-cli-contract` package from the same Python package set as its consuming CLIs.
-- Keep `ghostship-*` CLI names aligned to API/client operation names.
-- Keep JSON-first output and the shared error envelope.
+- The old shared `ghostship-cli-contract` package and service-specific `ghostship-*` Python CLIs are retired from active repo/image support.
+- Do not reintroduce baked service API wrappers unless the user explicitly asks for a new supported image-owned tool.

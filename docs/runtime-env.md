@@ -58,7 +58,6 @@ The image also bakes a PATH that prefers:
 - `/home/hermes/.cargo/bin`
 - `/home/hermes/.nix-profile/bin`
 - `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin`
-- `/opt/ghostship-utils/venv/bin`
 - `/opt/ghostship/bin`
 - `/opt/hermes/venv/bin`
 - `/opt/ghostship-router/venv/bin`
@@ -144,7 +143,7 @@ Channel behavior:
 ### Recommended Optional Operator Env
 
 - `WEBHOOK_SECRET`
-- `BW_CLIENTID`, `BW_CLIENTSECRET`, and `BW_PASSWORD` when using `bw-unlock`
+- `BW_CLIENTID`, `BW_CLIENTSECRET`, and `BW_PASSWORD` for model-authored Bitwarden workflows
 - `BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli`
 - `GITHUB_TOKEN`
 
@@ -154,7 +153,9 @@ Channel behavior:
 - `BROWSERBASE_PROJECT_ID`
 - `BROWSER_USE_API_KEY`
 
-### Service Utility Inputs
+### Model-Authored Service Tool Inputs
+
+The old image-baked service CLIs are retired, but the env contract remains available for agents or user-authored tools created in persisted state.
 
 - `SEARXNG_URL`
 - `SONARR_URL`
@@ -220,7 +221,7 @@ Codex OAuth is persisted in:
 
 That file survives container replacement as long as `/home/hermes` is persisted.
 
-The default Codex primary lane depends on that persisted auth. It does not use a downstream env key.
+The forced `#foodstamps` Codex channel depends on that persisted auth. It does not use a downstream env key.
 
 ## No In-Container Auth Layer
 
@@ -230,11 +231,8 @@ The dashboard and ttyd do not add basic auth. Protect the container at the proxy
 
 These commands are expected to exist in the image without downstream installation:
 
-- all repo `ghostship-*` CLIs
 - `blogwatcher-cli`
 - `bw`
-- `bw-unlock`
-- `bw-lock`
 - `codex`
 - `gemini`
 - `agent-browser`

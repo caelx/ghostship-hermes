@@ -1,7 +1,7 @@
-{ python311Packages, ghostshipCliContract }:
+{ python311Packages }:
 python311Packages.buildPythonApplication {
   pname = "ghostship-hermes-router";
-  version = "0.4.0";
+  version = "0.5.0";
   pyproject = true;
   src = ./.;
 
@@ -10,7 +10,6 @@ python311Packages.buildPythonApplication {
   ];
 
   dependencies = with python311Packages; [
-    ghostshipCliContract
     fastapi
     httpx
     uvicorn

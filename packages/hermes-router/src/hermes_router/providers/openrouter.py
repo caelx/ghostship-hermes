@@ -6,8 +6,6 @@ from typing import Any
 
 import httpx
 
-from ghostship_cli_contract import BaseHttpClient, HttpStatusError, TimeoutError, TransportError
-
 from .base import (
     NormalizedProviderError,
     ProviderChatResult,
@@ -16,6 +14,7 @@ from .base import (
     ProviderChatStreamState,
     ProviderModel,
 )
+from ..http_client import BaseHttpClient, HttpStatusError, TimeoutError, TransportError
 
 
 def _is_zeroish(value: Any) -> bool:
