@@ -156,6 +156,12 @@ class StateStore:
     def get_refresh_metric_rows(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
+    def count_provider_requests_since(self, provider_name: str, since: float) -> int:
+        raise NotImplementedError
+
+    def get_route_window_stats(self, windows: dict[str, float]) -> dict[str, Any]:
+        raise NotImplementedError
+
     def snapshot(self) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -1501,6 +1507,36 @@ class SqliteStateStore(StateStore):
                 """
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def count_provider_requests_since(self, provider_name: str, since: float) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM route_events WHERE provider_name = ? AND created_at >= ?",
+                (provider_name, since),
+            ).fetchone()
+        return int(row["count"] if row else 0)
+
+    def get_route_window_stats(self, windows: dict[str, float]) -> dict[str, Any]:
+        now = time.time()
+        stats: dict[str, Any] = {}
+        for label, seconds in windows.items():
+            since = now - float(seconds)
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT provider_name, backend_model, success, category,
+                           COUNT(*) AS attempts,
+                           AVG(latency_ms) AS latency_avg_ms,
+                           AVG(first_text_latency_ms) AS first_text_latency_avg_ms
+                    FROM route_events
+                    WHERE created_at >= ?
+                    GROUP BY provider_name, backend_model, success, category
+                    ORDER BY provider_name, backend_model
+                    """,
+                    (since,),
+                ).fetchall()
+            stats[label] = [dict(row) for row in rows]
+        return stats
 
     def snapshot(self) -> dict[str, Any]:
         with self._connect() as connection:

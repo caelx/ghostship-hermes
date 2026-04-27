@@ -6,7 +6,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from hermes_router.app import create_app
-from hermes_router.config import AliasConfig, ProviderSelectionPolicy, RouterConfig
+from hermes_router.config import AliasConfig, ProviderSeedPolicy, RouterConfig
 from hermes_router.models import ChatCompletionRequest
 from hermes_router.providers.base import (
     NormalizedProviderError,
@@ -16,6 +16,7 @@ from hermes_router.providers.base import (
     ProviderChatStreamState,
     ProviderModel,
 )
+from hermes_router.providers.opencode_zen import OpencodeZenProvider
 from hermes_router.service import RouterService
 from hermes_router.state import SqliteStateStore
 
@@ -39,10 +40,6 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         db_path=state_dir / "router.db",
         debug_event_limit=50,
         rolling_window_seconds=3600.0,
-        ranking_enabled=False,
-        ranking_interval_seconds=900,
-        ranking_worker_model=None,
-        ranking_shortlist_size=5,
         provider_cooldown_seconds=300,
         provider_failure_threshold=3.0,
         provider_rate_limit_threshold=2.5,
@@ -64,34 +61,77 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         openrouter_title=None,
         opencode_api_key=None,
         opencode_base_url="https://opencode.example/v1",
+        opencode_go_api_key=None,
+        opencode_go_base_url="https://opencode-go.example/v1",
+        zenmux_api_key=None,
+        zenmux_base_url="https://zenmux.example/v1",
+        electron_hub_api_key=None,
+        electron_hub_base_url="https://electron-hub.example/v1",
         nvidia_build_api_key=None,
         nvidia_build_base_url="https://integrate.api.nvidia.com/v1",
-        assisted_bucket_model=None,
-        assisted_bucket_batch_size=20,
         disabled_providers=(),
         disabled_models=(),
         provider_weight_overrides={},
         model_weight_overrides={},
-        alias_pin_overrides={"agentic": ()},
-        provider_priority=("nvidia-build", "opencode-zen", "openrouter"),
-        provider_reserve_limit=5,
-        provider_active_candidate_limit=3,
-        provider_selection_policies=(
-            ProviderSelectionPolicy(
+        alias_pin_overrides={"deepseek-v4-pro": (), "minimax-m2.7": ()},
+        provider_priority=("nvidia-build", "opencode-zen", "zenmux", "electron-hub", "openrouter", "opencode-go"),
+        provider_rpm_limits={
+            "nvidia-build": 30,
+            "opencode-zen": 30,
+            "zenmux": 10,
+            "electron-hub": 5,
+            "openrouter": 20,
+        },
+        provider_seed_policies=(
+            ProviderSeedPolicy(
                 provider_name="nvidia-build",
-                ranked_models=("nvidia-1", "nvidia-2", "nvidia-3", "nvidia-4", "nvidia-5"),
+                seeded_models=("nvidia-1", "nvidia-2", "nvidia-3", "nvidia-4", "nvidia-5"),
                 unused_models=("nvidia-bad",),
             ),
-            ProviderSelectionPolicy(
+            ProviderSeedPolicy(
                 provider_name="opencode-zen",
-                ranked_models=("zen-1", "zen-2", "zen-3", "zen-4", "zen-5"),
+                seeded_models=("zen-1", "zen-2", "zen-3", "zen-4", "zen-5"),
             ),
-            ProviderSelectionPolicy(
+            ProviderSeedPolicy(
+                provider_name="zenmux",
+                seeded_models=("zenmux-deepseek", "zenmux-minimax"),
+            ),
+            ProviderSeedPolicy(
+                provider_name="electron-hub",
+                seeded_models=("electron-deepseek", "electron-minimax"),
+            ),
+            ProviderSeedPolicy(
                 provider_name="openrouter",
-                ranked_models=("or-1", "or-2", "or-3", "or-4", "or-5"),
+                seeded_models=("or-1", "or-2", "or-3", "or-4", "or-5"),
+            ),
+            ProviderSeedPolicy(
+                provider_name="opencode-go",
+                seeded_models=("deepseek-v4-pro", "minimax-m2.7"),
             ),
         ),
-        aliases=(AliasConfig(name="agentic", description="agent", preferred_models=()),),
+        aliases=(
+            AliasConfig(
+                name="deepseek-v4-pro",
+                description="deepseek",
+                preferred_models=(
+                    "nvidia-build/nvidia-deepseek",
+                    "opencode-zen/zen-deepseek",
+                    "zenmux/zenmux-deepseek",
+                    "electron-hub/electron-deepseek",
+                    "opencode-go/deepseek-v4-pro",
+                ),
+            ),
+            AliasConfig(
+                name="minimax-m2.7",
+                description="minimax",
+                preferred_models=(
+                    "opencode-zen/zen-minimax",
+                    "zenmux/zenmux-minimax",
+                    "electron-hub/electron-minimax",
+                    "opencode-go/minimax-m2.7",
+                ),
+            ),
+        ),
     )
     return RouterConfig(**{**base.__dict__, **overrides})
 
@@ -152,6 +192,16 @@ def free_model(model_id: str, provider: str, *, tags: tuple[str, ...] = ("agenti
     )
 
 
+def paid_model(model_id: str, provider: str, *, tags: tuple[str, ...] = ("agentic",), modalities: tuple[str, ...] = ("text",)) -> ProviderModel:
+    return ProviderModel(
+        id=model_id,
+        provider=provider,
+        is_free=False,
+        tags=tags,
+        metadata={"supported_parameters": ["tools", "tool_choice"], "input_modalities": ["text"], "output_modalities": list(modalities)},
+    )
+
+
 def make_service(tmp_path: Path, *, providers: dict[str, FakeProvider], config: RouterConfig | None = None) -> RouterService:
     resolved = config or make_config(tmp_path)
     store = SqliteStateStore(resolved.db_path)
@@ -160,13 +210,57 @@ def make_service(tmp_path: Path, *, providers: dict[str, FakeProvider], config: 
     return service
 
 
-def test_models_endpoint_exposes_only_agentic_alias(tmp_path: Path) -> None:
+def test_config_default_rpms_include_zenmux_and_electron_hub(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
+    config = RouterConfig.from_env()
+
+    assert config.provider_rpm_limits["zenmux"] == 10
+    assert config.provider_rpm_limits["electron-hub"] == 5
+    assert config.provider_rpm_limits["openrouter"] == 20
+    assert config.provider_rpm_limits["nvidia-build"] == 30
+    assert config.provider_rpm_limits["opencode-zen"] == 30
+
+
+def test_config_provider_rpms_are_overrideable(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("GHOSTSHIP_ROUTER_PROVIDER_RPM_ZENMUX", "12")
+    monkeypatch.setenv("GHOSTSHIP_ROUTER_PROVIDER_RPM_ELECTRON_HUB", "7")
+    config = RouterConfig.from_env()
+
+    assert config.provider_rpm_limits["zenmux"] == 12
+    assert config.provider_rpm_limits["electron-hub"] == 7
+
+
+def test_zenmux_and_electron_hub_register_when_keys_are_configured(tmp_path: Path) -> None:
+    config = make_config(
+        tmp_path,
+        zenmux_api_key="zenmux-key",
+        electron_hub_api_key="electron-key",
+    )
+    service = RouterService(config)
+
+    assert isinstance(service.providers["zenmux"], OpencodeZenProvider)
+    assert isinstance(service.providers["electron-hub"], OpencodeZenProvider)
+    assert service.providers["zenmux"].name == "zenmux"
+    assert service.providers["electron-hub"].name == "electron-hub"
+
+
+def test_models_endpoint_exposes_only_opencode_go_ids_with_free_equivalents(tmp_path: Path) -> None:
+    config = make_config(
+        tmp_path,
+        aliases=(
+            *make_config(tmp_path).aliases,
+            AliasConfig(name="unmatched-go-model", description="hidden", preferred_models=("opencode-go/unmatched-go-model",)),
+        ),
+    )
     service = make_service(
         tmp_path,
+        config=config,
         providers={
-            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-1", "nvidia-build")]),
-            "opencode-zen": FakeProvider("opencode-zen", models=[]),
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-minimax", "opencode-zen")]),
             "openrouter": FakeProvider("openrouter", models=[]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go"), paid_model("minimax-m2.7", "opencode-go"), paid_model("unmatched-go-model", "opencode-go")]),
         },
     )
     client = TestClient(create_app(service=service, config=service.config))
@@ -175,222 +269,201 @@ def test_models_endpoint_exposes_only_agentic_alias(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert [item["id"] for item in payload["data"]] == ["agentic"]
+    assert [item["id"] for item in payload["data"]] == ["deepseek-v4-pro", "minimax-m2.7"]
+    deepseek = payload["data"][0]["metadata"]
+    assert deepseek["free_provider_count"] == 2
+    assert deepseek["free_providers"] == ["nvidia-build", "opencode-zen"]
+    assert deepseek["free_provider_state"]["nvidia-build"]["rpm_limit"] == 30
 
 
-def test_agentic_routes_take_top_three_currently_eligible_from_provider_top_five(tmp_path: Path) -> None:
+def test_deepseek_routes_free_equivalents_before_opencode_go_fallback(tmp_path: Path) -> None:
     service = make_service(
         tmp_path,
         providers={
-            "nvidia-build": FakeProvider(
-                "nvidia-build",
-                models=[free_model(f"nvidia-{index}", "nvidia-build") for index in range(1, 6)] + [free_model("nvidia-bad", "nvidia-build")],
-            ),
-            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-1", "opencode-zen")]),
-            "openrouter": FakeProvider("openrouter", models=[free_model("or-1", "openrouter")]),
-        },
-    )
-    service.state_store.apply_failure("nvidia-build", "nvidia-1", category="server_error", retryable=True, cooldown_model=True)
-
-    preview = service.preview_routes("agentic")
-
-    assert [item["backend_model"] for item in preview] == ["nvidia-2", "nvidia-3", "nvidia-4"]
-
-
-def test_retryable_model_failures_do_not_cross_provider_boundary(tmp_path: Path) -> None:
-    nvidia = FakeProvider(
-        "nvidia-build",
-        models=[free_model("nvidia-1", "nvidia-build"), free_model("nvidia-2", "nvidia-build"), free_model("nvidia-3", "nvidia-build")],
-        failures={
-            "nvidia-1": [NormalizedProviderError("server_error", "boom", provider="nvidia-build", backend_model="nvidia-1", retryable=True)],
-            "nvidia-2": [NormalizedProviderError("server_error", "boom", provider="nvidia-build", backend_model="nvidia-2", retryable=True)],
-            "nvidia-3": [NormalizedProviderError("server_error", "boom", provider="nvidia-build", backend_model="nvidia-3", retryable=True)],
-        },
-    )
-    zen = FakeProvider("opencode-zen", models=[free_model("zen-1", "opencode-zen")])
-    service = make_service(
-        tmp_path,
-        providers={
-            "nvidia-build": nvidia,
-            "opencode-zen": zen,
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-deepseek", "opencode-zen")]),
             "openrouter": FakeProvider("openrouter", models=[]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
         },
     )
 
-    try:
-        service.chat_completions(ChatCompletionRequest.model_validate({"model": "agentic", "messages": [{"role": "user", "content": "hello"}]}))
-    except Exception as exc:
-        detail = getattr(exc, "detail", {})
-        assert "All route candidates failed" in str(detail.get("message"))
-    else:
-        raise AssertionError("expected routing failure")
+    preview = service.preview_routes("deepseek-v4-pro")
 
-    assert nvidia.calls == ["nvidia-1", "nvidia-2", "nvidia-3"]
-    assert zen.calls == []
+    assert [(item["provider_name"], item["backend_model"]) for item in preview] == [
+        ("nvidia-build", "nvidia-deepseek"),
+        ("opencode-zen", "zen-deepseek"),
+        ("opencode-go", "deepseek-v4-pro"),
+    ]
+    assert preview[-1]["is_free"] is False
+    assert preview[-1]["is_fallback"] is True
 
 
-def test_quota_exhaustion_can_fail_over_to_next_provider(tmp_path: Path) -> None:
+def test_seeded_zenmux_and_electron_hub_are_free_candidates(tmp_path: Path) -> None:
+    service = make_service(
+        tmp_path,
+        providers={
+            "zenmux": FakeProvider("zenmux", models=[free_model("zenmux-deepseek", "zenmux")]),
+            "electron-hub": FakeProvider("electron-hub", models=[free_model("electron-deepseek", "electron-hub")]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
+        },
+    )
+
+    preview = service.preview_routes("deepseek-v4-pro")
+
+    assert [(item["provider_name"], item["backend_model"]) for item in preview] == [
+        ("zenmux", "zenmux-deepseek"),
+        ("electron-hub", "electron-deepseek"),
+        ("opencode-go", "deepseek-v4-pro"),
+    ]
+    assert preview[0]["is_free"] is True
+    assert preview[1]["is_free"] is True
+
+
+def test_round_robin_distributes_across_eligible_free_equivalents(tmp_path: Path) -> None:
+    providers = {
+        "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
+        "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-deepseek", "opencode-zen")]),
+        "zenmux": FakeProvider("zenmux", models=[free_model("zenmux-deepseek", "zenmux")]),
+        "electron-hub": FakeProvider("electron-hub", models=[free_model("electron-deepseek", "electron-hub")]),
+        "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
+    }
+    service = make_service(tmp_path, providers=providers)
+
+    used: list[str] = []
+    for _ in range(4):
+        _, headers = service.chat_completions(
+            ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
+        )
+        used.append(headers["X-Ghostship-Router-Backend-Provider"])
+
+    assert used == ["nvidia-build", "opencode-zen", "zenmux", "electron-hub"]
+    assert providers["opencode-go"].calls == []
+
+
+def test_rpm_exhaustion_skips_free_provider_until_window_clears(tmp_path: Path) -> None:
+    config = make_config(
+        tmp_path,
+        provider_rpm_limits={"electron-hub": 1},
+        provider_priority=("electron-hub", "opencode-go"),
+        aliases=(
+            AliasConfig(
+                name="deepseek-v4-pro",
+                description="deepseek",
+                preferred_models=("electron-hub/electron-deepseek", "opencode-go/deepseek-v4-pro"),
+            ),
+        ),
+    )
+    electron = FakeProvider("electron-hub", models=[free_model("electron-deepseek", "electron-hub")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, config=config, providers={"electron-hub": electron, "opencode-go": go})
+
+    _, first_headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
+    )
+    _, second_headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello again"}]})
+    )
+
+    assert first_headers["X-Ghostship-Router-Backend-Provider"] == "electron-hub"
+    assert second_headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
+    assert electron.calls == ["electron-deepseek"]
+    assert go.calls == ["deepseek-v4-pro"]
+
+
+def test_quota_exhaustion_falls_back_to_same_model_opencode_go(tmp_path: Path) -> None:
     nvidia = FakeProvider(
         "nvidia-build",
-        models=[free_model("nvidia-1", "nvidia-build")],
+        models=[free_model("nvidia-deepseek", "nvidia-build")],
         failures={
-            "nvidia-1": [
+            "nvidia-deepseek": [
                 NormalizedProviderError(
                     "quota_exhausted",
                     "quota done",
                     provider="nvidia-build",
-                    backend_model="nvidia-1",
+                    backend_model="nvidia-deepseek",
                     retryable=False,
                     details={"hard_exhaustion": True},
                 )
             ]
         },
     )
-    zen = FakeProvider("opencode-zen", models=[free_model("zen-1", "opencode-zen")])
+    zen = FakeProvider(
+        "opencode-zen",
+        models=[free_model("zen-deepseek", "opencode-zen")],
+        failures={
+            "zen-deepseek": [
+                NormalizedProviderError(
+                    "rate_limited",
+                    "rate limited",
+                    provider="opencode-zen",
+                    backend_model="zen-deepseek",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
     service = make_service(
         tmp_path,
         providers={
             "nvidia-build": nvidia,
             "opencode-zen": zen,
             "openrouter": FakeProvider("openrouter", models=[]),
+            "opencode-go": go,
         },
     )
 
     payload, headers = service.chat_completions(
-        ChatCompletionRequest.model_validate({"model": "agentic", "messages": [{"role": "user", "content": "hello"}]})
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
     )
 
-    assert payload["choices"][0]["message"]["content"] == "zen-1"
-    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
+    assert payload["choices"][0]["message"]["content"] == "deepseek-v4-pro"
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
+    assert nvidia.calls == ["nvidia-deepseek"]
+    assert zen.calls == ["zen-deepseek"]
+    assert go.calls == ["deepseek-v4-pro"]
 
 
-def test_session_stickiness_prefers_previous_provider_after_recovery(tmp_path: Path) -> None:
-    nvidia = FakeProvider("nvidia-build", models=[free_model("nvidia-1", "nvidia-build")])
-    zen = FakeProvider("opencode-zen", models=[free_model("zen-1", "opencode-zen")])
-    config = make_config(tmp_path)
-    store = SqliteStateStore(config.db_path)
-    service = RouterService(
-        config,
-        providers={"nvidia-build": nvidia, "opencode-zen": zen, "openrouter": FakeProvider("openrouter", models=[])},
-        state_store=store,
-    )
-    service.refresh_inventory(reason="test")
-    service.state_store.upsert_provider_override("nvidia-build", enabled=False)
-
-    _, first_headers = service.chat_completions(
-        ChatCompletionRequest.model_validate({"model": "agentic", "messages": [{"role": "user", "content": "hello"}]}),
-        session_id="session-1",
-    )
-    assert first_headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
-
-    service.state_store.upsert_provider_override("nvidia-build", enabled=True)
-    _, second_headers = service.chat_completions(
-        ChatCompletionRequest.model_validate({"model": "agentic", "messages": [{"role": "user", "content": "hello again"}]}),
-        session_id="session-1",
-    )
-    assert second_headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
-
-
-def test_debug_inventory_surfaces_unused_and_uncategorized_models(tmp_path: Path) -> None:
+def test_opencode_go_is_paid_fallback_not_free_provider(tmp_path: Path) -> None:
     service = make_service(
         tmp_path,
-        providers={
-            "nvidia-build": FakeProvider(
-                "nvidia-build",
-                models=[
-                    free_model("nvidia-1", "nvidia-build"),
-                    free_model("nvidia-bad", "nvidia-build"),
-                    free_model("nvidia-extra", "nvidia-build"),
-                ],
-            ),
-            "opencode-zen": FakeProvider("opencode-zen", models=[]),
-            "openrouter": FakeProvider("openrouter", models=[]),
-        },
-    )
-    client = TestClient(create_app(service=service, config=service.config))
-
-    unused = client.get("/debug/inventory/unused")
-    uncategorized = client.get("/debug/inventory/uncategorized")
-
-    assert unused.status_code == 200
-    assert [item["backend_model"] for item in unused.json()["providers"]["nvidia-build"]] == ["nvidia-bad"]
-    assert [item["backend_model"] for item in uncategorized.json()["providers"]["nvidia-build"]] == ["nvidia-extra"]
-
-
-def test_retired_coding_alias_is_rejected(tmp_path: Path) -> None:
-    service = make_service(
-        tmp_path,
-        providers={
-            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-1", "nvidia-build")]),
-            "opencode-zen": FakeProvider("opencode-zen", models=[]),
-            "openrouter": FakeProvider("openrouter", models=[]),
-        },
-    )
-    client = TestClient(create_app(service=service, config=service.config))
-
-    response = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
-
-    assert response.status_code == 404
-    assert "retired" in response.json()["error"]["message"]
-
-
-def test_debug_rankings_reports_non_routable_ranked_models_and_promotion(tmp_path: Path) -> None:
-    config = make_config(
-        tmp_path,
-        provider_selection_policies=(
-            ProviderSelectionPolicy(
-                provider_name="nvidia-build",
-                ranked_models=("nvidia-1", "nvidia-2", "nvidia-3", "nvidia-4", "nvidia-5"),
-                unused_models=("nvidia-bad",),
-            ),
-            ProviderSelectionPolicy(
-                provider_name="opencode-zen",
-                ranked_models=("zen-1", "zen-2", "zen-3", "zen-4", "zen-5"),
-            ),
-            ProviderSelectionPolicy(
-                provider_name="openrouter",
-                ranked_models=("or-1", "or-2", "or-3", "or-4", "or-5"),
-            ),
-        ),
-    )
-    service = make_service(
-        tmp_path,
-        config=config,
         providers={
             "nvidia-build": FakeProvider("nvidia-build", models=[]),
-            "opencode-zen": FakeProvider("opencode-zen", models=[]),
-            "openrouter": FakeProvider(
-                "openrouter",
-                models=[
-                    free_model("or-1", "openrouter"),
-                    free_model("or-2", "openrouter"),
-                    ProviderModel(
-                        id="or-3",
-                        provider="openrouter",
-                        is_free=True,
-                        tags=("agentic",),
-                        metadata={
-                            "supported_parameters": ["tools", "tool_choice"],
-                            "input_modalities": ["text", "image"],
-                            "output_modalities": ["text"],
-                        },
-                    ),
-                    free_model("or-4", "openrouter"),
-                    free_model("or-5", "openrouter"),
-                ],
-            ),
+            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-minimax", "opencode-zen")]),
+            "openrouter": FakeProvider("openrouter", models=[]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("minimax-m2.7", "opencode-go")]),
         },
     )
+    client = TestClient(create_app(service=service, config=service.config))
 
-    payload = service.debug_rankings("agentic")
-    openrouter = next(item for item in payload["providers"] if item["provider_name"] == "openrouter")
-    ranked = {item["backend_model"]: item for item in openrouter["ranked"]}
+    payload = client.get("/v1/models").json()
+    minimax = next(item for item in payload["data"] if item["id"] == "minimax-m2.7")
 
-    assert [item["backend_model"] for item in openrouter["active_candidates"]] == ["or-1", "or-2", "or-4"]
-    assert ranked["or-1"]["score"]["reserve_bias"] > ranked["or-2"]["score"]["reserve_bias"]
-    assert ranked["or-3"]["routable"] is False
-    assert ranked["or-3"]["excluded_reason"] == "multimodal_input"
-    assert ranked["or-4"]["active"] is True
+    assert minimax["metadata"]["free_provider_count"] == 1
+    assert minimax["metadata"]["free_providers"] == ["opencode-zen"]
+    assert minimax["metadata"]["candidates"][-1]["provider_name"] == "opencode-go"
+    assert minimax["metadata"]["candidates"][-1]["is_free"] is False
+
+
+def test_retired_aliases_are_rejected(tmp_path: Path) -> None:
+    service = make_service(
+        tmp_path,
+        providers={
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[]),
+            "openrouter": FakeProvider("openrouter", models=[]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
+        },
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    coding = client.post("/v1/chat/completions", json={"model": "coding", "messages": [{"role": "user", "content": "hello"}]})
+    agentic = client.post("/v1/chat/completions", json={"model": "agentic", "messages": [{"role": "user", "content": "hello"}]})
+
+    assert coding.status_code == 404
+    assert agentic.status_code == 404
+    assert "retired" in coding.json()["error"]["message"]
+    assert "retired" in agentic.json()["error"]["message"]
 
 
 def test_debug_summary_reports_provider_state_and_candidate_order(tmp_path: Path) -> None:
@@ -399,9 +472,10 @@ def test_debug_summary_reports_provider_state_and_candidate_order(tmp_path: Path
         tmp_path,
         config=config,
         providers={
-            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-1", "nvidia-build")]),
-            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-1", "opencode-zen")]),
-            "openrouter": FakeProvider("openrouter", models=[free_model("or-1", "openrouter")]),
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-deepseek", "opencode-zen")]),
+            "openrouter": FakeProvider("openrouter", models=[]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
         },
     )
     client = TestClient(create_app(service=service, config=service.config))
@@ -411,9 +485,10 @@ def test_debug_summary_reports_provider_state_and_candidate_order(tmp_path: Path
     assert response.status_code == 200
     payload = response.json()
     assert payload["router"]["auth_required"] is True
-    assert payload["router"]["provider_priority"] == ["nvidia-build", "opencode-zen", "openrouter"]
-    assert payload["aliases"]["agentic"]["selected_provider"] == "nvidia-build"
-    assert payload["providers"][0]["inventory_counts"]["ranked"] == 1
+    assert payload["router"]["provider_priority"] == ["nvidia-build", "opencode-zen", "openrouter", "opencode-go"]
+    assert "rolling_route_stats" in payload["router"]
+    assert payload["providers"][0]["rpm"]["rpm_limit"] == 30
+    assert payload["aliases"]["deepseek-v4-pro"]["selected_provider"] == "nvidia-build"
 
 
 def test_configured_api_key_requires_authorization(tmp_path: Path) -> None:
@@ -422,9 +497,10 @@ def test_configured_api_key_requires_authorization(tmp_path: Path) -> None:
         tmp_path,
         config=config,
         providers={
-            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-1", "nvidia-build")]),
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
             "opencode-zen": FakeProvider("opencode-zen", models=[]),
             "openrouter": FakeProvider("openrouter", models=[]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
         },
     )
     client = TestClient(create_app(service=service, config=service.config))

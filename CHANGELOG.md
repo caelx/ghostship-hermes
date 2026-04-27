@@ -4,8 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Breaking: made Ghostship Router the managed Hermes primary provider with `deepseek-v4-pro` default, `minimax-m2.7` fallback, high reasoning, and 500 max turns; added `opencode-go` as the router paid fallback catalog, kept `opencode-zen` as a free provider, added ZenMux and Electron Hub free-provider lanes, exposed only OpenCode Go model ids with explicit free equivalents, replaced the old alias/family/top-five selection path with RPM-aware free-provider round robin, and changed `#foodstamps` to the threaded `GHOSTSHIP_CODEX_CHANNEL` for `openai-codex/gpt-5.5`.
 - Changed managed Discord to thread by default, made `session_reset` daily at 04:00, added 05:00 closed-thread session retirement, documented the `#assistant` / `#foodstamps` / `#webhooks` channel-name contract, and added `DISCORD_WEBHOOK_CHANNEL` as the default Discord destination for Hermes-created webhook subscriptions.
-- Breaking: changed the managed Hermes primary lane to `openai-codex/gpt-5.5`, set the managed web backend to Firecrawl, and replaced the image-managed Bitwarden Secrets Manager `bws` contract with the Password Manager CLI `bw` using persisted state under `/home/hermes/.local/state/bitwarden-cli`.
+- Set the managed web backend to Firecrawl and replaced the image-managed Bitwarden Secrets Manager `bws` contract with the Password Manager CLI `bw` using persisted state under `/home/hermes/.local/state/bitwarden-cli`.
 - Added `bw-unlock` and `bw-lock` wrappers for the image-managed Bitwarden CLI; `bw-unlock` performs API-key login plus password unlock and writes a runtime `BW_SESSION`, while `bw-lock` removes the session without logging out.
 - Fixed raw `bw` invocations to inherit `BITWARDENCLI_APPDATA_DIR`, keeping Bitwarden CLI state out of the upstream `~/.config/Bitwarden CLI` fallback path.
 - Pinned Hermes release updated to `v2026.4.23`.

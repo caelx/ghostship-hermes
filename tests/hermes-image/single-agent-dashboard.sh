@@ -184,7 +184,7 @@ run_test_container() {
     --env DISCORD_ALLOWED_USERS=test-user \
     --env DISCORD_HOME_CHANNEL=assistant-channel \
     --env DISCORD_FREE_RESPONSE_CHANNELS=foodstamps-channel \
-    --env GHOSTSHIP_ROUTER_CHANNEL=foodstamps-channel \
+    --env GHOSTSHIP_CODEX_CHANNEL=foodstamps-channel \
     --env DISCORD_WEBHOOK_CHANNEL=webhooks-channel \
     --env FIRECRAWL_API_KEY=test-firecrawl \
     --env GHOSTSHIP_ROUTER_PORT=9999 \
@@ -319,12 +319,13 @@ run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.
 smoke_note "gateway status"
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
 smoke_note "config assertions"
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.5" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: deepseek-v4-pro" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
 import yaml
 from pathlib import Path
@@ -333,7 +334,8 @@ config = yaml.safe_load(Path("/home/hermes/.hermes/config.yaml").read_text(encod
 providers = config.get("custom_providers") or []
 router = next((entry for entry in providers if entry.get("name") == "ghostship-router"), None)
 assert router is not None
-assert router.get("model") == "agentic"
+assert router.get("model") == "deepseek-v4-pro"
+assert sorted((router.get("models") or {}).keys()) == ["deepseek-v4-pro", "minimax-m2.7"]
 assert router.get("base_url") == "http://127.0.0.1:8788/v1"
 PY'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
@@ -343,8 +345,8 @@ import gateway.run
 
 source_path = Path(inspect.getsourcefile(gateway.run))
 text = source_path.read_text(encoding="utf-8")
-assert "\"model\": \"agentic\"" in text
-assert "ghostship-router (`agentic`)" in text
+assert "\"model\": \"gpt-5.5\"" in text
+assert "openai-codex (`gpt-5.5`)" in text
 PY'
 run_as_hermes "$container_name" 'sed -n "/^memory:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: holographic" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^plugins:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    db_path: \$HERMES_HOME/memory_store.db" >/dev/null'

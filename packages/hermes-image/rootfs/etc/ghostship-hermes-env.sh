@@ -4,7 +4,7 @@ ghostship_is_hermes_passthrough_key() {
   local key="${1:-}"
 
   case "$key" in
-    DISCORD_WEBHOOK_CHANNEL|GHOSTSHIP_ROUTER_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
+    DISCORD_WEBHOOK_CHANNEL|GHOSTSHIP_CODEX_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
       return 0
       ;;
   esac
@@ -47,8 +47,8 @@ ghostship_collect_hermes_env() {
     env_values["$key"]="$value"
   done < <(env -0)
 
-  if [ -z "${env_values[OPENCODE_API_KEY]+x}" ] && [ -n "${OPENCODE_GO_API_KEY:-}" ]; then
-    env_values["OPENCODE_API_KEY"]="${OPENCODE_GO_API_KEY}"
+  if [ -z "${env_values[OPENCODE_API_KEY]+x}" ] && [ -n "${OPENCODE_ZEN_API_KEY:-}" ]; then
+    env_values["OPENCODE_API_KEY"]="${OPENCODE_ZEN_API_KEY}"
   fi
 }
 

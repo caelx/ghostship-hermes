@@ -58,13 +58,17 @@ Downstream should pass only the operator-facing runtime env vars. The full list 
 The common downstream set for the default Ghostship runtime is:
 
 - `OPENCODE_GO_API_KEY`
+- `OPENCODE_ZEN_API_KEY`
+- `NVIDIA_BUILD_API_KEY`
+- `ZENMUX_API_KEY`
+- `ELECTRON_HUB_API_KEY`
 - `OPENROUTER_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
 - `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
-- `GHOSTSHIP_ROUTER_CHANNEL`
+- `GHOSTSHIP_CODEX_CHANNEL`
 - `DISCORD_WEBHOOK_CHANNEL`
 - `WEBHOOK_SECRET`
 
@@ -73,7 +77,7 @@ Discord channel contract:
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id; set it to `#assistant`.
 - `DISCORD_REACTIONS` and `DISCORD_REQUIRE_MENTION` default to `false`; `DISCORD_AUTO_THREAD` defaults to `true` inside the image.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins `#foodstamps`, including its Discord threads, to the local router `agentic` lane.
+- `GHOSTSHIP_CODEX_CHANNEL` pins `#foodstamps`, including its Discord threads, to `openai-codex/gpt-5.5`.
 - `DISCORD_FREE_RESPONSE_CHANNELS` must include the `#foodstamps` channel id.
 - `DISCORD_WEBHOOK_CHANNEL` points at `#webhooks` and is the default channel used when Hermes creates a Discord webhook subscription without an explicit `--deliver-chat-id`.
 - The managed gateway retires closed Discord thread sessions after 05:00 local Hermes time and keeps their historical SQLite transcripts.
@@ -81,6 +85,8 @@ Discord channel contract:
 Internal-only runtime auth may be auto-generated for Hermes compatibility:
 
 - `_GHOSTSHIP_ROUTER_API_KEY`
+
+Router free-provider defaults are RPM-limited before the paid OpenCode Go fallback: NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20. Override with `GHOSTSHIP_ROUTER_PROVIDER_RPM_NVIDIA_BUILD`, `GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENCODE_ZEN`, `GHOSTSHIP_ROUTER_PROVIDER_RPM_ZENMUX`, `GHOSTSHIP_ROUTER_PROVIDER_RPM_ELECTRON_HUB`, or `GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENROUTER`.
 
 Codex OAuth is not set by env var. Authenticate once inside the persisted home for the default primary lane:
 

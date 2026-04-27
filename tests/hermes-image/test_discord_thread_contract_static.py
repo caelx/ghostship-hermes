@@ -23,7 +23,7 @@ def test_managed_discord_defaults_are_threaded_and_daily() -> None:
     assert "DISCORD_WEBHOOK_CHANNEL" in module
 
 
-def test_upstream_patch_paths_keep_router_pin_through_discord_thread_parent() -> None:
+def test_upstream_patch_paths_keep_codex_pin_through_discord_thread_parent() -> None:
     for path in (
         "packages/hermes-agent-wrapped/package.nix",
         "packages/hermes-image/build/prepare_upstream_hermes.py",
@@ -33,11 +33,11 @@ def test_upstream_patch_paths_keep_router_pin_through_discord_thread_parent() ->
             'parent_chat_id = getattr(source, "chat_id_alt", None)' in text
             or 'parent_chat_id = getattr(source, \\"chat_id_alt\\", None)' in text
         )
-        assert "chat_id == router_channel or parent_chat_id == router_channel" in text
+        assert "chat_id == codex_channel or parent_chat_id == codex_channel" in text
         assert "chat_id_alt=parent_channel_id if is_thread else None" in text
         assert "chat_id_alt=_parent_id or None" in text
         assert "skip_thread = bool(channel_ids & no_thread_channels)" in text
-        assert "ghostship-router (`agentic`)" in text
+        assert "openai-codex (`gpt-5.5`)" in text
 
 
 def test_webhook_discord_delivery_defaults_to_webhook_channel() -> None:

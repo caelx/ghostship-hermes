@@ -189,18 +189,19 @@ wait_for_hermes_condition() {
 
 assert_router_inventory() {
   local target_container="$1"
-  run_in_container "$target_container" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"auxiliary\") and index(\"coding\") and index(\"agentic\") and index(\"vision\") and index(\"tts\")' >/dev/null"
+  run_in_container "$target_container" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"deepseek-v4-pro\") and index(\"minimax-m2.7\")' >/dev/null"
 }
 
 assert_model_config() {
   local target_container="$1"
-  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: openai-codex" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "default: gpt-5.5" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: custom:ghostship-router" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "default: deepseek-v4-pro" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
   run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
   run_as_hermes "$target_container" '! sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "api_key:" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
 }
@@ -212,21 +213,24 @@ assert_config_migration() {
   run_as_hermes "$target_container" 'sed -i "/^model:$/a\  base_url: http://127.0.0.1:8788/v1" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  provider: opencode-go$/  provider: openai-codex/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  model: minimax-m2.7$/  model: gpt-5.4-mini/" /home/hermes/.hermes/config.yaml'
-  run_as_hermes "$target_container" 'sed -i "/^agent:/,/^[^ ]/s/^  reasoning_effort: medium$/  reasoning_effort: high/" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -i "/^agent:/,/^[^ ]/s/^  reasoning_effort: high$/  reasoning_effort: medium/" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -i "/^agent:/,/^[^ ]/s/^  max_turns: 500$/  max_turns: 110/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: minimax-m2.7" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: gpt-5.4-mini" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 110" >/dev/null'
   run_in_container "$target_container" 'systemctl start ghostship-hermes-bootstrap.service >/dev/null'
   run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: gpt-5.5" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: deepseek-v4-pro" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
 }
 
 assert_primary_execution() {
@@ -260,7 +264,7 @@ docker run -d \
   -e OPENROUTER_TITLE \
   -e DISCORD_BOT_TOKEN=single-agent-bot-token \
   -e DISCORD_ALLOWED_USERS=single-agent-user \
-  -e GHOSTSHIP_ROUTER_CHANNEL=single-agent-channel \
+  -e GHOSTSHIP_CODEX_CHANNEL=single-agent-channel \
   -e DISCORD_HOME_CHANNEL=single-agent-home \
   -e WEBHOOK_SECRET=single-agent-webhook-secret \
   -e CHAPTARR_URL=http://chaptarr.example:8789 \
@@ -395,7 +399,7 @@ docker run -d \
   -e OPENROUTER_TITLE \
   -e DISCORD_BOT_TOKEN=single-agent-bot-token \
   -e DISCORD_ALLOWED_USERS=single-agent-user \
-  -e GHOSTSHIP_ROUTER_CHANNEL=single-agent-channel \
+  -e GHOSTSHIP_CODEX_CHANNEL=single-agent-channel \
   -e DISCORD_HOME_CHANNEL=single-agent-home \
   -e WEBHOOK_SECRET=single-agent-webhook-secret \
   -e CHAPTARR_URL=http://chaptarr.example:8789 \

@@ -52,10 +52,10 @@ The workstation docs SHALL enumerate the supported downstream-owned operator env
 - **AND** the docs show how to provide those values through Compose, `docker run`, or a persisted operator-managed env file under `/home/hermes/.hermes`
 - **AND** the docs distinguish operator-facing env from image-internal plumbing env
 - **AND** the docs identify `DISCORD_HOME_CHANNEL` as required downstream env for `#assistant` when the Discord gateway is enabled
-- **AND** the docs identify `GHOSTSHIP_ROUTER_CHANNEL` as the downstream-owned Discord channel pin env for `#foodstamps`
+- **AND** the docs identify `GHOSTSHIP_CODEX_CHANNEL` as the downstream-owned Discord channel pin env for `#foodstamps`
 - **AND** the docs identify `DISCORD_FREE_RESPONSE_CHANNELS` as including the `#foodstamps` channel id
 - **AND** the docs identify `DISCORD_WEBHOOK_CHANNEL` as the downstream-owned Discord webhook destination env for `#webhooks`
-- **AND** the docs identify `GHOSTSHIP_CODEX_CHANNEL` as removed from the supported downstream env contract
+- **AND** the docs do not require the retired router-channel env as part of the Discord channel contract
 - **AND** the docs explain that Codex auth remains persisted home state rather than a downstream env key
 
 ### Requirement: Managed Discord defaults use threaded daily sessions

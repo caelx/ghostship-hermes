@@ -27,6 +27,10 @@ def _first_env(*names: str, default: str | None = None) -> str | None:
     return default
 
 
+def _env_token(value: str) -> str:
+    return "".join(char if char.isalnum() else "_" for char in value.upper())
+
+
 def _parse_bool_env(name: str, *, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None:
@@ -81,9 +85,9 @@ class AliasConfig:
 
 
 @dataclass(frozen=True)
-class ProviderSelectionPolicy:
+class ProviderSeedPolicy:
     provider_name: str
-    ranked_models: tuple[str, ...]
+    seeded_models: tuple[str, ...]
     unused_models: tuple[str, ...] = ()
     daily_reset_hours: int = 24
 
@@ -106,10 +110,6 @@ class RouterConfig:
     db_path: Path
     debug_event_limit: int
     rolling_window_seconds: float
-    ranking_enabled: bool
-    ranking_interval_seconds: int
-    ranking_worker_model: str | None
-    ranking_shortlist_size: int
     provider_cooldown_seconds: int
     provider_failure_threshold: float
     provider_rate_limit_threshold: float
@@ -131,19 +131,22 @@ class RouterConfig:
     openrouter_title: str | None
     opencode_api_key: str | None
     opencode_base_url: str
+    opencode_go_api_key: str | None
+    opencode_go_base_url: str
+    zenmux_api_key: str | None
+    zenmux_base_url: str
+    electron_hub_api_key: str | None
+    electron_hub_base_url: str
     nvidia_build_api_key: str | None
     nvidia_build_base_url: str
-    assisted_bucket_model: str | None
-    assisted_bucket_batch_size: int
     disabled_providers: tuple[str, ...]
     disabled_models: tuple[str, ...]
     provider_weight_overrides: dict[str, float]
     model_weight_overrides: dict[str, float]
     alias_pin_overrides: dict[str, tuple[str, ...]]
     provider_priority: tuple[str, ...]
-    provider_reserve_limit: int
-    provider_active_candidate_limit: int
-    provider_selection_policies: tuple[ProviderSelectionPolicy, ...]
+    provider_rpm_limits: dict[str, int]
+    provider_seed_policies: tuple[ProviderSeedPolicy, ...]
     aliases: tuple[AliasConfig, ...]
 
     @classmethod
@@ -167,10 +170,6 @@ class RouterConfig:
             db_path=db_path,
             debug_event_limit=int(os.environ.get("GHOSTSHIP_ROUTER_DEBUG_EVENT_LIMIT", "50")),
             rolling_window_seconds=_parse_float_env("GHOSTSHIP_ROUTER_ROLLING_WINDOW_SECONDS", default=3600.0),
-            ranking_enabled=_parse_bool_env("GHOSTSHIP_ROUTER_RANKING_ENABLED", default=False),
-            ranking_interval_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_RANKING_INTERVAL", "900")),
-            ranking_worker_model=os.environ.get("GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL"),
-            ranking_shortlist_size=int(os.environ.get("GHOSTSHIP_ROUTER_RANKING_SHORTLIST_SIZE", "5")),
             provider_cooldown_seconds=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_COOLDOWN_SECONDS", "300")),
             provider_failure_threshold=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_FAILURE_THRESHOLD", default=3.0),
             provider_rate_limit_threshold=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_RATE_LIMIT_THRESHOLD", default=2.5),
@@ -205,31 +204,43 @@ class RouterConfig:
             openrouter_base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             openrouter_http_referer=os.environ.get("OPENROUTER_HTTP_REFERER"),
             openrouter_title=os.environ.get("OPENROUTER_TITLE"),
-            opencode_api_key=_first_env("OPENCODE_GO_API_KEY", "OPENCODE_API_KEY"),
-            opencode_base_url=os.environ.get("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1"),
+            opencode_api_key=_first_env("OPENCODE_ZEN_API_KEY", "OPENCODE_API_KEY"),
+            opencode_base_url=_first_env("OPENCODE_ZEN_BASE_URL", "OPENCODE_BASE_URL", default="https://opencode.ai/zen/v1") or "https://opencode.ai/zen/v1",
+            opencode_go_api_key=os.environ.get("OPENCODE_GO_API_KEY"),
+            opencode_go_base_url=os.environ.get("OPENCODE_GO_BASE_URL", "https://opencode.ai/zen/go/v1"),
+            zenmux_api_key=os.environ.get("ZENMUX_API_KEY"),
+            zenmux_base_url=os.environ.get("ZENMUX_BASE_URL", "https://zenmux.ai/api/v1"),
+            electron_hub_api_key=os.environ.get("ELECTRON_HUB_API_KEY"),
+            electron_hub_base_url=os.environ.get("ELECTRON_HUB_BASE_URL", "https://api.electronhub.ai/v1"),
             nvidia_build_api_key=_first_env("NVIDIA_BUILD_API_KEY", "NVIDIA_API_KEY"),
             nvidia_build_base_url=os.environ.get("NVIDIA_BUILD_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-            assisted_bucket_model=os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"),
-            assisted_bucket_batch_size=int(os.environ.get("GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE", "20")),
             disabled_providers=_parse_csv_env("GHOSTSHIP_ROUTER_DISABLED_PROVIDERS"),
             disabled_models=_parse_csv_env("GHOSTSHIP_ROUTER_DISABLED_MODELS"),
             provider_weight_overrides=_parse_assignment_env("GHOSTSHIP_ROUTER_PROVIDER_WEIGHT_OVERRIDES", cast=float),
             model_weight_overrides=_parse_assignment_env("GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES", cast=float),
             alias_pin_overrides={
-                alias: _parse_csv_env(f"GHOSTSHIP_ROUTER_ALIAS_PIN_{alias.upper()}")
-                for alias in ("agentic",)
+                alias: _parse_csv_env(f"GHOSTSHIP_ROUTER_ALIAS_PIN_{_env_token(alias)}")
+                for alias in ("deepseek-v4-pro", "minimax-m2.7")
             },
             provider_priority=(
                 "nvidia-build",
                 "opencode-zen",
+                "zenmux",
+                "electron-hub",
                 "openrouter",
+                "opencode-go",
             ),
-            provider_reserve_limit=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_RESERVE_LIMIT", "5")),
-            provider_active_candidate_limit=int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_ACTIVE_CANDIDATE_LIMIT", "3")),
-            provider_selection_policies=(
-                ProviderSelectionPolicy(
+            provider_rpm_limits={
+                "nvidia-build": int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_RPM_NVIDIA_BUILD", "30")),
+                "opencode-zen": int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENCODE_ZEN", "30")),
+                "zenmux": int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_RPM_ZENMUX", "10")),
+                "electron-hub": int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_RPM_ELECTRON_HUB", "5")),
+                "openrouter": int(os.environ.get("GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENROUTER", "20")),
+            },
+            provider_seed_policies=(
+                ProviderSeedPolicy(
                     provider_name="nvidia-build",
-                    ranked_models=(
+                    seeded_models=(
                         "minimaxai/minimax-m2.7",
                         "qwen/qwen3-coder-480b-a35b-instruct",
                         "moonshotai/kimi-k2-thinking",
@@ -238,50 +249,78 @@ class RouterConfig:
                     ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_NVIDIA_BUILD_UNUSED_MODELS"),
                 ),
-                ProviderSelectionPolicy(
+                ProviderSeedPolicy(
                     provider_name="opencode-zen",
-                    ranked_models=(
+                    seeded_models=(
+                        "deepseek-v4-pro",
+                        "minimax-m2.7",
                         "big-pickle",
                         "minimax-m2.5-free",
                         "trinity-large-preview-free",
-                        "nemotron-3-super-free",
-                        "gpt-5-nano",
                     ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_OPENCODE_ZEN_UNUSED_MODELS"),
                 ),
-                ProviderSelectionPolicy(
+                ProviderSeedPolicy(
                     provider_name="openrouter",
-                    ranked_models=(
+                    seeded_models=(
+                        "deepseek/deepseek-v4-pro:free",
+                        "minimax/minimax-m2.7:free",
                         "nvidia/nemotron-3-super-120b-a12b:free",
                         "minimax/minimax-m2.5:free",
                         "arcee-ai/trinity-large-preview:free",
-                        "google/gemma-4-31b-it:free",
-                        "qwen/qwen3-coder:free",
                     ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_OPENROUTER_UNUSED_MODELS"),
+                ),
+                ProviderSeedPolicy(
+                    provider_name="zenmux",
+                    seeded_models=(
+                        "deepseek-v4-pro",
+                        "minimax-m2.7",
+                    ),
+                    unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_ZENMUX_UNUSED_MODELS"),
+                ),
+                ProviderSeedPolicy(
+                    provider_name="electron-hub",
+                    seeded_models=(
+                        "deepseek-v4-pro",
+                        "minimax-m2.7",
+                    ),
+                    unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_ELECTRON_HUB_UNUSED_MODELS"),
+                ),
+                ProviderSeedPolicy(
+                    provider_name="opencode-go",
+                    seeded_models=(
+                        "deepseek-v4-pro",
+                        "minimax-m2.7",
+                    ),
+                    unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_OPENCODE_GO_UNUSED_MODELS"),
                 ),
             ),
             aliases=(
                 AliasConfig(
-                    name="agentic",
-                    description="Tool-using agent workflows and orchestration tasks.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_AGENTIC_MODELS")
+                    name="deepseek-v4-pro",
+                    description="DeepSeek V4 Pro through free equivalents first, then OpenCode Go.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_DEEPSEEK_V4_PRO_MODELS")
+                    or (
+                        "nvidia-build/deepseek-ai/deepseek-v4-pro",
+                        "opencode-zen/deepseek-v4-pro",
+                        "zenmux/deepseek-v4-pro",
+                        "electron-hub/deepseek-v4-pro",
+                        "openrouter/deepseek/deepseek-v4-pro:free",
+                        "opencode-go/deepseek-v4-pro",
+                    ),
+                ),
+                AliasConfig(
+                    name="minimax-m2.7",
+                    description="MiniMax M2.7 through free equivalents first, then OpenCode Go.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_MINIMAX_M2_7_MODELS")
                     or (
                         "nvidia-build/minimaxai/minimax-m2.7",
-                        "nvidia-build/qwen/qwen3-coder-480b-a35b-instruct",
-                        "nvidia-build/moonshotai/kimi-k2-thinking",
-                        "nvidia-build/deepseek-ai/deepseek-v3.2",
-                        "nvidia-build/z-ai/glm-4.7",
-                        "opencode/big-pickle",
-                        "opencode/minimax-m2.5-free",
-                        "opencode/trinity-large-preview-free",
-                        "opencode/nemotron-3-super-free",
-                        "opencode/gpt-5-nano",
-                        "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-                        "openrouter/minimax/minimax-m2.5:free",
-                        "openrouter/arcee-ai/trinity-large-preview:free",
-                        "openrouter/google/gemma-4-31b-it:free",
-                        "openrouter/qwen/qwen3-coder:free",
+                        "opencode-zen/minimax-m2.7",
+                        "zenmux/minimax-m2.7",
+                        "electron-hub/minimax-m2.7",
+                        "openrouter/minimax/minimax-m2.7:free",
+                        "opencode-go/minimax-m2.7",
                     ),
                 ),
             ),
@@ -290,5 +329,5 @@ class RouterConfig:
     def alias_map(self) -> dict[str, AliasConfig]:
         return {alias.name: alias for alias in self.aliases}
 
-    def provider_policy_map(self) -> dict[str, ProviderSelectionPolicy]:
-        return {policy.provider_name: policy for policy in self.provider_selection_policies}
+    def provider_seed_map(self) -> dict[str, ProviderSeedPolicy]:
+        return {policy.provider_name: policy for policy in self.provider_seed_policies}

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import threading
 import time
 import uuid
@@ -20,127 +19,6 @@ from .providers.openrouter import OpenRouterProvider
 from .state import RouteEvent, SqliteStateStore, StateStore
 
 logger = logging.getLogger("hermes_router")
-
-_ALIASES = ("agentic",)
-
-_ALIAS_HINTS: dict[str, tuple[str, ...]] = {
-    "auxiliary": ("mini", "small", "flash", "flash-lite", "nano", "haiku"),
-    "coding": ("coder", "coding", "code", "codex", "qwen", "deepseek", "devstral", "reason", "thinking", "opus", "sonnet", "large", "70b", "72b", "swe"),
-    "agentic": ("agent", "tool", "operator", "orchestr", "swe", "reason", "thinking", "sonnet", "opus", "grok", "glm", "minimax"),
-    "vision": ("vision", "vl", "image", "video", "multimodal", "omni", "5v", "gemma-4"),
-    "tts": ("audio", "speech", "voice", "tts", "narration"),
-}
-
-_ALIAS_PENALTIES: dict[str, tuple[str, ...]] = {
-    "auxiliary": ("large", "70b", "72b", "reason", "thinking", "vision", "video", "audio"),
-    "coding": ("audio", "speech", "tts", "music"),
-    "agentic": ("audio", "speech", "tts", "music"),
-    "vision": ("audio", "speech", "tts", "music"),
-    "tts": ("vision", "image", "video", "music", "song", "lyrics", "lyria"),
-}
-
-_FAMILY_PRIORS_BY_ALIAS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
-    "coding": (
-        ("minimax", ("minimax", "m2.7", "m2.5")),
-        ("glm", ("glm-5", "glm", "z.ai", "z-ai")),
-        ("qwen", ("qwen3-coder-next", "qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
-        ("deepseek", ("deepseek", "speciale")),
-        ("grok", ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
-        ("gemini", ("gemini-3-flash", "gemini-3.1-pro", "gemini-3-pro", "gemini")),
-        ("stepfun", ("step-3.5", "stepfun", "step-")),
-        ("devstral", ("devstral", "mistral")),
-        ("nemotron", ("nemotron",)),
-        ("mimo", ("mimo-v2", "mimo")),
-        ("trinity", ("trinity", "arcee", "arcee-ai")),
-        ("gpt-oss", ("gpt-oss",)),
-        ("olmo", ("olmo",)),
-        ("gemma", ("gemma",)),
-        ("hermes", ("hermes",)),
-        ("solar", ("solar",)),
-        ("llama", ("llama",)),
-        ("venice", ("venice",)),
-        ("lfm", ("lfm", "liquid/lfm", "lfm2")),
-        ("molmo", ("molmo",)),
-    ),
-    "agentic": (
-        ("gemini", ("gemini-3.1-pro", "gemini-3-pro", "gemini")),
-        ("trinity", ("trinity", "arcee", "arcee-ai")),
-        ("minimax", ("minimax", "m2.7", "m2.5")),
-        ("qwen", ("qwen3.6-plus", "qwen3.6", "qwen3-coder", "qwen")),
-        ("mimo", ("mimo-v2", "mimo")),
-        ("nemotron", ("nemotron",)),
-        ("glm", ("glm-5", "glm", "z.ai", "z-ai")),
-        ("stepfun", ("step-3.5", "stepfun", "step-")),
-        ("deepseek", ("deepseek", "speciale")),
-        ("grok", ("grok code fast", "grok-code-fast", "grok 4.1 fast", "grok")),
-        ("devstral", ("devstral", "mistral")),
-        ("gpt-oss", ("gpt-oss",)),
-    ),
-    "vision": (
-        ("gemma", ("gemma",)),
-        ("qwen", ("qwen",)),
-        ("nemotron", ("nemotron",)),
-        ("molmo", ("molmo",)),
-        ("llama", ("llama",)),
-    ),
-    "auxiliary": (
-        ("gemini", ("gemini flash-lite", "gemini flash", "gemini-3.1-flash-lite", "gemini-3-flash", "gemini")),
-        ("gpt-oss", ("gpt-oss",)),
-        ("nemotron", ("nemotron",)),
-        ("mimo", ("mimo-v2-flash", "mimo-v2", "mimo")),
-        ("grok", ("grok code fast", "grok-code-fast", "grok fast", "grok")),
-        ("stepfun", ("step-3.5", "stepfun", "step-")),
-        ("glm", ("glm-5 turbo", "glm-5", "glm", "z.ai", "z-ai")),
-        ("minimax", ("minimax", "m2.7-highspeed", "m2.7", "m2.5")),
-        ("lfm", ("lfm", "liquid/lfm", "lfm2")),
-        ("gemma", ("gemma",)),
-    ),
-}
-
-_FAMILY_RANK_STEP_BY_ALIAS: dict[str, float] = {
-    "coding": 7.0,
-    "agentic": 6.0,
-    "auxiliary": 3.0,
-    "vision": 0.0,
-    "tts": 0.0,
-}
-
-_SIZE_RANK_STEP_BY_ALIAS: dict[str, float] = {
-    "coding": 0.25,
-    "agentic": 0.2,
-    "vision": 0.5,
-}
-
-_SIZE_RANK_CAP_BY_ALIAS: dict[str, float] = {
-    "coding": 3.0,
-    "agentic": 2.5,
-    "vision": 6.0,
-}
-
-_SIZE_HINTS: tuple[tuple[str, float], ...] = (
-    ("nano", -3.0),
-    ("mini", -2.5),
-    ("small", -2.0),
-    ("lite", -1.5),
-    ("flash", -1.0),
-    ("air", -0.75),
-    ("turbo", -0.5),
-    ("plus", 0.25),
-    ("pro", 1.0),
-    ("large", 1.5),
-    ("super", 1.5),
-    ("max", 2.0),
-    ("ultra", 2.0),
-    ("reason", 0.75),
-    ("thinking", 0.75),
-)
-
-_PROVIDER_PRIORITY_BIAS: dict[str, float] = {
-    "nvidia-build": 12.0,
-    "opencode-zen": 1.0,
-    "openrouter": 0.0,
-}
-
 
 class RouterServiceError(Exception):
     def __init__(self, status_code: int, detail: Any):
@@ -188,12 +66,9 @@ class RouterService:
         self._last_refresh_reason = "persisted"
         self._last_refresh_at = 0.0
         self._last_refresh_error: dict[str, Any] | None = None
-        self._last_bucket_model: str | None = None
-        self._last_ranking_at = 0.0
-        self._last_ranking_error: dict[str, Any] | None = None
-        self._last_ranking_worker: dict[str, str] | None = None
         self._refresh_lock = threading.RLock()
         self._session_affinity: dict[str, dict[str, Any]] = {}
+        self._round_robin_offsets: dict[str, int] = {}
 
     def _build_providers(self) -> dict[str, ChatProvider]:
         providers: dict[str, ChatProvider] = {}
@@ -216,6 +91,31 @@ class RouterService:
                 self.config.opencode_api_key,
                 base_url=self.config.opencode_base_url,
                 default_timeout=self.config.default_timeout,
+                provider_name="opencode-zen",
+                force_free_models=True,
+            )
+        if self.config.zenmux_api_key:
+            providers["zenmux"] = OpencodeZenProvider(
+                self.config.zenmux_api_key,
+                base_url=self.config.zenmux_base_url,
+                default_timeout=self.config.default_timeout,
+                provider_name="zenmux",
+                force_free_models=True,
+            )
+        if self.config.electron_hub_api_key:
+            providers["electron-hub"] = OpencodeZenProvider(
+                self.config.electron_hub_api_key,
+                base_url=self.config.electron_hub_base_url,
+                default_timeout=self.config.default_timeout,
+                provider_name="electron-hub",
+                force_free_models=True,
+            )
+        if self.config.opencode_go_api_key:
+            providers["opencode-go"] = OpencodeZenProvider(
+                self.config.opencode_go_api_key,
+                base_url=self.config.opencode_go_base_url,
+                default_timeout=self.config.default_timeout,
+                provider_name="opencode-go",
             )
         return providers
 
@@ -236,18 +136,47 @@ class RouterService:
         self._ensure_inventory_loaded_for_request()
         alias_cards: list[ModelCard] = []
         for alias in self.config.aliases:
+            free_providers = self._free_provider_names_for_alias(alias)
+            if not free_providers or not self._has_opencode_go_fallback(alias):
+                continue
             candidates = self.preview_routes(alias.name)
             alias_cards.append(
                 ModelCard(
                     id=alias.name,
                     metadata={
                         "description": alias.description,
+                        "free_provider_count": len(free_providers),
+                        "free_providers": list(free_providers),
+                        "free_provider_state": {
+                            provider_name: self._provider_rpm_state(provider_name)
+                            for provider_name in free_providers
+                        },
                         "candidate_count": len(candidates),
                         "candidates": candidates,
                     },
                 )
             )
         return ModelsResponse(data=alias_cards)
+
+    def _free_provider_names_for_alias(self, alias: AliasConfig) -> tuple[str, ...]:
+        providers: list[str] = []
+        for model_id in alias.preferred_models:
+            provider_name = self._provider_name_from_prefixed_model_id(model_id)
+            if provider_name is None or provider_name == "opencode-go":
+                continue
+            if provider_name not in self.providers:
+                continue
+            if provider_name not in providers:
+                providers.append(provider_name)
+        return tuple(providers)
+
+    def _has_opencode_go_fallback(self, alias: AliasConfig) -> bool:
+        expected_model = alias.name
+        for model_id in alias.preferred_models:
+            provider_name = self._provider_name_from_prefixed_model_id(model_id)
+            if provider_name == "opencode-go" and self._normalize_prefixed_model_id(model_id) == expected_model:
+                return True
+        return False
 
     def chat_completions(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> tuple[dict[str, Any], dict[str, str]]:
         active_session_id, request_for_routing = self._prepare_chat_request(request, session_id=session_id)
@@ -625,7 +554,7 @@ class RouterService:
                     request.model,
                     latency_ms=latency_ms,
                     first_text_latency_ms=first_text_latency_ms,
-                    is_fallback=(index > 0),
+                    is_fallback=candidate.is_fallback or index > 0,
                     details={"result_provider": result.provider, "score_breakdown": candidate.score_breakdown},
                 )
                 self._remember_session_affinity(session_id, candidate)
@@ -638,7 +567,7 @@ class RouterService:
                 return result.payload, headers
             except NormalizedProviderError as exc:
                 latency_ms = round((time.monotonic() - start) * 1000, 2)
-                self._record_failure(candidate, request.model, exc, latency_ms=latency_ms, is_fallback=(index > 0), zero_output=True)
+                self._record_failure(candidate, request.model, exc, latency_ms=latency_ms, is_fallback=candidate.is_fallback or index > 0, zero_output=True)
                 errors.append(
                     {
                         "provider": exc.provider,
@@ -696,7 +625,7 @@ class RouterService:
                 self._remember_session_affinity(session_id, candidate)
                 return candidate, stream_result, first_chunk, chunk_iter
             except NormalizedProviderError as exc:
-                self._record_failure(candidate, request.model, exc, latency_ms=None, is_fallback=(index > 0), zero_output=True)
+                self._record_failure(candidate, request.model, exc, latency_ms=None, is_fallback=candidate.is_fallback or index > 0, zero_output=True)
                 attempt_errors.append(
                     {
                         "provider": exc.provider,
@@ -1216,8 +1145,6 @@ class RouterService:
             self._last_refresh_reason = reason
             self._last_refresh_at = self._inventory_loaded_at
             self._last_refresh_error = errors or None
-            if reason == "ranking" and self.config.ranking_enabled and self._ranking_due():
-                self._refresh_rankings(self._inventory)
             if errors:
                 self._log_event("refresh_partial", reason=reason, model_count=len(self._inventory), errors=errors)
             else:
@@ -1231,25 +1158,25 @@ class RouterService:
             "last_refresh_reason": self._last_refresh_reason,
             "last_refresh_at": self._last_refresh_at,
             "last_refresh_error": self._last_refresh_error,
-            "last_ranking_at": self._last_ranking_at,
-            "last_ranking_error": self._last_ranking_error,
-            "last_ranking_worker": self._last_ranking_worker,
-            "assisted_bucket_model": self._last_bucket_model,
             "inventory_ttl_seconds": self.config.inventory_ttl_seconds,
             "refresh_interval_seconds": self.config.refresh_interval_seconds,
-            "ranking_interval_seconds": self.config.ranking_interval_seconds,
             "session_affinity": self._session_affinity,
             "policy": {
-                "reserve_limit": self.config.provider_reserve_limit,
-                "active_candidate_limit": self.config.provider_active_candidate_limit,
                 "providers": [
                     {
                         "provider_name": policy.provider_name,
-                        "ranked_models": list(policy.ranked_models),
+                        "seeded_models": list(policy.seeded_models),
                         "unused_models": list(policy.unused_models),
                         "daily_reset_hours": policy.daily_reset_hours,
                     }
-                    for policy in self.config.provider_selection_policies
+                    for policy in self.config.provider_seed_policies
+                ],
+                "aliases": [
+                    {
+                        "name": alias.name,
+                        "preferred_models": list(alias.preferred_models),
+                    }
+                    for alias in self.config.aliases
                 ],
             },
             "state": self.state_store.snapshot(),
@@ -1278,6 +1205,7 @@ class RouterService:
                     "throttle_reason": state.get("throttle_reason"),
                     "throttle_streak": state.get("throttle_streak", 0),
                     "suppression_source": self._provider_suppression_source(provider_name, state=state),
+                    "rpm": self._provider_rpm_state(provider_name),
                     "suspect_backend_model": state.get("suspect_backend_model"),
                     "suspect_category": state.get("suspect_category"),
                     "suspect_at": state.get("suspect_at"),
@@ -1295,12 +1223,13 @@ class RouterService:
 
     def debug_summary(self) -> dict[str, Any]:
         provider_state = self.state_store.get_provider_state()
-        inventory_groups = self._inventory_groups(alias="agentic")
+        primary_alias = self.config.aliases[0].name if self.config.aliases else "deepseek-v4-pro"
         provider_order = list(self._provider_order())
         enabled_providers = [provider_name for provider_name in self._provider_names if self._provider_enabled(provider_name)]
         providers: list[dict[str, Any]] = []
         for provider_name in self._provider_names:
             state = provider_state.get(provider_name, {})
+            provider_inventory = [model for model in self._inventory_for_all() if model.provider == provider_name]
             providers.append(
                 {
                     "provider_name": provider_name,
@@ -1309,25 +1238,21 @@ class RouterService:
                     "pacing_active": self._provider_is_pacing(provider_name, state=state),
                     "probe_mode": self._provider_in_probe_mode(provider_name, state=state),
                     "suppression_source": self._provider_suppression_source(provider_name, state=state),
+                    "rpm": self._provider_rpm_state(provider_name),
                     "stats": state,
                     "inventory_counts": {
-                        "ranked": len(inventory_groups["ranked"].get(provider_name, [])),
-                        "unused": len(inventory_groups["unused"].get(provider_name, [])),
-                        "uncategorized": len(inventory_groups["uncategorized"].get(provider_name, [])),
-                        "routable_ranked": sum(
-                            1 for item in inventory_groups["ranked"].get(provider_name, []) if item["routable"]
-                        ),
+                        "total": len(provider_inventory),
+                        "free": sum(1 for model in provider_inventory if model.is_free),
+                        "seeded": len(self._seeded_backend_ids_for_provider(provider_name)),
                     },
-                    "active_candidates": self._render_candidates(
-                        self._provider_policy_candidates(
-                            provider_name,
-                            alias="agentic",
-                            ignore_provider_pacing=True,
-                        )
-                    ),
+                    "active_candidates": [
+                        item
+                        for item in self.preview_routes(primary_alias)
+                        if item["provider_name"] == provider_name
+                    ],
                 }
             )
-        selected_candidates = self.preview_routes("agentic")
+        selected_candidates = self.preview_routes(primary_alias)
         return {
             "router": {
                 "configured_providers": list(self.config.provider_priority),
@@ -1338,18 +1263,19 @@ class RouterService:
                 "last_refresh_reason": self._last_refresh_reason,
                 "last_refresh_at": self._last_refresh_at,
                 "last_refresh_error": self._last_refresh_error,
-                "last_ranking_at": self._last_ranking_at,
-                "last_ranking_error": self._last_ranking_error,
-                "last_ranking_worker": self._last_ranking_worker,
+                "rolling_route_stats": self.state_store.get_route_window_stats(
+                    {"1m": 60.0, "5m": 300.0, "1h": 3600.0, "daily": 86400.0}
+                ),
             },
             "providers": providers,
             "aliases": {
-                "agentic": {
+                alias.name: {
                     "provider_order": provider_order,
-                    "selected_provider": selected_candidates[0]["provider_name"] if selected_candidates else None,
-                    "selected_candidates": selected_candidates,
-                    "providers": self.debug_rankings("agentic")["providers"],
+                    "selected_provider": (selected_candidates[0]["provider_name"] if alias.name == primary_alias and selected_candidates else None),
+                    "selected_candidates": selected_candidates if alias.name == primary_alias else self.preview_routes(alias.name),
+                    "providers": self.debug_rankings(alias.name)["providers"],
                 }
+                for alias in self.config.aliases
             },
         }
 
@@ -1357,34 +1283,27 @@ class RouterService:
         alias_config = self.config.alias_map().get(alias)
         if alias_config is None:
             raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
-        inventory_groups = self._inventory_groups(alias=alias)
         selected_keys = {
             (candidate["provider_name"], candidate["backend_model"])
             for candidate in self.preview_routes(alias)
         }
         providers: list[dict[str, Any]] = []
-        for provider_name in self._provider_order():
-            policy = self.config.provider_policy_map().get(provider_name)
-            if policy is None:
+        for provider_name in self.config.provider_priority:
+            seeded_ids = [
+                self._normalize_prefixed_model_id(model_id)
+                for model_id in alias_config.preferred_models
+                if self._provider_name_from_prefixed_model_id(model_id) == provider_name
+            ]
+            if not seeded_ids:
                 continue
-            ranked_entries: list[dict[str, Any]] = []
-            active_ids = {
-                candidate.backend_model
-                for candidate in self._provider_policy_candidates(
-                    provider_name,
-                    alias=alias,
-                    ignore_provider_pacing=True,
-                )
-            }
-            for rank, backend_model in enumerate(policy.ranked_models[: self.config.provider_reserve_limit], start=1):
+            entries: list[dict[str, Any]] = []
+            for backend_model in seeded_ids:
                 model = self._lookup_model(provider_name, backend_model)
-                ranked_entries.append(
+                entries.append(
                     {
-                        "rank": rank,
-                        "policy_rank": rank,
                         "backend_model": backend_model,
+                        "configured": provider_name in self.providers,
                         "discovered": model is not None,
-                        "active": backend_model in active_ids,
                         "selected_for_routing": (provider_name, backend_model) in selected_keys,
                         "is_free": bool(model.is_free) if model is not None else False,
                         "routable": bool(model is not None and self._model_is_routable(model, alias=alias)),
@@ -1394,11 +1313,6 @@ class RouterService:
                             alias=alias,
                             model=model,
                         ),
-                        "score": (
-                            self._score_breakdown(alias, model)
-                            if model is not None
-                            else {"total_score": 0.0}
-                        ),
                     }
                 )
             providers.append(
@@ -1407,25 +1321,58 @@ class RouterService:
                     "enabled": self._provider_enabled(provider_name),
                     "cooling_down": self._provider_is_cooling_down(provider_name),
                     "pacing": self._provider_is_pacing(provider_name),
+                    "rpm": self._provider_rpm_state(provider_name),
                     "probe_mode": self._provider_in_probe_mode(provider_name),
-                    "ranked": ranked_entries,
-                    "active_candidates": self._render_candidates(
-                        self._provider_policy_candidates(
-                            provider_name,
-                            alias=alias,
-                            ignore_provider_pacing=True,
-                        )
-                    ),
-                    "unused_count": len(inventory_groups["unused"].get(provider_name, [])),
-                    "uncategorized_count": len(inventory_groups["uncategorized"].get(provider_name, [])),
+                    "seeded": entries,
+                    "active_candidates": [
+                        item
+                        for item in self.preview_routes(alias)
+                        if item["provider_name"] == provider_name
+                    ],
                 }
             )
         return {"alias": alias, "providers": providers}
 
-    def debug_inventory(self, category: str, *, alias: str = "agentic") -> dict[str, Any]:
-        if category not in {"ranked", "unused", "uncategorized"}:
+    def debug_inventory(self, category: str, *, alias: str = "deepseek-v4-pro") -> dict[str, Any]:
+        if category not in {"seeded", "configured", "unconfigured", "inventory"}:
             raise RouterServiceError(404, {"message": f"Unknown inventory category '{category}'."})
-        return {"alias": alias, "category": category, "providers": self._inventory_groups(alias=alias)[category]}
+        alias_config = self.config.alias_map().get(alias) or (self.config.aliases[0] if self.config.aliases else None)
+        if alias_config is None:
+            return {"alias": alias, "category": category, "providers": {}}
+        providers: dict[str, list[dict[str, Any]]] = {}
+        if category == "inventory":
+            for model in self._inventory_for_all():
+                providers.setdefault(model.provider, []).append(
+                    {
+                        "backend_model": model.id,
+                        "is_free": model.is_free,
+                        "seeded": model.id in self._seeded_backend_ids_for_provider(model.provider),
+                        "metadata": model.metadata,
+                    }
+                )
+            return {"alias": alias_config.name, "category": category, "providers": providers}
+        for model_id in alias_config.preferred_models:
+            provider_name = self._provider_name_from_prefixed_model_id(model_id)
+            if provider_name is None:
+                continue
+            backend_model = self._normalize_prefixed_model_id(model_id)
+            configured = provider_name in self.providers
+            if category == "configured" and not configured:
+                continue
+            if category == "unconfigured" and configured:
+                continue
+            model = self._lookup_model(provider_name, backend_model)
+            providers.setdefault(provider_name, []).append(
+                {
+                    "backend_model": backend_model,
+                    "configured": configured,
+                    "discovered": model is not None,
+                    "is_free": bool(model.is_free) if model is not None else provider_name != "opencode-go",
+                    "rpm": self._provider_rpm_state(provider_name),
+                    "metadata": model.metadata if model is not None else {},
+                }
+            )
+        return {"alias": alias_config.name, "category": category, "providers": providers}
 
     def debug_model(self, provider_name: str, backend_model: str) -> dict[str, Any]:
         model = self._lookup_model(provider_name, backend_model)
@@ -1441,7 +1388,6 @@ class RouterService:
             },
             "model_state": self.state_store.get_model_state().get(self._model_key(provider_name, backend_model), {}),
             "provider_state": self.state_store.get_provider_state().get(provider_name, {}),
-            "ranking": self.state_store.get_rankings().get(self._model_key(provider_name, backend_model), {}),
             "overrides": self._model_override_payload(provider_name, backend_model),
         }
 
@@ -1450,7 +1396,6 @@ class RouterService:
         refresh_rows = self.state_store.get_refresh_metric_rows()
         model_state = self.state_store.get_model_state()
         provider_state = self.state_store.get_provider_state()
-        rankings = self.state_store.get_rankings()
         lines = [
             "# HELP ghostship_router_requests_total Total router request attempts by alias, provider, model, and result.",
             "# TYPE ghostship_router_requests_total counter",
@@ -1468,6 +1413,26 @@ class RouterService:
                     retryable=("true" if row["retryable"] else "false"),
                 )
             )
+        window_stats = self.state_store.get_route_window_stats({"1m": 60.0, "5m": 300.0, "1h": 3600.0, "daily": 86400.0})
+        lines.extend(
+            [
+                "# HELP ghostship_router_window_attempts Rolling route attempts by window, provider, model, and result.",
+                "# TYPE ghostship_router_window_attempts gauge",
+            ]
+        )
+        for window_name, rows in window_stats.items():
+            for row in rows:
+                lines.append(
+                    self._prom_metric(
+                        "ghostship_router_window_attempts",
+                        row["attempts"],
+                        window=window_name,
+                        provider=row["provider_name"],
+                        backend_model=row["backend_model"],
+                        result=("success" if row["success"] else "failure"),
+                        category=(row["category"] or "none"),
+                    )
+                )
         lines.extend(
             [
                 "# HELP ghostship_router_failovers_total Total attempts that used a non-primary candidate.",
@@ -1523,6 +1488,26 @@ class RouterService:
                     provider=provider_name,
                 )
             )
+        lines.extend(
+            [
+                "# HELP ghostship_router_provider_rpm_limit Configured sliding-window request-per-minute limit for free providers.",
+                "# TYPE ghostship_router_provider_rpm_limit gauge",
+            ]
+        )
+        for provider_name in self._provider_names:
+            limit = self._provider_rpm_limit(provider_name)
+            if limit is not None:
+                lines.append(self._prom_metric("ghostship_router_provider_rpm_limit", limit, provider=provider_name))
+        lines.extend(
+            [
+                "# HELP ghostship_router_provider_rpm_used Requests recorded in the last 60 seconds.",
+                "# TYPE ghostship_router_provider_rpm_used gauge",
+            ]
+        )
+        for provider_name in self._provider_names:
+            limit = self._provider_rpm_limit(provider_name)
+            if limit is not None:
+                lines.append(self._prom_metric("ghostship_router_provider_rpm_used", self._provider_rpm_used(provider_name), provider=provider_name))
         lines.extend(
             [
                 "# HELP ghostship_router_provider_probe_mode Whether a provider is in probe recovery mode.",
@@ -1615,44 +1600,6 @@ class RouterService:
         )
         for alias in self.config.alias_map():
             lines.append(self._prom_metric("ghostship_router_candidate_count", len(self.preview_routes(alias)), alias=alias))
-        lines.extend(
-            [
-                "# HELP ghostship_router_model_score Current total routing score by alias and backend model.",
-                "# TYPE ghostship_router_model_score gauge",
-            ]
-        )
-        for alias in self.config.alias_map():
-            for model in self._inventory_for_all():
-                if not self._model_is_routable(model, alias=alias):
-                    continue
-                if not self._model_effectively_enabled(model.provider, model.id):
-                    continue
-                breakdown = self._score_breakdown(alias, model)
-                lines.append(
-                    self._prom_metric(
-                        "ghostship_router_model_score",
-                        breakdown["total_score"],
-                        alias=alias,
-                        provider=model.provider,
-                        backend_model=model.id,
-                    )
-                )
-        lines.extend(
-            [
-                "# HELP ghostship_router_model_ranking_confidence Current ranking confidence by backend model.",
-                "# TYPE ghostship_router_model_ranking_confidence gauge",
-            ]
-        )
-        for key, ranking in rankings.items():
-            provider_name, backend_model = key.split("::", 1)
-            lines.append(
-                self._prom_metric(
-                    "ghostship_router_model_ranking_confidence",
-                    ranking.get("confidence") or 0,
-                    provider=provider_name,
-                    backend_model=backend_model,
-                )
-            )
         return "\n".join(lines) + "\n"
 
     def preview_routes(self, alias: str) -> list[dict[str, Any]]:
@@ -1675,11 +1622,11 @@ class RouterService:
         ]
 
     def _model_is_routable(self, model: ProviderModel, *, alias: str | None = None) -> bool:
-        if not model.is_free:
+        if model.provider != "opencode-go" and not model.is_free:
             return False
         output_modalities = self._output_modalities(model)
         input_modalities = self._input_modalities(model)
-        if alias not in {None, "agentic"}:
+        if alias is not None and alias not in self.config.alias_map():
             return False
         if not self._model_supports_tools(model):
             return False
@@ -1700,7 +1647,7 @@ class RouterService:
         resolved_model = model or self._lookup_model(provider_name, backend_model)
         if resolved_model is None:
             return "not_discovered"
-        if not resolved_model.is_free:
+        if provider_name != "opencode-go" and not resolved_model.is_free:
             return "not_free"
         if not self._model_supports_tools(resolved_model):
             return "no_tool_support"
@@ -1709,7 +1656,7 @@ class RouterService:
         output_modalities = self._output_modalities(resolved_model)
         if output_modalities and output_modalities != {"text"}:
             return "non_text_output"
-        if alias not in {None, "agentic"}:
+        if alias is not None and alias not in self.config.alias_map():
             return "unsupported_alias"
         if not self._model_effectively_enabled(provider_name, backend_model):
             return "disabled"
@@ -1772,30 +1719,19 @@ class RouterService:
             direct_candidates = self._resolve_direct_model(alias)
             if direct_candidates:
                 return direct_candidates
-            if alias in {"auxiliary", "coding", "vision", "tts"}:
-                raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use 'agentic'."})
+            if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
+                raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
             raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
-
-        for provider_name in self._provider_order(session_id=session_id):
-            provider_candidates = self._provider_policy_candidates(
-                provider_name,
-                alias=alias,
-                session_id=session_id,
-                ignore_provider_pacing=ignore_provider_pacing,
-            )
-            if provider_candidates:
-                return [
-                    RouteCandidate(**{**candidate.__dict__, "is_fallback": index > 0})
-                    for index, candidate in enumerate(provider_candidates)
-                ]
-            if (
-                not ignore_provider_pacing
-                and not self._provider_is_cooling_down(provider_name)
-                and self._provider_is_pacing(provider_name)
-                and self._provider_has_ranked_inventory(provider_name, alias=alias)
-            ):
-                return []
-        return []
+        candidates = self._preferred_candidates(
+            alias_config.preferred_models,
+            alias=alias,
+            ignore_provider_pacing=ignore_provider_pacing,
+            advance_round_robin=False,
+        )
+        return [
+            RouteCandidate(**{**candidate.__dict__, "is_fallback": candidate.provider_name == "opencode-go" or index > 0})
+            for index, candidate in enumerate(candidates)
+        ]
 
     def _resolve_remaining_candidates(
         self,
@@ -1812,75 +1748,157 @@ class RouterService:
                 for candidate in self._resolve_candidates(alias, session_id=session_id, ignore_provider_pacing=ignore_provider_pacing)
                 if (candidate.provider_name, candidate.backend_model) not in attempted
             ]
-        for provider_name in self._provider_order(session_id=session_id):
-            provider_candidates = self._provider_policy_candidates(
-                provider_name,
-                alias=alias,
-                session_id=session_id,
-                ignore_provider_pacing=ignore_provider_pacing,
-            )
-            available = [
-                candidate
-                for candidate in provider_candidates
-                if (candidate.provider_name, candidate.backend_model) not in attempted
-            ]
-            if available:
-                return [
-                    RouteCandidate(**{**candidate.__dict__, "is_fallback": index > 0})
-                    for index, candidate in enumerate(available)
-                ]
-            if provider_candidates:
-                return []
-            if (
-                not ignore_provider_pacing
-                and not self._provider_is_cooling_down(provider_name)
-                and self._provider_is_pacing(provider_name)
-                and self._provider_has_ranked_inventory(provider_name, alias=alias)
-            ):
-                return []
-        return []
+        candidates = self._preferred_candidates(
+            alias_config.preferred_models,
+            alias=alias,
+            ignore_provider_pacing=ignore_provider_pacing,
+            advance_round_robin=not attempted,
+        )
+        available = [
+            candidate
+            for candidate in candidates
+            if (candidate.provider_name, candidate.backend_model) not in attempted
+        ]
+        return [
+            RouteCandidate(**{**candidate.__dict__, "is_fallback": candidate.provider_name == "opencode-go" or index > 0})
+            for index, candidate in enumerate(available)
+        ]
 
     def _resolve_direct_model(self, model_name: str) -> list[RouteCandidate]:
         if not self.config.allow_direct_models:
             return []
-        return self._preferred_candidates((model_name,), alias=self._alias_for_model_id(model_name))
+        return self._preferred_candidates((model_name,), alias=model_name)
 
-    def _preferred_candidates(self, model_ids: tuple[str, ...], *, alias: str | None = None, inventory: list[ProviderModel] | None = None, ignore_provider_pacing: bool = False) -> list[RouteCandidate]:
-        candidates: list[RouteCandidate] = []
+    def _preferred_candidates(
+        self,
+        model_ids: tuple[str, ...],
+        *,
+        alias: str | None = None,
+        inventory: list[ProviderModel] | None = None,
+        ignore_provider_pacing: bool = False,
+        advance_round_robin: bool = False,
+    ) -> list[RouteCandidate]:
+        free_candidates: list[RouteCandidate] = []
+        fallback_candidates: list[RouteCandidate] = []
         known_inventory = inventory if inventory is not None else self._inventory_for_all()
         probe_selected: set[str] = set()
         for model_id in model_ids:
             normalized = self._normalize_prefixed_model_id(model_id)
-            matched = [model for model in known_inventory if model.id == normalized or model.id == model_id]
+            inferred_provider = self._provider_name_from_prefixed_model_id(model_id)
+            if inferred_provider is None:
+                matched = [model for model in known_inventory if model.id == normalized or model.id == model_id]
+            else:
+                matched = [
+                    model
+                    for model in known_inventory
+                    if model.provider == inferred_provider and (model.id == normalized or model.id == model_id)
+                ]
             if known_inventory and not matched:
-                inferred_provider = self._provider_name_from_prefixed_model_id(model_id)
                 if inferred_provider in self.providers:
                     fallback_model_id = normalized if normalized != model_id else model_id
                     matched.append(ProviderModel(id=fallback_model_id, provider=inferred_provider, is_free=self._model_id_looks_free(fallback_model_id)))
-            alias_name = alias or self._alias_for_model_id(model_id) or "agentic"
+            alias_name = alias or normalized
             for model in matched:
                 if not self._model_is_routable(model, alias=alias_name):
                     continue
                 if not self._model_effectively_enabled(model.provider, model.id):
                     continue
-                if self._provider_is_cooling_down(model.provider) or (not ignore_provider_pacing and self._provider_is_pacing(model.provider)):
+                if self._provider_is_cooling_down(model.provider):
                     continue
+                if not ignore_provider_pacing:
+                    if self._provider_is_pacing(model.provider):
+                        continue
+                    if not self._provider_has_rpm_capacity(model.provider):
+                        continue
                 if self._is_cooling_down(model.provider, model.id):
                     continue
                 if self._provider_in_probe_mode(model.provider):
                     if model.provider in probe_selected:
                         continue
                     probe_selected.add(model.provider)
-                breakdown = self._score_breakdown(alias_name, model)
+                breakdown = self._candidate_breakdown(alias_name, model)
                 candidate = RouteCandidate(
                     provider_name=model.provider,
                     backend_model=model.id,
                     total_score=breakdown["total_score"],
                     score_breakdown=breakdown,
                 )
-                if candidate not in candidates:
-                    candidates.append(candidate)
-        return candidates
+                target = fallback_candidates if model.provider == "opencode-go" else free_candidates
+                if candidate not in target:
+                    target.append(candidate)
+        return [
+            *self._round_robin_free_candidates(alias or "", free_candidates, advance=advance_round_robin),
+            *fallback_candidates,
+        ]
+
+    def _round_robin_free_candidates(self, alias: str, candidates: list[RouteCandidate], *, advance: bool) -> list[RouteCandidate]:
+        if len(candidates) <= 1:
+            return candidates
+        by_provider: dict[str, list[RouteCandidate]] = {}
+        for candidate in candidates:
+            by_provider.setdefault(candidate.provider_name, []).append(candidate)
+        provider_names = [name for name in self.config.provider_priority if name in by_provider]
+        if not provider_names:
+            return candidates
+        weights = {
+            provider_name: max(1, self._provider_rpm_limit(provider_name) or 1)
+            for provider_name in provider_names
+        }
+        max_weight = max(weights.values())
+        virtual_ring = [
+            provider_name
+            for step in range(max_weight)
+            for provider_name in provider_names
+            if weights[provider_name] > step
+        ]
+        if not virtual_ring:
+            return candidates
+        offset_key = alias or "::".join(f"{item.provider_name}/{item.backend_model}" for item in candidates)
+        offset = self._round_robin_offsets.get(offset_key, 0) % len(virtual_ring)
+        ordered_provider_names = [*virtual_ring[offset:], *virtual_ring[:offset]]
+        if advance:
+            self._round_robin_offsets[offset_key] = (offset + 1) % len(virtual_ring)
+
+        selected: list[RouteCandidate] = []
+        seen_candidates: set[tuple[str, str]] = set()
+        used_provider_slots: set[str] = set()
+        for provider_name in ordered_provider_names:
+            if provider_name in used_provider_slots:
+                continue
+            provider_candidates = by_provider.get(provider_name, [])
+            if not provider_candidates:
+                continue
+            provider_offset_key = f"{offset_key}:{provider_name}"
+            provider_offset = self._round_robin_offsets.get(provider_offset_key, 0) % len(provider_candidates)
+            if advance:
+                self._round_robin_offsets[provider_offset_key] = (provider_offset + 1) % len(provider_candidates)
+            provider_order = [*provider_candidates[provider_offset:], *provider_candidates[:provider_offset]]
+            for candidate in provider_order:
+                key = (candidate.provider_name, candidate.backend_model)
+                if key in seen_candidates:
+                    continue
+                selected.append(candidate)
+                seen_candidates.add(key)
+                break
+            used_provider_slots.add(provider_name)
+        for candidate in candidates:
+            key = (candidate.provider_name, candidate.backend_model)
+            if key not in seen_candidates:
+                selected.append(candidate)
+        return selected
+
+    def _candidate_breakdown(self, alias: str, model: ProviderModel) -> dict[str, Any]:
+        state = self.state_store.get_provider_state().get(model.provider, {})
+        return {
+            "model": alias,
+            "total_score": 0.0,
+            "rpm": self._provider_rpm_state(model.provider),
+            "cooldown_until": self.state_store.get_model_state().get(self._model_key(model.provider, model.id), {}).get("cooldown_until", 0),
+            "provider_cooldown_until": state.get("cooldown_until", 0),
+            "provider_next_request_at": state.get("next_request_at", 0),
+            "last_latency_ms": state.get("last_latency_ms"),
+            "last_first_text_latency_ms": state.get("last_first_text_latency_ms"),
+        }
 
     def _provider_order(self, *, session_id: str | None = None) -> tuple[str, ...]:
         ordered = [name for name in self.config.provider_priority if name in self.providers]
@@ -1899,162 +1917,19 @@ class RouterService:
             "updated_at": time.time(),
         }
 
-    def _provider_policy_candidates(
-        self,
-        provider_name: str,
-        *,
-        alias: str,
-        session_id: str | None = None,
-        ignore_provider_pacing: bool = False,
-    ) -> list[RouteCandidate]:
-        if not self._provider_enabled(provider_name):
-            return []
-        if self._provider_is_cooling_down(provider_name):
-            return []
-        if not ignore_provider_pacing and self._provider_is_pacing(provider_name):
-            return []
-        policy = self.config.provider_policy_map().get(provider_name)
-        if policy is None:
-            return []
-        reserve = list(policy.ranked_models[: self.config.provider_reserve_limit])
-        sticky = self._session_affinity.get(session_id or "")
-        sticky_model = str(sticky.get("backend_model") or "") if sticky and sticky.get("provider_name") == provider_name else ""
-        if sticky_model in reserve:
-            reserve = [sticky_model, *(model_id for model_id in reserve if model_id != sticky_model)]
-        limit = 1 if self._provider_in_probe_mode(provider_name) else self.config.provider_active_candidate_limit
-        candidates: list[RouteCandidate] = []
-        for backend_model in reserve:
-            model = self._lookup_model(provider_name, backend_model)
-            if model is None:
-                continue
-            if not self._model_is_routable(model, alias=alias):
-                continue
-            if not self._model_effectively_enabled(provider_name, backend_model):
-                continue
-            if self._is_cooling_down(provider_name, backend_model):
-                continue
-            breakdown = self._score_breakdown(alias, model)
-            candidates.append(
-                RouteCandidate(
-                    provider_name=provider_name,
-                    backend_model=backend_model,
-                    total_score=breakdown["total_score"],
-                    score_breakdown=breakdown,
-                )
-            )
-            if len(candidates) >= limit:
-                break
-        return candidates
-
-    def _provider_has_ranked_inventory(self, provider_name: str, *, alias: str) -> bool:
-        policy = self.config.provider_policy_map().get(provider_name)
-        if policy is None:
-            return False
-        for backend_model in policy.ranked_models[: self.config.provider_reserve_limit]:
-            model = self._lookup_model(provider_name, backend_model)
-            if model is None:
-                continue
-            if self._model_is_routable(model, alias=alias) and self._model_effectively_enabled(provider_name, backend_model):
-                return True
-        return False
-
-    def _inventory_groups(self, *, alias: str) -> dict[str, dict[str, list[dict[str, Any]]]]:
-        policies = self.config.provider_policy_map()
-        grouped: dict[str, dict[str, list[dict[str, Any]]]] = {
-            "ranked": {provider_name: [] for provider_name in self._provider_order()},
-            "unused": {provider_name: [] for provider_name in self._provider_order()},
-            "uncategorized": {provider_name: [] for provider_name in self._provider_order()},
-        }
-        for provider_name in self._provider_order():
-            policy = policies.get(provider_name)
-            if policy is None:
-                continue
-            ranked_ids = set(policy.ranked_models)
-            unused_ids = set(policy.unused_models)
-            for model in sorted(
-                (item for item in self._inventory_for_all() if item.provider == provider_name and item.is_free),
-                key=lambda item: item.id,
-            ):
-                payload = {
-                    "backend_model": model.id,
-                    "is_free": model.is_free,
-                    "routable": self._model_is_routable(model, alias=alias),
-                    "metadata": model.metadata,
-                }
-                if model.id in ranked_ids:
-                    grouped["ranked"][provider_name].append(payload)
-                elif model.id in unused_ids:
-                    grouped["unused"][provider_name].append(payload)
-                else:
-                    grouped["uncategorized"][provider_name].append(payload)
-        return grouped
-
     def _inventory_for_all(self) -> list[ProviderModel]:
         return list(self._inventory)
 
-    def _score_breakdown(self, alias: str, model: ProviderModel) -> dict[str, Any]:
-        policy = self.config.provider_policy_map().get(model.provider)
-        ranked_models = policy.ranked_models if policy is not None else ()
-        rank_index = ranked_models.index(model.id) if model.id in ranked_models else None
-        model_state = self.state_store.get_model_state().get(self._model_key(model.provider, model.id), {})
-        provider_state = self.state_store.get_provider_state().get(model.provider, {})
-        overrides = self._effective_overrides()
-        provider_bias = float(max(len(self._provider_names) - self._provider_order().index(model.provider), 0) * 100.0)
-        reserve_bias = float(max(self.config.provider_reserve_limit - rank_index, 0) * 10.0) if rank_index is not None else -1000.0
-        model_health = (
-            float(model_state.get("recent_success", 0)) * 2.0
-            - float(model_state.get("recent_failure", 0)) * 3.0
-            - float(model_state.get("recent_rate_limit", 0)) * 4.0
-            - float(model_state.get("recent_timeout", 0)) * 3.0
-            - float(model_state.get("recent_auth_failure", 0)) * 12.0
-            - float(model_state.get("recent_exhaustion", 0)) * 5.0
-        )
-        provider_health = (
-            float(provider_state.get("recent_success", 0))
-            - float(provider_state.get("recent_failure", 0)) * 2.0
-            - float(provider_state.get("recent_rate_limit", 0)) * 3.0
-            - float(provider_state.get("recent_timeout", 0)) * 2.0
-            - float(provider_state.get("recent_auth_failure", 0)) * 10.0
-            - float(provider_state.get("recent_exhaustion", 0)) * 4.0
-        )
-        latency_penalty = -((float(model_state.get("first_text_latency_avg_ms") or model_state.get("latency_avg_ms") or 0.0)) / 1000.0)
-        provider_weight = self._provider_weight(model.provider, overrides=overrides)
-        model_weight = self._model_weight(model.provider, model.id, overrides=overrides)
-        cooldown_penalty = -1000.0 if self._is_cooling_down(model.provider, model.id, state=model_state) else 0.0
-        provider_cooldown_penalty = -500.0 if self._provider_is_cooling_down(model.provider, state=provider_state) else 0.0
-        provider_pacing_penalty = -250.0 if self._provider_is_pacing(model.provider, state=provider_state) else 0.0
-        total_score = round(
-            + provider_bias
-            + reserve_bias
-            + model_health
-            + provider_health
-            + latency_penalty
-            + provider_weight
-            + model_weight
-            + cooldown_penalty
-            + provider_cooldown_penalty
-            + provider_pacing_penalty,
-            3,
-        )
-        return {
-            "total_score": total_score,
-            "provider_bias": provider_bias,
-            "policy_rank": (rank_index + 1) if rank_index is not None else None,
-            "reserve_bias": reserve_bias,
-            "model_health_score": round(model_health, 3),
-            "provider_health_score": round(provider_health, 3),
-            "latency_penalty": round(latency_penalty, 3),
-            "provider_weight": provider_weight,
-            "model_weight": model_weight,
-            "cooldown_penalty": cooldown_penalty,
-            "provider_cooldown_penalty": provider_cooldown_penalty,
-            "provider_pacing_penalty": provider_pacing_penalty,
-            "cooldown_until": model_state.get("cooldown_until", 0),
-            "provider_cooldown_until": provider_state.get("cooldown_until", 0),
-            "provider_next_request_at": provider_state.get("next_request_at", 0),
-            "last_latency_ms": model_state.get("last_latency_ms"),
-            "last_first_text_latency_ms": model_state.get("last_first_text_latency_ms"),
-        }
+    def _seeded_backend_ids_for_provider(self, provider_name: str) -> set[str]:
+        seeded: set[str] = set()
+        for alias in self.config.aliases:
+            for model_id in alias.preferred_models:
+                if self._provider_name_from_prefixed_model_id(model_id) == provider_name:
+                    seeded.add(self._normalize_prefixed_model_id(model_id))
+        policy = self.config.provider_seed_map().get(provider_name)
+        if policy is not None:
+            seeded.update(policy.seeded_models)
+        return seeded
 
     def _model_allowed(self, model_id: str) -> bool:
         normalized = self._normalize_prefixed_model_id(model_id)
@@ -2096,17 +1971,53 @@ class RouterService:
         return float(provider_state.get("next_request_at", 0) or 0) > time.time()
 
     def _provider_spacing_seconds(self, provider_name: str) -> float:
+        if self._provider_rpm_limit(provider_name) is not None:
+            return 0.0
         if provider_name == "nvidia-build":
             return self.config.nvidia_build_min_request_spacing_seconds
         if provider_name == "openrouter":
             return self.config.openrouter_min_request_spacing_seconds
         if provider_name == "opencode-zen":
             return self.config.opencode_min_request_spacing_seconds
+        if provider_name == "opencode-go":
+            return self.config.opencode_min_request_spacing_seconds
         return min(
             self.config.nvidia_build_min_request_spacing_seconds,
             self.config.openrouter_min_request_spacing_seconds,
             self.config.opencode_min_request_spacing_seconds,
         )
+
+    def _provider_rpm_limit(self, provider_name: str) -> int | None:
+        if provider_name == "opencode-go":
+            return None
+        value = self.config.provider_rpm_limits.get(provider_name)
+        if value is None or int(value) <= 0:
+            return None
+        return int(value)
+
+    def _provider_rpm_used(self, provider_name: str) -> int:
+        return self.state_store.count_provider_requests_since(provider_name, time.time() - 60.0)
+
+    def _provider_has_rpm_capacity(self, provider_name: str) -> bool:
+        limit = self._provider_rpm_limit(provider_name)
+        if limit is None:
+            return True
+        return self._provider_rpm_used(provider_name) < limit
+
+    def _provider_rpm_state(self, provider_name: str) -> dict[str, Any]:
+        limit = self._provider_rpm_limit(provider_name)
+        used = self._provider_rpm_used(provider_name)
+        return {
+            "configured": provider_name in self.providers,
+            "enabled": self._provider_enabled(provider_name),
+            "rpm_limit": limit,
+            "used_60s": used,
+            "remaining_60s": None if limit is None else max(limit - used, 0),
+            "available": self._provider_enabled(provider_name)
+            and not self._provider_is_cooling_down(provider_name)
+            and not self._provider_is_pacing(provider_name)
+            and self._provider_has_rpm_capacity(provider_name),
+        }
 
     def _provider_suppression_source(self, provider_name: str, *, state: dict[str, Any] | None = None) -> str | None:
         provider_state = state or self.state_store.get_provider_state().get(provider_name, {})
@@ -2256,269 +2167,6 @@ class RouterService:
             details={"source": "provider_guard"},
         )
 
-    def _ranking_due(self) -> bool:
-        if not self.config.ranking_enabled:
-            return False
-        if self._last_ranking_at == 0:
-            return True
-        return (time.time() - self._last_ranking_at) >= self.config.ranking_interval_seconds
-
-    def _refresh_rankings(self, models: list[ProviderModel]) -> None:
-        workers = self._select_ranking_workers(models)
-        if not workers:
-            self._last_ranking_error = {"message": "No healthy free auxiliary ranking worker available."}
-            self._last_ranking_worker = None
-            self._last_bucket_model = None
-            return
-        last_error: dict[str, Any] | None = None
-        for worker in workers:
-            provider = self.providers.get(worker.provider_name)
-            if provider is None:
-                continue
-            try:
-                classifications, rankings = self._rank_inventory_with_worker(provider, worker.backend_model, models)
-            except NormalizedProviderError as exc:
-                last_error = {"category": exc.category, "details": exc.details}
-                self._last_ranking_worker = {"provider_name": worker.provider_name, "backend_model": worker.backend_model}
-                self._last_bucket_model = None
-                self._log_event("ranking_failed", provider=worker.provider_name, backend_model=worker.backend_model, category=exc.category)
-                continue
-            if classifications:
-                self.state_store.save_classifications(classifications, source=worker.backend_model)
-            if rankings:
-                self.state_store.save_rankings(
-                    rankings,
-                    source="auxiliary-free-worker",
-                    worker_provider_name=worker.provider_name,
-                    worker_backend_model=worker.backend_model,
-                )
-            self._last_ranking_at = time.time()
-            self._last_ranking_error = None
-            self._last_ranking_worker = {"provider_name": worker.provider_name, "backend_model": worker.backend_model}
-            self._last_bucket_model = worker.backend_model
-            self._inventory = []
-            for provider_name in self.providers:
-                self._inventory.extend(self.state_store.load_inventory(provider_name))
-            self._log_event("ranking_complete", worker_provider=worker.provider_name, worker_backend_model=worker.backend_model, ranked_models=len(rankings))
-            return
-        self._last_ranking_error = last_error
-        self._last_bucket_model = None
-
-    def _select_ranking_workers(self, models: list[ProviderModel]) -> list[RouteCandidate]:
-        override_model = self.config.ranking_worker_model or self.config.assisted_bucket_model
-        if override_model:
-            forced = self._preferred_candidates((override_model,), inventory=models)
-            return [item for item in forced if self._model_is_free(item.provider_name, item.backend_model, inventory=models)]
-        if self.config.alias_map().get("auxiliary") is None:
-            return []
-
-        def sorted_candidates(preferred_provider: str | None = None) -> list[RouteCandidate]:
-            candidates: list[RouteCandidate] = []
-            for model in models:
-                if preferred_provider is not None and model.provider != preferred_provider:
-                    continue
-                if not self._model_is_routable(model, alias="auxiliary"):
-                    continue
-                if not self._model_effectively_enabled(model.provider, model.id):
-                    continue
-                if self._provider_is_cooling_down(model.provider):
-                    continue
-                if self._is_cooling_down(model.provider, model.id):
-                    continue
-                breakdown = self._score_breakdown("auxiliary", model)
-                if breakdown["total_score"] <= 0:
-                    continue
-                candidates.append(
-                    RouteCandidate(
-                        provider_name=model.provider,
-                        backend_model=model.id,
-                        total_score=breakdown["total_score"],
-                        score_breakdown=breakdown,
-                    )
-                )
-            return sorted(candidates, key=lambda item: item.total_score, reverse=True)
-
-        ordered: list[RouteCandidate] = []
-        seen: set[tuple[str, str]] = set()
-        for provider_name in ("nvidia-build", "opencode-zen", "openrouter", None):
-            for candidate in sorted_candidates(provider_name):
-                key = (candidate.provider_name, candidate.backend_model)
-                if key in seen:
-                    continue
-                ordered.append(candidate)
-                seen.add(key)
-        return ordered
-
-    def _rank_inventory_with_worker(
-        self,
-        provider: ChatProvider,
-        worker_backend_model: str,
-        models: list[ProviderModel],
-    ) -> tuple[dict[str, tuple[str, ...]], dict[str, dict[str, Any]]]:
-        classifications: dict[str, tuple[str, ...]] = {}
-        rankings: dict[str, dict[str, Any]] = {}
-        batches = [models[index : index + self.config.assisted_bucket_batch_size] for index in range(0, len(models), self.config.assisted_bucket_batch_size)]
-        for batch in batches:
-            prompt = {
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You classify router backend models. "
-                            "Return strict JSON with the shape "
-                            "{\"models\": [{\"provider\": \"...\", \"id\": \"...\", \"tags\": [\"coding\"], "
-                            "\"alias_scores\": {\"auxiliary\": 0-12, \"coding\": 0-12, \"agentic\": 0-12, \"vision\": 0-12, \"tts\": 0-12}, "
-                            "\"reason\": \"...\", \"confidence\": 0-1}]}. "
-                            "Use only the aliases auxiliary, coding, agentic, vision, tts. Favor explicit capability and modality fit over name heuristics. "
-                            "Only assign tts when the model can produce speech-style audio output; do not classify music generators such as Lyria into tts. Vision and tts do not require tool calling; auxiliary, coding, and agentic do."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "models": [
-                                    {
-                                        "provider": model.provider,
-                                        "id": model.id,
-                                        "is_free": model.is_free,
-                                        "tags": list(model.tags),
-                                        "metadata": model.metadata,
-                                    }
-                                    for model in batch
-                                ]
-                            },
-                            sort_keys=True,
-                        ),
-                    },
-                ],
-                "temperature": 0,
-            }
-            result = provider.chat_completions(worker_backend_model, prompt, timeout=min(self.config.default_timeout, 20.0))
-            payload = self._parse_json_completion(result.payload)
-            for item in payload.get("models", []):
-                item_id = str(item.get("id", "")).strip()
-                provider_name = str(item.get("provider", "")).strip()
-                if not item_id or not provider_name:
-                    continue
-                key = self._model_key(provider_name, item_id)
-                tags = tuple(tag for tag in item.get("tags", []) if tag in _ALIASES)
-                if tags:
-                    classifications[item_id] = tags
-                rankings[key] = {
-                    "provider_name": provider_name,
-                    "backend_model": item_id,
-                    "alias_scores": {
-                        alias: float(item.get("alias_scores", {}).get(alias, 0.0))
-                        for alias in _ALIASES
-                    },
-                    "rerank_scores": rankings.get(key, {}).get("rerank_scores", {}),
-                    "reason": str(item.get("reason", "")).strip() or None,
-                    "confidence": float(item.get("confidence", 0.0) or 0.0),
-                }
-        shortlist_scores = self._rerank_shortlists(provider, worker_backend_model, models)
-        for key, rerank_payload in shortlist_scores.items():
-            normalized = self._resolve_ranking_key(key, models)
-            if normalized is None:
-                self._log_event("rerank_key_ignored", key=key)
-                continue
-            provider_name, backend_model = normalized
-            model_key = self._model_key(provider_name, backend_model)
-            current = rankings.setdefault(
-                model_key,
-                {
-                    "provider_name": provider_name,
-                    "backend_model": backend_model,
-                    "alias_scores": {alias: 0.0 for alias in _ALIASES},
-                    "rerank_scores": {},
-                    "reason": None,
-                    "confidence": 0.0,
-                },
-            )
-            merged = dict(current.get("rerank_scores", {}))
-            merged.update(rerank_payload["rerank_scores"])
-            current["rerank_scores"] = merged
-            if rerank_payload.get("reason"):
-                current["reason"] = rerank_payload["reason"]
-        return classifications, rankings
-
-    def _rerank_shortlists(self, provider: ChatProvider, worker_backend_model: str, models: list[ProviderModel]) -> dict[str, dict[str, Any]]:
-        rerankings: dict[str, dict[str, Any]] = {}
-        for alias in _ALIASES:
-            shortlist = [
-                model
-                for model in sorted(models, key=lambda model: self._score_breakdown(alias, model)["total_score"], reverse=True)
-                if self._model_is_routable(model, alias=alias)
-            ][: self.config.ranking_shortlist_size]
-            if not shortlist:
-                continue
-            prompt = {
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Rank backend models for a router alias. "
-                            "Return strict JSON with the shape "
-                            "{\"alias\": \"coding\", \"ordered\": [\"provider::model\", ...], \"reason\": \"...\"}."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "alias": alias,
-                                "candidates": [
-                                    {
-                                        "provider": model.provider,
-                                        "id": model.id,
-                                        "is_free": model.is_free,
-                                        "tags": list(model.tags),
-                                        "metadata": model.metadata,
-                                        "heuristic_score": self._score_breakdown(alias, model)["total_score"],
-                                    }
-                                    for model in shortlist
-                                ],
-                            },
-                            sort_keys=True,
-                        ),
-                    },
-                ],
-                "temperature": 0,
-            }
-            try:
-                result = provider.chat_completions(worker_backend_model, prompt, timeout=min(self.config.default_timeout, 20.0))
-            except NormalizedProviderError as exc:
-                self._log_event("rerank_failed", alias=alias, category=exc.category)
-                continue
-            payload = self._parse_json_completion(result.payload)
-            ordered = [entry for entry in payload.get("ordered", []) if isinstance(entry, str)]
-            for index, key in enumerate(ordered):
-                bonus = float(max(len(ordered) - index, 1))
-                rerankings.setdefault(key, {"rerank_scores": {}, "reason": payload.get("reason")})
-                rerankings[key]["rerank_scores"][alias] = bonus
-        return rerankings
-
-    def _resolve_ranking_key(self, key: str, models: list[ProviderModel]) -> tuple[str, str] | None:
-        if "::" in key:
-            provider_name, backend_model = key.split("::", 1)
-            if provider_name and backend_model:
-                return provider_name, backend_model
-            return None
-        matches = [(model.provider, model.id) for model in models if model.id == key]
-        if len(matches) == 1:
-            return matches[0]
-        return None
-
-    def _parse_json_completion(self, payload: dict[str, Any]) -> dict[str, Any]:
-        content = payload.get("choices", [{}])[0].get("message", {}).get("content", "")
-        text = str(content).strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return {}
-
     def _prom_metric(self, name: str, value: Any, **labels: str) -> str:
         rendered_labels = ",".join(f'{key}="{self._prom_escape(label)}"' for key, label in sorted(labels.items()))
         if rendered_labels:
@@ -2535,226 +2183,6 @@ class RouterService:
                 return model
         return None
 
-    def _family_bias(self, alias: str, model: ProviderModel) -> tuple[str | None, float]:
-        primary_matches, description_matches = self._family_matches(alias, model)
-        family_bonus_map = self._family_bonus_map(alias)
-        if primary_matches:
-            family_name = next((family for family in family_bonus_map if family in primary_matches), primary_matches[0])
-            return family_name, family_bonus_map.get(family_name, 0.0)
-        if description_matches:
-            family_name = next((family for family in family_bonus_map if family in description_matches), description_matches[0])
-            return family_name, round(family_bonus_map.get(family_name, 0.0) * 0.2, 3)
-        return None, 0.0
-
-    def _family_matches(self, alias: str, model: ProviderModel) -> tuple[list[str], list[str]]:
-        priors = _FAMILY_PRIORS_BY_ALIAS.get(alias)
-        if not priors:
-            return [], []
-        metadata = model.metadata if isinstance(model.metadata, dict) else {}
-        primary_haystack = " ".join(
-            str(value).lower()
-            for value in (
-                model.id,
-                metadata.get("name"),
-            )
-            if value
-        )
-        description_haystack = str(metadata.get("description", "")).lower()
-        primary_matches: list[str] = []
-        description_matches: list[str] = []
-        for family_name, tokens in priors:
-            if any(token in primary_haystack for token in tokens):
-                primary_matches.append(family_name)
-                continue
-            if description_haystack and any(token in description_haystack for token in tokens):
-                description_matches.append(family_name)
-        return primary_matches, description_matches
-
-    def _family_bonus_map(self, alias: str) -> dict[str, float]:
-        priors = _FAMILY_PRIORS_BY_ALIAS.get(alias)
-        if not priors:
-            return {}
-        present_families: list[str] = []
-        for family_name, _tokens in priors:
-            for candidate in self._inventory_for_all():
-                if not self._model_is_routable(candidate, alias=alias):
-                    continue
-                if not self._model_effectively_enabled(candidate.provider, candidate.id):
-                    continue
-                primary_matches, _ = self._family_matches(alias, candidate)
-                if family_name in primary_matches:
-                    present_families.append(family_name)
-                    break
-        step = _FAMILY_RANK_STEP_BY_ALIAS.get(alias, 1.0)
-        family_count = len(present_families)
-        return {
-            family_name: round((family_count - index) * step, 3)
-            for index, family_name in enumerate(present_families)
-        }
-
-    def _parameter_bias(self, alias: str, model: ProviderModel, *, family_name: str | None) -> tuple[float | None, float, float, float]:
-        parameter_count = self._parameter_count_b(model)
-        size_hint = self._size_hint(model)
-        if alias == "auxiliary":
-            if parameter_count is None:
-                bias = -min(max(size_hint, 0.0) * 2.0, 4.0)
-                return None, bias, bias, 0.0
-            bias = -min(parameter_count * 0.18, 8.0)
-            return parameter_count, bias, bias, 0.0
-        if alias == "tts":
-            return parameter_count, 0.0, 0.0, 0.0
-        size_rank_bonus = self._size_rank_bonus(alias, model, parameter_count=parameter_count)
-        if family_name is None:
-            return parameter_count, size_rank_bonus, 0.0, size_rank_bonus
-        largest_signature = self._largest_family_size_signature(alias, family_name, model)
-        current_signature = self._size_signature(model)
-        if largest_signature is None or current_signature >= largest_signature:
-            return parameter_count, size_rank_bonus, 0.0, size_rank_bonus
-        parameter_gap = max(largest_signature[1] - current_signature[1], 0.0)
-        size_hint_gap = max(largest_signature[2] - current_signature[2], 0.0)
-        if alias == "vision":
-            penalty = min((parameter_gap * 0.32) + (size_hint_gap * 2.0), 12.0)
-        elif alias == "coding":
-            penalty = min((parameter_gap * 0.08) + (size_hint_gap * 4.0), 10.0)
-        elif alias == "agentic":
-            penalty = min((parameter_gap * 0.06) + (size_hint_gap * 5.0), 16.0)
-        else:
-            penalty = 0.0
-        total = round(size_rank_bonus - penalty, 3)
-        return parameter_count, total, -round(penalty, 3), size_rank_bonus
-
-    def _largest_family_size_signature(self, alias: str, family_name: str, model: ProviderModel) -> tuple[int, float, float] | None:
-        group_key = self._size_group_key(model, family_name)
-        grouped: list[ProviderModel] = []
-        family_wide: list[ProviderModel] = []
-        for sibling in self._inventory_for_all():
-            if not self._model_is_routable(sibling, alias=alias):
-                continue
-            primary_matches, _ = self._family_matches(alias, sibling)
-            matched_families = set(primary_matches)
-            if family_name not in matched_families:
-                continue
-            family_wide.append(sibling)
-            sibling_group_key = self._size_group_key(sibling, family_name)
-            if group_key is not None and sibling_group_key == group_key:
-                grouped.append(sibling)
-        if group_key is not None and group_key != family_name:
-            candidates = grouped if len(grouped) > 1 else []
-        else:
-            candidates = grouped if group_key is not None and len(grouped) > 1 else family_wide
-        best: tuple[int, float, float] | None = None
-        for sibling in candidates:
-            signature = self._size_signature(sibling)
-            if best is None or signature > best:
-                best = signature
-        return best
-
-    def _size_rank_bonus(self, alias: str, model: ProviderModel, *, parameter_count: float | None) -> float:
-        if parameter_count is None:
-            return 0.0
-        step = _SIZE_RANK_STEP_BY_ALIAS.get(alias, 0.0)
-        if step <= 0:
-            return 0.0
-        values = sorted(
-            {
-                count
-                for candidate in self._inventory_for_all()
-                if self._model_is_routable(candidate, alias=alias)
-                and self._model_effectively_enabled(candidate.provider, candidate.id)
-                and (count := self._parameter_count_b(candidate)) is not None
-            },
-            reverse=True,
-        )
-        if not values:
-            return 0.0
-        try:
-            rank = values.index(parameter_count)
-        except ValueError:
-            return 0.0
-        raw_bonus = (len(values) - rank) * step
-        return round(min(raw_bonus, _SIZE_RANK_CAP_BY_ALIAS.get(alias, raw_bonus)), 3)
-
-    def _size_group_key(self, model: ProviderModel, family_name: str) -> str | None:
-        metadata = model.metadata if isinstance(model.metadata, dict) else {}
-        haystack = " ".join(
-            str(value).lower()
-            for value in (
-                model.id,
-                metadata.get("name"),
-            )
-            if value
-        )
-        patterns: dict[str, tuple[str, ...]] = {
-            "minimax": (r"(m\d+(?:\.\d+)?)",),
-            "glm": (r"(glm-\d+(?:\.\d+)?)",),
-            "qwen": (r"(qwen\d+(?:\.\d+)?-coder-next)", r"(qwen\d+(?:\.\d+)?-coder)", r"(qwen\d+(?:\.\d+)?-next)", r"(qwen\d+(?:\.\d+)?)"),
-            "gemini": (r"(gemini-\d+(?:\.\d+)?)",),
-            "nemotron": (r"(nemotron-\d+)",),
-            "trinity": (r"(trinity)",),
-            "stepfun": (r"(step-\d+(?:\.\d+)?)",),
-            "mimo": (r"(mimo-v\d+(?:\.\d+)?)",),
-            "deepseek": (r"(deepseek(?:-v?\d+(?:\.\d+)?)?)",),
-            "grok": (r"(grok(?:\s|-)\d+(?:\.\d+)?)", r"(grok)",),
-            "devstral": (r"(devstral(?:\s|-)\d+(?:\.\d+)?)", r"(devstral)",),
-        }
-        for pattern in patterns.get(family_name, ()): 
-            match = re.search(pattern, haystack)
-            if match:
-                return match.group(1)
-        return family_name if family_name else None
-
-    def _size_signature(self, model: ProviderModel) -> tuple[int, float, float]:
-        parameter_count = self._parameter_count_b(model)
-        return (1 if parameter_count is not None else 0, parameter_count or 0.0, self._size_hint(model))
-
-    def _size_hint(self, model: ProviderModel) -> float:
-        metadata = model.metadata if isinstance(model.metadata, dict) else {}
-        haystack = " ".join(
-            str(value).lower()
-            for value in (
-                model.id,
-                metadata.get("name"),
-            )
-            if value
-        )
-        return round(sum(weight for token, weight in _SIZE_HINTS if token in haystack), 3)
-
-    def _parameter_count_b(self, model: ProviderModel) -> float | None:
-        metadata = model.metadata if isinstance(model.metadata, dict) else {}
-        haystack = " ".join(
-            str(value).lower()
-            for value in (
-                model.id,
-                metadata.get("name"),
-            )
-            if value
-        )
-        matches = [float(match) for match in re.findall(r"(?<!\d)(\d+(?:\.\d+)?)b(?![a-z])", haystack)]
-        if not matches:
-            return None
-        return max(matches)
-
-    def _recency_bias(self, model: ProviderModel) -> float:
-        metadata = model.metadata if isinstance(model.metadata, dict) else {}
-        created = metadata.get("created")
-        try:
-            created_value = float(created)
-        except (TypeError, ValueError):
-            return 0.0
-        now = time.time()
-        if created_value <= 0 or created_value > now:
-            return 0.0
-        age_days = (now - created_value) / 86400.0
-        if age_days <= 30:
-            return 18.0
-        if age_days <= 90:
-            return 12.0
-        if age_days <= 180:
-            return 8.0
-        if age_days <= 365:
-            return 4.0
-        return 0.0
-
     def _model_override_payload(self, provider_name: str, backend_model: str) -> dict[str, Any]:
         overrides = self._effective_overrides()
         return {
@@ -2766,42 +2194,17 @@ class RouterService:
     def _model_key(provider_name: str, backend_model: str) -> str:
         return f"{provider_name}::{backend_model}"
 
-    def _primary_alias_for_model(self, model: ProviderModel) -> str | None:
-        lowered = model.id.lower()
-        best_alias: str | None = None
-        best_key: tuple[float, float, float, float] | None = None
-        for alias in _ALIASES:
-            if not self._model_is_routable(model, alias=alias):
-                continue
-            breakdown = self._score_breakdown(alias, model)
-            alias_score = breakdown["total_score"]
-            if alias_score <= 0:
-                continue
-            key = (
-                alias_score,
-                breakdown["learned_ranking_score"],
-                breakdown.get("family_bias", 0.0),
-                1.0 if alias in model.tags else 0.0,
-                1.0 if any(token in lowered for token in _ALIAS_HINTS.get(alias, ())) else 0.0,
-            )
-            if best_key is None or key > best_key:
-                best_alias = alias
-                best_key = key
-        return best_alias
-
-    def _alias_for_model_id(self, model_id: str) -> str | None:
-        for alias, tokens in _ALIAS_HINTS.items():
-            if any(token in model_id.lower() for token in tokens):
-                return alias
-        return None
-
     @staticmethod
     def _provider_name_from_prefixed_model_id(model_id: str) -> str | None:
         prefixes = {
             "opencode/": "opencode-zen",
+            "opencode-zen/": "opencode-zen",
+            "opencode-go/": "opencode-go",
             "openrouter/": "openrouter",
             "nvidia/": "nvidia-build",
             "nvidia-build/": "nvidia-build",
+            "zenmux/": "zenmux",
+            "electron-hub/": "electron-hub",
         }
         lowered = model_id.lower()
         for prefix, provider_name in prefixes.items():

@@ -50,8 +50,15 @@ let
     "OPENROUTER_TITLE"
     "OPENAI_BASE_URL"
     "OPENCODE_API_KEY"
+    "OPENCODE_ZEN_API_KEY"
+    "OPENCODE_ZEN_BASE_URL"
     "OPENCODE_GO_API_KEY"
+    "OPENCODE_GO_BASE_URL"
     "OPENCODE_BASE_URL"
+    "ZENMUX_API_KEY"
+    "ZENMUX_BASE_URL"
+    "ELECTRON_HUB_API_KEY"
+    "ELECTRON_HUB_BASE_URL"
     "GITHUB_TOKEN"
     "HASS_TOKEN"
     "HASS_URL"
@@ -201,8 +208,8 @@ let
     in
     {
       model = {
-        provider = "openai-codex";
-        default = "gpt-5.5";
+        provider = "custom:ghostship-router";
+        default = "deepseek-v4-pro";
       };
       web = {
         backend = "firecrawl";
@@ -220,19 +227,26 @@ let
         default_trust = 0.5;
       };
       fallback_model = {
-        provider = "opencode-go";
+        provider = "custom:ghostship-router";
         model = "minimax-m2.7";
       };
       custom_providers = [
         {
           name = "ghostship-router";
           base_url = "http://127.0.0.1:8788/v1";
+          api_key_env = "_GHOSTSHIP_ROUTER_API_KEY";
+          api_mode = "chat_completions";
+          model = "deepseek-v4-pro";
+          models = {
+            "deepseek-v4-pro" = {};
+            "minimax-m2.7" = {};
+          };
         }
       ];
       timezone = "Pacific/Honolulu";
       agent = {
-        max_turns = 110;
-        reasoning_effort = "medium";
+        max_turns = 500;
+        reasoning_effort = "high";
         verbose = false;
       };
       compression = {
@@ -727,22 +741,34 @@ EOF
           next
         }
         in_model && $0 == "  provider: opencode-go" {
-          print "  provider: openai-codex"
+          print "  provider: custom:ghostship-router"
           next
         }
         in_model && $0 == "  default: minimax-m2.7" {
-          print "  default: gpt-5.5"
+          print "  default: deepseek-v4-pro"
+          next
+        }
+        in_model && $0 == "  provider: openai-codex" {
+          print "  provider: custom:ghostship-router"
           next
         }
         in_model && $0 == "  default: gpt-5.4" {
-          print "  default: gpt-5.5"
+          print "  default: deepseek-v4-pro"
+          next
+        }
+        in_model && $0 == "  default: gpt-5.5" {
+          print "  default: deepseek-v4-pro"
           next
         }
         in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
           next
         }
         in_fallback_model && $0 == "  provider: openai-codex" {
-          print "  provider: opencode-go"
+          print "  provider: custom:ghostship-router"
+          next
+        }
+        in_fallback_model && $0 == "  provider: opencode-go" {
+          print "  provider: custom:ghostship-router"
           next
         }
         in_fallback_model && $0 == "  model: gpt-5.4-mini" {
@@ -750,7 +776,15 @@ EOF
           next
         }
         in_agent && $0 == "  reasoning_effort: high" {
-          print "  reasoning_effort: medium"
+          print
+          next
+        }
+        in_agent && $0 == "  reasoning_effort: medium" {
+          print "  reasoning_effort: high"
+          next
+        }
+        in_agent && $0 == "  max_turns: 110" {
+          print "  max_turns: 500"
           next
         }
         in_web && $0 ~ /^  backend:[[:space:]]/ {
@@ -817,7 +851,7 @@ EOF
       is_hermes_passthrough_key() {
         key="$1"
         case "$key" in
-          DISCORD_WEBHOOK_CHANNEL|GHOSTSHIP_ROUTER_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
+          DISCORD_WEBHOOK_CHANNEL|GHOSTSHIP_CODEX_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
             return 0
             ;;
         esac
@@ -1392,18 +1426,24 @@ in
         "OPENROUTER_HTTP_REFERER"
         "OPENROUTER_TITLE"
         "OPENCODE_API_KEY"
+        "OPENCODE_ZEN_API_KEY"
+        "OPENCODE_ZEN_BASE_URL"
         "OPENCODE_GO_API_KEY"
+        "OPENCODE_GO_BASE_URL"
         "OPENCODE_BASE_URL"
+        "ZENMUX_API_KEY"
+        "ZENMUX_BASE_URL"
+        "ELECTRON_HUB_API_KEY"
+        "ELECTRON_HUB_BASE_URL"
         "GHOSTSHIP_ROUTER_CORS_ORIGINS"
         "_GHOSTSHIP_ROUTER_API_KEY"
         "API_SERVER_CORS_ORIGINS"
-        "GHOSTSHIP_ROUTER_ASSISTED_BUCKET_MODEL"
-        "GHOSTSHIP_ROUTER_ASSISTED_BUCKET_BATCH_SIZE"
-        "GHOSTSHIP_ROUTER_RANKING_ENABLED"
-        "GHOSTSHIP_ROUTER_RANKING_INTERVAL"
-        "GHOSTSHIP_ROUTER_RANKING_WORKER_MODEL"
-        "GHOSTSHIP_ROUTER_RANKING_SHORTLIST_SIZE"
         "GHOSTSHIP_ROUTER_ROLLING_WINDOW_SECONDS"
+        "GHOSTSHIP_ROUTER_PROVIDER_RPM_NVIDIA_BUILD"
+        "GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENCODE_ZEN"
+        "GHOSTSHIP_ROUTER_PROVIDER_RPM_ZENMUX"
+        "GHOSTSHIP_ROUTER_PROVIDER_RPM_ELECTRON_HUB"
+        "GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENROUTER"
         "GHOSTSHIP_ROUTER_PROVIDER_COOLDOWN_SECONDS"
         "GHOSTSHIP_ROUTER_PROVIDER_FAILURE_THRESHOLD"
         "GHOSTSHIP_ROUTER_PROVIDER_RATE_LIMIT_THRESHOLD"
@@ -1413,13 +1453,16 @@ in
         "GHOSTSHIP_ROUTER_DISABLED_MODELS"
         "GHOSTSHIP_ROUTER_PROVIDER_WEIGHT_OVERRIDES"
         "GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES"
-        "GHOSTSHIP_ROUTER_ALIAS_PIN_AGENTIC"
-        "GHOSTSHIP_ROUTER_AGENTIC_MODELS"
-        "GHOSTSHIP_ROUTER_PROVIDER_RESERVE_LIMIT"
-        "GHOSTSHIP_ROUTER_PROVIDER_ACTIVE_CANDIDATE_LIMIT"
+        "GHOSTSHIP_ROUTER_ALIAS_PIN_DEEPSEEK_V4_PRO"
+        "GHOSTSHIP_ROUTER_ALIAS_PIN_MINIMAX_M2_7"
+        "GHOSTSHIP_ROUTER_DEEPSEEK_V4_PRO_MODELS"
+        "GHOSTSHIP_ROUTER_MINIMAX_M2_7_MODELS"
         "GHOSTSHIP_ROUTER_NVIDIA_BUILD_UNUSED_MODELS"
         "GHOSTSHIP_ROUTER_OPENCODE_ZEN_UNUSED_MODELS"
+        "GHOSTSHIP_ROUTER_ZENMUX_UNUSED_MODELS"
+        "GHOSTSHIP_ROUTER_ELECTRON_HUB_UNUSED_MODELS"
         "GHOSTSHIP_ROUTER_OPENROUTER_UNUSED_MODELS"
+        "GHOSTSHIP_ROUTER_OPENCODE_GO_UNUSED_MODELS"
       ];
       ExecStart = routerCommand;
       Restart = "always";

@@ -107,15 +107,19 @@ These provider credentials should be present for the default Ghostship runtime:
 The local router can additionally use any configured provider credential:
 
 - `NVIDIA_BUILD_API_KEY`
+- `OPENCODE_ZEN_API_KEY` or legacy `OPENCODE_API_KEY`
+- `ZENMUX_API_KEY`
+- `ELECTRON_HUB_API_KEY`
 - `OPENROUTER_API_KEY`
 
 Notes:
 
-- `NVIDIA_BUILD_API_KEY` enables the prioritized curated free-only NVIDIA Build inventory in the local router.
-- `OPENCODE_GO_API_KEY` backs the configured `opencode-go/minimax-m2.7` fallback lane.
-- `OPENROUTER_API_KEY` enables OpenRouter-backed candidates in the local router.
+- `NVIDIA_BUILD_API_KEY` enables free NVIDIA Build equivalents in the local router.
+- `OPENCODE_ZEN_API_KEY`, `ZENMUX_API_KEY`, `ELECTRON_HUB_API_KEY`, and `OPENROUTER_API_KEY` enable explicit free-provider equivalents when they are seeded for the requested OpenCode Go model id.
+- `OPENCODE_GO_API_KEY` backs the router paid fallback lane for exposed OpenCode Go model IDs.
+- Router free-provider RPM defaults are NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20; override them with `GHOSTSHIP_ROUTER_PROVIDER_RPM_*` env vars.
 - `GOOGLE_AI_STUDIO_API_KEY` is required because the runtime uses Gemini-backed supplemental tasks.
-- Codex primary auth is not an env var; it is persisted in `/home/hermes/.hermes/auth.json`.
+- Codex auth is not an env var; it is persisted in `/home/hermes/.hermes/auth.json` for the forced Codex channel.
 
 ### Required When Discord Gateway Is Enabled
 
@@ -123,7 +127,7 @@ Notes:
 - `DISCORD_ALLOWED_USERS`
 - `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
-- `GHOSTSHIP_ROUTER_CHANNEL`
+- `GHOSTSHIP_CODEX_CHANNEL`
 - `DISCORD_WEBHOOK_CHANNEL`
 
 Channel behavior:
@@ -131,10 +135,10 @@ Channel behavior:
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id; set it to `#assistant`.
 - `DISCORD_REACTIONS` and `DISCORD_REQUIRE_MENTION` are image-owned and default to `false`; `DISCORD_AUTO_THREAD` is image-owned and defaults to `true`.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to `ghostship-router` `agentic`; set it to `#foodstamps`.
+- `GHOSTSHIP_CODEX_CHANNEL` pins replies to `openai-codex/gpt-5.5`; set it to `#foodstamps`.
 - `DISCORD_FREE_RESPONSE_CHANNELS` must include the `#foodstamps` channel id.
 - `DISCORD_WEBHOOK_CHANNEL` defaults Hermes-created Discord webhook subscriptions to `#webhooks` when `hermes webhook subscribe --deliver discord` omits `--deliver-chat-id`.
-- `/model` cannot override router-pinned `#foodstamps` sessions, including sessions inside Discord threads.
+- `/model` cannot override Codex-pinned `#foodstamps` sessions, including sessions inside Discord threads.
 - The managed gateway retires closed, archived, locked, deleted, or inaccessible Discord thread sessions after 05:00 local Hermes time while preserving historical SQLite transcripts.
 
 ### Recommended Optional Operator Env

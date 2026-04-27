@@ -11,12 +11,12 @@ def _load_app_module(monkeypatch, tmp_path: Path):
     managed_home.mkdir(parents=True)
     (managed_home / 'config.yaml').write_text(
         """model:
-  provider: openai-codex
-  default: gpt-5.5
+  provider: custom:ghostship-router
+  default: deepseek-v4-pro
 web:
   backend: firecrawl
 fallback_model:
-  provider: opencode-go
+  provider: custom:ghostship-router
   model: minimax-m2.7
 """,
         encoding='utf-8',
@@ -85,7 +85,8 @@ def test_console_routes_open_and_close_session(monkeypatch, tmp_path: Path) -> N
             return None
 
     monkeypatch.setattr(console_module.subprocess, 'Popen', lambda *args, **kwargs: DummyProcess())
-    monkeypatch.setattr(console_module, 'port_is_open', lambda host, port, timeout=0.15: True)
+    port_checks = iter([False, True, True])
+    monkeypatch.setattr(console_module, 'port_is_open', lambda host, port, timeout=0.15: next(port_checks, True))
     monkeypatch.setattr(console_module, 'process_is_alive', lambda pid: True)
     monkeypatch.setattr(console_module, 'terminate_session', lambda session, timeout=0.75: None)
 

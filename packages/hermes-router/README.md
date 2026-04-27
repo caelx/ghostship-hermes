@@ -5,47 +5,38 @@ Local `FastAPI` model router for `ghostship-hermes`.
 Current contract:
 
 - exposes Hermes/OpenAI-compatible health, `chat/completions`, and `responses` endpoints
-- exposes one logical alias at `GET /v1/models`: `agentic`
+- uses OpenCode Go as the canonical served-model catalog
+- exposes only OpenCode Go model ids with explicit free-provider equivalents, initially `deepseek-v4-pro` and `minimax-m2.7`
+- routes configured free equivalents first, then falls back to `opencode-go/<same model id>`
+- reports `free_provider_count`, free provider names, availability, and RPM state in `/v1/models` metadata
 - persists inventory, route health, provider health, cooldowns, overrides, recent events, chat sessions, and stored `responses` objects in SQLite
-- refreshes inventory from `nvidia-build`, `opencode-zen`, and `openrouter`
-- discovers NVIDIA Build inventory live from the filtered `build.nvidia.com/models?filters=nimType%3Anim_type_preview` page, filters out deprecated free endpoints, deduplicates repeated model ids, and normalizes them into canonical `publisher/model` ids
-- routes only explicitly ranked `agentic` models
-- keeps a top-five reserve per provider and chooses the best three currently eligible models from that reserve
-- never routes uncategorized discovered models; they are exposed only through debug inventory surfaces
-- exposes operator debug surfaces at `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{alias}`, `GET /debug/rankings/{alias}`, `GET /debug/inventory/{category}`, and `GET /debug/models/{provider}/{model}`
+- refreshes inventory from configured free providers (`nvidia-build`, `opencode-zen`, `zenmux`, `electron-hub`, and explicitly mapped `openrouter`) plus paid fallback provider `opencode-go`
+- never exposes OpenCode Go models without explicit free-equivalence mappings
+- exposes operator debug surfaces at `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{model}`, `GET /debug/rankings/{model}`, `GET /debug/inventory/{seeded|configured|unconfigured|inventory}`, and `GET /debug/models/{provider}/{model}`
 - exposes a compact tuning surface at `GET /debug/summary`
 - exposes Prometheus-style metrics at `GET /metrics`
 - supports optional internal bearer auth through `_GHOSTSHIP_ROUTER_API_KEY`
 
 Provider policy:
 
-- provider order is fixed: `nvidia-build -> opencode-zen -> openrouter`
-- provider failover is exhaustion-gated; ordinary retryable model failures stay inside the active provider
-- repeated exhaustion evidence can suppress a provider for a longer daily-limit style window
-- chat sessions keep provider/model stickiness once a session lands on a healthy route
+- `opencode-go` is the paid fallback and is never counted as a free provider
+- `opencode-zen` is a free-provider candidate only when an explicit equivalence entry maps it to the requested OpenCode Go model id
+- NVIDIA Build is a free-provider candidate through live catalog discovery
+- ZenMux is a free-provider candidate through explicit equivalence mappings and defaults to 10 RPM
+- Electron Hub is a free-provider candidate through explicit equivalence mappings and defaults to 5 RPM
+- OpenRouter is a free-provider candidate only for explicitly mapped free models
+- OpenRouter defaults to 20 RPM when configured, assuming the account has a maintained balance
+- NVIDIA Build and OpenCode Zen default to 30 RPM
+- free providers are selected by sliding-window RPM-aware round robin; `opencode-go` is used only after all eligible free equivalents are exhausted, rate-limited, unavailable, or failed
 
-Seed ranked usable sets:
+Default served models:
 
-- `nvidia-build`
-  - `minimaxai/minimax-m2.7`
-  - `qwen/qwen3-coder-480b-a35b-instruct`
-  - `moonshotai/kimi-k2-thinking`
-  - `deepseek-ai/deepseek-v3.2`
-  - `z-ai/glm-4.7`
-- `opencode-zen`
-  - `big-pickle`
-  - `minimax-m2.5-free`
-  - `trinity-large-preview-free`
-  - `nemotron-3-super-free`
-  - `gpt-5-nano`
-- `openrouter`
-  - `nvidia/nemotron-3-super-120b-a12b:free`
-  - `minimax/minimax-m2.5:free`
-  - `arcee-ai/trinity-large-preview:free`
-  - `google/gemma-4-31b-it:free`
-  - `qwen/qwen3-coder:free`
-
-`google/gemma-4-31b-it:free` remains intentionally ranked even though the current `agentic` filter usually skips it because it advertises image/video input.
+- `deepseek-v4-pro`
+  - free equivalents: configured NVIDIA Build, OpenCode Zen, ZenMux, Electron Hub, and OpenRouter entries when available
+  - paid fallback: `opencode-go/deepseek-v4-pro`
+- `minimax-m2.7`
+  - free equivalents: configured NVIDIA Build, OpenCode Zen, ZenMux, Electron Hub, and OpenRouter entries when available
+  - paid fallback: `opencode-go/minimax-m2.7`
 
 Compatibility notes:
 
@@ -53,15 +44,21 @@ Compatibility notes:
 - `responses` supports Hermes/OpenAI SDK streaming and richer stored response objects
 - Hermes may use either `http://127.0.0.1:8788/v1` or the bare root; both surfaces are exposed
 - `NVIDIA_API_KEY` remains a compatibility alias for `NVIDIA_BUILD_API_KEY`
-- `OPENCODE_GO_API_KEY` remains a compatibility alias for `OPENCODE_API_KEY`
+- `OPENCODE_API_KEY` remains a compatibility alias for `OPENCODE_ZEN_API_KEY`; use `OPENCODE_GO_API_KEY` for the paid fallback provider
 
 ## Environment
 
 Required provider creds for full local validation:
 
-- `OPENROUTER_API_KEY`
-- `OPENCODE_API_KEY` or `OPENCODE_GO_API_KEY`
+- `OPENCODE_GO_API_KEY`
+- `OPENCODE_ZEN_API_KEY` or legacy `OPENCODE_API_KEY`
 - `NVIDIA_BUILD_API_KEY`
+- `ZENMUX_API_KEY`
+- `ELECTRON_HUB_API_KEY`
+
+Optional mapped provider creds:
+
+- `OPENROUTER_API_KEY`
 
 Common router env:
 
@@ -71,38 +68,13 @@ Common router env:
 - `GHOSTSHIP_ROUTER_STATE_DIR`
 - `GHOSTSHIP_ROUTER_DB_PATH`
 - `GHOSTSHIP_ROUTER_REFRESH_INTERVAL`
+- `GHOSTSHIP_ROUTER_PROVIDER_RPM_NVIDIA_BUILD`
+- `GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENCODE_ZEN`
+- `GHOSTSHIP_ROUTER_PROVIDER_RPM_ZENMUX`
+- `GHOSTSHIP_ROUTER_PROVIDER_RPM_ELECTRON_HUB`
+- `GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENROUTER`
 - `GHOSTSHIP_ROUTER_PROVIDER_COOLDOWN_SECONDS`
 - `GHOSTSHIP_ROUTER_PROVIDER_FAILURE_THRESHOLD`
 - `GHOSTSHIP_ROUTER_PROVIDER_RATE_LIMIT_THRESHOLD`
 - `GHOSTSHIP_ROUTER_PROVIDER_TIMEOUT_THRESHOLD`
 - `GHOSTSHIP_ROUTER_PROVIDER_EXHAUSTION_THRESHOLD`
-- `GHOSTSHIP_ROUTER_PROVIDER_RESERVE_LIMIT`
-- `GHOSTSHIP_ROUTER_PROVIDER_ACTIVE_CANDIDATE_LIMIT`
-- `GHOSTSHIP_ROUTER_AGENTIC_MODELS`
-- `GHOSTSHIP_ROUTER_ALIAS_PIN_AGENTIC`
-- `GHOSTSHIP_ROUTER_NVIDIA_BUILD_UNUSED_MODELS`
-- `GHOSTSHIP_ROUTER_OPENCODE_ZEN_UNUSED_MODELS`
-- `GHOSTSHIP_ROUTER_OPENROUTER_UNUSED_MODELS`
-
-Hermes-compatible aliases:
-
-- `API_SERVER_HOST`
-- `API_SERVER_PORT`
-- `API_SERVER_CORS_ORIGINS`
-
-Standalone local runs default router state to `${XDG_STATE_HOME:-~/.local/state}/ghostship-hermes/router`. The workstation image overrides that to `/home/hermes/.local/state/ghostship-hermes/router`.
-
-## Local Development
-
-```fish
-cd packages/hermes-router
-uv sync --extra dev
-.venv/bin/python -m pytest -q
-.venv/bin/python -m hermes_router.app
-```
-
-Build through the repo flake:
-
-```fish
-nix build .#ghostship-hermes-router
-```

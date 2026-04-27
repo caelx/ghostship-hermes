@@ -39,7 +39,7 @@ Immutable image-owned layer:
 - router in `/opt/ghostship-router`
 - `s6`, `nginx`, `ttyd`
 - repo-owned Hermes patches:
-  - Discord router-pinned channel
+  - Discord Codex-pinned channel
   - dashboard `Terminal` entry
 - baked fixed environment defaults
 
@@ -295,7 +295,7 @@ Required when Discord gateway is enabled:
 - `DISCORD_ALLOWED_USERS`
 - `DISCORD_HOME_CHANNEL`
 - `DISCORD_FREE_RESPONSE_CHANNELS`
-- `GHOSTSHIP_ROUTER_CHANNEL`
+- `GHOSTSHIP_CODEX_CHANNEL`
 - `DISCORD_WEBHOOK_CHANNEL`
 
 Recommended optional operator env:
@@ -322,14 +322,14 @@ Important behavior:
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id; set it to `#assistant`.
 - `DISCORD_REACTIONS` and `DISCORD_REQUIRE_MENTION` default to `false`; `DISCORD_AUTO_THREAD` defaults to `true` so Discord sessions run in threads by default.
 - `DISCORD_FREE_RESPONSE_CHANNELS` is the upstream Hermes comma-separated free-response channel list.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins replies to router alias `agentic`; set it to `#foodstamps`.
+- `GHOSTSHIP_CODEX_CHANNEL` pins replies to Codex channel `openai-codex/gpt-5.5`; set it to `#foodstamps`.
 - `DISCORD_FREE_RESPONSE_CHANNELS` must include the `#foodstamps` channel id.
 - `DISCORD_WEBHOOK_CHANNEL` is the default Discord destination for `hermes webhook subscribe --deliver discord` when `--deliver-chat-id` is omitted; set it to `#webhooks`.
-- `/model` cannot override the router-pinned `#foodstamps` sessions, including sessions inside Discord threads.
+- `/model` cannot override the Codex-pinned `#foodstamps` sessions, including sessions inside Discord threads.
 - Closed, archived, locked, deleted, or inaccessible Discord thread sessions are retired by the managed gateway after 05:00 local Hermes time; historical SQLite transcripts are preserved.
 - `_GHOSTSHIP_ROUTER_API_KEY` is optional internal router auth. The image may still auto-generate it for Hermes integration, but the router does not require it to run.
 
-Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume and backs the default `openai-codex/gpt-5.5` primary lane.
+Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume and backs the forced `#foodstamps` Codex lane.
 
 The full fixed env contract is also documented in [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/docs/runtime-env.md).
 
@@ -345,15 +345,15 @@ Router:
 
 - `ghostship-hermes-router` is mandatory
 - it listens on `127.0.0.1:8788`
-- Hermes default config uses Codex `gpt-5.5` as the primary lane and `opencode-go/minimax-m2.7` as the configured fallback
+- Hermes default config uses `custom:ghostship-router/deepseek-v4-pro` as the primary lane and `custom:ghostship-router/minimax-m2.7` as the configured fallback
 - Hermes default config sets `web.backend: firecrawl`
-- the managed Hermes config also exposes `ghostship-router` as a local custom provider pinned to alias `agentic`
-- when configured, NVIDIA Build participates through live free-endpoint catalog discovery and outranks Zen/OpenRouter by default
-- router normal routing is `agentic`-only, keeps a top-five reserve per provider, and uses the best three currently eligible models from that reserve
+- the managed Hermes config exposes `ghostship-router` as a local custom provider with `deepseek-v4-pro` and `minimax-m2.7` models
+- when configured, NVIDIA Build, OpenCode Zen, ZenMux, Electron Hub, and explicitly mapped OpenRouter free models participate through explicit equivalence entries
+- router normal routing exposes only OpenCode Go model IDs with explicit free-provider equivalents, uses RPM-aware round robin across eligible free providers, and falls back to `opencode-go` with the same model id only when the free equivalents are exhausted or unavailable
 
 Forced Discord channels:
 
-- `GHOSTSHIP_ROUTER_CHANNEL` pins `#foodstamps` replies, including thread replies, to the local router `agentic` lane.
+- `GHOSTSHIP_CODEX_CHANNEL` pins `#foodstamps` replies, including thread replies, to `openai-codex/gpt-5.5`.
 - `/model` does not override that forced channel
 
 ## Native Hermes Management
@@ -374,7 +374,7 @@ After the first successful container boot:
 
 1. authenticate Codex so the default primary lane can run
 2. verify provider and gateway env are present in both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`
-3. inspect `config.yaml` once and confirm the expected Codex-primary and OpenCode-fallback defaults
+3. inspect `config.yaml` once and confirm the expected router-primary defaults
 4. run `hermes doctor`
 5. open the dashboard and confirm `/terminal/` works through the same origin
 
@@ -393,10 +393,10 @@ Expected config shape after first boot:
 - Hermes home at `/home/hermes/.hermes`
 - `terminal.backend: local`
 - `terminal.cwd: /workspace`
-- root model uses Codex `gpt-5.5`
-- `fallback_model` uses direct `opencode-go/minimax-m2.7`
+- root model uses `custom:ghostship-router/deepseek-v4-pro`
+- `fallback_model` uses `custom:ghostship-router/minimax-m2.7`
 - `web.backend` is `firecrawl`
-- `custom_providers` includes `ghostship-router` pinned to `agentic`
+- `custom_providers` includes `ghostship-router` with `deepseek-v4-pro` and `minimax-m2.7`
 - Discord forced-channel behavior controlled by runtime env, not by hardcoding channel ids into `config.yaml`
 
 ## Verification

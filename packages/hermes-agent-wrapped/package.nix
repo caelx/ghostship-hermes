@@ -139,7 +139,7 @@ turn_route_marker = """    def _resolve_turn_agent_config(self, user_message: st
         return route
 """
 turn_route_replacement = """    @staticmethod
-    def _ghostship_is_discord_router_channel(source) -> bool:
+    def _ghostship_is_discord_codex_channel(source) -> bool:
         if source is None:
             return False
         platform = getattr(source, "platform", None)
@@ -148,19 +148,19 @@ turn_route_replacement = """    @staticmethod
             return False
         if getattr(source, "chat_type", None) == "dm":
             return False
-        router_channel = os.getenv("GHOSTSHIP_ROUTER_CHANNEL", "").strip()
-        if not router_channel:
+        codex_channel = os.getenv("GHOSTSHIP_CODEX_CHANNEL", "").strip()
+        if not codex_channel:
             return False
         chat_id = getattr(source, "chat_id", None)
         parent_chat_id = getattr(source, "chat_id_alt", None)
-        return chat_id == router_channel or parent_chat_id == router_channel
+        return chat_id == codex_channel or parent_chat_id == codex_channel
 
     @staticmethod
-    def _ghostship_force_discord_router_channel_route(runtime_kwargs: dict) -> dict:
+    def _ghostship_force_discord_codex_channel_route(runtime_kwargs: dict) -> dict:
         forced_runtime = dict(runtime_kwargs)
-        forced_runtime["base_url"] = "http://127.0.0.1:8788/v1"
-        forced_runtime["provider"] = "custom"
-        forced_runtime["api_mode"] = "chat_completions"
+        forced_runtime["base_url"] = None
+        forced_runtime["provider"] = "openai-codex"
+        forced_runtime["api_mode"] = "codex_responses"
         forced_runtime["command"] = None
         forced_runtime["args"] = []
         forced_runtime["credential_pool"] = None
@@ -170,20 +170,20 @@ turn_route_replacement = """    @staticmethod
         from agent.smart_model_routing import resolve_turn_route
         from hermes_cli.models import resolve_fast_mode_overrides
 
-        if self._ghostship_is_discord_router_channel(source):
+        if self._ghostship_is_discord_codex_channel(source):
             primary = {
-                "model": "agentic",
-                "base_url": "http://127.0.0.1:8788/v1",
-                "provider": "custom",
-                "api_mode": "chat_completions",
+                "model": "gpt-5.5",
+                "base_url": None,
+                "provider": "openai-codex",
+                "api_mode": "codex_responses",
                 "command": None,
                 "args": [],
                 "credential_pool": None,
             }
             route = resolve_turn_route(user_message, getattr(self, "_smart_model_routing", {}), primary)
-            route["model"] = "agentic"
-            route["runtime"] = self._ghostship_force_discord_router_channel_route(route.get("runtime", {}))
-            route["label"] = "ghostship discord router channel pin"
+            route["model"] = "gpt-5.5"
+            route["runtime"] = self._ghostship_force_discord_codex_channel_route(route.get("runtime", {}))
+            route["label"] = "ghostship discord codex channel pin"
             route["signature"] = (
                 route["model"],
                 route["runtime"].get("provider"),
@@ -219,7 +219,7 @@ turn_route_replacement = """    @staticmethod
 """
 gateway_run_text = gateway_run_text.replace(turn_route_marker, turn_route_replacement, 1)
 if turn_route_replacement not in gateway_run_text:
-    raise RuntimeError("failed to inject ghostship discord router channel pin into gateway.run")
+    raise RuntimeError("failed to inject ghostship discord codex channel pin into gateway.run")
 
 gateway_run_text = gateway_run_text.replace(
     '            turn_route = self._resolve_turn_agent_config(prompt, model, runtime_kwargs)\n',
@@ -240,16 +240,16 @@ gateway_run_text = gateway_run_text.replace(
 model_guard_marker = """        # No args: show interactive picker (Telegram/Discord) or text list
         if not model_input and not explicit_provider:
 """
-model_guard_replacement = """        if self._ghostship_is_discord_router_channel(source):
+model_guard_replacement = """        if self._ghostship_is_discord_codex_channel(source):
             self._session_model_overrides.pop(session_key, None)
-            return "This Discord router channel is pinned to ghostship-router (`agentic`)."
+            return "This Discord Codex channel is pinned to openai-codex (`gpt-5.5`)."
 
         # No args: show interactive picker (Telegram/Discord) or text list
         if not model_input and not explicit_provider:
 """
 gateway_run_text = gateway_run_text.replace(model_guard_marker, model_guard_replacement, 1)
 if model_guard_replacement not in gateway_run_text:
-    raise RuntimeError("failed to block /model in pinned discord router channels")
+    raise RuntimeError("failed to block /model in pinned discord codex channels")
 
 gateway_run_text = gateway_run_text.replace(
     '    async def _session_expiry_watcher(self, interval: int = 300):\n',

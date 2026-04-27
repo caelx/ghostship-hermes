@@ -21,7 +21,7 @@
 - Router is mandatory.
 - Discord forced-channel routing is mandatory.
 - The only repo-owned Hermes patches are:
-  - Discord router-pinned channel
+  - Discord Codex-pinned channel
   - dashboard `Terminal` entry
 - Do not add extra Hermes service/doctor compatibility patches unless upstream behavior changes and there is no cleaner workaround.
 - Do not use `hermes gateway install` inside the container runtime. `s6` owns service supervision.
@@ -73,12 +73,12 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - The wrapper at `/usr/local/bin/google-chrome` must inject CloakBrowser's default stealth args on each launch and append the forced `--user-data-dir=/home/hermes/.local/state/cloakbrowser` after caller args so browser tooling cannot override it with a temporary profile.
 - Fresh homes must pre-create `/home/hermes/.local/state/cloakbrowser` as `hermes`; browser launches must not leave root-owned state behind in that tree.
 - Upstream Hermes `web/src/App.tsx` ships in three currently supported released shapes: the older static nav/page map, the intermediate `BUILTIN_NAV` plus explicit `<Route>` layout, and the newer `BUILTIN_ROUTES` plus `BUILTIN_NAV` route-table layout. Keep `prepare_upstream_hermes.py` patching all three shapes so upstream dashboard bumps do not break the image build.
-- Upstream Hermes `gateway/run.py` currently ships in two supported `_resolve_turn_agent_config` shapes: the older smart-routing helper and the newer direct runtime/route builder. Keep `prepare_upstream_hermes.py` patching both shapes so router-pinned Discord channel behavior survives Hermes pin bumps.
+- Upstream Hermes `gateway/run.py` currently ships in two supported `_resolve_turn_agent_config` shapes: the older smart-routing helper and the newer direct runtime/route builder. Keep `prepare_upstream_hermes.py` patching both shapes so the Codex-pinned Discord channel behavior survives Hermes pin bumps.
 - Install high-backtracking upstream Hermes extras in the Dockerfile with `uv pip` plus constraints; broad messaging, matrix, Daytona, OpenTelemetry, Alibaba/DingTalk, Mistral, and related ranges can make pip hit `resolution-too-deep` before it finds valid leaves.
 - Do not install upstream Hermes in the Dockerfile base stage; the final stage owns the repo-patched Hermes install, and duplicating it doubles resolver/build exposure.
 - Build `tirith` from the repo flake's pinned `.#tirith` package, not from ad-hoc `nixpkgs#tirith`, so exact-source Docker builds stay deterministic and do not depend on live `nixpkgs-unstable` GitHub API lookups.
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
-- The managed Hermes runtime primary lane is Codex `gpt-5.5` with `agent.reasoning_effort = "medium"`, the configured fallback lane is direct `opencode-go/minimax-m2.7`, and the managed web backend is `firecrawl`.
+- The managed Hermes runtime primary lane is `custom:ghostship-router/deepseek-v4-pro`, fallback is `custom:ghostship-router/minimax-m2.7`, and managed agent defaults are `reasoning_effort = "high"` and `max_turns = 500`.
 - The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Use `bw-unlock` and `bw-lock` for the normal Hermes session workflow; `bw-lock` must not log out.
 - Export `BITWARDENCLI_APPDATA_DIR` at the image/global env layer too; raw `bw` commands otherwise fall back to `~/.config/Bitwarden CLI`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.
@@ -88,26 +88,29 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Discord Routing
 
 - `DISCORD_HOME_CHANNEL` is part of the downstream Discord contract and should point at `#assistant`.
-- `GHOSTSHIP_ROUTER_CHANNEL` pins `#foodstamps` replies to the local router `agentic` lane, including replies in Discord threads whose parent channel is `#foodstamps`.
-- `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the `#foodstamps` router-pinned channel.
+- `GHOSTSHIP_CODEX_CHANNEL` pins `#foodstamps` replies to `openai-codex/gpt-5.5`, including replies in Discord threads whose parent channel is `#foodstamps`.
+- `DISCORD_FREE_RESPONSE_CHANNELS` is part of the downstream Discord contract and must include the `#foodstamps` Codex-pinned channel.
 - `DISCORD_WEBHOOK_CHANNEL` is part of the downstream Discord contract and defaults Hermes-created Discord webhook subscriptions to `#webhooks`.
-- The router-pinned forced channel must ignore per-session `/model` overrides.
+- The Codex-pinned forced channel must ignore per-session `/model` overrides.
 - Keep the managed Discord defaults at `require_mention = false` and `reactions = false`. Do not flip them back unless the user explicitly changes the contract.
 - `DISCORD_REACTIONS=false`, `DISCORD_REQUIRE_MENTION=false`, and `DISCORD_AUTO_THREAD=true` are image-owned defaults. Treat them as optional for downstream and do not make downstream set them unless the contract changes.
 - The managed gateway retires closed Discord thread sessions after 05:00 local Hermes time by removing only the live `sessions.json` mapping and preserving SQLite transcripts.
-- The default Codex primary lane depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
+- The forced Codex channel depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
 - Do not use `OPENAI_API_KEY` anywhere in this repo's active runtime contract.
 - Do not expose router auth as a downstream env knob. If Hermes uses a router token, keep it internal as an underscore-prefixed env such as `_GHOSTSHIP_ROUTER_API_KEY`; the router itself must treat that auth as optional.
 
 ### Router Policy
 
 - `NVIDIA_BUILD_API_KEY` enables the repo-owned `nvidia-build` provider.
+- `ZENMUX_API_KEY` enables the repo-owned `zenmux` free-provider lane; default RPM is 10.
+- `ELECTRON_HUB_API_KEY` enables the repo-owned `electron-hub` free-provider lane; default RPM is 5.
 - NVIDIA free inventory discovery should use the filtered `build.nvidia.com/models?filters=nimType%3Anim_type_preview` catalog page and dedupe repeated model ids before persisting inventory.
-- Normal router alias routing is `agentic`-only.
-- Each provider owns a repo-ranked top-five reserve and only the best three currently eligible models from that reserve may route at request time.
-- Uncategorized discovered models must not route; expose them only through operator-facing inventory surfaces until they are manually ranked or explicitly unused.
-- Default provider priority is fixed: `nvidia-build` ahead of `opencode-zen` ahead of `openrouter`.
-- Cross-provider failover should happen only on clear exhaustion or when a provider has no eligible ranked candidates left; ordinary retryable model failures stay inside the active provider.
+- Normal router routing exposes OpenCode Go model IDs only when explicit free-provider equivalents are configured.
+- Free providers route only through explicit equivalence entries for an exposed OpenCode Go model id.
+- Normal routing must not use alias/family/top-five reserve selection. Use only the requested OpenCode Go model id's explicit equivalence table.
+- Default free-provider RPMs are NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20.
+- Candidate selection is RPM-aware round robin across eligible free equivalents, then `opencode-go/<same model id>` as paid fallback.
+- `opencode-go` is the canonical model catalog and paid fallback; it is never counted as a free provider.
 
 ### Packaging Split
 

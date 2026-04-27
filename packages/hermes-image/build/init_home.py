@@ -41,8 +41,8 @@ def _direct_gemini() -> dict[str, str]:
 
 DEFAULT_CONFIG = {
     "model": {
-        "provider": "openai-codex",
-        "default": "gpt-5.5",
+        "provider": "custom:ghostship-router",
+        "default": "deepseek-v4-pro",
     },
     "web": {
         "backend": "firecrawl",
@@ -62,7 +62,7 @@ DEFAULT_CONFIG = {
         }
     },
     "fallback_model": {
-        "provider": "opencode-go",
+        "provider": "custom:ghostship-router",
         "model": "minimax-m2.7",
     },
     "custom_providers": [
@@ -71,13 +71,17 @@ DEFAULT_CONFIG = {
             "base_url": ROUTER_URL,
             "api_key_env": ROUTER_API_KEY_ENV,
             "api_mode": "chat_completions",
-            "model": "agentic",
+            "model": "deepseek-v4-pro",
+            "models": {
+                "deepseek-v4-pro": {},
+                "minimax-m2.7": {},
+            },
         }
     ],
     "timezone": "Pacific/Honolulu",
     "agent": {
-        "max_turns": 110,
-        "reasoning_effort": "medium",
+        "max_turns": 500,
+        "reasoning_effort": "high",
         "verbose": False,
     },
     "compression": {
@@ -270,6 +274,13 @@ def _normalize_router_auth(config: object) -> bool:
             if provider.get("api_key_env") != ROUTER_API_KEY_ENV:
                 provider["api_key_env"] = ROUTER_API_KEY_ENV
                 changed = True
+            if provider.get("model") != "deepseek-v4-pro":
+                provider["model"] = "deepseek-v4-pro"
+                changed = True
+            models = provider.get("models")
+            if models != {"deepseek-v4-pro": {}, "minimax-m2.7": {}}:
+                provider["models"] = {"deepseek-v4-pro": {}, "minimax-m2.7": {}}
+                changed = True
 
     return changed
 
@@ -283,33 +294,33 @@ def _normalize_managed_model_contract(config: object) -> bool:
     model = config.get("model")
     if (
         isinstance(model, dict)
-        and model.get("provider") == "opencode-go"
-        and model.get("default") == "minimax-m2.7"
+        and model.get("provider") in {"opencode-go", "openai-codex"}
+        and model.get("default") in {"minimax-m2.7", "gpt-5.4", "gpt-5.5"}
     ):
-        model["provider"] = "openai-codex"
-        model["default"] = "gpt-5.5"
+        model["provider"] = "custom:ghostship-router"
+        model["default"] = "deepseek-v4-pro"
         changed = True
-    elif (
-        isinstance(model, dict)
-        and model.get("provider") == "openai-codex"
-        and model.get("default") == "gpt-5.4"
-    ):
-        model["default"] = "gpt-5.5"
+    elif isinstance(model, dict) and model.get("provider") == "custom" and model.get("default") in {"agentic", "coding"}:
+        model["provider"] = "custom:ghostship-router"
+        model["default"] = "deepseek-v4-pro"
         changed = True
 
     fallback_model = config.get("fallback_model")
     if (
         isinstance(fallback_model, dict)
-        and fallback_model.get("provider") == "openai-codex"
-        and fallback_model.get("model") == "gpt-5.4-mini"
+        and fallback_model.get("provider") in {"openai-codex", "opencode-go", "custom"}
+        and fallback_model.get("model") in {"gpt-5.4-mini", "minimax-m2.7", "agentic", "coding"}
     ):
-        fallback_model["provider"] = "opencode-go"
+        fallback_model["provider"] = "custom:ghostship-router"
         fallback_model["model"] = "minimax-m2.7"
         changed = True
 
     agent = config.get("agent")
-    if isinstance(agent, dict) and agent.get("reasoning_effort") == "high":
-        agent["reasoning_effort"] = "medium"
+    if isinstance(agent, dict) and agent.get("reasoning_effort") != "high":
+        agent["reasoning_effort"] = "high"
+        changed = True
+    if isinstance(agent, dict) and agent.get("max_turns") != 500:
+        agent["max_turns"] = 500
         changed = True
 
     web = config.get("web")
