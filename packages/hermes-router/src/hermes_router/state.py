@@ -929,7 +929,8 @@ class SqliteStateStore(StateStore):
         if not zero_output or not self._is_exhaustion_category(category):
             return {"disabled": False, "probe_failed": False, "hard_exhaustion": False}
         detail_map = details if isinstance(details, dict) else {}
-        hard_exhaustion = bool(detail_map.get("hard_exhaustion")) or category in {"insufficient_balance", "quota_exhausted"}
+        model_scoped = bool(detail_map.get("model_scoped"))
+        hard_exhaustion = (bool(detail_map.get("hard_exhaustion")) or category in {"insufficient_balance", "quota_exhausted"}) and not model_scoped
         with self._connect() as connection:
             row = self._fetch_provider_row(connection, provider_name)
             if row is None:

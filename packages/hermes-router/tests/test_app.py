@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -423,6 +425,175 @@ def test_quota_exhaustion_falls_back_to_same_model_opencode_go(tmp_path: Path) -
     assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
     assert nvidia.calls == ["deepseek-ai/deepseek-v4-pro"]
     assert zen.calls == ["deepseek-v4-pro"]
+    assert go.calls == ["deepseek-v4-pro"]
+
+
+def test_timeout_failure_tries_another_free_provider_before_opencode_go(tmp_path: Path) -> None:
+    nvidia = FakeProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        failures={
+            "deepseek-ai/deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="nvidia-build",
+                    backend_model="deepseek-ai/deepseek-v4-pro",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-zen": zen, "opencode-go": go})
+
+    _, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
+    )
+
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
+    assert nvidia.calls == ["deepseek-ai/deepseek-v4-pro"]
+    assert zen.calls == ["deepseek-v4-pro"]
+    assert go.calls == []
+
+
+def test_stream_timeout_failure_tries_another_free_provider_before_opencode_go(tmp_path: Path) -> None:
+    nvidia = FakeProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        failures={
+            "deepseek-ai/deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="nvidia-build",
+                    backend_model="deepseek-ai/deepseek-v4-pro",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-zen": zen, "opencode-go": go})
+
+    plan = service.stream_chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "stream": True, "messages": [{"role": "user", "content": "hello"}]})
+    )
+    body = "".join(plan.body)
+
+    assert plan.headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
+    assert "deepseek-v4-pro" in body
+    assert nvidia.calls == ["deepseek-ai/deepseek-v4-pro"]
+    assert zen.calls == ["deepseek-v4-pro"]
+    assert go.calls == []
+
+
+def test_timeout_score_suppresses_only_unhealthy_free_candidate(tmp_path: Path) -> None:
+    nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-zen": zen, "opencode-go": go})
+    now = time.time()
+    with sqlite3.connect(service.config.db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO model_state (provider_name, backend_model, recent_timeout, updated_at)
+            VALUES ('nvidia-build', 'deepseek-ai/deepseek-v4-pro', 3.0, ?)
+            ON CONFLICT(provider_name, backend_model) DO UPDATE SET
+              recent_timeout = 3.0,
+              cooldown_until = 0,
+              updated_at = excluded.updated_at
+            """,
+            (now,),
+        )
+    service.state_store._invalidate_read_caches("_model_state_cache")
+
+    service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "skip slow free provider"}]})
+    )
+
+    assert nvidia.calls == []
+    assert zen.calls == ["deepseek-v4-pro"]
+    assert go.calls == []
+    candidates = service.preview_routes("deepseek-v4-pro")
+    assert [candidate["provider_name"] for candidate in candidates] == ["opencode-zen", "opencode-go"]
+    route_debug = service.debug_routes("deepseek-v4-pro")
+    assert route_debug["skipped"][0]["provider_name"] == "nvidia-build"
+    assert route_debug["skipped"][0]["reason"] == "model_timeout_guard"
+    assert route_debug["skipped"][0]["state"]["timeout_guard_until"] is not None
+
+
+def test_model_scoped_exhaustion_keeps_same_provider_free_backend_available(tmp_path: Path) -> None:
+    zenmux = FakeProvider(
+        "zenmux",
+        models=[
+            free_model("deepseek/deepseek-v4-pro", "zenmux"),
+            free_model("deepseek/deepseek-v4-pro-free", "zenmux"),
+        ],
+        failures={
+            "deepseek/deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "quota_exhausted",
+                    "Credit required for this model.",
+                    provider="zenmux",
+                    backend_model="deepseek/deepseek-v4-pro",
+                    retryable=False,
+                    details={"model_scoped": True},
+                )
+            ]
+        },
+    )
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"zenmux": zenmux, "opencode-go": go})
+
+    _, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
+    )
+
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "zenmux"
+    assert zenmux.calls == ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-pro-free"]
+    assert go.calls == []
+    provider_state = service.state_store.get_provider_state()["zenmux"]
+    assert provider_state["cooldown_until"] == 0
+
+
+def test_opencode_go_fallback_is_not_removed_by_provider_pacing(tmp_path: Path) -> None:
+    config = make_config(
+        tmp_path,
+        provider_priority=("nvidia-build", "opencode-go"),
+        provider_rpm_limits={"nvidia-build": 30},
+    )
+    nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, config=config, providers={"nvidia-build": nvidia, "opencode-go": go})
+    now = time.time()
+    with sqlite3.connect(service.config.db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO provider_state (provider_name, cooldown_until, updated_at)
+            VALUES ('nvidia-build', ?, ?)
+            ON CONFLICT(provider_name) DO UPDATE SET cooldown_until = excluded.cooldown_until, updated_at = excluded.updated_at
+            """,
+            (now + 300, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO provider_state (provider_name, next_request_at, updated_at)
+            VALUES ('opencode-go', ?, ?)
+            ON CONFLICT(provider_name) DO UPDATE SET next_request_at = excluded.next_request_at, updated_at = excluded.updated_at
+            """,
+            (now + 300, now),
+        )
+    service.state_store._invalidate_read_caches("_provider_state_cache")
+
+    _, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
+    )
+
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
+    assert nvidia.calls == []
     assert go.calls == ["deepseek-v4-pro"]
 
 

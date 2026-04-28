@@ -14,6 +14,14 @@ from typing import Any
 
 
 XML_MARKERS = ("<tool_call", "</tool_call", "<attribute", "</attribute")
+PROVIDER_ENV = {
+    "nvidia-build": ("NVIDIA_BUILD_API_KEY", "NVIDIA_BUILD_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+    "opencode-zen": ("OPENCODE_ZEN_API_KEY", "OPENCODE_ZEN_BASE_URL", "https://opencode.ai/zen/v1"),
+    "openrouter": ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+    "zenmux": ("ZENMUX_API_KEY", "ZENMUX_BASE_URL", "https://zenmux.ai/api/v1"),
+    "electron-hub": ("ELECTRON_HUB_API_KEY", "ELECTRON_HUB_BASE_URL", "https://api.electronhub.ai/v1"),
+    "opencode-go": ("OPENCODE_GO_API_KEY", "OPENCODE_GO_BASE_URL", "https://opencode.ai/zen/go/v1"),
+}
 
 
 @dataclass
@@ -24,6 +32,8 @@ class Result:
     provider: str | None = None
     model: str | None = None
     error: str | None = None
+    elapsed_ms: float | None = None
+    first_byte_ms: float | None = None
 
 
 class RouterClient:
@@ -43,6 +53,10 @@ class RouterClient:
                 return response.status, {key.lower(): value for key, value in response.headers.items()}, response.read()
         except urllib.error.HTTPError as exc:
             return exc.code, {key.lower(): value for key, value in exc.headers.items()}, exc.read()
+        except TimeoutError as exc:
+            return 599, {}, f"request timed out after {self.timeout}s: {exc}".encode()
+        except OSError as exc:
+            return 598, {}, f"request transport error: {type(exc).__name__}: {exc}".encode()
 
     def json(self, method: str, path: str, body: dict[str, Any] | None = None) -> tuple[int, dict[str, str], Any]:
         status, headers, raw = self.request(method, path, body)
@@ -84,6 +98,89 @@ def simple_chat(model: str, content: str, *, stream: bool = False) -> dict[str, 
     }
 
 
+def sanitized_shape(payload: dict[str, Any]) -> dict[str, Any]:
+    shaped: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key == "messages" and isinstance(value, list):
+            shaped["messages"] = [
+                {
+                    "role": item.get("role"),
+                    "content_type": type(item.get("content")).__name__,
+                    "has_tool_calls": isinstance(item.get("tool_calls"), list),
+                    "has_tool_call_id": bool(item.get("tool_call_id")),
+                    "has_reasoning_content": "reasoning_content" in item,
+                }
+                for item in value
+                if isinstance(item, dict)
+            ]
+        elif key == "tools" and isinstance(value, list):
+            shaped["tools"] = [item.get("function", {}).get("name") for item in value if isinstance(item, dict)]
+        else:
+            shaped[key] = value
+    return shaped
+
+
+def provider_env(provider: str) -> tuple[str | None, str | None]:
+    spec = PROVIDER_ENV.get(provider)
+    if spec is None:
+        return None, None
+    key_name, base_name, default_base = spec
+    key = os.environ.get(key_name)
+    if provider == "opencode-zen":
+        key = key or os.environ.get("OPENCODE_API_KEY")
+    if provider == "nvidia-build":
+        key = key or os.environ.get("NVIDIA_API_KEY")
+    base_url = os.environ.get(base_name)
+    if provider == "opencode-zen":
+        base_url = base_url or os.environ.get("OPENCODE_BASE_URL")
+    return key, (base_url or default_base).rstrip("/")
+
+
+def direct_provider_case(provider: str, backend_model: str, *, timeout: float, stream: bool) -> Result:
+    key, base_url = provider_env(provider)
+    name = f"direct-{provider} {'stream' if stream else 'chat'} {backend_model}"
+    if not key or not base_url:
+        return Result(name, False, provider=provider, model=backend_model, error="provider env is not configured")
+    body = {
+        "model": backend_model,
+        "messages": [{"role": "user", "content": "Reply with the word ok."}],
+        "max_tokens": 16,
+        "stream": stream,
+    }
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "ghostship-hermes-router",
+        "x-api-key": key,
+    }
+    request = urllib.request.Request(f"{base_url}/chat/completions", data=json.dumps(body).encode(), headers=headers, method="POST")
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            headers_ms = round((time.monotonic() - started) * 1000, 2)
+            if stream:
+                first_line = b""
+                while not first_line:
+                    first_line = response.readline()
+                    if not first_line:
+                        break
+                first_ms = round((time.monotonic() - started) * 1000, 2)
+                text = first_line.decode(errors="replace")
+                ok = response.status < 400 and bool(first_line)
+                return Result(name, ok, status=response.status, provider=provider, model=backend_model, elapsed_ms=headers_ms, first_byte_ms=first_ms, error=None if ok else f"empty first stream line shape={sanitized_shape(body)!r} body={text[:500]!r}")
+            raw = response.read(1000)
+            elapsed = round((time.monotonic() - started) * 1000, 2)
+            ok = response.status < 400 and bool(raw)
+            return Result(name, ok, status=response.status, provider=provider, model=backend_model, elapsed_ms=elapsed, first_byte_ms=headers_ms, error=None if ok else f"empty body shape={sanitized_shape(body)!r}")
+    except urllib.error.HTTPError as exc:
+        elapsed = round((time.monotonic() - started) * 1000, 2)
+        text = exc.read(1000).decode(errors="replace")
+        return Result(name, False, status=exc.code, provider=provider, model=backend_model, elapsed_ms=elapsed, error=f"upstream HTTP body={text[:500]!r} shape={sanitized_shape(body)!r}")
+    except Exception as exc:
+        elapsed = round((time.monotonic() - started) * 1000, 2)
+        return Result(name, False, provider=provider, model=backend_model, elapsed_ms=elapsed, error=f"{type(exc).__name__}: {exc} shape={sanitized_shape(body)!r}")
+
+
 def run_json_case(client: RouterClient, name: str, path: str, payload: dict[str, Any]) -> Result:
     started = time.monotonic()
     status, headers, body = client.json("POST", path, payload)
@@ -91,12 +188,12 @@ def run_json_case(client: RouterClient, name: str, path: str, payload: dict[str,
     provider = headers.get("x-ghostship-router-backend-provider")
     backend = headers.get("x-ghostship-router-backend-model")
     if status >= 500:
-        return Result(name, False, status=status, provider=provider, model=backend, error=f"server error body={body!r}")
+        return Result(name, False, status=status, provider=provider, model=backend, elapsed_ms=elapsed, error=f"server error body={body!r}")
     if status >= 400:
-        return Result(name, False, status=status, provider=provider, model=backend, error=f"client error body={body!r}")
+        return Result(name, False, status=status, provider=provider, model=backend, elapsed_ms=elapsed, error=f"client error body={body!r}")
     if has_xml_tool_call(body):
-        return Result(name, False, status=status, provider=provider, model=backend, error="raw XML tool call leaked")
-    return Result(f"{name} ({elapsed}ms)", True, status=status, provider=provider, model=backend)
+        return Result(name, False, status=status, provider=provider, model=backend, elapsed_ms=elapsed, error="raw XML tool call leaked")
+    return Result(name, True, status=status, provider=provider, model=backend, elapsed_ms=elapsed)
 
 
 def run_stream_case(client: RouterClient, name: str, path: str, payload: dict[str, Any]) -> Result:
@@ -119,8 +216,14 @@ def run_stream_case(client: RouterClient, name: str, path: str, payload: dict[st
 def print_result(result: Result) -> None:
     status = result.status if result.status is not None else "-"
     route = f"{result.provider or '-'} / {result.model or '-'}"
+    timings = []
+    if result.elapsed_ms is not None:
+        timings.append(f"elapsed={result.elapsed_ms}ms")
+    if result.first_byte_ms is not None:
+        timings.append(f"first_byte={result.first_byte_ms}ms")
+    suffix = f" ({', '.join(timings)})" if timings else ""
     outcome = "PASS" if result.ok else "FAIL"
-    print(f"{outcome} {status} {result.name} [{route}]")
+    print(f"{outcome} {status} {result.name}{suffix} [{route}]")
     if result.error:
         print(f"  {result.error}")
 
@@ -132,6 +235,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=float(os.environ.get("GHOSTSHIP_ROUTER_STRESS_TIMEOUT", "90")))
     parser.add_argument("--rpm-burst", type=int, default=int(os.environ.get("GHOSTSHIP_ROUTER_STRESS_RPM_BURST", "16")))
     parser.add_argument("--models", default=os.environ.get("GHOSTSHIP_ROUTER_STRESS_MODELS", ""))
+    parser.add_argument("--direct-provider-probes", action="store_true", default=os.environ.get("GHOSTSHIP_ROUTER_STRESS_DIRECT_PROVIDERS", "").lower() in {"1", "true", "yes"})
     args = parser.parse_args()
 
     client = RouterClient(args.base_url, args.api_key, args.timeout)
@@ -159,6 +263,37 @@ def main() -> int:
     for model in models:
         status, _, route_body = client.json("GET", f"/debug/routes/{model}")
         results.append(Result(f"debug-routes {model}", status == 200, status=status))
+        route_entries: list[dict[str, Any]] = []
+        if isinstance(route_body, dict):
+            for key in ("candidates", "skipped"):
+                values = route_body.get(key)
+                if isinstance(values, list):
+                    route_entries.extend(item for item in values if isinstance(item, dict))
+        if args.direct_provider_probes:
+            rankings_status, _, rankings_body = client.json("GET", f"/debug/rankings/{model}")
+            if rankings_status == 200 and isinstance(rankings_body, dict):
+                for provider_item in rankings_body.get("providers", []):
+                    if not isinstance(provider_item, dict):
+                        continue
+                    provider_name = str(provider_item.get("provider_name") or "")
+                    for seeded_item in provider_item.get("seeded", []):
+                        if isinstance(seeded_item, dict) and seeded_item.get("backend_model"):
+                            route_entries.append(
+                                {
+                                    "provider_name": provider_name,
+                                    "backend_model": seeded_item["backend_model"],
+                                }
+                            )
+        if args.direct_provider_probes:
+            seen_direct: set[tuple[str, str]] = set()
+            for item in route_entries:
+                provider = str(item.get("provider_name") or "")
+                backend_model = str(item.get("backend_model") or "")
+                if not provider or not backend_model or (provider, backend_model) in seen_direct:
+                    continue
+                seen_direct.add((provider, backend_model))
+                results.append(direct_provider_case(provider, backend_model, timeout=args.timeout, stream=False))
+                results.append(direct_provider_case(provider, backend_model, timeout=args.timeout, stream=True))
         results.append(run_json_case(client, f"chat {model}", "/v1/chat/completions", simple_chat(model, "Reply with the word ok.")))
         results.append(run_stream_case(client, f"chat-stream {model}", "/v1/chat/completions", simple_chat(model, "Reply with the word ok.")))
         tool_payload = {

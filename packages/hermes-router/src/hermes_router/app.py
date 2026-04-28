@@ -130,7 +130,11 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
 
     @app.get("/debug/routes/{alias}")
     def debug_routes(alias: str):
-        return {"alias": alias, "candidates": resolved_service.preview_routes(alias)}
+        try:
+            return resolved_service.debug_routes(alias)
+        except RouterServiceError as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+            return JSONResponse(_openai_error(str(detail.get("message", exc.detail))), status_code=exc.status_code)
 
     @app.get("/debug/inventory/{category}")
     def debug_inventory(category: str):

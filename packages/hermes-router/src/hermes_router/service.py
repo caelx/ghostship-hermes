@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 import uuid
@@ -1808,6 +1809,28 @@ class RouterService:
             return []
         return self._render_candidates(candidates)
 
+    def debug_routes(self, alias: str) -> dict[str, Any]:
+        if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
+            raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
+        if self._opencode_go_model(alias) is None:
+            raise RouterServiceError(404, {"message": f"Unknown OpenCode Go model id '{alias}'."})
+        candidates = self.preview_routes(alias)
+        active_keys = {(item["provider_name"], item["backend_model"]) for item in candidates}
+        skipped: list[dict[str, Any]] = []
+        for model in [*self._free_equivalent_models(alias), *(go_model for go_model in [self._opencode_go_model(alias)] if go_model is not None)]:
+            if (model.provider, model.id) in active_keys:
+                continue
+            skipped.append(
+                {
+                    "provider_name": model.provider,
+                    "backend_model": model.id,
+                    "is_free": bool(model.is_free),
+                    "reason": self._ranked_model_exclusion_reason(model.provider, model.id, alias=alias, model=model),
+                    "state": self._candidate_state(model.provider, model.id),
+                }
+            )
+        return {"alias": alias, "candidates": candidates, "skipped": skipped}
+
     def _render_candidates(self, candidates: list[RouteCandidate]) -> list[dict[str, Any]]:
         return [
             {
@@ -1855,6 +1878,9 @@ class RouterService:
             return "non_text_output"
         if not self._model_effectively_enabled(provider_name, backend_model):
             return "disabled"
+        timeout_reason = self._rolling_timeout_suppression_reason(provider_name, backend_model)
+        if timeout_reason is not None:
+            return timeout_reason
         if self._is_cooling_down(provider_name, backend_model):
             return "model_cooldown"
         if self._provider_is_cooling_down(provider_name):
@@ -2015,10 +2041,12 @@ class RouterService:
             return False
         if not self._model_effectively_enabled(model.provider, model.id):
             return False
+        if model.provider != "opencode-go" and self._rolling_timeout_suppression_reason(model.provider, model.id) is not None:
+            return False
         if self._provider_is_cooling_down(model.provider):
             return False
         if not ignore_provider_pacing:
-            if self._provider_is_pacing(model.provider):
+            if model.provider != "opencode-go" and self._provider_is_pacing(model.provider):
                 return False
             if not self._provider_has_rpm_capacity(model.provider):
                 return False
@@ -2060,10 +2088,12 @@ class RouterService:
                     continue
                 if not self._model_effectively_enabled(model.provider, model.id):
                     continue
+                if model.provider != "opencode-go" and self._rolling_timeout_suppression_reason(model.provider, model.id) is not None:
+                    continue
                 if self._provider_is_cooling_down(model.provider):
                     continue
                 if not ignore_provider_pacing:
-                    if self._provider_is_pacing(model.provider):
+                    if model.provider != "opencode-go" and self._provider_is_pacing(model.provider):
                         continue
                     if not self._provider_has_rpm_capacity(model.provider):
                         continue
@@ -2145,17 +2175,89 @@ class RouterService:
         return selected
 
     def _candidate_breakdown(self, alias: str, model: ProviderModel) -> dict[str, Any]:
-        state = self.state_store.get_provider_state().get(model.provider, {})
+        state = self._candidate_state(model.provider, model.id)
         return {
             "model": alias,
             "total_score": 0.0,
             "rpm": self._provider_rpm_state(model.provider),
-            "cooldown_until": self.state_store.get_model_state().get(self._model_key(model.provider, model.id), {}).get("cooldown_until", 0),
-            "provider_cooldown_until": state.get("cooldown_until", 0),
-            "provider_next_request_at": state.get("next_request_at", 0),
-            "last_latency_ms": state.get("last_latency_ms"),
-            "last_first_text_latency_ms": state.get("last_first_text_latency_ms"),
+            "cooldown_until": state["model_cooldown_until"],
+            "provider_cooldown_until": state["provider_cooldown_until"],
+            "provider_next_request_at": state["provider_next_request_at"],
+            "last_latency_ms": state["last_latency_ms"],
+            "last_first_text_latency_ms": state["last_first_text_latency_ms"],
+            "recent_provider_timeout": state["recent_provider_timeout"],
+            "recent_model_timeout": state["recent_model_timeout"],
+            "timeout_guard_active": state["timeout_guard_active"],
+            "timeout_guard_until": state["timeout_guard_until"],
         }
+
+    def _rolling_timeout_suppression_reason(self, provider_name: str, backend_model: str) -> str | None:
+        if provider_name == "opencode-go":
+            return None
+        threshold = float(self.config.provider_timeout_threshold)
+        if threshold <= 0:
+            return None
+        provider_state = self.state_store.get_provider_state().get(provider_name, {})
+        if self._decayed_state_value(provider_state, "recent_timeout") >= threshold:
+            return "provider_timeout_guard"
+        model_state = self.state_store.get_model_state().get(self._model_key(provider_name, backend_model), {})
+        if self._decayed_state_value(model_state, "recent_timeout") >= threshold:
+            return "model_timeout_guard"
+        return None
+
+    def _candidate_state(self, provider_name: str, backend_model: str) -> dict[str, Any]:
+        provider_state = self.state_store.get_provider_state().get(provider_name, {})
+        model_state = self.state_store.get_model_state().get(self._model_key(provider_name, backend_model), {})
+        return {
+            "provider_cooldown_until": provider_state.get("cooldown_until", 0),
+            "model_cooldown_until": model_state.get("cooldown_until", 0),
+            "provider_next_request_at": provider_state.get("next_request_at", 0),
+            "last_latency_ms": provider_state.get("last_latency_ms"),
+            "last_first_text_latency_ms": provider_state.get("last_first_text_latency_ms"),
+            "recent_provider_timeout": self._decayed_state_value(provider_state, "recent_timeout"),
+            "recent_model_timeout": self._decayed_state_value(model_state, "recent_timeout"),
+            "timeout_guard_active": self._rolling_timeout_suppression_reason(provider_name, backend_model) is not None,
+            "timeout_guard_until": self._timeout_guard_until(provider_name, backend_model),
+            "rpm": self._provider_rpm_state(provider_name),
+        }
+
+    def _timeout_guard_until(self, provider_name: str, backend_model: str) -> float | None:
+        if provider_name == "opencode-go":
+            return None
+        threshold = float(self.config.provider_timeout_threshold)
+        if threshold <= 0:
+            return None
+        provider_state = self.state_store.get_provider_state().get(provider_name, {})
+        model_state = self.state_store.get_model_state().get(self._model_key(provider_name, backend_model), {})
+        waits = [
+            self._decay_wait_until_below_threshold(provider_state, "recent_timeout", threshold),
+            self._decay_wait_until_below_threshold(model_state, "recent_timeout", threshold),
+        ]
+        active_waits = [value for value in waits if value is not None]
+        return max(active_waits) if active_waits else None
+
+    def _decayed_state_value(self, state: dict[str, Any], key: str) -> float:
+        try:
+            value = float(state.get(key, 0) or 0)
+            updated_at = float(state.get("updated_at", 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+        if value <= 0 or updated_at <= 0:
+            return max(value, 0.0)
+        elapsed = max(0.0, time.time() - updated_at)
+        return round(value * math.exp(-elapsed / self.config.rolling_window_seconds), 6)
+
+    def _decay_wait_until_below_threshold(self, state: dict[str, Any], key: str, threshold: float) -> float | None:
+        try:
+            value = float(state.get(key, 0) or 0)
+            updated_at = float(state.get("updated_at", 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        decayed = self._decayed_state_value(state, key)
+        if value <= 0 or updated_at <= 0 or decayed < threshold:
+            return None
+        seconds = self.config.rolling_window_seconds * math.log(decayed / threshold)
+        return time.time() + max(0.0, seconds)
 
     def _provider_order(self, *, session_id: str | None = None) -> tuple[str, ...]:
         ordered = [name for name in self.config.provider_priority if name in self.providers]

@@ -69,6 +69,25 @@ def test_opencode_zen_payment_required_is_balance_exhaustion() -> None:
     assert exc.retryable is False
 
 
+def test_opencode_zen_model_scoped_payment_required_is_model_exhaustion() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/chat/completions", "/v1/chat/completions"}
+        return httpx.Response(
+            402,
+            json={"error": {"message": "Credit required. To prevent abuse, a positive balance is required for this model."}},
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://zenmux.example/v1", transport=make_transport(handler), provider_name="zenmux")
+    provider._family_cache["deepseek/deepseek-v4-pro"] = "chat_completions"
+    with pytest.raises(NormalizedProviderError) as excinfo:
+        provider.chat_completions("deepseek/deepseek-v4-pro", {"messages": [{"role": "user", "content": "hello"}]})
+    exc = excinfo.value
+    assert exc.category == "quota_exhausted"
+    assert exc.details["model_scoped"] is True
+    assert exc.details.get("hard_exhaustion") is not True
+    assert exc.retryable is False
+
+
 def test_opencode_go_tool_choice_unsupported_is_classified_separately() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path in {"/chat/completions", "/v1/chat/completions"}

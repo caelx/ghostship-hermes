@@ -923,6 +923,9 @@ class OpencodeZenProvider:
             return NormalizedProviderError("endpoint_family_mismatch", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
         if "missing api key" in lowered:
             return NormalizedProviderError("endpoint_family_mismatch", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
+        if "premium model requires a subscription" in lowered or ("for this model" in lowered and "credit required" in lowered):
+            details["model_scoped"] = True
+            return NormalizedProviderError("quota_exhausted", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if "insufficient balance" in lowered or "credit required" in lowered:
             details["hard_exhaustion"] = True
             return NormalizedProviderError("insufficient_balance", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
