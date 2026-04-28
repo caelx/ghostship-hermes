@@ -12,7 +12,7 @@ Current contract:
 - persists inventory, route health, provider health, cooldowns, overrides, recent events, chat sessions, and stored `responses` objects in SQLite
 - refreshes inventory from configured free providers (`nvidia-build`, `opencode-zen`, `zenmux`, `electron-hub`, and `openrouter`) plus paid fallback provider `opencode-go`
 - never exposes OpenCode Go models without at least one discovered free equivalent
-- exposes operator debug surfaces at `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{model}`, `GET /debug/rankings/{model}`, `GET /debug/inventory/{seeded|configured|unconfigured|inventory}`, and `GET /debug/models/{provider}/{model}`
+- exposes operator debug surfaces at `GET /debug/state`, `GET /debug/events`, `GET /debug/route-events`, `GET /debug/providers`, `GET /debug/routes/{model}`, `GET /debug/rankings/{model}`, `GET /debug/inventory/{seeded|configured|unconfigured|inventory}`, and `GET /debug/models/{provider}/{model}`
 - exposes a compact tuning surface at `GET /debug/summary`
 - exposes Prometheus-style metrics at `GET /metrics`
 - supports optional internal bearer auth through `_GHOSTSHIP_ROUTER_API_KEY`

@@ -736,6 +736,95 @@ def test_debug_summary_reports_provider_state_and_candidate_order(tmp_path: Path
     assert payload["aliases"]["deepseek-v4-pro"]["selected_provider"] == "nvidia-build"
 
 
+def test_debug_route_events_filters_and_reports_request_shape(tmp_path: Path) -> None:
+    nvidia = FakeProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        failures={
+            "deepseek-ai/deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="nvidia-build",
+                    backend_model="deepseek-ai/deepseek-v4-pro",
+                    retryable=True,
+                    details={"method": "POST", "path": "/chat/completions", "timeout": 30.0},
+                )
+            ]
+        },
+    )
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-zen": zen, "opencode-go": go})
+    client = TestClient(create_app(service=service, config=service.config))
+
+    chat_response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "call the tool"}],
+            "tools": [{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}],
+            "stream_options": {"include_usage": True},
+        },
+    )
+    route_response = client.get("/debug/route-events", params={"provider_name": "nvidia-build", "category": "timeout", "success": False})
+
+    assert chat_response.status_code == 200
+    assert route_response.status_code == 200
+    payload = route_response.json()
+    assert payload["filters"]["provider_name"] == "nvidia-build"
+    assert payload["filters"]["category"] == "timeout"
+    assert payload["filters"]["success"] is False
+    assert len(payload["events"]) == 1
+    event = payload["events"][0]
+    assert isinstance(event["id"], int)
+    assert event["provider_name"] == "nvidia-build"
+    assert event["backend_model"] == "deepseek-ai/deepseek-v4-pro"
+    request_shape = event["details"]["request_shape"]
+    assert request_shape["model"] == "deepseek-v4-pro"
+    assert request_shape["message_count"] == 1
+    assert request_shape["role_counts"] == {"user": 1}
+    assert request_shape["has_tools"] is True
+    assert request_shape["tool_count"] == 1
+    assert request_shape["has_stream_options"] is True
+
+
+def test_request_debug_shape_counts_hermes_tool_history() -> None:
+    shape = RouterService._request_debug_shape(
+        {
+            "model": "deepseek-v4-pro",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "reasoning_content": "thinking",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "skill_view", "arguments": "{\"name\":\"health\"}"},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call_1", "content": "ok"},
+                {"role": "user", "content": "continue"},
+            ],
+            "tools": [{"type": "function", "function": {"name": "skill_view", "parameters": {"type": "object"}}}],
+            "tool_choice": "auto",
+            "max_tokens": 64,
+        }
+    )
+
+    assert shape["message_count"] == 3
+    assert shape["role_counts"] == {"assistant": 1, "tool": 1, "user": 1}
+    assert shape["assistant_tool_call_messages"] == 1
+    assert shape["assistant_reasoning_messages"] == 1
+    assert shape["tool_result_messages"] == 1
+    assert shape["null_content_messages"] == 1
+    assert shape["tool_choice"] == "auto"
+    assert shape["has_max_tokens"] is True
+
+
 def test_configured_api_key_requires_authorization(tmp_path: Path) -> None:
     config = make_config(tmp_path, api_key="secret")
     service = make_service(

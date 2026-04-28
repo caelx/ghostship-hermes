@@ -189,6 +189,7 @@ class RouterService:
             headers["X-Hermes-Session-Id"] = active_session_id
             return StreamPlan(body=self._synthetic_chat_stream_body(request_for_routing.model, payload), headers=headers)
         candidate, stream_result, first_chunk, chunk_iter = self._open_chat_stream(request_for_routing, session_id=active_session_id)
+        request_shape = self._request_debug_shape(self._chat_request_payload(request_for_routing))
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         created = int(time.time())
         headers = {
@@ -240,6 +241,7 @@ class RouterService:
                     latency_ms=round((time.monotonic() - started_at) * 1000, 2),
                     is_fallback=candidate.is_fallback,
                     zero_output=not self._stream_state_has_output(stream_result.state),
+                    request_shape=request_shape,
                 )
                 raise
             latency_ms = round((time.monotonic() - started_at) * 1000, 2)
@@ -255,7 +257,7 @@ class RouterService:
                 latency_ms=latency_ms,
                 first_text_latency_ms=first_text_latency_ms,
                 is_fallback=candidate.is_fallback,
-                details={"score_breakdown": candidate.score_breakdown},
+                details={"score_breakdown": candidate.score_breakdown, "request_shape": request_shape},
             )
             self.state_store.save_chat_session(active_session_id, self._chat_session_messages(request_for_routing, final_payload))
             if not saw_finish_reason:
@@ -318,6 +320,7 @@ class RouterService:
                 response_headers["X-Ghostship-Router-First-Text-Latency-Ms"] = headers["X-Ghostship-Router-First-Text-Latency-Ms"]
             return StreamPlan(body=self._synthetic_responses_stream_body(final_response_payload), headers=response_headers)
         candidate, stream_result, first_chunk, chunk_iter = self._open_chat_stream(prepared.chat_request)
+        request_shape = self._request_debug_shape(self._chat_request_payload(prepared.chat_request))
         response_headers = {
             "Cache-Control": "no-cache",
             "X-Ghostship-Router-Backend-Provider": stream_result.provider,
@@ -485,6 +488,7 @@ class RouterService:
                     latency_ms=round((time.monotonic() - started_at) * 1000, 2),
                     is_fallback=candidate.is_fallback,
                     zero_output=not self._stream_state_has_output(stream_result.state),
+                    request_shape=request_shape,
                 )
                 raise
 
@@ -502,7 +506,7 @@ class RouterService:
                 latency_ms=latency_ms,
                 first_text_latency_ms=first_text_latency_ms,
                 is_fallback=candidate.is_fallback,
-                details={"score_breakdown": candidate.score_breakdown},
+                details={"score_breakdown": candidate.score_breakdown, "request_shape": request_shape},
             )
             final_response_payload = self._responses_payload(response_id, prepared, final_chat_payload)
             if prepared.request.store:
@@ -559,6 +563,7 @@ class RouterService:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
         request_payload = self._chat_request_payload(request)
         request_payload.pop("timeout", None)
+        request_shape = self._request_debug_shape(request_payload)
         errors: list[dict[str, Any]] = []
         while candidates:
             index = len(attempted)
@@ -589,7 +594,7 @@ class RouterService:
                     latency_ms=latency_ms,
                     first_text_latency_ms=first_text_latency_ms,
                     is_fallback=candidate.is_fallback or index > 0,
-                    details={"result_provider": result.provider, "score_breakdown": candidate.score_breakdown},
+                    details={"result_provider": result.provider, "score_breakdown": candidate.score_breakdown, "request_shape": request_shape},
                 )
                 self._remember_session_affinity(session_id, candidate)
                 headers = {
@@ -601,7 +606,15 @@ class RouterService:
                 return result.payload, headers
             except NormalizedProviderError as exc:
                 latency_ms = round((time.monotonic() - start) * 1000, 2)
-                self._record_failure(candidate, request.model, exc, latency_ms=latency_ms, is_fallback=candidate.is_fallback or index > 0, zero_output=True)
+                self._record_failure(
+                    candidate,
+                    request.model,
+                    exc,
+                    latency_ms=latency_ms,
+                    is_fallback=candidate.is_fallback or index > 0,
+                    zero_output=True,
+                    request_shape=request_shape,
+                )
                 errors.append(
                     {
                         "provider": exc.provider,
@@ -645,6 +658,7 @@ class RouterService:
 
         request_payload = self._chat_request_payload(request)
         request_payload.pop("timeout", None)
+        request_shape = self._request_debug_shape(request_payload)
         attempt_errors: list[dict[str, Any]] = []
         while candidates:
             index = len(attempted)
@@ -669,7 +683,15 @@ class RouterService:
                 self._remember_session_affinity(session_id, candidate)
                 return candidate, stream_result, first_chunk, chunk_iter
             except NormalizedProviderError as exc:
-                self._record_failure(candidate, request.model, exc, latency_ms=None, is_fallback=candidate.is_fallback or index > 0, zero_output=True)
+                self._record_failure(
+                    candidate,
+                    request.model,
+                    exc,
+                    latency_ms=None,
+                    is_fallback=candidate.is_fallback or index > 0,
+                    zero_output=True,
+                    request_shape=request_shape,
+                )
                 attempt_errors.append(
                     {
                         "provider": exc.provider,
@@ -698,6 +720,42 @@ class RouterService:
         if any(category in {"bad_request", "tool_choice_unsupported"} for category in categories):
             return 400
         return 503
+
+    @staticmethod
+    def _request_debug_shape(payload: dict[str, Any]) -> dict[str, Any]:
+        messages = [message for message in payload.get("messages") or [] if isinstance(message, dict)]
+        role_counts: dict[str, int] = {}
+        assistant_tool_call_messages = 0
+        assistant_reasoning_messages = 0
+        tool_result_messages = 0
+        null_content_messages = 0
+        for message in messages:
+            role = str(message.get("role") or "unknown")
+            role_counts[role] = role_counts.get(role, 0) + 1
+            if message.get("content") is None:
+                null_content_messages += 1
+            if role == "assistant" and isinstance(message.get("tool_calls"), list) and message["tool_calls"]:
+                assistant_tool_call_messages += 1
+            if role == "assistant" and ("reasoning_content" in message or "reasoning" in message):
+                assistant_reasoning_messages += 1
+            if role == "tool" or message.get("tool_call_id"):
+                tool_result_messages += 1
+        return {
+            "model": payload.get("model"),
+            "stream": bool(payload.get("stream")),
+            "message_count": len(messages),
+            "role_counts": role_counts,
+            "has_tools": bool(payload.get("tools")),
+            "tool_count": len(payload.get("tools") or []) if isinstance(payload.get("tools"), list) else None,
+            "tool_choice": payload.get("tool_choice"),
+            "has_stream_options": "stream_options" in payload,
+            "has_temperature": "temperature" in payload,
+            "has_max_tokens": "max_tokens" in payload,
+            "assistant_tool_call_messages": assistant_tool_call_messages,
+            "assistant_reasoning_messages": assistant_reasoning_messages,
+            "tool_result_messages": tool_result_messages,
+            "null_content_messages": null_content_messages,
+        }
 
     def _ensure_inventory_loaded_for_request(self) -> None:
         if self._inventory or not self.providers:
@@ -1014,6 +1072,7 @@ class RouterService:
         latency_ms: float | None,
         is_fallback: bool,
         zero_output: bool,
+        request_shape: dict[str, Any] | None = None,
     ) -> None:
         logger.warning(
             "router candidate failed: provider=%s backend_model=%s category=%s retryable=%s",
@@ -1067,6 +1126,7 @@ class RouterService:
                     "zero_output": zero_output,
                     "provider_exhaustion": provider_exhaustion,
                     "provider_throttle": provider_throttle,
+                    "request_shape": request_shape,
                 },
                 created_at=time.time(),
             )
@@ -1390,6 +1450,40 @@ class RouterService:
 
     def debug_events(self) -> list[dict[str, Any]]:
         return self.state_store.get_recent_events(self.config.debug_event_limit)
+
+    def debug_route_events(
+        self,
+        *,
+        limit: int | None = None,
+        alias: str | None = None,
+        provider_name: str | None = None,
+        backend_model: str | None = None,
+        category: str | None = None,
+        since: float | None = None,
+        success: bool | None = None,
+    ) -> dict[str, Any]:
+        resolved_limit = max(1, min(int(limit or self.config.debug_event_limit), 500))
+        events = self.state_store.get_route_events(
+            limit=resolved_limit,
+            alias=alias,
+            provider_name=provider_name,
+            backend_model=backend_model,
+            category=category,
+            since=since,
+            success=success,
+        )
+        return {
+            "limit": resolved_limit,
+            "filters": {
+                "alias": alias,
+                "provider_name": provider_name,
+                "backend_model": backend_model,
+                "category": category,
+                "since": since,
+                "success": success,
+            },
+            "events": events,
+        }
 
     def debug_providers(self) -> list[dict[str, Any]]:
         provider_state = self.state_store.get_provider_state()

@@ -112,6 +112,26 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
     def debug_events():
         return resolved_service.debug_events()
 
+    @app.get("/debug/route-events")
+    def debug_route_events(
+        limit: int | None = None,
+        alias: str | None = None,
+        provider_name: str | None = None,
+        backend_model: str | None = None,
+        category: str | None = None,
+        since: float | None = None,
+        success: bool | None = None,
+    ):
+        return resolved_service.debug_route_events(
+            limit=limit,
+            alias=alias,
+            provider_name=provider_name,
+            backend_model=backend_model,
+            category=category,
+            since=since,
+            success=success,
+        )
+
     @app.get("/debug/providers")
     def debug_providers():
         return resolved_service.debug_providers()

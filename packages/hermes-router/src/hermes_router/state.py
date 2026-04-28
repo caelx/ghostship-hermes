@@ -150,6 +150,19 @@ class StateStore:
     def get_recent_events(self, limit: int) -> list[dict[str, Any]]:
         raise NotImplementedError
 
+    def get_route_events(
+        self,
+        *,
+        limit: int,
+        alias: str | None = None,
+        provider_name: str | None = None,
+        backend_model: str | None = None,
+        category: str | None = None,
+        since: float | None = None,
+        success: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
     def get_route_metric_rows(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
@@ -1457,19 +1470,56 @@ class SqliteStateStore(StateStore):
             )
 
     def get_recent_events(self, limit: int) -> list[dict[str, Any]]:
+        return self.get_route_events(limit=limit)
+
+    def get_route_events(
+        self,
+        *,
+        limit: int,
+        alias: str | None = None,
+        provider_name: str | None = None,
+        backend_model: str | None = None,
+        category: str | None = None,
+        since: float | None = None,
+        success: bool | None = None,
+    ) -> list[dict[str, Any]]:
         with self._connect() as connection:
+            where: list[str] = []
+            params: list[Any] = []
+            if alias:
+                where.append("alias = ?")
+                params.append(alias)
+            if provider_name:
+                where.append("provider_name = ?")
+                params.append(provider_name)
+            if backend_model:
+                where.append("backend_model = ?")
+                params.append(backend_model)
+            if category:
+                where.append("category = ?")
+                params.append(category)
+            if since is not None:
+                where.append("created_at >= ?")
+                params.append(float(since))
+            if success is not None:
+                where.append("success = ?")
+                params.append(1 if success else 0)
+            where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+            params.append(limit)
             rows = connection.execute(
-                """
-                SELECT alias, provider_name, backend_model, success, retryable, is_fallback,
+                f"""
+                SELECT id, alias, provider_name, backend_model, success, retryable, is_fallback,
                        category, latency_ms, first_text_latency_ms, details_json, created_at
                 FROM route_events
+                {where_sql}
                 ORDER BY id DESC
                 LIMIT ?
                 """,
-                (limit,),
+                params,
             ).fetchall()
         return [
             {
+                "id": row["id"],
                 "alias": row["alias"],
                 "provider_name": row["provider_name"],
                 "backend_model": row["backend_model"],
