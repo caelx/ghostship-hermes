@@ -63,6 +63,23 @@ class StateStore:
     def apply_failure(self, provider_name: str, backend_model: str, *, category: str, retryable: bool, cooldown_model: bool = True) -> None:
         raise NotImplementedError
 
+    def record_shape_result(
+        self,
+        provider_name: str,
+        backend_model: str,
+        shape_key: str,
+        *,
+        success: bool,
+        category: str | None,
+        latency_ms: float | None,
+        first_text_latency_ms: float | None,
+        slow_success: bool = False,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def get_shape_health(self) -> dict[str, dict[str, Any]]:
+        raise NotImplementedError
+
     def note_provider_request(self, provider_name: str, *, next_request_at: float) -> None:
         raise NotImplementedError
 
@@ -309,6 +326,32 @@ class SqliteStateStore(StateStore):
                     updated_at REAL NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS shape_health (
+                    provider_name TEXT NOT NULL,
+                    backend_model TEXT NOT NULL,
+                    shape_key TEXT NOT NULL,
+                    success_count INTEGER NOT NULL DEFAULT 0,
+                    failure_count INTEGER NOT NULL DEFAULT 0,
+                    timeout_count INTEGER NOT NULL DEFAULT 0,
+                    slow_success_count INTEGER NOT NULL DEFAULT 0,
+                    recent_success REAL NOT NULL DEFAULT 0,
+                    recent_failure REAL NOT NULL DEFAULT 0,
+                    recent_timeout REAL NOT NULL DEFAULT 0,
+                    recent_slow_success REAL NOT NULL DEFAULT 0,
+                    suppression_level INTEGER NOT NULL DEFAULT 0,
+                    suppressed_until REAL NOT NULL DEFAULT 0,
+                    next_probe_at REAL NOT NULL DEFAULT 0,
+                    probe_success_count INTEGER NOT NULL DEFAULT 0,
+                    last_category TEXT,
+                    last_event_at REAL,
+                    last_latency_ms REAL,
+                    last_first_text_latency_ms REAL,
+                    latency_avg_ms REAL,
+                    first_text_latency_avg_ms REAL,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (provider_name, backend_model, shape_key)
+                );
+
                 CREATE TABLE IF NOT EXISTS model_rankings (
                     provider_name TEXT NOT NULL,
                     backend_model TEXT NOT NULL,
@@ -419,6 +462,7 @@ class SqliteStateStore(StateStore):
             self._ensure_column(connection, "provider_state", "throttle_streak", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(connection, "provider_state", "last_throttle_at", "REAL")
             self._ensure_column(connection, "provider_state", "throttle_reason", "TEXT")
+            self._ensure_column(connection, "shape_health", "probe_success_count", "INTEGER NOT NULL DEFAULT 0")
 
     @staticmethod
     def _ensure_column(connection: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -865,6 +909,141 @@ class SqliteStateStore(StateStore):
                 ),
             )
         self._invalidate_read_caches("_model_state_cache", "_provider_state_cache")
+
+    def record_shape_result(
+        self,
+        provider_name: str,
+        backend_model: str,
+        shape_key: str,
+        *,
+        success: bool,
+        category: str | None,
+        latency_ms: float | None,
+        first_text_latency_ms: float | None,
+        slow_success: bool = False,
+    ) -> dict[str, Any]:
+        now = time.time()
+        timeout_categories = {"timeout", "connect_timeout", "first_byte_timeout", "read_timeout", "request_timeout"}
+        is_timeout = (not success and category in timeout_categories)
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM shape_health
+                WHERE provider_name = ? AND backend_model = ? AND shape_key = ?
+                """,
+                (provider_name, backend_model, shape_key),
+            ).fetchone()
+            updated_at = float(row["updated_at"]) if row else now
+            recent_success = self._decayed_increment(row["recent_success"] if row else 0, updated_at, now, amount=(1.0 if success else 0.0))
+            recent_failure = self._decayed_increment(row["recent_failure"] if row else 0, updated_at, now, amount=(0.0 if success else 1.0))
+            recent_timeout = self._decayed_increment(row["recent_timeout"] if row else 0, updated_at, now, amount=(1.0 if is_timeout else 0.0))
+            recent_slow_success = self._decayed_increment(row["recent_slow_success"] if row else 0, updated_at, now, amount=(1.0 if slow_success else 0.0))
+            previous_level = int(row["suppression_level"] or 0) if row else 0
+            suppression_level = previous_level
+            suppressed_until = float(row["suppressed_until"] or 0) if row else 0.0
+            next_probe_at = float(row["next_probe_at"] or 0) if row else 0.0
+            probe_success_count = int(row["probe_success_count"] or 0) if row else 0
+            if is_timeout:
+                suppression_level = min(3, previous_level + 1)
+                durations = {1: 600.0, 2: 1800.0, 3: 7200.0}
+                duration = durations[suppression_level]
+                suppressed_until = max(suppressed_until, now + duration)
+                next_probe_at = max(next_probe_at, now + min(duration, max(60.0, duration * 0.25)))
+                probe_success_count = 0
+            elif slow_success and recent_slow_success >= 2.0:
+                suppression_level = max(previous_level, 1)
+                suppressed_until = max(suppressed_until, now + 600.0)
+                next_probe_at = max(next_probe_at, now + 120.0)
+                probe_success_count = 0
+            elif success and previous_level > 0:
+                probe_success_count += 1
+                if probe_success_count >= 2:
+                    suppression_level = max(0, previous_level - 1)
+                    probe_success_count = 0
+                    if suppression_level == 0:
+                        suppressed_until = 0.0
+                        next_probe_at = 0.0
+
+            latency_avg_ms = self._ema(row["latency_avg_ms"] if row else None, latency_ms)
+            first_text_avg_ms = self._ema(row["first_text_latency_avg_ms"] if row else None, first_text_latency_ms)
+            connection.execute(
+                """
+                INSERT INTO shape_health (
+                    provider_name, backend_model, shape_key, success_count, failure_count,
+                    timeout_count, slow_success_count, recent_success, recent_failure,
+                    recent_timeout, recent_slow_success, suppression_level, suppressed_until,
+                    next_probe_at, probe_success_count, last_category, last_event_at,
+                    last_latency_ms, last_first_text_latency_ms, latency_avg_ms,
+                    first_text_latency_avg_ms, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(provider_name, backend_model, shape_key) DO UPDATE SET
+                    success_count = excluded.success_count,
+                    failure_count = excluded.failure_count,
+                    timeout_count = excluded.timeout_count,
+                    slow_success_count = excluded.slow_success_count,
+                    recent_success = excluded.recent_success,
+                    recent_failure = excluded.recent_failure,
+                    recent_timeout = excluded.recent_timeout,
+                    recent_slow_success = excluded.recent_slow_success,
+                    suppression_level = excluded.suppression_level,
+                    suppressed_until = excluded.suppressed_until,
+                    next_probe_at = excluded.next_probe_at,
+                    probe_success_count = excluded.probe_success_count,
+                    last_category = excluded.last_category,
+                    last_event_at = excluded.last_event_at,
+                    last_latency_ms = excluded.last_latency_ms,
+                    last_first_text_latency_ms = excluded.last_first_text_latency_ms,
+                    latency_avg_ms = excluded.latency_avg_ms,
+                    first_text_latency_avg_ms = excluded.first_text_latency_avg_ms,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    provider_name,
+                    backend_model,
+                    shape_key,
+                    (int(row["success_count"]) if row else 0) + (1 if success else 0),
+                    (int(row["failure_count"]) if row else 0) + (0 if success else 1),
+                    (int(row["timeout_count"]) if row else 0) + (1 if is_timeout else 0),
+                    (int(row["slow_success_count"]) if row else 0) + (1 if slow_success else 0),
+                    recent_success,
+                    recent_failure,
+                    recent_timeout,
+                    recent_slow_success,
+                    suppression_level,
+                    suppressed_until,
+                    next_probe_at,
+                    probe_success_count,
+                    category,
+                    now,
+                    latency_ms,
+                    first_text_latency_ms,
+                    latency_avg_ms,
+                    first_text_avg_ms,
+                    now,
+                ),
+            )
+        return {
+            "shape_key": shape_key,
+            "suppression_level": suppression_level,
+            "suppressed_until": suppressed_until,
+            "next_probe_at": next_probe_at,
+            "recent_timeout": recent_timeout,
+            "recent_slow_success": recent_slow_success,
+        }
+
+    def get_shape_health(self) -> dict[str, dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM shape_health
+                ORDER BY provider_name, backend_model, shape_key
+                """
+            ).fetchall()
+        return {
+            f"{row['provider_name']}::{row['backend_model']}::{row['shape_key']}": dict(row)
+            for row in rows
+        }
 
     def note_provider_request(self, provider_name: str, *, next_request_at: float) -> None:
         now = time.time()
@@ -1609,6 +1788,7 @@ class SqliteStateStore(StateStore):
             "chat_session_count": chat_session_count,
             "model_state": list(self.get_model_state().values()),
             "provider_state": list(self.get_provider_state().values()),
+            "shape_health": list(self.get_shape_health().values()),
             "rankings": list(self.get_rankings().values()),
             "overrides": self.get_overrides(),
         }
@@ -1665,7 +1845,7 @@ class SqliteStateStore(StateStore):
             "recent_success": self._decay(row["recent_success"] if row and "recent_success" in row.keys() else 0, updated_at, now),
             "recent_failure": self._decayed_increment(row["recent_failure"] if row and "recent_failure" in row.keys() else 0, updated_at, now),
             "recent_rate_limit": self._decay_category(row, "recent_rate_limit", updated_at, now, category == "rate_limited"),
-            "recent_timeout": self._decay_category(row, "recent_timeout", updated_at, now, category == "timeout"),
+            "recent_timeout": self._decay_category(row, "recent_timeout", updated_at, now, self._is_timeout_category(category)),
             "recent_auth_failure": self._decay_category(row, "recent_auth_failure", updated_at, now, category == "unauthorized"),
             "recent_transport_failure": self._decay_category(row, "recent_transport_failure", updated_at, now, category == "transport_error"),
             "recent_server_error": self._decay_category(row, "recent_server_error", updated_at, now, category == "server_error"),
@@ -1694,7 +1874,7 @@ class SqliteStateStore(StateStore):
             "recent_success": self._decay(row["recent_success"] if row and "recent_success" in row.keys() else 0, updated_at, now),
             "recent_failure": self._decay(row["recent_failure"] if row and "recent_failure" in row.keys() else 0, updated_at, now),
             "recent_rate_limit": self._decay_category(row, "recent_rate_limit", updated_at, now, (not success and category == "rate_limited")),
-            "recent_timeout": self._decay_category(row, "recent_timeout", updated_at, now, (not success and category == "timeout")),
+            "recent_timeout": self._decay_category(row, "recent_timeout", updated_at, now, (not success and category is not None and self._is_timeout_category(category))),
             "recent_auth_failure": self._decay_category(row, "recent_auth_failure", updated_at, now, (not success and category == "unauthorized")),
             "recent_transport_failure": self._decay_category(row, "recent_transport_failure", updated_at, now, (not success and category == "transport_error")),
             "recent_server_error": self._decay_category(row, "recent_server_error", updated_at, now, (not success and category == "server_error")),
@@ -1734,6 +1914,10 @@ class SqliteStateStore(StateStore):
     @staticmethod
     def _is_exhaustion_category(category: str) -> bool:
         return category in {"rate_limited", "insufficient_balance", "quota_exhausted"}
+
+    @staticmethod
+    def _is_timeout_category(category: str) -> bool:
+        return category in {"timeout", "connect_timeout", "first_byte_timeout", "read_timeout", "request_timeout"}
 
     def _next_exhaustion_streak(self, row: sqlite3.Row | None, now: float, *, category: str) -> int:
         if not self._is_exhaustion_category(category):

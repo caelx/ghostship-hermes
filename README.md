@@ -341,7 +341,7 @@ Router:
 - Hermes default config sets `web.backend: firecrawl`
 - the managed Hermes config exposes `ghostship-router` as a local custom provider with `deepseek-v4-pro` and `minimax-m2.7` models
 - when configured, NVIDIA Build, OpenCode Zen, ZenMux, Electron Hub, and explicitly mapped OpenRouter free models participate through explicit equivalence entries
-- router normal routing exposes only OpenCode Go model IDs with explicit free-provider equivalents, uses RPM-aware round robin across eligible free providers, and falls back to `opencode-go` with the same model id only when the free equivalents are exhausted or unavailable
+- router normal routing exposes only OpenCode Go model IDs with explicit free-provider equivalents, uses RPM-weighted deficit round robin with shape-aware health across eligible free providers, and falls back to `opencode-go` with the same model id only when the free equivalents are exhausted, unavailable, suppressed, or the free-provider request budget is spent
 
 Forced Discord channels:
 

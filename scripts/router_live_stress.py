@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -64,6 +65,35 @@ class RouterClient:
             return status, headers, json.loads(raw.decode() or "{}")
         except json.JSONDecodeError:
             return status, headers, raw.decode(errors="replace")
+
+    def stream_request(self, path: str, body: dict[str, Any]) -> tuple[int, dict[str, str], bytes, float | None, float | None]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        request = urllib.request.Request(f"{self.base_url}{path}", data=json.dumps(body).encode(), headers=headers, method="POST")
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                chunks: list[bytes] = []
+                first_byte_ms: float | None = None
+                while True:
+                    chunk = response.readline()
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    if first_byte_ms is None and chunk.strip():
+                        first_byte_ms = round((time.monotonic() - started) * 1000, 2)
+                elapsed_ms = round((time.monotonic() - started) * 1000, 2)
+                return response.status, {key.lower(): value for key, value in response.headers.items()}, b"".join(chunks), first_byte_ms, elapsed_ms
+        except urllib.error.HTTPError as exc:
+            elapsed_ms = round((time.monotonic() - started) * 1000, 2)
+            return exc.code, {key.lower(): value for key, value in exc.headers.items()}, exc.read(), None, elapsed_ms
+        except TimeoutError as exc:
+            elapsed_ms = round((time.monotonic() - started) * 1000, 2)
+            return 599, {}, f"request timed out after {self.timeout}s: {exc}".encode(), None, elapsed_ms
+        except OSError as exc:
+            elapsed_ms = round((time.monotonic() - started) * 1000, 2)
+            return 598, {}, f"request transport error: {type(exc).__name__}: {exc}".encode(), None, elapsed_ms
 
 
 def has_xml_tool_call(value: Any) -> bool:
@@ -198,19 +228,19 @@ def run_json_case(client: RouterClient, name: str, path: str, payload: dict[str,
 
 def run_stream_case(client: RouterClient, name: str, path: str, payload: dict[str, Any]) -> Result:
     payload = {**payload, "stream": True}
-    status, headers, raw = client.request("POST", path, payload)
+    status, headers, raw, first_byte_ms, elapsed_ms = client.stream_request(path, payload)
     provider = headers.get("x-ghostship-router-backend-provider")
     backend = headers.get("x-ghostship-router-backend-model")
     text = raw.decode(errors="replace")
     if status >= 500:
-        return Result(name, False, status=status, provider=provider, model=backend, error=f"server error body={text[:500]!r}")
+        return Result(name, False, status=status, provider=provider, model=backend, elapsed_ms=elapsed_ms, first_byte_ms=first_byte_ms, error=f"server error body={text[:500]!r}")
     if status >= 400:
-        return Result(name, False, status=status, provider=provider, model=backend, error=f"client error body={text[:500]!r}")
+        return Result(name, False, status=status, provider=provider, model=backend, elapsed_ms=elapsed_ms, first_byte_ms=first_byte_ms, error=f"client error body={text[:500]!r}")
     if "data: [DONE]" not in text and "response.completed" not in text:
-        return Result(name, False, status=status, provider=provider, model=backend, error="stream did not complete")
+        return Result(name, False, status=status, provider=provider, model=backend, elapsed_ms=elapsed_ms, first_byte_ms=first_byte_ms, error="stream did not complete")
     if has_xml_tool_call(text):
-        return Result(name, False, status=status, provider=provider, model=backend, error="raw XML tool call leaked")
-    return Result(name, True, status=status, provider=provider, model=backend)
+        return Result(name, False, status=status, provider=provider, model=backend, elapsed_ms=elapsed_ms, first_byte_ms=first_byte_ms, error="raw XML tool call leaked")
+    return Result(name, True, status=status, provider=provider, model=backend, elapsed_ms=elapsed_ms, first_byte_ms=first_byte_ms)
 
 
 def print_result(result: Result) -> None:
@@ -241,7 +271,7 @@ def main() -> int:
     client = RouterClient(args.base_url, args.api_key, args.timeout)
     results: list[Result] = []
 
-    for name, path in (("readyz", "/readyz"), ("models", "/v1/models"), ("debug-summary", "/debug/summary"), ("metrics", "/metrics")):
+    for name, path in (("readyz", "/readyz"), ("models", "/v1/models"), ("debug-summary", "/debug/summary"), ("debug-health", "/debug/health"), ("metrics", "/metrics")):
         status, _, body = client.request("GET", path)
         ok = status < 500 and bool(body)
         results.append(Result(name, ok, status=status, error=None if ok else body.decode(errors="replace")[:500]))
@@ -263,6 +293,9 @@ def main() -> int:
     for model in models:
         status, _, route_body = client.json("GET", f"/debug/routes/{model}")
         results.append(Result(f"debug-routes {model}", status == 200, status=status))
+        for shape_key in ("stream", "tools", "stream+tools", "tool_history", "reasoning"):
+            shape_status, _, _ = client.json("GET", f"/debug/routes/{model}?shape_key={urllib.parse.quote(shape_key)}")
+            results.append(Result(f"debug-routes {model} {shape_key}", shape_status == 200, status=shape_status))
         route_entries: list[dict[str, Any]] = []
         if isinstance(route_body, dict):
             for key in ("candidates", "skipped"):
@@ -353,6 +386,17 @@ def main() -> int:
         print_result(result)
     providers = sorted({result.provider for result in results if result.provider})
     print(f"Providers observed: {', '.join(providers) if providers else 'none'}")
+    events_status, _, events_body = client.json("GET", "/debug/route-events?limit=25")
+    if events_status == 200 and isinstance(events_body, dict):
+        print("Recent route events:")
+        for event in events_body.get("events", [])[:25]:
+            if not isinstance(event, dict):
+                continue
+            print(
+                "  "
+                f"id={event.get('id')} alias={event.get('alias')} provider={event.get('provider_name')} "
+                f"backend={event.get('backend_model')} success={event.get('success')} category={event.get('category')}"
+            )
     failures = [result for result in results if not result.ok]
     return 1 if failures else 0
 

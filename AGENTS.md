@@ -105,7 +105,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Free providers route only through explicit equivalence entries for an exposed OpenCode Go model id.
 - Normal routing must not use alias/family/top-five reserve selection. Use only the requested OpenCode Go model id's explicit equivalence table.
 - Default free-provider RPMs are NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20.
-- Candidate selection is RPM-aware round robin across eligible free equivalents, then `opencode-go/<same model id>` as paid fallback.
+- Candidate selection is RPM-weighted deficit round robin across eligible free equivalents, adjusted by shape-aware health and bounded free-provider timeouts, then `opencode-go/<same model id>` as paid fallback.
 - `opencode-go` is the canonical model catalog and paid fallback; it is never counted as a free provider.
 
 ### Packaging Split

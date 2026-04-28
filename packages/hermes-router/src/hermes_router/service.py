@@ -42,6 +42,14 @@ class StreamPlan:
     body: Iterator[str]
     headers: dict[str, str]
 
+@dataclass(frozen=True)
+class RouteContext:
+    request_id: str
+    session_id: str | None
+    shape_key: str
+    free_budget_seconds: float
+    free_started_at: float
+
 
 @dataclass(frozen=True)
 class PreparedResponsesRequest:
@@ -70,6 +78,7 @@ class RouterService:
         self._refresh_lock = threading.RLock()
         self._session_affinity: dict[str, dict[str, Any]] = {}
         self._round_robin_offsets: dict[str, int] = {}
+        self._round_robin_deficits: dict[str, float] = {}
 
     def _build_providers(self) -> dict[str, ChatProvider]:
         providers: dict[str, ChatProvider] = {}
@@ -543,40 +552,118 @@ class RouterService:
             raise RouterServiceError(404, {"message": f"Response not found: {response_id}"})
         return {"id": response_id, "object": "response", "deleted": True}
 
+    def _route_context(self, request_payload: dict[str, Any], *, session_id: str | None, response_api: bool = False) -> RouteContext:
+        return RouteContext(
+            request_id=f"route_{uuid.uuid4().hex[:24]}",
+            session_id=session_id,
+            shape_key=self._request_shape_key(request_payload, response_api=response_api),
+            free_budget_seconds=max(0.0, float(self.config.free_total_budget_seconds)),
+            free_started_at=time.monotonic(),
+        )
+
+    def _candidate_timeout(self, candidate: RouteCandidate, request_timeout: float | None, *, stream_first_byte: bool = False) -> float:
+        if candidate.provider_name == "opencode-go":
+            return float(request_timeout or self.config.fallback_timeout_seconds)
+        free_limit = self.config.free_stream_first_byte_timeout_seconds if stream_first_byte else self.config.free_attempt_timeout_seconds
+        upstream_limit = request_timeout or self.config.default_timeout
+        return max(0.1, min(float(upstream_limit), float(free_limit)))
+
+    def _free_budget_remaining(self, context: RouteContext) -> float:
+        return context.free_budget_seconds - (time.monotonic() - context.free_started_at)
+
+    def _normalize_timeout_error(self, exc: NormalizedProviderError, *, phase: str) -> NormalizedProviderError:
+        if exc.category != "timeout":
+            return exc
+        category = {
+            "connect": "connect_timeout",
+            "first_byte": "first_byte_timeout",
+            "read": "read_timeout",
+            "request": "request_timeout",
+        }.get(phase, "request_timeout")
+        details = exc.details if isinstance(exc.details, dict) else {"message": str(exc)}
+        return NormalizedProviderError(
+            category,
+            str(exc),
+            provider=exc.provider,
+            backend_model=exc.backend_model,
+            retryable=exc.retryable,
+            details={**details, "timeout_phase": phase},
+        )
+
+    def _trace_route(self, event: str, **fields: Any) -> None:
+        if not self.config.trace_routing:
+            return
+        logger.info("router_trace %s", json.dumps({"event": event, **fields}, sort_keys=True, default=str))
+
     def _execute_chat_completion(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> tuple[dict[str, Any], dict[str, str]]:
         self._validate_tool_history(request)
         self._ensure_inventory_loaded_for_request()
         requires_tool_protocol = self._request_requires_tool_protocol(request)
-        attempted: set[tuple[str, str]] = set()
-        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
-        if not candidates:
-            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
-            if wait_seconds is not None:
-                time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
-        if not candidates:
-            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
-            if wait_seconds is not None:
-                time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
-        if not candidates:
-            raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
         request_payload = self._chat_request_payload(request)
         request_payload.pop("timeout", None)
+        context = self._route_context(request_payload, session_id=session_id)
         request_shape = self._request_debug_shape(request_payload)
+        attempted: set[tuple[str, str]] = set()
+        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+        if not candidates:
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+            if wait_seconds is not None:
+                time.sleep(wait_seconds)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+        if not candidates:
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+            if wait_seconds is not None:
+                time.sleep(wait_seconds)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+        if not candidates:
+            raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
+        request_payload["stream"] = False
         errors: list[dict[str, Any]] = []
         while candidates:
             index = len(attempted)
             candidate = candidates[0]
             attempted.add((candidate.provider_name, candidate.backend_model))
+            attempt_timeout = self._candidate_timeout(candidate, request.timeout, stream_first_byte=False)
+            if candidate.provider_name != "opencode-go" and self._free_budget_remaining(context) <= 0:
+                self._record_skip(
+                    candidate,
+                    request.model,
+                    "request_budget_exhausted",
+                    request_shape=request_shape,
+                    context=context,
+                    candidate_rank=index,
+                    attempt_timeout_seconds=attempt_timeout,
+                )
+                errors.append(
+                    {
+                        "provider": candidate.provider_name,
+                        "backend_model": candidate.backend_model,
+                        "category": "request_budget_exhausted",
+                        "retryable": True,
+                        "details": {"free_budget_seconds": context.free_budget_seconds},
+                    }
+                )
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                continue
             provider = self.providers.get(candidate.provider_name)
             if provider is None:
-                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
                 continue
             self.state_store.note_provider_request(candidate.provider_name, next_request_at=time.time() + self._provider_spacing_seconds(candidate.provider_name))
+            self._trace_route(
+                "attempt",
+                request_id=context.request_id,
+                session_id=context.session_id,
+                shape_key=context.shape_key,
+                alias=request.model,
+                provider=candidate.provider_name,
+                backend_model=candidate.backend_model,
+                rank=index,
+                timeout_seconds=attempt_timeout,
+            )
             start = time.monotonic()
             try:
-                result = provider.chat_completions(candidate.backend_model, request_payload, timeout=request.timeout or self.config.default_timeout)
+                result = provider.chat_completions(candidate.backend_model, request_payload, timeout=attempt_timeout)
                 if requires_tool_protocol and self._payload_has_xml_tool_call(result.payload):
                     raise NormalizedProviderError(
                         "tool_protocol_mismatch",
@@ -594,7 +681,19 @@ class RouterService:
                     latency_ms=latency_ms,
                     first_text_latency_ms=first_text_latency_ms,
                     is_fallback=candidate.is_fallback or index > 0,
-                    details={"result_provider": result.provider, "score_breakdown": candidate.score_breakdown, "request_shape": request_shape},
+                    details={
+                        "result_provider": result.provider,
+                        "score_breakdown": candidate.score_breakdown,
+                        "request_shape": request_shape,
+                        "route": {
+                            "request_id": context.request_id,
+                            "session_id": context.session_id,
+                            "shape_key": context.shape_key,
+                            "candidate_rank": index,
+                            "attempt_timeout_seconds": attempt_timeout,
+                            "free_budget_seconds": context.free_budget_seconds,
+                        },
+                    },
                 )
                 self._remember_session_affinity(session_id, candidate)
                 headers = {
@@ -605,6 +704,7 @@ class RouterService:
                 }
                 return result.payload, headers
             except NormalizedProviderError as exc:
+                exc = self._normalize_timeout_error(exc, phase="request")
                 latency_ms = round((time.monotonic() - start) * 1000, 2)
                 self._record_failure(
                     candidate,
@@ -614,6 +714,9 @@ class RouterService:
                     is_fallback=candidate.is_fallback or index > 0,
                     zero_output=True,
                     request_shape=request_shape,
+                    context=context,
+                    candidate_rank=index,
+                    attempt_timeout_seconds=attempt_timeout,
                 )
                 errors.append(
                     {
@@ -626,12 +729,12 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
                 if not candidates:
                     wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
-                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
         raise RouterServiceError(
             self._status_code_for_attempt_failures(errors),
             {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors},
@@ -646,34 +749,68 @@ class RouterService:
         self._validate_tool_history(request)
         self._ensure_inventory_loaded_for_request()
         requires_tool_protocol = self._request_requires_tool_protocol(request)
+        request_payload = self._chat_request_payload(request)
+        request_payload.pop("timeout", None)
+        context = self._route_context(request_payload, session_id=session_id)
+        request_shape = self._request_debug_shape(request_payload)
         attempted: set[tuple[str, str]] = set()
-        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
         if not candidates:
             wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
             if wait_seconds is not None:
                 time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
         if not candidates:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
-
-        request_payload = self._chat_request_payload(request)
-        request_payload.pop("timeout", None)
-        request_shape = self._request_debug_shape(request_payload)
         attempt_errors: list[dict[str, Any]] = []
         while candidates:
             index = len(attempted)
             candidate = candidates[0]
             attempted.add((candidate.provider_name, candidate.backend_model))
+            attempt_timeout = self._candidate_timeout(candidate, request.timeout, stream_first_byte=True)
+            if candidate.provider_name != "opencode-go" and self._free_budget_remaining(context) <= 0:
+                self._record_skip(
+                    candidate,
+                    request.model,
+                    "request_budget_exhausted",
+                    request_shape=request_shape,
+                    context=context,
+                    candidate_rank=index,
+                    attempt_timeout_seconds=attempt_timeout,
+                )
+                attempt_errors.append(
+                    {
+                        "provider": candidate.provider_name,
+                        "backend_model": candidate.backend_model,
+                        "category": "request_budget_exhausted",
+                        "retryable": True,
+                        "details": {"free_budget_seconds": context.free_budget_seconds},
+                    }
+                )
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                continue
             provider = self.providers.get(candidate.provider_name)
             if provider is None:
-                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
                 continue
             self.state_store.note_provider_request(candidate.provider_name, next_request_at=time.time() + self._provider_spacing_seconds(candidate.provider_name))
+            self._trace_route(
+                "stream_open",
+                request_id=context.request_id,
+                session_id=context.session_id,
+                shape_key=context.shape_key,
+                alias=request.model,
+                provider=candidate.provider_name,
+                backend_model=candidate.backend_model,
+                rank=index,
+                timeout_seconds=attempt_timeout,
+            )
+            start = time.monotonic()
             try:
                 stream_result = provider.chat_completions_stream(
                     candidate.backend_model,
                     request_payload,
-                    timeout=request.timeout or self.config.default_timeout,
+                    timeout=attempt_timeout,
                 )
                 chunk_iter = iter(stream_result.chunks)
                 try:
@@ -683,14 +820,18 @@ class RouterService:
                 self._remember_session_affinity(session_id, candidate)
                 return candidate, stream_result, first_chunk, chunk_iter
             except NormalizedProviderError as exc:
+                exc = self._normalize_timeout_error(exc, phase="first_byte")
                 self._record_failure(
                     candidate,
                     request.model,
                     exc,
-                    latency_ms=None,
+                    latency_ms=round((time.monotonic() - start) * 1000, 2),
                     is_fallback=candidate.is_fallback or index > 0,
                     zero_output=True,
                     request_shape=request_shape,
+                    context=context,
+                    candidate_rank=index,
+                    attempt_timeout_seconds=attempt_timeout,
                 )
                 attempt_errors.append(
                     {
@@ -703,12 +844,12 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
                 if not candidates:
                     wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
-                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
         raise RouterServiceError(
             self._status_code_for_attempt_failures(attempt_errors),
             {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors},
@@ -721,8 +862,8 @@ class RouterService:
             return 400
         return 503
 
-    @staticmethod
-    def _request_debug_shape(payload: dict[str, Any]) -> dict[str, Any]:
+    @classmethod
+    def _request_debug_shape(cls, payload: dict[str, Any], *, response_api: bool = False) -> dict[str, Any]:
         messages = [message for message in payload.get("messages") or [] if isinstance(message, dict)]
         role_counts: dict[str, int] = {}
         assistant_tool_call_messages = 0
@@ -742,6 +883,7 @@ class RouterService:
                 tool_result_messages += 1
         return {
             "model": payload.get("model"),
+            "shape_key": cls._request_shape_key(payload, response_api=response_api),
             "stream": bool(payload.get("stream")),
             "message_count": len(messages),
             "role_counts": role_counts,
@@ -756,6 +898,23 @@ class RouterService:
             "tool_result_messages": tool_result_messages,
             "null_content_messages": null_content_messages,
         }
+
+    @staticmethod
+    def _request_shape_key(payload: dict[str, Any], *, response_api: bool = False) -> str:
+        messages = [message for message in payload.get("messages") or [] if isinstance(message, dict)]
+        parts: list[str] = []
+        if response_api:
+            parts.append("responses")
+        if bool(payload.get("stream")):
+            parts.append("stream")
+        has_tools = bool(payload.get("tools")) or payload.get("tool_choice") not in (None, "none")
+        if has_tools:
+            parts.append("tools")
+        if any(message.get("role") == "tool" or message.get("tool_call_id") or message.get("tool_calls") for message in messages):
+            parts.append("tool_history")
+        if any("reasoning_content" in message or "reasoning" in message for message in messages):
+            parts.append("reasoning")
+        return "+".join(parts) if parts else "text"
 
     def _ensure_inventory_loaded_for_request(self) -> None:
         if self._inventory or not self.providers:
@@ -1073,6 +1232,9 @@ class RouterService:
         is_fallback: bool,
         zero_output: bool,
         request_shape: dict[str, Any] | None = None,
+        context: RouteContext | None = None,
+        candidate_rank: int | None = None,
+        attempt_timeout_seconds: float | None = None,
     ) -> None:
         logger.warning(
             "router candidate failed: provider=%s backend_model=%s category=%s retryable=%s",
@@ -1108,6 +1270,18 @@ class RouterService:
             probe_escalation_factor=self.config.provider_probe_escalation_factor,
             max_disable_seconds=self.config.provider_max_disable_seconds,
         )
+        shape_health = None
+        shape_key = context.shape_key if context is not None else (request_shape or {}).get("shape_key")
+        if shape_key and candidate.provider_name != "opencode-go":
+            shape_health = self.state_store.record_shape_result(
+                candidate.provider_name,
+                candidate.backend_model,
+                str(shape_key),
+                success=False,
+                category=exc.category,
+                latency_ms=latency_ms,
+                first_text_latency_ms=None,
+            )
         self._apply_provider_health_guards(candidate.provider_name)
         self.state_store.record_attempt(
             RouteEvent(
@@ -1127,6 +1301,56 @@ class RouterService:
                     "provider_exhaustion": provider_exhaustion,
                     "provider_throttle": provider_throttle,
                     "request_shape": request_shape,
+                    "shape_health": shape_health,
+                    "route": {
+                        "request_id": context.request_id if context else None,
+                        "session_id": context.session_id if context else None,
+                        "shape_key": shape_key,
+                        "candidate_rank": candidate_rank,
+                        "attempt_timeout_seconds": attempt_timeout_seconds,
+                        "free_budget_seconds": context.free_budget_seconds if context else None,
+                        "free_budget_remaining_seconds": self._free_budget_remaining(context) if context else None,
+                    },
+                },
+                created_at=time.time(),
+            )
+        )
+
+    def _record_skip(
+        self,
+        candidate: RouteCandidate,
+        alias: str,
+        category: str,
+        *,
+        request_shape: dict[str, Any] | None,
+        context: RouteContext,
+        candidate_rank: int,
+        attempt_timeout_seconds: float,
+    ) -> None:
+        self.state_store.record_attempt(
+            RouteEvent(
+                alias=alias,
+                provider_name=candidate.provider_name,
+                backend_model=candidate.backend_model,
+                success=False,
+                retryable=True,
+                is_fallback=candidate.is_fallback,
+                category=category,
+                latency_ms=0.0,
+                first_text_latency_ms=None,
+                details={
+                    "skip_reason": category,
+                    "score_breakdown": candidate.score_breakdown,
+                    "request_shape": request_shape,
+                    "route": {
+                        "request_id": context.request_id,
+                        "session_id": context.session_id,
+                        "shape_key": context.shape_key,
+                        "candidate_rank": candidate_rank,
+                        "attempt_timeout_seconds": attempt_timeout_seconds,
+                        "free_budget_seconds": context.free_budget_seconds,
+                        "free_budget_remaining_seconds": self._free_budget_remaining(context),
+                    },
                 },
                 created_at=time.time(),
             )
@@ -1148,6 +1372,26 @@ class RouterService:
             latency_ms=latency_ms,
             first_text_latency_ms=first_text_latency_ms,
         )
+        request_shape = details.get("request_shape") if isinstance(details.get("request_shape"), dict) else {}
+        shape_key = str(request_shape.get("shape_key") or "")
+        slow_success = candidate.provider_name != "opencode-go" and (
+            (first_text_latency_ms is not None and first_text_latency_ms >= self.config.provider_slow_first_text_threshold_ms)
+            or (latency_ms is not None and latency_ms >= self.config.provider_slow_total_threshold_ms)
+        )
+        if shape_key and candidate.provider_name != "opencode-go":
+            details = {
+                **details,
+                "shape_health": self.state_store.record_shape_result(
+                    candidate.provider_name,
+                    candidate.backend_model,
+                    shape_key,
+                    success=True,
+                    category="slow_success" if slow_success else None,
+                    latency_ms=latency_ms,
+                    first_text_latency_ms=first_text_latency_ms,
+                    slow_success=slow_success,
+                ),
+            }
         self._apply_provider_health_guards(candidate.provider_name)
         self.state_store.record_attempt(
             RouteEvent(
@@ -1909,19 +2153,19 @@ class RouterService:
                 lines.append(self._prom_metric("ghostship_router_candidate_count", len(self.preview_routes(model.id)), alias=model.id))
         return "\n".join(lines) + "\n"
 
-    def preview_routes(self, alias: str) -> list[dict[str, Any]]:
+    def preview_routes(self, alias: str, *, shape_key: str = "text") -> list[dict[str, Any]]:
         try:
-            candidates = self._resolve_candidates(alias)
+            candidates = self._resolve_candidates(alias, shape_key=shape_key)
         except RouterServiceError:
             return []
         return self._render_candidates(candidates)
 
-    def debug_routes(self, alias: str) -> dict[str, Any]:
+    def debug_routes(self, alias: str, *, shape_key: str = "text") -> dict[str, Any]:
         if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
             raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
         if self._opencode_go_model(alias) is None:
             raise RouterServiceError(404, {"message": f"Unknown OpenCode Go model id '{alias}'."})
-        candidates = self.preview_routes(alias)
+        candidates = self.preview_routes(alias, shape_key=shape_key)
         active_keys = {(item["provider_name"], item["backend_model"]) for item in candidates}
         skipped: list[dict[str, Any]] = []
         for model in [*self._free_equivalent_models(alias), *(go_model for go_model in [self._opencode_go_model(alias)] if go_model is not None)]:
@@ -1932,11 +2176,35 @@ class RouterService:
                     "provider_name": model.provider,
                     "backend_model": model.id,
                     "is_free": bool(model.is_free),
-                    "reason": self._ranked_model_exclusion_reason(model.provider, model.id, alias=alias, model=model),
-                    "state": self._candidate_state(model.provider, model.id),
+                    "reason": self._ranked_model_exclusion_reason(model.provider, model.id, alias=alias, model=model, shape_key=shape_key),
+                    "state": self._candidate_state(model.provider, model.id, shape_key=shape_key),
                 }
             )
-        return {"alias": alias, "candidates": candidates, "skipped": skipped}
+        return {"alias": alias, "shape_key": shape_key, "candidates": candidates, "skipped": skipped}
+
+    def debug_health(self) -> dict[str, Any]:
+        now = time.time()
+        provider_state = self.state_store.get_provider_state()
+        model_state = self.state_store.get_model_state()
+        shape_health = self.state_store.get_shape_health()
+        shapes: list[dict[str, Any]] = []
+        for key, state in shape_health.items():
+            provider_name, backend_model, shape_key = key.split("::", 2)
+            shapes.append(
+                {
+                    **state,
+                    "health_score": self._shape_health_score(provider_name, backend_model, shape_key),
+                    "suppression_active": float(state.get("suppressed_until", 0) or 0) > now,
+                    "probe_available": self._shape_probe_available(provider_name, backend_model, shape_key),
+                    "suppressed_remaining_seconds": max(0.0, float(state.get("suppressed_until", 0) or 0) - now),
+                    "next_probe_in_seconds": max(0.0, float(state.get("next_probe_at", 0) or 0) - now),
+                }
+            )
+        return {
+            "providers": list(provider_state.values()),
+            "models": list(model_state.values()),
+            "shapes": shapes,
+        }
 
     def _render_candidates(self, candidates: list[RouteCandidate]) -> list[dict[str, Any]]:
         return [
@@ -1970,6 +2238,7 @@ class RouterService:
         *,
         alias: str,
         model: ProviderModel | None = None,
+        shape_key: str = "text",
     ) -> str | None:
         resolved_model = model or self._lookup_model(provider_name, backend_model)
         if resolved_model is None:
@@ -1985,7 +2254,7 @@ class RouterService:
             return "non_text_output"
         if not self._model_effectively_enabled(provider_name, backend_model):
             return "disabled"
-        health_reason = self._rolling_health_suppression_reason(provider_name, backend_model)
+        health_reason = self._rolling_health_suppression_reason(provider_name, backend_model, shape_key=shape_key)
         if health_reason is not None:
             return health_reason
         if self._is_cooling_down(provider_name, backend_model):
@@ -2047,6 +2316,7 @@ class RouterService:
         session_id: str | None = None,
         ignore_provider_pacing: bool = False,
         requires_tool_protocol: bool = False,
+        shape_key: str = "text",
     ) -> list[RouteCandidate]:
         if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
             raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
@@ -2060,6 +2330,7 @@ class RouterService:
             ignore_provider_pacing=ignore_provider_pacing,
             advance_round_robin=False,
             requires_tool_protocol=requires_tool_protocol,
+            shape_key=shape_key,
         )
         return [
             RouteCandidate(**{**candidate.__dict__, "is_fallback": candidate.provider_name == "opencode-go" or index > 0})
@@ -2074,6 +2345,7 @@ class RouterService:
         session_id: str | None = None,
         ignore_provider_pacing: bool = False,
         requires_tool_protocol: bool = False,
+        shape_key: str = "text",
     ) -> list[RouteCandidate]:
         if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
             raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
@@ -2084,6 +2356,7 @@ class RouterService:
             ignore_provider_pacing=ignore_provider_pacing,
             advance_round_robin=not attempted,
             requires_tool_protocol=requires_tool_protocol,
+            shape_key=shape_key,
         )
         available = [
             candidate
@@ -2107,6 +2380,7 @@ class RouterService:
         ignore_provider_pacing: bool = False,
         advance_round_robin: bool = False,
         requires_tool_protocol: bool = False,
+        shape_key: str = "text",
     ) -> list[RouteCandidate]:
         free_candidates: list[RouteCandidate] = []
         fallback_candidates: list[RouteCandidate] = []
@@ -2117,9 +2391,10 @@ class RouterService:
                 ignore_provider_pacing=ignore_provider_pacing,
                 probe_selected=probe_selected,
                 requires_tool_protocol=requires_tool_protocol,
+                shape_key=shape_key,
             ):
                 continue
-            breakdown = self._candidate_breakdown(served_model_id, model)
+            breakdown = self._candidate_breakdown(served_model_id, model, shape_key=shape_key)
             candidate = RouteCandidate(
                 provider_name=model.provider,
                 backend_model=model.id,
@@ -2130,7 +2405,7 @@ class RouterService:
             if candidate not in target:
                 target.append(candidate)
         return [
-            *self._round_robin_free_candidates(served_model_id, free_candidates, advance=advance_round_robin),
+            *self._round_robin_free_candidates(served_model_id, free_candidates, advance=advance_round_robin, shape_key=shape_key),
             *fallback_candidates,
         ]
 
@@ -2141,6 +2416,7 @@ class RouterService:
         ignore_provider_pacing: bool,
         probe_selected: set[str],
         requires_tool_protocol: bool = False,
+        shape_key: str = "text",
     ) -> bool:
         if not self._model_is_routable(model):
             return False
@@ -2148,7 +2424,7 @@ class RouterService:
             return False
         if not self._model_effectively_enabled(model.provider, model.id):
             return False
-        if model.provider != "opencode-go" and self._rolling_health_suppression_reason(model.provider, model.id) is not None:
+        if model.provider != "opencode-go" and self._rolling_health_suppression_reason(model.provider, model.id, shape_key=shape_key) is not None:
             return False
         if self._provider_is_cooling_down(model.provider):
             return False
@@ -2221,71 +2497,49 @@ class RouterService:
                 if candidate not in target:
                     target.append(candidate)
         return [
-            *self._round_robin_free_candidates(alias or "", free_candidates, advance=advance_round_robin),
+            *self._round_robin_free_candidates(alias or "", free_candidates, advance=advance_round_robin, shape_key="direct"),
             *fallback_candidates,
         ]
 
-    def _round_robin_free_candidates(self, alias: str, candidates: list[RouteCandidate], *, advance: bool) -> list[RouteCandidate]:
+    def _round_robin_free_candidates(self, alias: str, candidates: list[RouteCandidate], *, advance: bool, shape_key: str) -> list[RouteCandidate]:
         if len(candidates) <= 1:
             return candidates
-        by_provider: dict[str, list[RouteCandidate]] = {}
-        for candidate in candidates:
-            by_provider.setdefault(candidate.provider_name, []).append(candidate)
-        provider_names = [name for name in self.config.provider_priority if name in by_provider]
-        if not provider_names:
-            return candidates
-        weights = {
-            provider_name: max(1, self._provider_rpm_limit(provider_name) or 1)
-            for provider_name in provider_names
-        }
-        max_weight = max(weights.values())
-        virtual_ring = [
-            provider_name
-            for step in range(max_weight)
-            for provider_name in provider_names
-            if weights[provider_name] > step
-        ]
-        if not virtual_ring:
-            return candidates
-        offset_key = alias or "::".join(f"{item.provider_name}/{item.backend_model}" for item in candidates)
-        offset = self._round_robin_offsets.get(offset_key, 0) % len(virtual_ring)
-        ordered_provider_names = [*virtual_ring[offset:], *virtual_ring[:offset]]
-        if advance:
-            self._round_robin_offsets[offset_key] = (offset + 1) % len(virtual_ring)
-
+        rr_key = f"{alias}:{shape_key}"
+        deficits = dict(self._round_robin_deficits)
+        remaining = list(candidates)
         selected: list[RouteCandidate] = []
-        seen_candidates: set[tuple[str, str]] = set()
-        used_provider_slots: set[str] = set()
-        for provider_name in ordered_provider_names:
-            if provider_name in used_provider_slots:
-                continue
-            provider_candidates = by_provider.get(provider_name, [])
-            if not provider_candidates:
-                continue
-            provider_offset_key = f"{offset_key}:{provider_name}"
-            provider_offset = self._round_robin_offsets.get(provider_offset_key, 0) % len(provider_candidates)
-            if advance:
-                self._round_robin_offsets[provider_offset_key] = (provider_offset + 1) % len(provider_candidates)
-            provider_order = [*provider_candidates[provider_offset:], *provider_candidates[:provider_offset]]
-            for candidate in provider_order:
-                key = (candidate.provider_name, candidate.backend_model)
-                if key in seen_candidates:
-                    continue
-                selected.append(candidate)
-                seen_candidates.add(key)
-                break
-            used_provider_slots.add(provider_name)
-        for candidate in candidates:
-            key = (candidate.provider_name, candidate.backend_model)
-            if key not in seen_candidates:
-                selected.append(candidate)
+        total_weight = sum(max(1.0, float(candidate.score_breakdown.get("effective_weight", 1.0))) for candidate in remaining)
+        provider_order = {provider: index for index, provider in enumerate(self.config.provider_priority)}
+        while remaining:
+            for candidate in remaining:
+                key = f"{rr_key}:{candidate.provider_name}/{candidate.backend_model}"
+                deficits[key] = deficits.get(key, 0.0) + max(1.0, float(candidate.score_breakdown.get("effective_weight", 1.0)))
+            chosen = max(
+                remaining,
+                key=lambda candidate: (
+                    deficits.get(f"{rr_key}:{candidate.provider_name}/{candidate.backend_model}", 0.0),
+                    -provider_order.get(candidate.provider_name, 999),
+                ),
+            )
+            chosen_key = f"{rr_key}:{chosen.provider_name}/{chosen.backend_model}"
+            deficits[chosen_key] = deficits.get(chosen_key, 0.0) - max(total_weight, 1.0)
+            selected.append(chosen)
+            remaining.remove(chosen)
+        if advance:
+            self._round_robin_deficits = deficits
         return selected
 
-    def _candidate_breakdown(self, alias: str, model: ProviderModel) -> dict[str, Any]:
-        state = self._candidate_state(model.provider, model.id)
+    def _candidate_breakdown(self, alias: str, model: ProviderModel, *, shape_key: str = "text") -> dict[str, Any]:
+        state = self._candidate_state(model.provider, model.id, shape_key=shape_key)
+        health_score = self._shape_health_score(model.provider, model.id, shape_key)
+        base_weight = max(1, self._provider_rpm_limit(model.provider) or 1)
+        effective_weight = max(1.0, round(base_weight * health_score, 2))
         return {
             "model": alias,
-            "total_score": 0.0,
+            "total_score": effective_weight,
+            "shape_key": shape_key,
+            "health_score": health_score,
+            "effective_weight": effective_weight,
             "rpm": self._provider_rpm_state(model.provider),
             "cooldown_until": state["model_cooldown_until"],
             "provider_cooldown_until": state["provider_cooldown_until"],
@@ -2304,8 +2558,49 @@ class RouterService:
             "slow_guard_until": state["slow_guard_until"],
         }
 
-    def _rolling_health_suppression_reason(self, provider_name: str, backend_model: str) -> str | None:
-        return self._rolling_timeout_suppression_reason(provider_name, backend_model) or self._rolling_slow_suppression_reason(provider_name, backend_model)
+    def _shape_health_key(self, provider_name: str, backend_model: str, shape_key: str) -> str:
+        return f"{provider_name}::{backend_model}::{shape_key}"
+
+    def _shape_health(self, provider_name: str, backend_model: str, shape_key: str) -> dict[str, Any]:
+        return self.state_store.get_shape_health().get(self._shape_health_key(provider_name, backend_model, shape_key), {})
+
+    def _shape_health_score(self, provider_name: str, backend_model: str, shape_key: str) -> float:
+        if provider_name == "opencode-go":
+            return 1.0
+        state = self._shape_health(provider_name, backend_model, shape_key)
+        recent_timeout = self._decayed_state_value(state, "recent_timeout")
+        recent_failure = self._decayed_state_value(state, "recent_failure")
+        recent_slow = self._decayed_state_value(state, "recent_slow_success")
+        level = int(state.get("suppression_level", 0) or 0)
+        score = 1.0 / (1.0 + (recent_timeout * 3.0) + recent_failure + (recent_slow * 0.75) + level)
+        if self._shape_probe_available(provider_name, backend_model, shape_key):
+            score = min(score, 0.1)
+        return round(max(0.05, min(1.0, score)), 4)
+
+    def _shape_probe_available(self, provider_name: str, backend_model: str, shape_key: str) -> bool:
+        state = self._shape_health(provider_name, backend_model, shape_key)
+        if provider_name == "opencode-go" or not state:
+            return False
+        now = time.time()
+        return float(state.get("suppressed_until", 0) or 0) > now and float(state.get("next_probe_at", 0) or 0) <= now
+
+    def _shape_suppression_reason(self, provider_name: str, backend_model: str, shape_key: str) -> str | None:
+        if provider_name == "opencode-go":
+            return None
+        state = self._shape_health(provider_name, backend_model, shape_key)
+        if not state:
+            return None
+        now = time.time()
+        if float(state.get("suppressed_until", 0) or 0) > now and float(state.get("next_probe_at", 0) or 0) > now:
+            return "shape_suppressed"
+        return None
+
+    def _rolling_health_suppression_reason(self, provider_name: str, backend_model: str, *, shape_key: str = "text") -> str | None:
+        return (
+            self._shape_suppression_reason(provider_name, backend_model, shape_key)
+            or self._rolling_timeout_suppression_reason(provider_name, backend_model)
+            or self._rolling_slow_suppression_reason(provider_name, backend_model)
+        )
 
     def _rolling_timeout_suppression_reason(self, provider_name: str, backend_model: str) -> str | None:
         if provider_name == "opencode-go":
@@ -2340,9 +2635,10 @@ class RouterService:
                 return "model_slow_latency_guard"
         return None
 
-    def _candidate_state(self, provider_name: str, backend_model: str) -> dict[str, Any]:
+    def _candidate_state(self, provider_name: str, backend_model: str, *, shape_key: str = "text") -> dict[str, Any]:
         provider_state = self.state_store.get_provider_state().get(provider_name, {})
         model_state = self.state_store.get_model_state().get(self._model_key(provider_name, backend_model), {})
+        shape_state = self._shape_health(provider_name, backend_model, shape_key)
         return {
             "provider_cooldown_until": provider_state.get("cooldown_until", 0),
             "model_cooldown_until": model_state.get("cooldown_until", 0),
@@ -2359,6 +2655,11 @@ class RouterService:
             "recent_model_latency_ms": self._decayed_state_value(model_state, "latency_avg_ms"),
             "slow_guard_active": self._rolling_slow_suppression_reason(provider_name, backend_model) is not None,
             "slow_guard_until": self._slow_guard_until(provider_name, backend_model),
+            "shape_key": shape_key,
+            "shape_health": shape_state,
+            "shape_health_score": self._shape_health_score(provider_name, backend_model, shape_key),
+            "shape_suppression_reason": self._shape_suppression_reason(provider_name, backend_model, shape_key),
+            "shape_probe_available": self._shape_probe_available(provider_name, backend_model, shape_key),
             "rpm": self._provider_rpm_state(provider_name),
         }
 
@@ -2630,6 +2931,8 @@ class RouterService:
 
     @staticmethod
     def _should_apply_model_cooldown(exc: NormalizedProviderError) -> bool:
+        if exc.category in {"timeout", "connect_timeout", "first_byte_timeout", "read_timeout", "request_timeout"}:
+            return False
         if exc.category in {"quota_exhausted", "insufficient_balance"}:
             return isinstance(exc.details, dict) and bool(exc.details.get("model_scoped"))
         if exc.category in {"bad_request", "tool_choice_unsupported"}:

@@ -124,6 +124,11 @@ class RouterConfig:
     provider_max_disable_seconds: int
     provider_lane_limit: int
     provider_throttle_ladder_seconds: tuple[int, ...]
+    free_attempt_timeout_seconds: float
+    free_stream_first_byte_timeout_seconds: float
+    free_total_budget_seconds: float
+    fallback_timeout_seconds: float
+    trace_routing: bool
     openrouter_min_request_spacing_seconds: float
     opencode_min_request_spacing_seconds: float
     nvidia_build_min_request_spacing_seconds: float
@@ -192,6 +197,11 @@ class RouterConfig:
                 "GHOSTSHIP_ROUTER_PROVIDER_THROTTLE_LADDER_SECONDS",
                 default=(15, 30, 60, 300, 900),
             ),
+            free_attempt_timeout_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FREE_ATTEMPT_TIMEOUT_SECONDS", default=10.0),
+            free_stream_first_byte_timeout_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FREE_STREAM_FIRST_BYTE_TIMEOUT_SECONDS", default=8.0),
+            free_total_budget_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FREE_TOTAL_BUDGET_SECONDS", default=24.0),
+            fallback_timeout_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FALLBACK_TIMEOUT_SECONDS", default=45.0),
+            trace_routing=_parse_bool_env("GHOSTSHIP_ROUTER_TRACE_ROUTING", default=False),
             openrouter_min_request_spacing_seconds=_parse_float_env(
                 "GHOSTSHIP_ROUTER_OPENROUTER_MIN_REQUEST_SPACING_SECONDS",
                 default=3.0,

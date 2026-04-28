@@ -56,6 +56,11 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         provider_max_disable_seconds=600,
         provider_lane_limit=3,
         provider_throttle_ladder_seconds=(15, 30, 60),
+        free_attempt_timeout_seconds=10.0,
+        free_stream_first_byte_timeout_seconds=8.0,
+        free_total_budget_seconds=24.0,
+        fallback_timeout_seconds=45.0,
+        trace_routing=False,
         openrouter_min_request_spacing_seconds=3.0,
         opencode_min_request_spacing_seconds=2.0,
         nvidia_build_min_request_spacing_seconds=1.0,
@@ -120,6 +125,7 @@ class FakeProvider:
         self._models = list(models)
         self.failures = {key: list(value) for key, value in (failures or {}).items()}
         self.calls: list[str] = []
+        self.timeouts: list[float | None] = []
         self.payloads: list[dict[str, Any]] = []
         self.responses: dict[str, list[dict[str, Any]]] = {}
 
@@ -128,7 +134,7 @@ class FakeProvider:
         return list(self._models)
 
     def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
-        del timeout
+        self.timeouts.append(timeout)
         self.payloads.append(payload)
         self.calls.append(backend_model)
         failures = self.failures.get(backend_model) or []
@@ -199,6 +205,10 @@ def test_config_default_rpms_include_zenmux_and_electron_hub(tmp_path: Path, mon
     assert config.provider_rpm_limits["openrouter"] == 20
     assert config.provider_rpm_limits["nvidia-build"] == 30
     assert config.provider_rpm_limits["opencode-zen"] == 30
+    assert config.free_attempt_timeout_seconds == 10.0
+    assert config.free_stream_first_byte_timeout_seconds == 8.0
+    assert config.free_total_budget_seconds == 24.0
+    assert config.fallback_timeout_seconds == 45.0
 
 
 def test_config_provider_rpms_are_overrideable(tmp_path: Path, monkeypatch) -> None:
@@ -342,7 +352,7 @@ def test_round_robin_distributes_across_eligible_free_equivalents(tmp_path: Path
         )
         used.append(headers["X-Ghostship-Router-Backend-Provider"])
 
-    assert used == ["nvidia-build", "opencode-zen", "zenmux", "electron-hub"]
+    assert used == ["nvidia-build", "opencode-zen", "nvidia-build", "opencode-zen"]
     assert providers["opencode-go"].calls == []
 
 
@@ -490,6 +500,147 @@ def test_stream_timeout_failure_tries_another_free_provider_before_opencode_go(t
     assert nvidia.calls == ["deepseek-ai/deepseek-v4-pro"]
     assert zen.calls == ["deepseek-v4-pro"]
     assert go.calls == []
+
+
+def test_free_provider_attempts_use_aggressive_timeouts_before_fallback(tmp_path: Path) -> None:
+    nvidia = FakeProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        failures={
+            "deepseek-ai/deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="nvidia-build",
+                    backend_model="deepseek-ai/deepseek-v4-pro",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-go": go})
+
+    _, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
+    )
+
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
+    assert nvidia.timeouts == [10.0]
+    assert go.timeouts == [45.0]
+    event = service.state_store.get_route_events(limit=10, provider_name="nvidia-build", success=False)[0]
+    assert event["category"] == "request_timeout"
+    assert event["details"]["request_shape"]["shape_key"] == "text"
+    assert event["details"]["route"]["attempt_timeout_seconds"] == 10.0
+
+
+def test_shape_timeout_suppression_does_not_poison_text_shape(tmp_path: Path) -> None:
+    nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-zen": zen, "opencode-go": go})
+    service.state_store.record_shape_result(
+        "nvidia-build",
+        "deepseek-ai/deepseek-v4-pro",
+        "stream+tools",
+        success=False,
+        category="first_byte_timeout",
+        latency_ms=8000.0,
+        first_text_latency_ms=None,
+    )
+
+    stream_tool_routes = service.debug_routes("deepseek-v4-pro", shape_key="stream+tools")
+    text_routes = service.debug_routes("deepseek-v4-pro", shape_key="text")
+
+    assert stream_tool_routes["skipped"][0]["provider_name"] == "nvidia-build"
+    assert stream_tool_routes["skipped"][0]["reason"] == "shape_suppressed"
+    assert text_routes["candidates"][0]["provider_name"] == "nvidia-build"
+
+
+def test_slow_shape_health_reduces_weight_without_removing_provider(tmp_path: Path) -> None:
+    nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-zen": zen, "opencode-go": go})
+    service.state_store.record_shape_result(
+        "nvidia-build",
+        "deepseek-ai/deepseek-v4-pro",
+        "text",
+        success=True,
+        category="slow_success",
+        latency_ms=40000.0,
+        first_text_latency_ms=20000.0,
+        slow_success=True,
+    )
+
+    routes = service.preview_routes("deepseek-v4-pro")
+    nvidia_route = next(item for item in routes if item["provider_name"] == "nvidia-build")
+    zen_route = next(item for item in routes if item["provider_name"] == "opencode-zen")
+
+    assert nvidia_route["health_score"] < zen_route["health_score"]
+    assert nvidia_route["effective_weight"] < zen_route["effective_weight"]
+    assert "nvidia-build" in [item["provider_name"] for item in routes]
+
+
+def test_free_budget_exhaustion_records_skip_and_uses_opencode_go(tmp_path: Path) -> None:
+    config = make_config(tmp_path, free_total_budget_seconds=0.0)
+    nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, config=config, providers={"nvidia-build": nvidia, "opencode-zen": zen, "opencode-go": go})
+
+    _, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
+    )
+
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
+    assert nvidia.calls == []
+    assert zen.calls == []
+    assert go.calls == ["deepseek-v4-pro"]
+    skipped = service.state_store.get_route_events(limit=10, category="request_budget_exhausted", success=False)
+    assert {event["provider_name"] for event in skipped} == {"nvidia-build", "opencode-zen"}
+
+
+def test_shape_probe_success_lowers_suppression_level(tmp_path: Path) -> None:
+    service = make_service(
+        tmp_path,
+        providers={
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
+        },
+    )
+    service.state_store.record_shape_result(
+        "nvidia-build",
+        "deepseek-ai/deepseek-v4-pro",
+        "stream",
+        success=False,
+        category="first_byte_timeout",
+        latency_ms=8000.0,
+        first_text_latency_ms=None,
+    )
+    service.state_store.record_shape_result(
+        "nvidia-build",
+        "deepseek-ai/deepseek-v4-pro",
+        "stream",
+        success=True,
+        category=None,
+        latency_ms=1200.0,
+        first_text_latency_ms=900.0,
+    )
+    health_after_one = service.state_store.get_shape_health()["nvidia-build::deepseek-ai/deepseek-v4-pro::stream"]
+    service.state_store.record_shape_result(
+        "nvidia-build",
+        "deepseek-ai/deepseek-v4-pro",
+        "stream",
+        success=True,
+        category=None,
+        latency_ms=1100.0,
+        first_text_latency_ms=800.0,
+    )
+    health_after_two = service.state_store.get_shape_health()["nvidia-build::deepseek-ai/deepseek-v4-pro::stream"]
+
+    assert health_after_one["suppression_level"] == 1
+    assert health_after_two["suppression_level"] == 0
 
 
 def test_timeout_score_suppresses_only_unhealthy_free_candidate(tmp_path: Path) -> None:
@@ -736,6 +887,35 @@ def test_debug_summary_reports_provider_state_and_candidate_order(tmp_path: Path
     assert payload["aliases"]["deepseek-v4-pro"]["selected_provider"] == "nvidia-build"
 
 
+def test_debug_health_reports_shape_health(tmp_path: Path) -> None:
+    service = make_service(
+        tmp_path,
+        providers={
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
+        },
+    )
+    service.state_store.record_shape_result(
+        "nvidia-build",
+        "deepseek-ai/deepseek-v4-pro",
+        "stream+tools",
+        success=False,
+        category="first_byte_timeout",
+        latency_ms=8000.0,
+        first_text_latency_ms=None,
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    response = client.get("/debug/health")
+
+    assert response.status_code == 200
+    shape = response.json()["shapes"][0]
+    assert shape["provider_name"] == "nvidia-build"
+    assert shape["shape_key"] == "stream+tools"
+    assert shape["suppression_active"] is True
+    assert shape["health_score"] < 1.0
+
+
 def test_debug_route_events_filters_and_reports_request_shape(tmp_path: Path) -> None:
     nvidia = FakeProvider(
         "nvidia-build",
@@ -767,13 +947,13 @@ def test_debug_route_events_filters_and_reports_request_shape(tmp_path: Path) ->
             "stream_options": {"include_usage": True},
         },
     )
-    route_response = client.get("/debug/route-events", params={"provider_name": "nvidia-build", "category": "timeout", "success": False})
+    route_response = client.get("/debug/route-events", params={"provider_name": "nvidia-build", "category": "request_timeout", "success": False})
 
     assert chat_response.status_code == 200
     assert route_response.status_code == 200
     payload = route_response.json()
     assert payload["filters"]["provider_name"] == "nvidia-build"
-    assert payload["filters"]["category"] == "timeout"
+    assert payload["filters"]["category"] == "request_timeout"
     assert payload["filters"]["success"] is False
     assert len(payload["events"]) == 1
     event = payload["events"][0]
@@ -782,6 +962,7 @@ def test_debug_route_events_filters_and_reports_request_shape(tmp_path: Path) ->
     assert event["backend_model"] == "deepseek-ai/deepseek-v4-pro"
     request_shape = event["details"]["request_shape"]
     assert request_shape["model"] == "deepseek-v4-pro"
+    assert request_shape["shape_key"] == "tools"
     assert request_shape["message_count"] == 1
     assert request_shape["role_counts"] == {"user": 1}
     assert request_shape["has_tools"] is True

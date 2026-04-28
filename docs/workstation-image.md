@@ -86,7 +86,7 @@ Internal-only runtime auth may be auto-generated for Hermes compatibility:
 
 - `_GHOSTSHIP_ROUTER_API_KEY`
 
-Router free-provider defaults are RPM-limited before the paid OpenCode Go fallback: NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20. Override with `GHOSTSHIP_ROUTER_PROVIDER_RPM_NVIDIA_BUILD`, `GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENCODE_ZEN`, `GHOSTSHIP_ROUTER_PROVIDER_RPM_ZENMUX`, `GHOSTSHIP_ROUTER_PROVIDER_RPM_ELECTRON_HUB`, or `GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENROUTER`.
+Router free-provider defaults are RPM-limited before the paid OpenCode Go fallback: NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20. Free attempts are also bounded by adaptive shape-aware health and timeout budgets. Override RPM with `GHOSTSHIP_ROUTER_PROVIDER_RPM_*`; override timeout budgets with `GHOSTSHIP_ROUTER_FREE_ATTEMPT_TIMEOUT_SECONDS`, `GHOSTSHIP_ROUTER_FREE_STREAM_FIRST_BYTE_TIMEOUT_SECONDS`, `GHOSTSHIP_ROUTER_FREE_TOTAL_BUDGET_SECONDS`, and `GHOSTSHIP_ROUTER_FALLBACK_TIMEOUT_SECONDS`.
 
 Codex OAuth is not set by env var. Authenticate once inside the persisted home for the forced `#foodstamps` Codex channel:
 
