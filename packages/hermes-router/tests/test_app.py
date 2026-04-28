@@ -188,6 +188,21 @@ def paid_model(model_id: str, provider: str, *, tags: tuple[str, ...] = ("agenti
     )
 
 
+def paid_messages_tool_model(model_id: str, provider: str, *, tags: tuple[str, ...] = ("agentic",)) -> ProviderModel:
+    return ProviderModel(
+        id=model_id,
+        provider=provider,
+        is_free=False,
+        tags=tags,
+        metadata={
+            "endpoint_family": "messages",
+            "provider_metadata": {"tool_call": True},
+            "input_modalities": ["text"],
+            "output_modalities": ["text"],
+        },
+    )
+
+
 def make_service(tmp_path: Path, *, providers: dict[str, FakeProvider], config: RouterConfig | None = None) -> RouterService:
     resolved = config or make_config(tmp_path)
     store = SqliteStateStore(resolved.db_path)
@@ -1084,6 +1099,55 @@ def test_orphan_tool_message_is_rejected_before_routing(tmp_path: Path) -> None:
     assert response.status_code == 400
     assert "unknown tool_call_id" in response.json()["error"]["message"]
     assert provider.calls == []
+
+
+def test_messages_family_tool_call_models_remain_tool_candidates(tmp_path: Path) -> None:
+    zenmux = FakeProvider(
+        "zenmux",
+        models=[free_model("qwen/qwen3.5-plus", "zenmux")],
+        failures={
+            "qwen/qwen3.5-plus": [
+                NormalizedProviderError(
+                    "quota_exhausted",
+                    "credit required",
+                    provider="zenmux",
+                    backend_model="qwen/qwen3.5-plus",
+                    retryable=False,
+                    details={"model_scoped": True},
+                )
+            ]
+        },
+    )
+    go = FakeProvider("opencode-go", models=[paid_messages_tool_model("qwen3.5-plus", "opencode-go")])
+    config = make_config(
+        tmp_path,
+        aliases=(
+            AliasConfig(name="deepseek-v4-pro", description="deepseek"),
+            AliasConfig(name="minimax-m2.7", description="minimax"),
+            AliasConfig(name="qwen3.5-plus", description="qwen"),
+        ),
+    )
+    service = make_service(tmp_path, providers={"zenmux": zenmux, "opencode-go": go}, config=config)
+    client = TestClient(create_app(service=service, config=service.config))
+
+    routes = client.get("/debug/routes/qwen3.5-plus", params={"shape_key": "tools"}).json()
+    assert ("opencode-go", "qwen3.5-plus") in {
+        (candidate["provider_name"], candidate["backend_model"]) for candidate in routes["candidates"]
+    }
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "qwen3.5-plus",
+            "messages": [{"role": "user", "content": "call the tool"}],
+            "tools": [{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}],
+            "tool_choice": "auto",
+        },
+    )
+
+    assert response.status_code == 200
+    assert zenmux.calls == ["qwen/qwen3.5-plus"]
+    assert go.calls == ["qwen3.5-plus"]
 
 
 def test_tool_request_skips_endpoint_family_without_tool_adapter(tmp_path: Path) -> None:

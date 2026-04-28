@@ -2153,9 +2153,13 @@ class RouterService:
                 lines.append(self._prom_metric("ghostship_router_candidate_count", len(self.preview_routes(model.id)), alias=model.id))
         return "\n".join(lines) + "\n"
 
-    def preview_routes(self, alias: str, *, shape_key: str = "text") -> list[dict[str, Any]]:
+    def preview_routes(self, alias: str, *, shape_key: str = "text", requires_tool_protocol: bool | None = None) -> list[dict[str, Any]]:
         try:
-            candidates = self._resolve_candidates(alias, shape_key=shape_key)
+            candidates = self._resolve_candidates(
+                alias,
+                shape_key=shape_key,
+                requires_tool_protocol=self._shape_key_requires_tool_protocol(shape_key) if requires_tool_protocol is None else requires_tool_protocol,
+            )
         except RouterServiceError:
             return []
         return self._render_candidates(candidates)
@@ -2165,7 +2169,8 @@ class RouterService:
             raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
         if self._opencode_go_model(alias) is None:
             raise RouterServiceError(404, {"message": f"Unknown OpenCode Go model id '{alias}'."})
-        candidates = self.preview_routes(alias, shape_key=shape_key)
+        requires_tool_protocol = self._shape_key_requires_tool_protocol(shape_key)
+        candidates = self.preview_routes(alias, shape_key=shape_key, requires_tool_protocol=requires_tool_protocol)
         active_keys = {(item["provider_name"], item["backend_model"]) for item in candidates}
         skipped: list[dict[str, Any]] = []
         for model in [*self._free_equivalent_models(alias), *(go_model for go_model in [self._opencode_go_model(alias)] if go_model is not None)]:
@@ -2176,7 +2181,14 @@ class RouterService:
                     "provider_name": model.provider,
                     "backend_model": model.id,
                     "is_free": bool(model.is_free),
-                    "reason": self._ranked_model_exclusion_reason(model.provider, model.id, alias=alias, model=model, shape_key=shape_key),
+                    "reason": self._ranked_model_exclusion_reason(
+                        model.provider,
+                        model.id,
+                        alias=alias,
+                        model=model,
+                        shape_key=shape_key,
+                        requires_tool_protocol=requires_tool_protocol,
+                    ),
                     "state": self._candidate_state(model.provider, model.id, shape_key=shape_key),
                 }
             )
@@ -2239,6 +2251,7 @@ class RouterService:
         alias: str,
         model: ProviderModel | None = None,
         shape_key: str = "text",
+        requires_tool_protocol: bool = False,
     ) -> str | None:
         resolved_model = model or self._lookup_model(provider_name, backend_model)
         if resolved_model is None:
@@ -2247,6 +2260,8 @@ class RouterService:
             return "not_free"
         if not self._model_supports_tools(resolved_model):
             return "no_tool_support"
+        if requires_tool_protocol and not self._model_can_preserve_tool_protocol(resolved_model):
+            return "tool_adapter_missing"
         if {"image", "video"} & self._input_modalities(resolved_model):
             return "multimodal_input"
         output_modalities = self._output_modalities(resolved_model)
@@ -2278,7 +2293,14 @@ class RouterService:
     def _model_can_preserve_tool_protocol(self, model: ProviderModel) -> bool:
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
         endpoint_family = str(metadata.get("endpoint_family") or "chat_completions")
-        return endpoint_family == "chat_completions" and self._model_supports_tools(model)
+        provider_metadata = metadata.get("provider_metadata")
+        advertises_tool_calls = isinstance(provider_metadata, dict) and bool(provider_metadata.get("tool_call"))
+        return self._model_supports_tools(model) and (endpoint_family == "chat_completions" or advertises_tool_calls)
+
+    @staticmethod
+    def _shape_key_requires_tool_protocol(shape_key: str) -> bool:
+        parts = {part for part in shape_key.split("+") if part}
+        return bool(parts & {"tools", "tool_history"})
 
     def _output_modalities(self, model: ProviderModel) -> set[str]:
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
