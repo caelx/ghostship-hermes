@@ -221,6 +221,10 @@ def paid_nested_multimodal_model(model_id: str, provider: str) -> ProviderModel:
     )
 
 
+def simple_chat_payload(model: str) -> dict[str, Any]:
+    return {"model": model, "messages": [{"role": "user", "content": "ok"}], "max_tokens": 16}
+
+
 def make_service(tmp_path: Path, *, providers: dict[str, FakeProvider], config: RouterConfig | None = None) -> RouterService:
     resolved = config or make_config(tmp_path)
     store = SqliteStateStore(resolved.db_path)
@@ -1189,6 +1193,68 @@ def test_nested_multimodal_input_models_are_not_exposed(tmp_path: Path) -> None:
 
     models = client.get("/v1/models").json()["data"]
     assert "qwen3.5-plus" not in {item["id"] for item in models}
+
+
+def test_model_auth_failure_does_not_cooldown_successful_fallback_provider(tmp_path: Path) -> None:
+    zenmux = FakeProvider(
+        "zenmux",
+        models=[free_model("minimax/minimax-m2.5", "zenmux"), free_model("minimax/minimax-m2.7", "zenmux")],
+        failures={
+            "minimax/minimax-m2.5": [
+                NormalizedProviderError(
+                    "quota_exhausted",
+                    "credit required",
+                    provider="zenmux",
+                    backend_model="minimax/minimax-m2.5",
+                    retryable=False,
+                    details={"model_scoped": True},
+                )
+            ],
+            "minimax/minimax-m2.7": [
+                NormalizedProviderError(
+                    "quota_exhausted",
+                    "credit required",
+                    provider="zenmux",
+                    backend_model="minimax/minimax-m2.7",
+                    retryable=False,
+                    details={"model_scoped": True},
+                )
+            ],
+        },
+    )
+    go = FakeProvider(
+        "opencode-go",
+        models=[paid_model("minimax-m2.5", "opencode-go"), paid_model("minimax-m2.7", "opencode-go")],
+        failures={
+            "minimax-m2.5": [
+                NormalizedProviderError(
+                    "unauthorized",
+                    "invalid model key",
+                    provider="opencode-go",
+                    backend_model="minimax-m2.5",
+                    retryable=False,
+                    details={"message": "invalid model key"},
+                )
+            ]
+        },
+    )
+    config = make_config(
+        tmp_path,
+        aliases=(
+            AliasConfig(name="deepseek-v4-pro", description="deepseek"),
+            AliasConfig(name="minimax-m2.5", description="minimax"),
+            AliasConfig(name="minimax-m2.7", description="minimax"),
+        ),
+    )
+    service = make_service(tmp_path, providers={"zenmux": zenmux, "opencode-go": go}, config=config)
+    client = TestClient(create_app(service=service, config=service.config))
+
+    assert client.post("/v1/chat/completions", json=simple_chat_payload("minimax-m2.7")).status_code == 200
+    assert client.post("/v1/chat/completions", json=simple_chat_payload("minimax-m2.5")).status_code == 503
+    response = client.post("/v1/chat/completions", json=simple_chat_payload("minimax-m2.7"))
+
+    assert response.status_code == 200
+    assert response.headers["x-ghostship-router-backend-provider"] == "opencode-go"
 
 
 def test_tool_request_skips_endpoint_family_without_tool_adapter(tmp_path: Path) -> None:

@@ -3068,7 +3068,9 @@ class RouterService:
             return
         now = time.time()
         category: str | None = None
-        if float(provider_state.get("recent_auth_failure", 0)) >= 1.0:
+        recent_auth_failure = float(provider_state.get("recent_auth_failure", 0) or 0)
+        recent_success = float(provider_state.get("recent_success", 0) or 0)
+        if recent_auth_failure >= 1.0 and recent_success < 0.1:
             category = "unauthorized"
         elif float(provider_state.get("recent_timeout", 0)) >= self.config.provider_timeout_threshold:
             category = "timeout"
