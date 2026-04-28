@@ -116,24 +116,32 @@ class FakeProvider:
         self._models = list(models)
         self.failures = {key: list(value) for key, value in (failures or {}).items()}
         self.calls: list[str] = []
+        self.payloads: list[dict[str, Any]] = []
+        self.responses: dict[str, list[dict[str, Any]]] = {}
 
     def list_models(self, *, timeout: float | None = None) -> list[ProviderModel]:
         del timeout
         return list(self._models)
 
     def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
-        del payload, timeout
+        del timeout
+        self.payloads.append(payload)
         self.calls.append(backend_model)
         failures = self.failures.get(backend_model) or []
         if failures:
             raise failures.pop(0)
-        return ProviderChatResult(
-            payload={
+        responses = self.responses.get(backend_model) or []
+        if responses:
+            response_payload = responses.pop(0)
+        else:
+            response_payload = {
                 "id": f"chatcmpl-{backend_model}",
                 "object": "chat.completion",
                 "model": backend_model,
                 "choices": [{"index": 0, "message": {"role": "assistant", "content": backend_model}, "finish_reason": "stop"}],
-            },
+            }
+        return ProviderChatResult(
+            payload=response_payload,
             provider=self.name,
             backend_model=backend_model,
             first_text_latency_ms=12.0,
@@ -504,3 +512,181 @@ def test_configured_api_key_requires_authorization(tmp_path: Path) -> None:
 
     assert unauthorized.status_code == 401
     assert authorized.status_code == 200
+
+
+def test_chat_message_preserves_assistant_tool_calls_and_null_content() -> None:
+    request = ChatCompletionRequest.model_validate(
+        {
+            "model": "deepseek-v4-pro",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "skill_view", "arguments": "{\"name\":\"ghostship-media-services-health\"}"},
+                        }
+                    ],
+                    "reasoning_content": "selected the tool",
+                },
+                {"role": "tool", "tool_call_id": "call_1", "content": "ok"},
+                {"role": "user", "content": "summarize"},
+            ],
+            "tools": [{"type": "function", "function": {"name": "skill_view", "parameters": {"type": "object"}}}],
+        }
+    )
+
+    payload = RouterService._chat_request_payload(RouterService.__new__(RouterService), request)
+
+    assert payload["messages"][0]["content"] is None
+    assert payload["messages"][0]["tool_calls"][0]["id"] == "call_1"
+    assert payload["messages"][0]["reasoning_content"] == "selected the tool"
+    assert payload["messages"][1]["tool_call_id"] == "call_1"
+
+
+def test_orphan_tool_message_is_rejected_before_routing(tmp_path: Path) -> None:
+    provider = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(
+        tmp_path,
+        providers={
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
+            "opencode-go": provider,
+        },
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "deepseek-v4-pro",
+            "messages": [
+                {"role": "tool", "tool_call_id": "missing", "content": "ok"},
+                {"role": "user", "content": "continue"},
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "unknown tool_call_id" in response.json()["error"]["message"]
+    assert provider.calls == []
+
+
+def test_tool_request_skips_endpoint_family_without_tool_adapter(tmp_path: Path) -> None:
+    messages_family = free_model("deepseek-v4-pro", "opencode-zen")
+    messages_family.metadata["endpoint_family"] = "messages"
+    zen = FakeProvider("opencode-zen", models=[messages_family])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"opencode-zen": zen, "opencode-go": go})
+
+    _, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate(
+            {
+                "model": "deepseek-v4-pro",
+                "messages": [{"role": "user", "content": "call the tool"}],
+                "tools": [{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}],
+            }
+        )
+    )
+
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
+    assert zen.calls == []
+    assert go.calls == ["deepseek-v4-pro"]
+
+
+def test_xml_tool_call_text_is_failed_and_falls_back(tmp_path: Path) -> None:
+    nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
+    nvidia.responses["deepseek-ai/deepseek-v4-pro"] = [
+        {
+            "id": "chatcmpl-bad",
+            "object": "chat.completion",
+            "model": "deepseek-ai/deepseek-v4-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "<tool_call name=\"skill_view\"></tool_call>"},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+    ]
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-go": go})
+
+    payload, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate(
+            {
+                "model": "deepseek-v4-pro",
+                "messages": [{"role": "user", "content": "call the tool"}],
+                "tools": [{"type": "function", "function": {"name": "skill_view", "parameters": {"type": "object"}}}],
+            }
+        )
+    )
+
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
+    assert payload["choices"][0]["message"]["content"] == "deepseek-v4-pro"
+    events = service.state_store.get_recent_events(10)
+    assert any(event["category"] == "tool_protocol_mismatch" for event in events)
+
+
+def test_streaming_tool_request_uses_guarded_synthetic_stream(tmp_path: Path) -> None:
+    nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
+    nvidia.responses["deepseek-ai/deepseek-v4-pro"] = [
+        {
+            "id": "chatcmpl-tool",
+            "object": "chat.completion",
+            "model": "deepseek-ai/deepseek-v4-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "skill_view", "arguments": "{\"name\":\"ghostship-media-services-health\"}"},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        }
+    ]
+    service = make_service(
+        tmp_path,
+        providers={
+            "nvidia-build": nvidia,
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
+        },
+    )
+
+    plan = service.stream_chat_completions(
+        ChatCompletionRequest.model_validate(
+            {
+                "model": "deepseek-v4-pro",
+                "stream": True,
+                "messages": [{"role": "user", "content": "call the tool"}],
+                "tools": [{"type": "function", "function": {"name": "skill_view", "parameters": {"type": "object"}}}],
+            }
+        )
+    )
+    body = "".join(plan.body)
+
+    assert '"tool_calls"' in body
+    assert "<tool_call" not in body
+
+
+def test_request_shape_errors_do_not_apply_model_cooldown() -> None:
+    for category in ("bad_request", "tool_choice_unsupported"):
+        exc = NormalizedProviderError(
+            category,
+            "request shape is unsupported",
+            provider="opencode-go",
+            backend_model="deepseek-v4-pro",
+            retryable=False,
+        )
+        assert RouterService._should_apply_model_cooldown(exc) is False

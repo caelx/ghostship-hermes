@@ -181,6 +181,12 @@ class RouterService:
 
     def stream_chat_completions(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> StreamPlan:
         active_session_id, request_for_routing = self._prepare_chat_request(request, session_id=session_id)
+        if self._request_requires_tool_protocol(request_for_routing):
+            payload, headers = self._execute_chat_completion(request_for_routing, session_id=active_session_id)
+            self.state_store.save_chat_session(active_session_id, self._chat_session_messages(request_for_routing, payload))
+            headers["Cache-Control"] = "no-cache"
+            headers["X-Hermes-Session-Id"] = active_session_id
+            return StreamPlan(body=self._synthetic_chat_stream_body(request_for_routing.model, payload), headers=headers)
         candidate, stream_result, first_chunk, chunk_iter = self._open_chat_stream(request_for_routing, session_id=active_session_id)
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         created = int(time.time())
@@ -288,6 +294,28 @@ class RouterService:
     def responses_create_stream(self, request: ResponsesRequest) -> StreamPlan:
         prepared = self._prepare_responses_request(request)
         response_id = f"resp_{uuid.uuid4().hex[:28]}"
+        if self._request_requires_tool_protocol(prepared.chat_request):
+            final_chat_payload, headers = self._execute_chat_completion(prepared.chat_request)
+            final_response_payload = self._responses_payload(response_id, prepared, final_chat_payload)
+            if prepared.request.store:
+                conversation_history = list(prepared.conversation_history)
+                conversation_history.append(self._chat_message_from_payload(final_chat_payload))
+                self.state_store.put_response(
+                    response_id,
+                    final_response_payload,
+                    conversation_history=conversation_history,
+                    instructions=prepared.instructions,
+                )
+                if prepared.request.conversation:
+                    self.state_store.set_conversation_response(prepared.request.conversation, response_id)
+            response_headers = {
+                "Cache-Control": "no-cache",
+                "X-Ghostship-Router-Backend-Provider": headers.get("X-Ghostship-Router-Backend-Provider", ""),
+                "X-Ghostship-Router-Backend-Model": headers.get("X-Ghostship-Router-Backend-Model", ""),
+            }
+            if headers.get("X-Ghostship-Router-First-Text-Latency-Ms"):
+                response_headers["X-Ghostship-Router-First-Text-Latency-Ms"] = headers["X-Ghostship-Router-First-Text-Latency-Ms"]
+            return StreamPlan(body=self._synthetic_responses_stream_body(final_response_payload), headers=response_headers)
         candidate, stream_result, first_chunk, chunk_iter = self._open_chat_stream(prepared.chat_request)
         response_headers = {
             "Cache-Control": "no-cache",
@@ -511,22 +539,24 @@ class RouterService:
         return {"id": response_id, "object": "response", "deleted": True}
 
     def _execute_chat_completion(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> tuple[dict[str, Any], dict[str, str]]:
+        self._validate_tool_history(request)
         self._ensure_inventory_loaded_for_request()
+        requires_tool_protocol = self._request_requires_tool_protocol(request)
         attempted: set[tuple[str, str]] = set()
-        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
+        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
         if not candidates:
-            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id)
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
             if wait_seconds is not None:
                 time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
         if not candidates:
-            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id)
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
             if wait_seconds is not None:
                 time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
         if not candidates:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
-        request_payload = request.model_dump(mode="json", exclude_none=True)
+        request_payload = self._chat_request_payload(request)
         request_payload.pop("timeout", None)
         errors: list[dict[str, Any]] = []
         while candidates:
@@ -535,12 +565,21 @@ class RouterService:
             attempted.add((candidate.provider_name, candidate.backend_model))
             provider = self.providers.get(candidate.provider_name)
             if provider is None:
-                candidates = self._resolve_remaining_candidates(request.model, attempted)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol)
                 continue
             self.state_store.note_provider_request(candidate.provider_name, next_request_at=time.time() + self._provider_spacing_seconds(candidate.provider_name))
             start = time.monotonic()
             try:
                 result = provider.chat_completions(candidate.backend_model, request_payload, timeout=request.timeout or self.config.default_timeout)
+                if requires_tool_protocol and self._payload_has_xml_tool_call(result.payload):
+                    raise NormalizedProviderError(
+                        "tool_protocol_mismatch",
+                        "Provider returned XML pseudo-tool-call text for a tool-enabled request.",
+                        provider=result.provider,
+                        backend_model=result.backend_model,
+                        retryable=True,
+                        details={"xml_tool_call": True},
+                    )
                 latency_ms = round((time.monotonic() - start) * 1000, 2)
                 first_text_latency_ms = result.first_text_latency_ms or latency_ms
                 self._record_success(
@@ -573,12 +612,12 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
                 if not candidates:
-                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id)
+                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
-                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
         raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors})
 
     def _open_chat_stream(
@@ -587,13 +626,20 @@ class RouterService:
         *,
         session_id: str | None = None,
     ) -> tuple[RouteCandidate, ProviderChatStreamResult, ProviderChatStreamEvent | None, Iterator[ProviderChatStreamEvent]]:
+        self._validate_tool_history(request)
         self._ensure_inventory_loaded_for_request()
+        requires_tool_protocol = self._request_requires_tool_protocol(request)
         attempted: set[tuple[str, str]] = set()
-        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
+        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+        if not candidates:
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+            if wait_seconds is not None:
+                time.sleep(wait_seconds)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
         if not candidates:
             raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
 
-        request_payload = request.model_dump(mode="json", exclude_none=True)
+        request_payload = self._chat_request_payload(request)
         request_payload.pop("timeout", None)
         attempt_errors: list[dict[str, Any]] = []
         while candidates:
@@ -602,7 +648,7 @@ class RouterService:
             attempted.add((candidate.provider_name, candidate.backend_model))
             provider = self.providers.get(candidate.provider_name)
             if provider is None:
-                candidates = self._resolve_remaining_candidates(request.model, attempted)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol)
                 continue
             self.state_store.note_provider_request(candidate.provider_name, next_request_at=time.time() + self._provider_spacing_seconds(candidate.provider_name))
             try:
@@ -631,12 +677,12 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
                 if not candidates:
-                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id)
+                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
-                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
         raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors})
 
     def _ensure_inventory_loaded_for_request(self) -> None:
@@ -651,19 +697,170 @@ class RouterService:
         stored_messages = self.state_store.load_chat_session(session_id)
         if not stored_messages:
             return active_session_id, request
-        request_messages = request.model_dump(mode="json", exclude_none=True)["messages"]
+        request_messages = self._chat_request_payload(request)["messages"]
         system_messages = [message for message in request_messages if message.get("role") == "system"]
         non_system = [message for message in request_messages if message.get("role") != "system"]
         if non_system:
             merged = [*system_messages, *stored_messages, non_system[-1]]
         else:
             merged = [*system_messages, *stored_messages]
-        return active_session_id, ChatCompletionRequest.model_validate({**request.model_dump(mode="json", exclude_none=True), "messages": merged})
+        return active_session_id, ChatCompletionRequest.model_validate({**self._chat_request_payload(request), "messages": merged})
 
     def _chat_session_messages(self, request: ChatCompletionRequest, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        messages = [message.model_dump(mode="json", exclude_none=True) for message in request.messages if message.role != "system"]
+        messages = [self._chat_message_dump(message) for message in request.messages if message.role != "system"]
         messages.append(self._chat_message_from_payload(payload))
         return messages
+
+    @staticmethod
+    def _chat_message_dump(message: Any) -> dict[str, Any]:
+        if hasattr(message, "model_dump"):
+            dumped = message.model_dump(mode="json", exclude_none=True)
+            role = getattr(message, "role", dumped.get("role"))
+            content = getattr(message, "content", dumped.get("content"))
+            tool_calls = getattr(message, "tool_calls", dumped.get("tool_calls"))
+        else:
+            dumped = {key: value for key, value in dict(message).items() if value is not None}
+            role = dumped.get("role")
+            content = dict(message).get("content") if isinstance(message, dict) else dumped.get("content")
+            tool_calls = dumped.get("tool_calls")
+        if role == "assistant" and isinstance(tool_calls, list):
+            dumped["tool_calls"] = tool_calls
+            if content is None:
+                dumped["content"] = None
+        return dumped
+
+    def _chat_request_payload(self, request: ChatCompletionRequest) -> dict[str, Any]:
+        payload = request.model_dump(mode="json", exclude_none=True)
+        payload["messages"] = [self._chat_message_dump(message) for message in request.messages]
+        return payload
+
+    def _validate_tool_history(self, request: ChatCompletionRequest) -> None:
+        pending: dict[str, int] = {}
+        for index, raw_message in enumerate(request.messages):
+            message = self._chat_message_dump(raw_message)
+            role = message.get("role")
+            if pending and role not in {"tool"}:
+                missing = ", ".join(sorted(pending))
+                raise RouterServiceError(400, {"message": f"Tool call history is incomplete before message {index}; missing tool outputs for: {missing}."})
+            if role == "assistant":
+                for tool_call in message.get("tool_calls") or []:
+                    if not isinstance(tool_call, dict):
+                        continue
+                    call_id = str(tool_call.get("id") or tool_call.get("call_id") or "").strip()
+                    if call_id:
+                        pending[call_id] = index
+            elif role == "tool":
+                call_id = str(message.get("tool_call_id") or "").strip()
+                if not call_id:
+                    raise RouterServiceError(400, {"message": f"Tool message {index} is missing tool_call_id."})
+                if call_id not in pending:
+                    raise RouterServiceError(400, {"message": f"Tool message {index} references unknown tool_call_id '{call_id}'."})
+                pending.pop(call_id, None)
+        if pending:
+            missing = ", ".join(sorted(pending))
+            raise RouterServiceError(400, {"message": f"Tool call history is incomplete; missing tool outputs for: {missing}."})
+
+    def _request_requires_tool_protocol(self, request: ChatCompletionRequest) -> bool:
+        payload = self._chat_request_payload(request)
+        tools = payload.get("tools")
+        if isinstance(tools, list) and tools:
+            return True
+        if payload.get("tool_choice") not in (None, "none"):
+            return True
+        for message in payload.get("messages") or []:
+            if not isinstance(message, dict):
+                continue
+            if message.get("role") == "tool" or message.get("tool_call_id") or message.get("tool_calls"):
+                return True
+        return False
+
+    @staticmethod
+    def _payload_has_xml_tool_call(payload: dict[str, Any]) -> bool:
+        message = ((payload.get("choices") or [{}])[0].get("message") or {})
+        values = [message.get("content"), message.get("reasoning_content"), message.get("reasoning")]
+        text = "\n".join(value for value in values if isinstance(value, str)).lower()
+        return "<tool_call" in text or "</tool_call" in text or "<attribute" in text or "</attribute" in text
+
+    def _synthetic_chat_stream_body(self, model: str, payload: dict[str, Any]) -> Iterator[str]:
+        completion_id = str(payload.get("id") or f"chatcmpl-{uuid.uuid4().hex[:29]}")
+        created = int(payload.get("created") or time.time())
+        message = ((payload.get("choices") or [{}])[0].get("message") or {})
+        yield self._chat_stream_sse(completion_id, created, model, {"role": "assistant"})
+        content = message.get("content")
+        if isinstance(content, str) and content:
+            yield self._chat_stream_sse(completion_id, created, model, {"content": content})
+        reasoning = message.get("reasoning_content") or message.get("reasoning")
+        if isinstance(reasoning, str) and reasoning:
+            yield self._chat_stream_sse(completion_id, created, model, {"reasoning_content": reasoning})
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            yield self._chat_stream_sse(completion_id, created, model, {"tool_calls": tool_calls})
+        finish_chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": self._chat_finish_reason(payload)}],
+            "usage": self._chat_usage(payload),
+        }
+        yield f"data: {json.dumps(finish_chunk)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    @staticmethod
+    def _chat_stream_sse(completion_id: str, created: int, model: str, delta: dict[str, Any]) -> str:
+        chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+        }
+        return f"data: {json.dumps(chunk)}\n\n"
+
+    def _synthetic_responses_stream_body(self, payload: dict[str, Any]) -> Iterator[str]:
+        sequence_number = 0
+        created = {
+            **payload,
+            "status": "in_progress",
+            "output": [],
+        }
+        yield self._sse_event("response.created", {"response": created, "sequence_number": sequence_number, "type": "response.created"})
+        sequence_number += 1
+        for output_index, item in enumerate(payload.get("output") or []):
+            yield self._sse_event(
+                "response.output_item.added",
+                {"item": item, "output_index": output_index, "sequence_number": sequence_number, "type": "response.output_item.added"},
+            )
+            sequence_number += 1
+            if item.get("type") == "message":
+                for content_index, part in enumerate(item.get("content") or []):
+                    text = part.get("text") if isinstance(part, dict) else None
+                    if isinstance(text, str) and text:
+                        yield self._sse_event(
+                            "response.output_text.delta",
+                            {
+                                "content_index": content_index,
+                                "delta": text,
+                                "item_id": item.get("id"),
+                                "output_index": output_index,
+                                "sequence_number": sequence_number,
+                                "type": "response.output_text.delta",
+                            },
+                        )
+                        sequence_number += 1
+            if item.get("type") == "function_call" and item.get("arguments"):
+                yield self._sse_event(
+                    "response.function_call_arguments.delta",
+                    {
+                        "delta": item.get("arguments"),
+                        "item_id": item.get("id"),
+                        "output_index": output_index,
+                        "sequence_number": sequence_number,
+                        "type": "response.function_call_arguments.delta",
+                    },
+                )
+                sequence_number += 1
+        yield self._sse_event("response.completed", {"response": payload, "sequence_number": sequence_number, "type": "response.completed"})
 
     def _assistant_text_from_payload(self, payload: dict[str, Any]) -> str:
         message = ((payload.get("choices") or [{}])[0].get("message") or {})
@@ -1676,6 +1873,11 @@ class RouterService:
             return True
         return "tools" in supported or "tool_choice" in supported
 
+    def _model_can_preserve_tool_protocol(self, model: ProviderModel) -> bool:
+        metadata = model.metadata if isinstance(model.metadata, dict) else {}
+        endpoint_family = str(metadata.get("endpoint_family") or "chat_completions")
+        return endpoint_family == "chat_completions" and self._model_supports_tools(model)
+
     def _output_modalities(self, model: ProviderModel) -> set[str]:
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
         output_modalities = metadata.get("output_modalities")
@@ -1711,6 +1913,7 @@ class RouterService:
         *,
         session_id: str | None = None,
         ignore_provider_pacing: bool = False,
+        requires_tool_protocol: bool = False,
     ) -> list[RouteCandidate]:
         if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
             raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
@@ -1723,6 +1926,7 @@ class RouterService:
             alias,
             ignore_provider_pacing=ignore_provider_pacing,
             advance_round_robin=False,
+            requires_tool_protocol=requires_tool_protocol,
         )
         return [
             RouteCandidate(**{**candidate.__dict__, "is_fallback": candidate.provider_name == "opencode-go" or index > 0})
@@ -1736,6 +1940,7 @@ class RouterService:
         *,
         session_id: str | None = None,
         ignore_provider_pacing: bool = False,
+        requires_tool_protocol: bool = False,
     ) -> list[RouteCandidate]:
         if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
             raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
@@ -1745,6 +1950,7 @@ class RouterService:
             alias,
             ignore_provider_pacing=ignore_provider_pacing,
             advance_round_robin=not attempted,
+            requires_tool_protocol=requires_tool_protocol,
         )
         available = [
             candidate
@@ -1767,6 +1973,7 @@ class RouterService:
         *,
         ignore_provider_pacing: bool = False,
         advance_round_robin: bool = False,
+        requires_tool_protocol: bool = False,
     ) -> list[RouteCandidate]:
         free_candidates: list[RouteCandidate] = []
         fallback_candidates: list[RouteCandidate] = []
@@ -1776,6 +1983,7 @@ class RouterService:
                 model,
                 ignore_provider_pacing=ignore_provider_pacing,
                 probe_selected=probe_selected,
+                requires_tool_protocol=requires_tool_protocol,
             ):
                 continue
             breakdown = self._candidate_breakdown(served_model_id, model)
@@ -1799,8 +2007,11 @@ class RouterService:
         *,
         ignore_provider_pacing: bool,
         probe_selected: set[str],
+        requires_tool_protocol: bool = False,
     ) -> bool:
         if not self._model_is_routable(model):
+            return False
+        if requires_tool_protocol and not self._model_can_preserve_tool_protocol(model):
             return False
         if not self._model_effectively_enabled(model.provider, model.id):
             return False
@@ -2151,13 +2362,20 @@ class RouterService:
 
     @staticmethod
     def _should_apply_model_cooldown(exc: NormalizedProviderError) -> bool:
-        if exc.category in {"quota_exhausted", "insufficient_balance"}:
+        if exc.category in {"quota_exhausted", "insufficient_balance", "bad_request", "tool_choice_unsupported"}:
             return False
         if exc.category == "rate_limited":
             return not RouterService._is_temporary_provider_throttle(exc.details)
         return True
 
-    def _paced_wait_seconds(self, alias: str, attempted: set[tuple[str, str]], *, session_id: str | None = None) -> float | None:
+    def _paced_wait_seconds(
+        self,
+        alias: str,
+        attempted: set[tuple[str, str]],
+        *,
+        session_id: str | None = None,
+        requires_tool_protocol: bool = False,
+    ) -> float | None:
         provider_state = self.state_store.get_provider_state()
         max_wait_seconds = max(
             self.config.nvidia_build_min_request_spacing_seconds,
@@ -2165,7 +2383,12 @@ class RouterService:
             self.config.opencode_min_request_spacing_seconds,
         )
         waits: list[float] = []
-        for candidate in self._resolve_candidates(alias, session_id=session_id, ignore_provider_pacing=True):
+        for candidate in self._resolve_candidates(
+            alias,
+            session_id=session_id,
+            ignore_provider_pacing=True,
+            requires_tool_protocol=requires_tool_protocol,
+        ):
             if (candidate.provider_name, candidate.backend_model) in attempted:
                 continue
             state = provider_state.get(candidate.provider_name, {})

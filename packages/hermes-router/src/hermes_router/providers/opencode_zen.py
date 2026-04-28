@@ -104,7 +104,7 @@ def _normalized_http_details(exc: HttpStatusError) -> dict[str, Any]:
     if retry_after is not None:
         payload["retry_after_seconds"] = retry_after
     lowered = message.lower()
-    if "freeusagelimiterror" in lowered or retry_after is not None:
+    if "freeusagelimiterror" in lowered or "rate limit exceeded" in lowered or "throttling" in lowered or retry_after is not None:
         payload["temporary_throttle"] = True
         payload["provider_pacing"] = True
     if "quota" in lowered or ("monthly" in lowered and "limit" in lowered):
@@ -272,6 +272,7 @@ class OpencodeZenProvider:
                     with client.stream(spec.method, url, params=spec.params, json=spec.json_body, headers=spec.headers) as response:
                         if response.is_error:
                             details: Any = None
+                            response.read()
                             try:
                                 details = response.json()
                             except Exception:
@@ -904,11 +905,13 @@ class OpencodeZenProvider:
         details = _normalized_http_details(exc)
         message = _extract_error_message(details) or exc.message
         lowered = message.lower()
+        if "tool_choice" in lowered and ("not support" in lowered or "no endpoints found" in lowered):
+            return NormalizedProviderError("tool_choice_unsupported", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if "not supported for format" in lowered:
             return NormalizedProviderError("endpoint_family_mismatch", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
         if "missing api key" in lowered:
             return NormalizedProviderError("endpoint_family_mismatch", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
-        if "insufficient balance" in lowered:
+        if "insufficient balance" in lowered or "credit required" in lowered:
             details["hard_exhaustion"] = True
             return NormalizedProviderError("insufficient_balance", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if exc.status_code in {401, 403}:

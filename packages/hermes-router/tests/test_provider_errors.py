@@ -67,3 +67,27 @@ def test_opencode_zen_payment_required_is_balance_exhaustion() -> None:
     assert exc.category == "insufficient_balance"
     assert exc.details["hard_exhaustion"] is True
     assert exc.retryable is False
+
+
+def test_opencode_go_tool_choice_unsupported_is_classified_separately() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/chat/completions", "/v1/chat/completions"}
+        return httpx.Response(
+            400,
+            json={"error": {"message": "Error from provider (DeepSeek): deepseek-reasoner does not support this tool_choice"}},
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode-go.example/v1", transport=make_transport(handler), provider_name="opencode-go")
+    provider._family_cache["deepseek-v4-pro"] = "chat_completions"
+    with pytest.raises(NormalizedProviderError) as excinfo:
+        provider.chat_completions(
+            "deepseek-v4-pro",
+            {
+                "messages": [{"role": "user", "content": "hello"}],
+                "tools": [{"type": "function", "function": {"name": "skill_view"}}],
+                "tool_choice": {"type": "function", "function": {"name": "skill_view"}},
+            },
+        )
+    exc = excinfo.value
+    assert exc.category == "tool_choice_unsupported"
+    assert exc.retryable is False

@@ -160,6 +160,7 @@ class NvidiaBuildProvider:
                     with client.stream(spec.method, url, params=spec.params, json=spec.json_body, headers=spec.headers) as response:
                         if response.is_error:
                             details: Any = None
+                            response.read()
                             try:
                                 details = response.json()
                             except Exception:
@@ -406,6 +407,9 @@ class NvidiaBuildProvider:
         status = exc.status_code
         details = _normalized_error_details(exc)
         message = _extract_error_message(details) or exc.message
+        lowered = message.lower()
+        if "tool_choice" in lowered and ("not support" in lowered or "no endpoints found" in lowered):
+            return NormalizedProviderError("tool_choice_unsupported", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if status in {401, 403}:
             return NormalizedProviderError("unauthorized", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if status == 404:

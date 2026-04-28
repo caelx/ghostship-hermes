@@ -4,6 +4,7 @@ import json
 
 import httpx
 
+from hermes_router.providers.base import NormalizedProviderError
 from hermes_router.providers.opencode_zen import OpencodeZenProvider
 
 
@@ -273,3 +274,28 @@ def test_google_stream_uses_native_events() -> None:
     assert any(event.finish_reason == "stop" for event in events)
     assert result.state.final_payload is not None
     assert result.state.final_payload["choices"][0]["message"]["content"] == "hello"
+
+
+def test_stream_error_body_is_read_before_normalization() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/chat/completions", "/v1/chat/completions"}
+        return httpx.Response(
+            400,
+            json={"error": {"message": "Invalid tool history"}},
+            headers={"content-type": "application/json"},
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/v1", transport=make_transport(handler))
+    provider._family_cache["deepseek-v4-pro"] = "chat_completions"
+    result = provider.chat_completions_stream(
+        "deepseek-v4-pro",
+        {"messages": [{"role": "user", "content": "hello"}], "stream": True},
+    )
+
+    try:
+        list(result.chunks)
+    except NormalizedProviderError as exc:
+        assert exc.category == "bad_request"
+        assert exc.details["error"]["message"] == "Invalid tool history"
+    else:
+        raise AssertionError("expected NormalizedProviderError")
