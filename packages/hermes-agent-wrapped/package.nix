@@ -49,6 +49,9 @@ gateway_run = site / "gateway" / "run.py"
 discord_platform = site / "gateway" / "platforms" / "discord.py"
 model_switch = site / "hermes_cli" / "model_switch.py"
 providers = site / "hermes_cli" / "providers.py"
+config_py = site / "hermes_cli" / "config.py"
+runtime_provider = site / "hermes_cli" / "runtime_provider.py"
+auxiliary_client = site / "agent" / "auxiliary_client.py"
 webhook_cli = site / "hermes_cli" / "webhook.py"
 
 tools_text = tools.read_text()
@@ -552,7 +555,7 @@ if "def resolve_custom_provider(" not in providers_text:
         "",
         "        display_name = entry.get(\"name\", \"\") or name",
         "        api_url = entry.get(\"api\", \"\") or entry.get(\"url\", \"\") or entry.get(\"base_url\", \"\") or \"\"",
-        "        key_env = entry.get(\"key_env\", \"\") or \"\"",
+        "        key_env = entry.get(\"api_key_env\", \"\") or entry.get(\"key_env\", \"\") or \"\"",
         "        transport = entry.get(\"transport\", \"openai_chat\") or \"openai_chat\"",
         "",
         "        env_vars: List[str] = []",
@@ -587,7 +590,7 @@ if "def resolve_custom_provider(" not in providers_text:
         "            continue",
         "",
         "        transport = entry.get(\"transport\", \"openai_chat\") or \"openai_chat\"",
-        "        key_env = str(entry.get(\"key_env\", \"\") or \"\").strip()",
+        "        key_env = str(entry.get(\"api_key_env\", \"\") or entry.get(\"key_env\", \"\") or \"\").strip()",
         "        env_vars: List[str] = []",
         "        if key_env:",
         "            env_vars.append(key_env)",
@@ -635,6 +638,56 @@ else:
     if 'entry.get("api_key_env", "")' not in providers_text:
         raise RuntimeError("failed to teach custom_providers to honor api_key_env")
 providers.write_text(providers_text)
+
+config_text = config_py.read_text()
+config_text = config_text.replace(
+    '        "keyEnv": "key_env",\n        "defaultModel": "default_model",\n',
+    '        "keyEnv": "key_env",\n        "apiKeyEnv": "api_key_env",\n        "defaultModel": "default_model",\n',
+    1,
+)
+config_text = config_text.replace(
+    '        "name", "api", "url", "base_url", "api_key", "key_env",\n        "api_mode", "transport", "model", "default_model", "models",\n',
+    '        "name", "api", "url", "base_url", "api_key", "key_env", "api_key_env",\n        "api_mode", "transport", "model", "default_model", "models",\n',
+    1,
+)
+config_text = config_text.replace(
+    '    key_env = entry.get("key_env")\n    if isinstance(key_env, str) and key_env.strip():\n        normalized["key_env"] = key_env.strip()\n',
+    '    key_env = entry.get("key_env") or entry.get("api_key_env")\n    if isinstance(key_env, str) and key_env.strip():\n        normalized["key_env"] = key_env.strip()\n        normalized["api_key_env"] = key_env.strip()\n',
+    1,
+)
+if '"apiKeyEnv": "api_key_env"' not in config_text or '"api_key_env"' not in config_text:
+    raise RuntimeError("failed to teach custom provider config normalization about api_key_env")
+config_py.write_text(config_text)
+
+runtime_provider_text = runtime_provider.read_text()
+runtime_provider_text = runtime_provider_text.replace(
+    '            key_env = str(entry.get("key_env", "") or "").strip()\n',
+    '            key_env = str(entry.get("api_key_env", "") or entry.get("key_env", "") or "").strip()\n',
+    1,
+)
+runtime_provider_text = runtime_provider_text.replace(
+    '            "api_key": str(entry.get("api_key", "") or "").strip(),\n        }\n        key_env = str(entry.get("key_env", "") or "").strip()\n        if key_env:\n            result["key_env"] = key_env\n',
+    '            "api_key": str(entry.get("api_key", "") or "").strip(),\n        }\n        key_env = str(entry.get("api_key_env", "") or entry.get("key_env", "") or "").strip()\n        if key_env:\n            result["key_env"] = key_env\n            result["api_key_env"] = key_env\n',
+    1,
+)
+runtime_provider_text = runtime_provider_text.replace(
+    '        os.getenv(str(custom_provider.get("key_env", "") or "").strip(), "").strip(),\n',
+    '        os.getenv(str(custom_provider.get("api_key_env", "") or custom_provider.get("key_env", "") or "").strip(), "").strip(),\n',
+    1,
+)
+if 'custom_provider.get("api_key_env", "")' not in runtime_provider_text:
+    raise RuntimeError("failed to teach runtime named custom providers about api_key_env")
+runtime_provider.write_text(runtime_provider_text)
+
+auxiliary_client_text = auxiliary_client.read_text()
+auxiliary_client_text = auxiliary_client_text.replace(
+    '            custom_key_env = custom_entry.get("key_env", "").strip()\n',
+    '            custom_key_env = (\n                custom_entry.get("api_key_env", "")\n                or custom_entry.get("key_env", "")\n                or ""\n            ).strip()\n',
+    1,
+)
+if 'custom_entry.get("api_key_env", "")' not in auxiliary_client_text:
+    raise RuntimeError("failed to teach agent named custom providers about api_key_env")
+auxiliary_client.write_text(auxiliary_client_text)
 
 model_switch_text = model_switch.read_text()
 old_user_provider_block = """    # --- 3. User-defined endpoints from config ---\n    if user_providers and isinstance(user_providers, dict):\n        for ep_name, ep_cfg in user_providers.items():\n            if not isinstance(ep_cfg, dict):\n                continue\n            display_name = ep_cfg.get(\"name\", \"\") or ep_name\n            api_url = ep_cfg.get(\"api\", \"\") or ep_cfg.get(\"url\", \"\") or \"\"\n            default_model = ep_cfg.get(\"default_model\", \"\")\n\n            models_list = []\n            if default_model:\n                models_list.append(default_model)\n\n            # Try to probe /v1/models if URL is set (but don't block on it)\n            # For now just show what we know from config\n            results.append({\n                \"slug\": ep_name,\n                \"name\": display_name,\n                \"is_current\": ep_name == current_provider,\n                \"is_user_defined\": True,\n                \"models\": models_list,\n                \"total_models\": len(models_list) if models_list else 0,\n                \"source\": \"user-config\",\n                \"api_url\": api_url,\n            })\n"""

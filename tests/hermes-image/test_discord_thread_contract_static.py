@@ -59,6 +59,10 @@ def test_custom_provider_api_key_env_is_patched_for_router_auth() -> None:
         text = read(path)
         assert 'entry.get("api_key_env", "")' in text
         assert "api_key_env_vars=tuple(env_vars)" in text
+        assert '"apiKeyEnv": "api_key_env"' in text
+        assert 'entry.get("key_env") or entry.get("api_key_env")' in text
+        assert 'custom_provider.get("api_key_env", "")' in text
+        assert 'custom_entry.get("api_key_env", "")' in text
 
 
 def test_closed_discord_thread_retirement_is_patched_into_gateway() -> None:

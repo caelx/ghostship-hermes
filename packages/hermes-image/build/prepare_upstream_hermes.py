@@ -730,6 +730,60 @@ def main() -> None:
     )
     providers_py.write_text(providers_text, encoding="utf-8")
 
+    config_py = root / "hermes_cli" / "config.py"
+    config_text = config_py.read_text(encoding="utf-8")
+    config_text = replace_once(
+        config_text,
+        '        "keyEnv": "key_env",\n        "defaultModel": "default_model",\n',
+        '        "keyEnv": "key_env",\n        "apiKeyEnv": "api_key_env",\n        "defaultModel": "default_model",\n',
+        path=config_py,
+    )
+    config_text = replace_once(
+        config_text,
+        '        "name", "api", "url", "base_url", "api_key", "key_env",\n        "api_mode", "transport", "model", "default_model", "models",\n',
+        '        "name", "api", "url", "base_url", "api_key", "key_env", "api_key_env",\n        "api_mode", "transport", "model", "default_model", "models",\n',
+        path=config_py,
+    )
+    config_text = replace_once(
+        config_text,
+        '    key_env = entry.get("key_env")\n    if isinstance(key_env, str) and key_env.strip():\n        normalized["key_env"] = key_env.strip()\n',
+        '    key_env = entry.get("key_env") or entry.get("api_key_env")\n    if isinstance(key_env, str) and key_env.strip():\n        normalized["key_env"] = key_env.strip()\n        normalized["api_key_env"] = key_env.strip()\n',
+        path=config_py,
+    )
+    config_py.write_text(config_text, encoding="utf-8")
+
+    runtime_provider_py = root / "hermes_cli" / "runtime_provider.py"
+    runtime_provider_text = runtime_provider_py.read_text(encoding="utf-8")
+    runtime_provider_text = replace_once(
+        runtime_provider_text,
+        '            key_env = str(entry.get("key_env", "") or "").strip()\n',
+        '            key_env = str(entry.get("api_key_env", "") or entry.get("key_env", "") or "").strip()\n',
+        path=runtime_provider_py,
+    )
+    runtime_provider_text = replace_once(
+        runtime_provider_text,
+        '            "api_key": str(entry.get("api_key", "") or "").strip(),\n        }\n        key_env = str(entry.get("key_env", "") or "").strip()\n        if key_env:\n            result["key_env"] = key_env\n',
+        '            "api_key": str(entry.get("api_key", "") or "").strip(),\n        }\n        key_env = str(entry.get("api_key_env", "") or entry.get("key_env", "") or "").strip()\n        if key_env:\n            result["key_env"] = key_env\n            result["api_key_env"] = key_env\n',
+        path=runtime_provider_py,
+    )
+    runtime_provider_text = replace_once(
+        runtime_provider_text,
+        '        os.getenv(str(custom_provider.get("key_env", "") or "").strip(), "").strip(),\n',
+        '        os.getenv(str(custom_provider.get("api_key_env", "") or custom_provider.get("key_env", "") or "").strip(), "").strip(),\n',
+        path=runtime_provider_py,
+    )
+    runtime_provider_py.write_text(runtime_provider_text, encoding="utf-8")
+
+    auxiliary_client_py = root / "agent" / "auxiliary_client.py"
+    auxiliary_client_text = auxiliary_client_py.read_text(encoding="utf-8")
+    auxiliary_client_text = replace_once(
+        auxiliary_client_text,
+        '            custom_key_env = custom_entry.get("key_env", "").strip()\n',
+        '            custom_key_env = (\n                custom_entry.get("api_key_env", "")\n                or custom_entry.get("key_env", "")\n                or ""\n            ).strip()\n',
+        path=auxiliary_client_py,
+    )
+    auxiliary_client_py.write_text(auxiliary_client_text, encoding="utf-8")
+
     app_tsx = root / "web" / "src" / "App.tsx"
     app_text = app_tsx.read_text(encoding="utf-8")
     if 'const BUILTIN_ROUTES: Record<string, React.ComponentType> = {' in app_text:
