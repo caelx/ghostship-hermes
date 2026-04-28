@@ -376,12 +376,17 @@ class OpencodeZenProvider:
     @staticmethod
     def _normalize_chat_messages_for_model(backend_model: str, messages: Any) -> list[dict[str, Any]]:
         normalized = [dict(message) for message in messages if isinstance(message, dict)]
-        if not backend_model.startswith("deepseek-"):
+        if not OpencodeZenProvider._is_deepseek_model(backend_model):
             return normalized
         for message in normalized:
-            if message.get("role") == "assistant" and isinstance(message.get("tool_calls"), list) and "reasoning_content" not in message:
+            if message.get("role") == "assistant" and "reasoning_content" not in message:
                 message["reasoning_content"] = ""
         return normalized
+
+    @staticmethod
+    def _is_deepseek_model(backend_model: str) -> bool:
+        model = backend_model.lower()
+        return model.startswith("deepseek-") or model.startswith("deepseek/")
 
     def _build_stream_request(self, family: str, backend_model: str, payload: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
         body, path = self._build_request(family, backend_model, payload)

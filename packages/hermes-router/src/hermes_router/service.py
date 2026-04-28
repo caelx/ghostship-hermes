@@ -619,7 +619,10 @@ class RouterService:
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
                         candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
-        raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors})
+        raise RouterServiceError(
+            self._status_code_for_attempt_failures(errors),
+            {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors},
+        )
 
     def _open_chat_stream(
         self,
@@ -684,7 +687,17 @@ class RouterService:
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
                         candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
-        raise RouterServiceError(503, {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors})
+        raise RouterServiceError(
+            self._status_code_for_attempt_failures(attempt_errors),
+            {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors},
+        )
+
+    @staticmethod
+    def _status_code_for_attempt_failures(errors: list[dict[str, Any]]) -> int:
+        categories = [str(error.get("category") or "") for error in errors]
+        if any(category in {"bad_request", "tool_choice_unsupported"} for category in categories):
+            return 400
+        return 503
 
     def _ensure_inventory_loaded_for_request(self) -> None:
         if self._inventory or not self.providers:
@@ -2523,7 +2536,9 @@ class RouterService:
 
     @staticmethod
     def _should_apply_model_cooldown(exc: NormalizedProviderError) -> bool:
-        if exc.category in {"quota_exhausted", "insufficient_balance", "bad_request", "tool_choice_unsupported"}:
+        if exc.category in {"quota_exhausted", "insufficient_balance"}:
+            return isinstance(exc.details, dict) and bool(exc.details.get("model_scoped"))
+        if exc.category in {"bad_request", "tool_choice_unsupported"}:
             return False
         if exc.category == "rate_limited":
             return not RouterService._is_temporary_provider_throttle(exc.details)

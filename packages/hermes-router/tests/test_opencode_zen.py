@@ -196,6 +196,41 @@ def test_deepseek_tool_history_gets_reasoning_placeholder_for_opencode_thinking_
     assert messages[1]["reasoning_content"] == ""
 
 
+def test_deepseek_slash_model_gets_reasoning_placeholder_for_assistant_history() -> None:
+    seen_body: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path not in {"/chat/completions", "/v1/chat/completions"}:
+            raise AssertionError(f"unexpected path: {request.url.path}")
+        seen_body.update(json.loads(request.content.decode()))
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "model": "deepseek/deepseek-v4-pro-free",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            },
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/v1", transport=make_transport(handler))
+    provider._family_cache["deepseek/deepseek-v4-pro-free"] = "chat_completions"
+    provider.chat_completions(
+        "deepseek/deepseek-v4-pro-free",
+        {
+            "messages": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "previous answer"},
+                {"role": "user", "content": "continue"},
+            ],
+        },
+    )
+
+    messages = seen_body["messages"]
+    assert isinstance(messages, list)
+    assert messages[1]["reasoning_content"] == ""
+
+
 def test_chat_completion_stream_uses_native_chunks() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path in {"/chat/completions", "/v1/chat/completions"}

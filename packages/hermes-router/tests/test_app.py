@@ -621,6 +621,14 @@ def test_model_scoped_exhaustion_keeps_same_provider_free_backend_available(tmp_
     assert go.calls == []
     provider_state = service.state_store.get_provider_state()["zenmux"]
     assert provider_state["cooldown_until"] == 0
+    paid_model_state = service.state_store.get_model_state()["zenmux::deepseek/deepseek-v4-pro"]
+    assert paid_model_state["cooldown_until"] > time.time()
+
+    service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello again"}]})
+    )
+
+    assert zenmux.calls == ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-pro-free", "deepseek/deepseek-v4-pro-free"]
 
 
 def test_opencode_go_fallback_is_not_removed_by_provider_pacing(tmp_path: Path) -> None:
@@ -925,3 +933,55 @@ def test_request_shape_errors_do_not_apply_model_cooldown() -> None:
             retryable=False,
         )
         assert RouterService._should_apply_model_cooldown(exc) is False
+
+
+def test_model_scoped_exhaustion_applies_model_cooldown() -> None:
+    exc = NormalizedProviderError(
+        "quota_exhausted",
+        "credit required for this model",
+        provider="zenmux",
+        backend_model="deepseek/deepseek-v4-pro",
+        retryable=False,
+        details={"model_scoped": True},
+    )
+
+    assert RouterService._should_apply_model_cooldown(exc) is True
+
+
+def test_all_candidates_bad_request_returns_client_error(tmp_path: Path) -> None:
+    zenmux = FakeProvider(
+        "zenmux",
+        models=[free_model("deepseek/deepseek-v4-pro-free", "zenmux")],
+        failures={
+            "deepseek/deepseek-v4-pro-free": [
+                NormalizedProviderError(
+                    "bad_request",
+                    "The `reasoning_content` in the thinking mode must be passed back to the API.",
+                    provider="zenmux",
+                    backend_model="deepseek/deepseek-v4-pro-free",
+                    retryable=False,
+                )
+            ]
+        },
+    )
+    go = FakeProvider(
+        "opencode-go",
+        models=[paid_model("deepseek-v4-pro", "opencode-go")],
+        failures={
+            "deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "bad_request",
+                    "The `reasoning_content` in the thinking mode must be passed back to the API.",
+                    provider="opencode-go",
+                    backend_model="deepseek-v4-pro",
+                    retryable=False,
+                )
+            ]
+        },
+    )
+    service = make_service(tmp_path, providers={"zenmux": zenmux, "opencode-go": go})
+    client = TestClient(create_app(service=service, config=service.config))
+
+    response = client.post("/v1/chat/completions", json={"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
+
+    assert response.status_code == 400
