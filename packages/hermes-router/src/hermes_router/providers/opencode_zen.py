@@ -328,6 +328,8 @@ class OpencodeZenProvider:
         if family == "chat_completions":
             body = dict(payload)
             body.pop("stream", None)
+            body.pop("stream_options", None)
+            body["messages"] = self._normalize_chat_messages_for_model(backend_model, body.get("messages", []))
             body["model"] = backend_model
             return body, "/chat/completions"
         if family == "responses":
@@ -370,6 +372,16 @@ class OpencodeZenProvider:
                 }
             return body, f"/models/{backend_model}:generateContent"
         raise NormalizedProviderError("bad_request", f"Unsupported endpoint family '{family}'.", provider=self.name, backend_model=backend_model)
+
+    @staticmethod
+    def _normalize_chat_messages_for_model(backend_model: str, messages: Any) -> list[dict[str, Any]]:
+        normalized = [dict(message) for message in messages if isinstance(message, dict)]
+        if not backend_model.startswith("deepseek-"):
+            return normalized
+        for message in normalized:
+            if message.get("role") == "assistant" and isinstance(message.get("tool_calls"), list) and "reasoning_content" not in message:
+                message["reasoning_content"] = ""
+        return normalized
 
     def _build_stream_request(self, family: str, backend_model: str, payload: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
         body, path = self._build_request(family, backend_model, payload)

@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed Ghostship Router production request-shape failures by stripping `stream_options` from guarded non-stream provider calls and adding the empty `reasoning_content` marker DeepSeek thinking-mode requires when replaying prior assistant tool-call history through OpenCode Go; bumped `ghostship-hermes-router` to `0.5.2`.
 - Hardened Ghostship Router tool-call handling by preserving assistant `tool_calls` and null content, rejecting malformed tool histories before routing, normalizing streaming provider error bodies without leaking `ResponseNotRead`, filtering tool-enabled requests to tool-preserving adapters, classifying XML pseudo-tool output as `tool_protocol_mismatch`, and adding a live router stress harness.
 - Fixed Ghostship Router smoke-test failures by removing synthetic candidates and static provider backend defaults; served models are now discovered from the OpenCode Go catalog and matched dynamically to live free-provider catalogs before falling back to same-model OpenCode Go.
 - Fixed Hermes custom provider auth so `custom_providers[].api_key_env` is honored by provider resolution, config normalization, named runtime providers, and agent client construction for the local Ghostship Router, preventing unauthenticated `custom:ghostship-router` requests from failing with router 401s.
