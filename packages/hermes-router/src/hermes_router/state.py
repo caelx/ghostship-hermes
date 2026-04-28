@@ -1954,7 +1954,7 @@ class SqliteStateStore(StateStore):
             "server_error": 60.0,
             "transport_error": 30.0,
             "model_missing": 15.0,
-            "unauthorized": 3600.0,
+            "unauthorized": 86400.0,
             "bad_request": 600.0,
             "quota_exhausted": 600.0,
             "insufficient_balance": 900.0,
