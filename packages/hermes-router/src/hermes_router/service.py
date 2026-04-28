@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from concurrent import futures
 from dataclasses import dataclass
 from itertools import chain
 from typing import Any
@@ -78,6 +79,7 @@ class RouterService:
         self._refresh_lock = threading.RLock()
         self._session_affinity: dict[str, dict[str, Any]] = {}
         self._round_robin_offsets: dict[str, int] = {}
+        self._deadline_executor = futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="router-provider-deadline")
         self._round_robin_deficits: dict[str, float] = {}
 
     def _build_providers(self) -> dict[str, ChatProvider]:
@@ -592,6 +594,21 @@ class RouterService:
             details={**details, "timeout_phase": phase},
         )
 
+    def _call_provider_with_deadline(self, candidate: RouteCandidate, timeout_seconds: float, phase: str, call: Any) -> Any:
+        future = self._deadline_executor.submit(call)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except futures.TimeoutError as exc:
+            future.cancel()
+            raise NormalizedProviderError(
+                "timeout",
+                f"{phase} timed out after {timeout_seconds} seconds",
+                provider=candidate.provider_name,
+                backend_model=candidate.backend_model,
+                retryable=True,
+                details={"timeout": timeout_seconds, "timeout_phase": phase, "deadline_enforced": True},
+            ) from exc
+
     def _trace_route(self, event: str, **fields: Any) -> None:
         if not self.config.trace_routing:
             return
@@ -665,7 +682,12 @@ class RouterService:
             )
             start = time.monotonic()
             try:
-                result = provider.chat_completions(candidate.backend_model, request_payload, timeout=attempt_timeout)
+                result = self._call_provider_with_deadline(
+                    candidate,
+                    attempt_timeout,
+                    "request",
+                    lambda: provider.chat_completions(candidate.backend_model, request_payload, timeout=attempt_timeout),
+                )
                 if requires_tool_protocol and self._payload_has_xml_tool_call(result.payload):
                     raise NormalizedProviderError(
                         "tool_protocol_mismatch",
@@ -809,16 +831,12 @@ class RouterService:
             )
             start = time.monotonic()
             try:
-                stream_result = provider.chat_completions_stream(
-                    candidate.backend_model,
-                    request_payload,
-                    timeout=attempt_timeout,
+                stream_result, first_chunk, chunk_iter = self._call_provider_with_deadline(
+                    candidate,
+                    attempt_timeout,
+                    "first_byte",
+                    lambda: self._open_stream_first_chunk(provider, candidate.backend_model, request_payload, attempt_timeout),
                 )
-                chunk_iter = iter(stream_result.chunks)
-                try:
-                    first_chunk = next(chunk_iter)
-                except StopIteration:
-                    first_chunk = None
                 self._remember_session_affinity(session_id, candidate)
                 return candidate, stream_result, first_chunk, chunk_iter
             except NormalizedProviderError as exc:
@@ -856,6 +874,25 @@ class RouterService:
             self._status_code_for_attempt_failures(attempt_errors),
             {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors},
         )
+
+    @staticmethod
+    def _open_stream_first_chunk(
+        provider: ChatProvider,
+        backend_model: str,
+        request_payload: dict[str, Any],
+        attempt_timeout: float,
+    ) -> tuple[ProviderChatStreamResult, ProviderChatStreamEvent | None, Iterator[ProviderChatStreamEvent]]:
+        stream_result = provider.chat_completions_stream(
+            backend_model,
+            request_payload,
+            timeout=attempt_timeout,
+        )
+        chunk_iter = iter(stream_result.chunks)
+        try:
+            first_chunk = next(chunk_iter)
+        except StopIteration:
+            first_chunk = None
+        return stream_result, first_chunk, chunk_iter
 
     @staticmethod
     def _status_code_for_attempt_failures(errors: list[dict[str, Any]]) -> int:

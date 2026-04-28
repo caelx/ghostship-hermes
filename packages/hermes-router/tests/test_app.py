@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -166,6 +167,43 @@ class FakeProvider:
             backend_model=backend_model,
             state=state,
         )
+
+
+class SlowProvider(FakeProvider):
+    def __init__(self, name: str, *, models: list[ProviderModel], sleep_seconds: float) -> None:
+        super().__init__(name, models=models)
+        self.sleep_seconds = sleep_seconds
+
+    def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
+        self.timeouts.append(timeout)
+        self.payloads.append(payload)
+        self.calls.append(backend_model)
+        time.sleep(self.sleep_seconds)
+        return ProviderChatResult(
+            payload={
+                "id": f"chatcmpl-{backend_model}",
+                "object": "chat.completion",
+                "model": backend_model,
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": backend_model}, "finish_reason": "stop"}],
+            },
+            provider=self.name,
+            backend_model=backend_model,
+            first_text_latency_ms=round(self.sleep_seconds * 1000, 2),
+        )
+
+    def chat_completions_stream(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatStreamResult:
+        self.timeouts.append(timeout)
+        self.payloads.append(payload)
+        self.calls.append(backend_model)
+        state = ProviderChatStreamState()
+
+        def chunks() -> Iterator[ProviderChatStreamEvent]:
+            time.sleep(self.sleep_seconds)
+            state.first_text_latency_ms = round(self.sleep_seconds * 1000, 2)
+            state.emitted_text = backend_model
+            yield ProviderChatStreamEvent(content=backend_model, finish_reason="stop")
+
+        return ProviderChatStreamResult(chunks=chunks(), provider=self.name, backend_model=backend_model, state=state)
 
 
 def free_model(model_id: str, provider: str, *, tags: tuple[str, ...] = ("agentic",), modalities: tuple[str, ...] = ("text",)) -> ProviderModel:
@@ -569,6 +607,62 @@ def test_free_provider_attempts_use_aggressive_timeouts_before_fallback(tmp_path
     assert event["category"] == "request_timeout"
     assert event["details"]["request_shape"]["shape_key"] == "text"
     assert event["details"]["route"]["attempt_timeout_seconds"] == 10.0
+
+
+def test_free_provider_wall_clock_deadline_skips_slow_non_stream_call(tmp_path: Path) -> None:
+    slow = SlowProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        sleep_seconds=2.0,
+    )
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(
+        tmp_path,
+        config=make_config(tmp_path, free_attempt_timeout_seconds=0.1),
+        providers={"nvidia-build": slow, "opencode-zen": zen, "opencode-go": go},
+    )
+
+    started_at = time.monotonic()
+    _, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
+    )
+
+    assert time.monotonic() - started_at < 1.0
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
+    assert slow.calls == ["deepseek-ai/deepseek-v4-pro"]
+    assert zen.calls == ["deepseek-v4-pro"]
+    event = service.state_store.get_route_events(limit=10, provider_name="nvidia-build", success=False)[0]
+    assert event["category"] == "request_timeout"
+    assert event["details"]["provider_error"]["deadline_enforced"] is True
+
+
+def test_free_provider_wall_clock_deadline_skips_slow_stream_first_byte(tmp_path: Path) -> None:
+    slow = SlowProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        sleep_seconds=2.0,
+    )
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(
+        tmp_path,
+        config=make_config(tmp_path, free_stream_first_byte_timeout_seconds=0.1),
+        providers={"nvidia-build": slow, "opencode-zen": zen, "opencode-go": go},
+    )
+
+    started_at = time.monotonic()
+    plan = service.stream_chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "stream": True, "messages": [{"role": "user", "content": "hello"}]})
+    )
+    body = "".join(plan.body)
+
+    assert time.monotonic() - started_at < 1.0
+    assert plan.headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
+    assert "deepseek-v4-pro" in body
+    event = service.state_store.get_route_events(limit=10, provider_name="nvidia-build", success=False)[0]
+    assert event["category"] == "first_byte_timeout"
+    assert event["details"]["provider_error"]["deadline_enforced"] is True
 
 
 def test_shape_timeout_suppression_does_not_poison_text_shape(tmp_path: Path) -> None:
