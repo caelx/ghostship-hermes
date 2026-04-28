@@ -1878,9 +1878,9 @@ class RouterService:
             return "non_text_output"
         if not self._model_effectively_enabled(provider_name, backend_model):
             return "disabled"
-        timeout_reason = self._rolling_timeout_suppression_reason(provider_name, backend_model)
-        if timeout_reason is not None:
-            return timeout_reason
+        health_reason = self._rolling_health_suppression_reason(provider_name, backend_model)
+        if health_reason is not None:
+            return health_reason
         if self._is_cooling_down(provider_name, backend_model):
             return "model_cooldown"
         if self._provider_is_cooling_down(provider_name):
@@ -2041,7 +2041,7 @@ class RouterService:
             return False
         if not self._model_effectively_enabled(model.provider, model.id):
             return False
-        if model.provider != "opencode-go" and self._rolling_timeout_suppression_reason(model.provider, model.id) is not None:
+        if model.provider != "opencode-go" and self._rolling_health_suppression_reason(model.provider, model.id) is not None:
             return False
         if self._provider_is_cooling_down(model.provider):
             return False
@@ -2088,7 +2088,7 @@ class RouterService:
                     continue
                 if not self._model_effectively_enabled(model.provider, model.id):
                     continue
-                if model.provider != "opencode-go" and self._rolling_timeout_suppression_reason(model.provider, model.id) is not None:
+                if model.provider != "opencode-go" and self._rolling_health_suppression_reason(model.provider, model.id) is not None:
                     continue
                 if self._provider_is_cooling_down(model.provider):
                     continue
@@ -2189,7 +2189,16 @@ class RouterService:
             "recent_model_timeout": state["recent_model_timeout"],
             "timeout_guard_active": state["timeout_guard_active"],
             "timeout_guard_until": state["timeout_guard_until"],
+            "recent_provider_first_text_latency_ms": state["recent_provider_first_text_latency_ms"],
+            "recent_model_first_text_latency_ms": state["recent_model_first_text_latency_ms"],
+            "recent_provider_latency_ms": state["recent_provider_latency_ms"],
+            "recent_model_latency_ms": state["recent_model_latency_ms"],
+            "slow_guard_active": state["slow_guard_active"],
+            "slow_guard_until": state["slow_guard_until"],
         }
+
+    def _rolling_health_suppression_reason(self, provider_name: str, backend_model: str) -> str | None:
+        return self._rolling_timeout_suppression_reason(provider_name, backend_model) or self._rolling_slow_suppression_reason(provider_name, backend_model)
 
     def _rolling_timeout_suppression_reason(self, provider_name: str, backend_model: str) -> str | None:
         if provider_name == "opencode-go":
@@ -2205,6 +2214,25 @@ class RouterService:
             return "model_timeout_guard"
         return None
 
+    def _rolling_slow_suppression_reason(self, provider_name: str, backend_model: str) -> str | None:
+        if provider_name == "opencode-go":
+            return None
+        provider_state = self.state_store.get_provider_state().get(provider_name, {})
+        model_state = self.state_store.get_model_state().get(self._model_key(provider_name, backend_model), {})
+        first_text_threshold = float(self.config.provider_slow_first_text_threshold_ms)
+        if first_text_threshold > 0:
+            if self._decayed_state_value(provider_state, "first_text_latency_avg_ms") >= first_text_threshold:
+                return "provider_slow_first_text_guard"
+            if self._decayed_state_value(model_state, "first_text_latency_avg_ms") >= first_text_threshold:
+                return "model_slow_first_text_guard"
+        total_threshold = float(self.config.provider_slow_total_threshold_ms)
+        if total_threshold > 0:
+            if self._decayed_state_value(provider_state, "latency_avg_ms") >= total_threshold:
+                return "provider_slow_latency_guard"
+            if self._decayed_state_value(model_state, "latency_avg_ms") >= total_threshold:
+                return "model_slow_latency_guard"
+        return None
+
     def _candidate_state(self, provider_name: str, backend_model: str) -> dict[str, Any]:
         provider_state = self.state_store.get_provider_state().get(provider_name, {})
         model_state = self.state_store.get_model_state().get(self._model_key(provider_name, backend_model), {})
@@ -2218,6 +2246,12 @@ class RouterService:
             "recent_model_timeout": self._decayed_state_value(model_state, "recent_timeout"),
             "timeout_guard_active": self._rolling_timeout_suppression_reason(provider_name, backend_model) is not None,
             "timeout_guard_until": self._timeout_guard_until(provider_name, backend_model),
+            "recent_provider_first_text_latency_ms": self._decayed_state_value(provider_state, "first_text_latency_avg_ms"),
+            "recent_model_first_text_latency_ms": self._decayed_state_value(model_state, "first_text_latency_avg_ms"),
+            "recent_provider_latency_ms": self._decayed_state_value(provider_state, "latency_avg_ms"),
+            "recent_model_latency_ms": self._decayed_state_value(model_state, "latency_avg_ms"),
+            "slow_guard_active": self._rolling_slow_suppression_reason(provider_name, backend_model) is not None,
+            "slow_guard_until": self._slow_guard_until(provider_name, backend_model),
             "rpm": self._provider_rpm_state(provider_name),
         }
 
@@ -2233,6 +2267,31 @@ class RouterService:
             self._decay_wait_until_below_threshold(provider_state, "recent_timeout", threshold),
             self._decay_wait_until_below_threshold(model_state, "recent_timeout", threshold),
         ]
+        active_waits = [value for value in waits if value is not None]
+        return max(active_waits) if active_waits else None
+
+    def _slow_guard_until(self, provider_name: str, backend_model: str) -> float | None:
+        if provider_name == "opencode-go":
+            return None
+        provider_state = self.state_store.get_provider_state().get(provider_name, {})
+        model_state = self.state_store.get_model_state().get(self._model_key(provider_name, backend_model), {})
+        waits: list[float | None] = []
+        first_text_threshold = float(self.config.provider_slow_first_text_threshold_ms)
+        if first_text_threshold > 0:
+            waits.extend(
+                [
+                    self._decay_wait_until_below_threshold(provider_state, "first_text_latency_avg_ms", first_text_threshold),
+                    self._decay_wait_until_below_threshold(model_state, "first_text_latency_avg_ms", first_text_threshold),
+                ]
+            )
+        total_threshold = float(self.config.provider_slow_total_threshold_ms)
+        if total_threshold > 0:
+            waits.extend(
+                [
+                    self._decay_wait_until_below_threshold(provider_state, "latency_avg_ms", total_threshold),
+                    self._decay_wait_until_below_threshold(model_state, "latency_avg_ms", total_threshold),
+                ]
+            )
         active_waits = [value for value in waits if value is not None]
         return max(active_waits) if active_waits else None
 

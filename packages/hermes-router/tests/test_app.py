@@ -46,6 +46,8 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         provider_failure_threshold=3.0,
         provider_rate_limit_threshold=2.5,
         provider_timeout_threshold=2.5,
+        provider_slow_first_text_threshold_ms=15000.0,
+        provider_slow_total_threshold_ms=30000.0,
         provider_exhaustion_threshold=3.0,
         exhaustion_cooldown_ladder_seconds=(30, 60, 300, 600),
         provider_suspect_window_seconds=120,
@@ -523,6 +525,68 @@ def test_timeout_score_suppresses_only_unhealthy_free_candidate(tmp_path: Path) 
     assert route_debug["skipped"][0]["provider_name"] == "nvidia-build"
     assert route_debug["skipped"][0]["reason"] == "model_timeout_guard"
     assert route_debug["skipped"][0]["state"]["timeout_guard_until"] is not None
+
+
+def test_slow_latency_score_suppresses_unhealthy_free_candidate(tmp_path: Path) -> None:
+    nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
+    zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-zen": zen, "opencode-go": go})
+    now = time.time()
+    with sqlite3.connect(service.config.db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO model_state (provider_name, backend_model, first_text_latency_avg_ms, updated_at)
+            VALUES ('nvidia-build', 'deepseek-ai/deepseek-v4-pro', 45000.0, ?)
+            ON CONFLICT(provider_name, backend_model) DO UPDATE SET
+              first_text_latency_avg_ms = 45000.0,
+              cooldown_until = 0,
+              updated_at = excluded.updated_at
+            """,
+            (now,),
+        )
+    service.state_store._invalidate_read_caches("_model_state_cache")
+
+    _, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "skip slow free provider"}]})
+    )
+
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
+    assert nvidia.calls == []
+    assert zen.calls == ["deepseek-v4-pro"]
+    assert go.calls == []
+    route_debug = service.debug_routes("deepseek-v4-pro")
+    assert route_debug["skipped"][0]["provider_name"] == "nvidia-build"
+    assert route_debug["skipped"][0]["reason"] == "model_slow_first_text_guard"
+    assert route_debug["skipped"][0]["state"]["slow_guard_until"] is not None
+
+
+def test_slow_free_provider_falls_back_to_opencode_go_when_no_other_free_is_eligible(tmp_path: Path) -> None:
+    nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-go": go})
+    now = time.time()
+    with sqlite3.connect(service.config.db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO provider_state (provider_name, first_text_latency_avg_ms, updated_at)
+            VALUES ('nvidia-build', 45000.0, ?)
+            ON CONFLICT(provider_name) DO UPDATE SET
+              first_text_latency_avg_ms = 45000.0,
+              cooldown_until = 0,
+              updated_at = excluded.updated_at
+            """,
+            (now,),
+        )
+    service.state_store._invalidate_read_caches("_provider_state_cache")
+
+    _, headers = service.chat_completions(
+        ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "fallback after slow free provider"}]})
+    )
+
+    assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
+    assert nvidia.calls == []
+    assert go.calls == ["deepseek-v4-pro"]
 
 
 def test_model_scoped_exhaustion_keeps_same_provider_free_backend_available(tmp_path: Path) -> None:

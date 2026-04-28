@@ -114,6 +114,8 @@ class RouterConfig:
     provider_failure_threshold: float
     provider_rate_limit_threshold: float
     provider_timeout_threshold: float
+    provider_slow_first_text_threshold_ms: float
+    provider_slow_total_threshold_ms: float
     provider_exhaustion_threshold: float
     exhaustion_cooldown_ladder_seconds: tuple[int, ...]
     provider_suspect_window_seconds: int
@@ -174,6 +176,8 @@ class RouterConfig:
             provider_failure_threshold=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_FAILURE_THRESHOLD", default=3.0),
             provider_rate_limit_threshold=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_RATE_LIMIT_THRESHOLD", default=2.5),
             provider_timeout_threshold=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_TIMEOUT_THRESHOLD", default=2.5),
+            provider_slow_first_text_threshold_ms=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_SLOW_FIRST_TEXT_THRESHOLD_MS", default=15000.0),
+            provider_slow_total_threshold_ms=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_SLOW_TOTAL_THRESHOLD_MS", default=30000.0),
             provider_exhaustion_threshold=_parse_float_env("GHOSTSHIP_ROUTER_PROVIDER_EXHAUSTION_THRESHOLD", default=3.0),
             exhaustion_cooldown_ladder_seconds=_parse_int_csv_env(
                 "GHOSTSHIP_ROUTER_EXHAUSTION_COOLDOWN_LADDER_SECONDS",
