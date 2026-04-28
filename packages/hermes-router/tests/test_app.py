@@ -1257,6 +1257,32 @@ def test_model_auth_failure_does_not_cooldown_successful_fallback_provider(tmp_p
     assert response.headers["x-ghostship-router-backend-provider"] == "opencode-go"
 
 
+def test_models_endpoint_hides_models_with_no_live_candidates(tmp_path: Path) -> None:
+    go = FakeProvider("opencode-go", models=[paid_model("minimax-m2.5", "opencode-go")])
+    config = make_config(
+        tmp_path,
+        aliases=(
+            AliasConfig(name="deepseek-v4-pro", description="deepseek"),
+            AliasConfig(name="minimax-m2.5", description="minimax"),
+        ),
+    )
+    service = make_service(
+        tmp_path,
+        providers={
+            "zenmux": FakeProvider("zenmux", models=[free_model("minimax/minimax-m2.5", "zenmux")]),
+            "opencode-go": go,
+        },
+        config=config,
+    )
+    service.state_store.apply_failure("opencode-go", "minimax-m2.5", category="unauthorized", retryable=False)
+    service.state_store.apply_failure("zenmux", "minimax/minimax-m2.5", category="quota_exhausted", retryable=False)
+    client = TestClient(create_app(service=service, config=service.config))
+
+    models = client.get("/v1/models").json()["data"]
+
+    assert "minimax-m2.5" not in {item["id"] for item in models}
+
+
 def test_tool_request_skips_endpoint_family_without_tool_adapter(tmp_path: Path) -> None:
     messages_family = free_model("deepseek-v4-pro", "opencode-zen")
     messages_family.metadata["endpoint_family"] = "messages"

@@ -151,6 +151,8 @@ class RouterService:
                 continue
             free_providers = self._free_provider_names_for_served_model(model.id)
             candidates = self.preview_routes(model.id)
+            if not candidates:
+                continue
             alias_cards.append(
                 ModelCard(
                     id=model.id,

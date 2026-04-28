@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed Ghostship Router model listing so `/v1/models` hides served models that currently have no live route candidates, preventing the Discord model switcher from offering cooled-down or exhausted models; bumped `ghostship-hermes-router` to `0.5.9`.
 - Fixed Ghostship Router provider auth cooldown so one model-scoped OpenCode Go unauthorized failure does not suppress the whole paid fallback provider after other OpenCode Go models have succeeded; bumped `ghostship-hermes-router` to `0.5.8`.
 - Fixed Ghostship Router model exposure to honor nested OpenCode Go modality metadata, preventing text+image/video models from being offered as Hermes text/tool models; bumped `ghostship-hermes-router` to `0.5.7`.
 - Fixed Ghostship Router tool-aware routing for OpenCode Go models whose catalog endpoint family is `messages` but explicitly advertises tool calls, so Hermes tool requests do not lose the paid fallback; bumped `ghostship-hermes-router` to `0.5.6`.
