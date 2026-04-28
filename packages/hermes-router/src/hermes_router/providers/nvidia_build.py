@@ -410,6 +410,9 @@ class NvidiaBuildProvider:
             return NormalizedProviderError("unauthorized", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if status == 404:
             return NormalizedProviderError("model_missing", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
+        if status == 402:
+            details["hard_exhaustion"] = True
+            return NormalizedProviderError("insufficient_balance", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if status == 429:
             category = "quota_exhausted" if details.get("hard_exhaustion") else "rate_limited"
             return NormalizedProviderError(category, message, provider=self.name, backend_model=backend_model, retryable=(category == "rate_limited"), details=details)

@@ -319,6 +319,38 @@ def test_seeded_zenmux_and_electron_hub_are_free_candidates(tmp_path: Path) -> N
     assert preview[1]["is_free"] is True
 
 
+def test_missing_explicit_equivalence_is_not_synthesized(tmp_path: Path) -> None:
+    service = make_service(
+        tmp_path,
+        providers={
+            "openrouter": FakeProvider("openrouter", models=[]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
+        },
+    )
+
+    preview = service.preview_routes("deepseek-v4-pro")
+
+    assert [(item["provider_name"], item["backend_model"]) for item in preview] == [
+        ("opencode-go", "deepseek-v4-pro"),
+    ]
+
+
+def test_default_seeded_equivalence_matches_live_catalog_shapes(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path))
+    config = RouterConfig.from_env()
+
+    aliases = {alias.name: alias.preferred_models for alias in config.aliases}
+    seed_map = config.provider_seed_map()
+
+    assert "openrouter/deepseek/deepseek-v4-pro:free" not in aliases["deepseek-v4-pro"]
+    assert "openrouter/minimax/minimax-m2.7:free" not in aliases["minimax-m2.7"]
+    assert "zenmux/deepseek/deepseek-v4-pro-free" in aliases["deepseek-v4-pro"]
+    assert "zenmux/minimax/minimax-m2.7" in aliases["minimax-m2.7"]
+    assert "electron-hub/deepseek-v4-pro:free" in aliases["deepseek-v4-pro"]
+    assert "deepseek-ai/deepseek-v4-pro" in seed_map["nvidia-build"].seeded_models
+    assert "deepseek-v4-pro" not in seed_map["opencode-zen"].seeded_models
+
+
 def test_round_robin_distributes_across_eligible_free_equivalents(tmp_path: Path) -> None:
     providers = {
         "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),

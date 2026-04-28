@@ -1793,10 +1793,6 @@ class RouterService:
                     for model in known_inventory
                     if model.provider == inferred_provider and (model.id == normalized or model.id == model_id)
                 ]
-            if known_inventory and not matched:
-                if inferred_provider in self.providers:
-                    fallback_model_id = normalized if normalized != model_id else model_id
-                    matched.append(ProviderModel(id=fallback_model_id, provider=inferred_provider, is_free=self._model_id_looks_free(fallback_model_id)))
             alias_name = alias or normalized
             for model in matched:
                 if not self._model_is_routable(model, alias=alias_name):
@@ -2219,15 +2215,6 @@ class RouterService:
             return model_id
         prefix = "nvidia-build/" if model_id.lower().startswith("nvidia-build/") else f"{model_id.split('/', 1)[0]}/"
         return model_id.removeprefix(prefix)
-
-    @staticmethod
-    def _model_id_looks_free(model_id: str) -> bool:
-        lowered = model_id.lower()
-        return lowered.endswith(":free") or lowered.endswith("-free") or lowered in {
-            "moonshotai/kimi-k2-instruct",
-            "mistralai/mistral-nemotron",
-            "deepseek-ai/deepseek-r1",
-        }
 
     def _log_event(self, event: str, **fields: Any) -> None:
         logger.info("router_event %s", json.dumps({"event": event, **fields}, sort_keys=True))

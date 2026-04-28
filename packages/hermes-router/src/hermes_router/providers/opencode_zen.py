@@ -915,6 +915,9 @@ class OpencodeZenProvider:
             return NormalizedProviderError("unauthorized", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if exc.status_code == 404:
             return NormalizedProviderError("model_missing", message, provider=self.name, backend_model=backend_model, retryable=True, details=details)
+        if exc.status_code == 402:
+            details["hard_exhaustion"] = True
+            return NormalizedProviderError("insufficient_balance", message, provider=self.name, backend_model=backend_model, retryable=False, details=details)
         if exc.status_code == 429:
             category = "quota_exhausted" if details.get("hard_exhaustion") else "rate_limited"
             return NormalizedProviderError(category, message, provider=self.name, backend_model=backend_model, retryable=(category == "rate_limited"), details=details)

@@ -49,3 +49,21 @@ def test_opencode_zen_free_usage_limit_captures_retry_after() -> None:
     assert exc.details["temporary_throttle"] is True
     assert exc.details["provider_pacing"] is True
     assert exc.details["retry_after_seconds"] == 35
+
+
+def test_opencode_zen_payment_required_is_balance_exhaustion() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/chat/completions", "/v1/chat/completions"}
+        return httpx.Response(
+            402,
+            json={"error": {"message": "Payment Required"}},
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://zenmux.example/v1", transport=make_transport(handler), provider_name="zenmux")
+    provider._family_cache["minimax/minimax-m2.7"] = "chat_completions"
+    with pytest.raises(NormalizedProviderError) as excinfo:
+        provider.chat_completions("minimax/minimax-m2.7", {"messages": [{"role": "user", "content": "hello"}]})
+    exc = excinfo.value
+    assert exc.category == "insufficient_balance"
+    assert exc.details["hard_exhaustion"] is True
+    assert exc.retryable is False

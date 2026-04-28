@@ -244,7 +244,7 @@ class RouterConfig:
                         "minimaxai/minimax-m2.7",
                         "qwen/qwen3-coder-480b-a35b-instruct",
                         "moonshotai/kimi-k2-thinking",
-                        "deepseek-ai/deepseek-v3.2",
+                        "deepseek-ai/deepseek-v4-pro",
                         "z-ai/glm-4.7",
                     ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_NVIDIA_BUILD_UNUSED_MODELS"),
@@ -252,7 +252,6 @@ class RouterConfig:
                 ProviderSeedPolicy(
                     provider_name="opencode-zen",
                     seeded_models=(
-                        "deepseek-v4-pro",
                         "minimax-m2.7",
                         "big-pickle",
                         "minimax-m2.5-free",
@@ -263,8 +262,6 @@ class RouterConfig:
                 ProviderSeedPolicy(
                     provider_name="openrouter",
                     seeded_models=(
-                        "deepseek/deepseek-v4-pro:free",
-                        "minimax/minimax-m2.7:free",
                         "nvidia/nemotron-3-super-120b-a12b:free",
                         "minimax/minimax-m2.5:free",
                         "arcee-ai/trinity-large-preview:free",
@@ -274,8 +271,8 @@ class RouterConfig:
                 ProviderSeedPolicy(
                     provider_name="zenmux",
                     seeded_models=(
-                        "deepseek-v4-pro",
-                        "minimax-m2.7",
+                        "deepseek/deepseek-v4-pro-free",
+                        "minimax/minimax-m2.7",
                     ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_ZENMUX_UNUSED_MODELS"),
                 ),
@@ -303,10 +300,8 @@ class RouterConfig:
                     preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_DEEPSEEK_V4_PRO_MODELS")
                     or (
                         "nvidia-build/deepseek-ai/deepseek-v4-pro",
-                        "opencode-zen/deepseek-v4-pro",
-                        "zenmux/deepseek-v4-pro",
-                        "electron-hub/deepseek-v4-pro",
-                        "openrouter/deepseek/deepseek-v4-pro:free",
+                        "zenmux/deepseek/deepseek-v4-pro-free",
+                        "electron-hub/deepseek-v4-pro:free",
                         "opencode-go/deepseek-v4-pro",
                     ),
                 ),
@@ -317,9 +312,8 @@ class RouterConfig:
                     or (
                         "nvidia-build/minimaxai/minimax-m2.7",
                         "opencode-zen/minimax-m2.7",
-                        "zenmux/minimax-m2.7",
+                        "zenmux/minimax/minimax-m2.7",
                         "electron-hub/minimax-m2.7",
-                        "openrouter/minimax/minimax-m2.7:free",
                         "opencode-go/minimax-m2.7",
                     ),
                 ),

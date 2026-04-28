@@ -32,10 +32,10 @@ Provider policy:
 Default served models:
 
 - `deepseek-v4-pro`
-  - free equivalents: configured NVIDIA Build, OpenCode Zen, ZenMux, Electron Hub, and OpenRouter entries when available
+  - free equivalents: configured NVIDIA Build, ZenMux, and Electron Hub entries when available
   - paid fallback: `opencode-go/deepseek-v4-pro`
 - `minimax-m2.7`
-  - free equivalents: configured NVIDIA Build, OpenCode Zen, ZenMux, Electron Hub, and OpenRouter entries when available
+  - free equivalents: configured NVIDIA Build, OpenCode Zen, ZenMux, and Electron Hub entries when available
   - paid fallback: `opencode-go/minimax-m2.7`
 
 Compatibility notes:
