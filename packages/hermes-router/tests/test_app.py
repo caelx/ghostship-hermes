@@ -83,53 +83,21 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
             "openrouter": 20,
         },
         provider_seed_policies=(
-            ProviderSeedPolicy(
-                provider_name="nvidia-build",
-                seeded_models=("nvidia-1", "nvidia-2", "nvidia-3", "nvidia-4", "nvidia-5"),
-                unused_models=("nvidia-bad",),
-            ),
-            ProviderSeedPolicy(
-                provider_name="opencode-zen",
-                seeded_models=("zen-1", "zen-2", "zen-3", "zen-4", "zen-5"),
-            ),
-            ProviderSeedPolicy(
-                provider_name="zenmux",
-                seeded_models=("zenmux-deepseek", "zenmux-minimax"),
-            ),
-            ProviderSeedPolicy(
-                provider_name="electron-hub",
-                seeded_models=("electron-deepseek", "electron-minimax"),
-            ),
-            ProviderSeedPolicy(
-                provider_name="openrouter",
-                seeded_models=("or-1", "or-2", "or-3", "or-4", "or-5"),
-            ),
-            ProviderSeedPolicy(
-                provider_name="opencode-go",
-                seeded_models=("deepseek-v4-pro", "minimax-m2.7"),
-            ),
+            ProviderSeedPolicy(provider_name="nvidia-build", unused_models=("nvidia-bad",)),
+            ProviderSeedPolicy(provider_name="opencode-zen"),
+            ProviderSeedPolicy(provider_name="zenmux"),
+            ProviderSeedPolicy(provider_name="electron-hub"),
+            ProviderSeedPolicy(provider_name="openrouter"),
+            ProviderSeedPolicy(provider_name="opencode-go"),
         ),
         aliases=(
             AliasConfig(
                 name="deepseek-v4-pro",
                 description="deepseek",
-                preferred_models=(
-                    "nvidia-build/nvidia-deepseek",
-                    "opencode-zen/zen-deepseek",
-                    "zenmux/zenmux-deepseek",
-                    "electron-hub/electron-deepseek",
-                    "opencode-go/deepseek-v4-pro",
-                ),
             ),
             AliasConfig(
                 name="minimax-m2.7",
                 description="minimax",
-                preferred_models=(
-                    "opencode-zen/zen-minimax",
-                    "zenmux/zenmux-minimax",
-                    "electron-hub/electron-minimax",
-                    "opencode-go/minimax-m2.7",
-                ),
             ),
         ),
     )
@@ -257,8 +225,8 @@ def test_models_endpoint_exposes_only_opencode_go_ids_with_free_equivalents(tmp_
         tmp_path,
         config=config,
         providers={
-            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
-            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-minimax", "opencode-zen")]),
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen"), free_model("minimax-m2.7", "opencode-zen")]),
             "openrouter": FakeProvider("openrouter", models=[]),
             "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go"), paid_model("minimax-m2.7", "opencode-go"), paid_model("unmatched-go-model", "opencode-go")]),
         },
@@ -280,8 +248,8 @@ def test_deepseek_routes_free_equivalents_before_opencode_go_fallback(tmp_path: 
     service = make_service(
         tmp_path,
         providers={
-            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
-            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-deepseek", "opencode-zen")]),
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")]),
             "openrouter": FakeProvider("openrouter", models=[]),
             "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
         },
@@ -290,8 +258,8 @@ def test_deepseek_routes_free_equivalents_before_opencode_go_fallback(tmp_path: 
     preview = service.preview_routes("deepseek-v4-pro")
 
     assert [(item["provider_name"], item["backend_model"]) for item in preview] == [
-        ("nvidia-build", "nvidia-deepseek"),
-        ("opencode-zen", "zen-deepseek"),
+        ("nvidia-build", "deepseek-ai/deepseek-v4-pro"),
+        ("opencode-zen", "deepseek-v4-pro"),
         ("opencode-go", "deepseek-v4-pro"),
     ]
     assert preview[-1]["is_free"] is False
@@ -302,8 +270,8 @@ def test_seeded_zenmux_and_electron_hub_are_free_candidates(tmp_path: Path) -> N
     service = make_service(
         tmp_path,
         providers={
-            "zenmux": FakeProvider("zenmux", models=[free_model("zenmux-deepseek", "zenmux")]),
-            "electron-hub": FakeProvider("electron-hub", models=[free_model("electron-deepseek", "electron-hub")]),
+            "zenmux": FakeProvider("zenmux", models=[free_model("deepseek/deepseek-v4-pro-free", "zenmux")]),
+            "electron-hub": FakeProvider("electron-hub", models=[free_model("deepseek-v4-pro:free", "electron-hub")]),
             "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
         },
     )
@@ -311,15 +279,15 @@ def test_seeded_zenmux_and_electron_hub_are_free_candidates(tmp_path: Path) -> N
     preview = service.preview_routes("deepseek-v4-pro")
 
     assert [(item["provider_name"], item["backend_model"]) for item in preview] == [
-        ("zenmux", "zenmux-deepseek"),
-        ("electron-hub", "electron-deepseek"),
+        ("zenmux", "deepseek/deepseek-v4-pro-free"),
+        ("electron-hub", "deepseek-v4-pro:free"),
         ("opencode-go", "deepseek-v4-pro"),
     ]
     assert preview[0]["is_free"] is True
     assert preview[1]["is_free"] is True
 
 
-def test_missing_explicit_equivalence_is_not_synthesized(tmp_path: Path) -> None:
+def test_missing_dynamic_equivalence_is_not_exposed(tmp_path: Path) -> None:
     service = make_service(
         tmp_path,
         providers={
@@ -330,33 +298,27 @@ def test_missing_explicit_equivalence_is_not_synthesized(tmp_path: Path) -> None
 
     preview = service.preview_routes("deepseek-v4-pro")
 
-    assert [(item["provider_name"], item["backend_model"]) for item in preview] == [
-        ("opencode-go", "deepseek-v4-pro"),
-    ]
+    assert preview == []
 
 
-def test_default_seeded_equivalence_matches_live_catalog_shapes(tmp_path: Path, monkeypatch) -> None:
+def test_default_router_config_does_not_hardcode_provider_backend_models(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("GHOSTSHIP_ROUTER_STATE_DIR", str(tmp_path))
     config = RouterConfig.from_env()
 
     aliases = {alias.name: alias.preferred_models for alias in config.aliases}
     seed_map = config.provider_seed_map()
 
-    assert "openrouter/deepseek/deepseek-v4-pro:free" not in aliases["deepseek-v4-pro"]
-    assert "openrouter/minimax/minimax-m2.7:free" not in aliases["minimax-m2.7"]
-    assert "zenmux/deepseek/deepseek-v4-pro-free" in aliases["deepseek-v4-pro"]
-    assert "zenmux/minimax/minimax-m2.7" in aliases["minimax-m2.7"]
-    assert "electron-hub/deepseek-v4-pro:free" in aliases["deepseek-v4-pro"]
-    assert "deepseek-ai/deepseek-v4-pro" in seed_map["nvidia-build"].seeded_models
-    assert "deepseek-v4-pro" not in seed_map["opencode-zen"].seeded_models
+    assert aliases["deepseek-v4-pro"] == ()
+    assert aliases["minimax-m2.7"] == ()
+    assert all(policy.seeded_models == () for policy in seed_map.values())
 
 
 def test_round_robin_distributes_across_eligible_free_equivalents(tmp_path: Path) -> None:
     providers = {
-        "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
-        "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-deepseek", "opencode-zen")]),
-        "zenmux": FakeProvider("zenmux", models=[free_model("zenmux-deepseek", "zenmux")]),
-        "electron-hub": FakeProvider("electron-hub", models=[free_model("electron-deepseek", "electron-hub")]),
+        "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
+        "opencode-zen": FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")]),
+        "zenmux": FakeProvider("zenmux", models=[free_model("deepseek/deepseek-v4-pro-free", "zenmux")]),
+        "electron-hub": FakeProvider("electron-hub", models=[free_model("deepseek-v4-pro:free", "electron-hub")]),
         "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
     }
     service = make_service(tmp_path, providers=providers)
@@ -381,11 +343,11 @@ def test_rpm_exhaustion_skips_free_provider_until_window_clears(tmp_path: Path) 
             AliasConfig(
                 name="deepseek-v4-pro",
                 description="deepseek",
-                preferred_models=("electron-hub/electron-deepseek", "opencode-go/deepseek-v4-pro"),
+                preferred_models=("electron-hub/deepseek-v4-pro:free", "opencode-go/deepseek-v4-pro"),
             ),
         ),
     )
-    electron = FakeProvider("electron-hub", models=[free_model("electron-deepseek", "electron-hub")])
+    electron = FakeProvider("electron-hub", models=[free_model("deepseek-v4-pro:free", "electron-hub")])
     go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
     service = make_service(tmp_path, config=config, providers={"electron-hub": electron, "opencode-go": go})
 
@@ -398,21 +360,21 @@ def test_rpm_exhaustion_skips_free_provider_until_window_clears(tmp_path: Path) 
 
     assert first_headers["X-Ghostship-Router-Backend-Provider"] == "electron-hub"
     assert second_headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
-    assert electron.calls == ["electron-deepseek"]
+    assert electron.calls == ["deepseek-v4-pro:free"]
     assert go.calls == ["deepseek-v4-pro"]
 
 
 def test_quota_exhaustion_falls_back_to_same_model_opencode_go(tmp_path: Path) -> None:
     nvidia = FakeProvider(
         "nvidia-build",
-        models=[free_model("nvidia-deepseek", "nvidia-build")],
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
         failures={
-            "nvidia-deepseek": [
+            "deepseek-ai/deepseek-v4-pro": [
                 NormalizedProviderError(
                     "quota_exhausted",
                     "quota done",
                     provider="nvidia-build",
-                    backend_model="nvidia-deepseek",
+                    backend_model="deepseek-ai/deepseek-v4-pro",
                     retryable=False,
                     details={"hard_exhaustion": True},
                 )
@@ -421,14 +383,14 @@ def test_quota_exhaustion_falls_back_to_same_model_opencode_go(tmp_path: Path) -
     )
     zen = FakeProvider(
         "opencode-zen",
-        models=[free_model("zen-deepseek", "opencode-zen")],
+        models=[free_model("deepseek-v4-pro", "opencode-zen")],
         failures={
-            "zen-deepseek": [
+            "deepseek-v4-pro": [
                 NormalizedProviderError(
                     "rate_limited",
                     "rate limited",
                     provider="opencode-zen",
-                    backend_model="zen-deepseek",
+                    backend_model="deepseek-v4-pro",
                     retryable=True,
                 )
             ]
@@ -451,8 +413,8 @@ def test_quota_exhaustion_falls_back_to_same_model_opencode_go(tmp_path: Path) -
 
     assert payload["choices"][0]["message"]["content"] == "deepseek-v4-pro"
     assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-go"
-    assert nvidia.calls == ["nvidia-deepseek"]
-    assert zen.calls == ["zen-deepseek"]
+    assert nvidia.calls == ["deepseek-ai/deepseek-v4-pro"]
+    assert zen.calls == ["deepseek-v4-pro"]
     assert go.calls == ["deepseek-v4-pro"]
 
 
@@ -461,7 +423,7 @@ def test_opencode_go_is_paid_fallback_not_free_provider(tmp_path: Path) -> None:
         tmp_path,
         providers={
             "nvidia-build": FakeProvider("nvidia-build", models=[]),
-            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-minimax", "opencode-zen")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("minimax-m2.7", "opencode-zen")]),
             "openrouter": FakeProvider("openrouter", models=[]),
             "opencode-go": FakeProvider("opencode-go", models=[paid_model("minimax-m2.7", "opencode-go")]),
         },
@@ -481,7 +443,7 @@ def test_retired_aliases_are_rejected(tmp_path: Path) -> None:
     service = make_service(
         tmp_path,
         providers={
-            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
             "opencode-zen": FakeProvider("opencode-zen", models=[]),
             "openrouter": FakeProvider("openrouter", models=[]),
             "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
@@ -504,8 +466,8 @@ def test_debug_summary_reports_provider_state_and_candidate_order(tmp_path: Path
         tmp_path,
         config=config,
         providers={
-            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
-            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("zen-deepseek", "opencode-zen")]),
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
+            "opencode-zen": FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")]),
             "openrouter": FakeProvider("openrouter", models=[]),
             "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
         },
@@ -529,7 +491,7 @@ def test_configured_api_key_requires_authorization(tmp_path: Path) -> None:
         tmp_path,
         config=config,
         providers={
-            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("nvidia-deepseek", "nvidia-build")]),
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
             "opencode-zen": FakeProvider("opencode-zen", models=[]),
             "openrouter": FakeProvider("openrouter", models=[]),
             "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),

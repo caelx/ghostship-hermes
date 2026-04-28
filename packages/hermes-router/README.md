@@ -6,12 +6,12 @@ Current contract:
 
 - exposes Hermes/OpenAI-compatible health, `chat/completions`, and `responses` endpoints
 - uses OpenCode Go as the canonical served-model catalog
-- exposes only OpenCode Go model ids with explicit free-provider equivalents, initially `deepseek-v4-pro` and `minimax-m2.7`
-- routes configured free equivalents first, then falls back to `opencode-go/<same model id>`
+- exposes only OpenCode Go model ids with dynamically discovered free-provider equivalents
+- routes discovered free equivalents first, then falls back to `opencode-go/<same model id>`
 - reports `free_provider_count`, free provider names, availability, and RPM state in `/v1/models` metadata
 - persists inventory, route health, provider health, cooldowns, overrides, recent events, chat sessions, and stored `responses` objects in SQLite
-- refreshes inventory from configured free providers (`nvidia-build`, `opencode-zen`, `zenmux`, `electron-hub`, and explicitly mapped `openrouter`) plus paid fallback provider `opencode-go`
-- never exposes OpenCode Go models without explicit free-equivalence mappings
+- refreshes inventory from configured free providers (`nvidia-build`, `opencode-zen`, `zenmux`, `electron-hub`, and `openrouter`) plus paid fallback provider `opencode-go`
+- never exposes OpenCode Go models without at least one discovered free equivalent
 - exposes operator debug surfaces at `GET /debug/state`, `GET /debug/events`, `GET /debug/providers`, `GET /debug/routes/{model}`, `GET /debug/rankings/{model}`, `GET /debug/inventory/{seeded|configured|unconfigured|inventory}`, and `GET /debug/models/{provider}/{model}`
 - exposes a compact tuning surface at `GET /debug/summary`
 - exposes Prometheus-style metrics at `GET /metrics`
@@ -20,23 +20,20 @@ Current contract:
 Provider policy:
 
 - `opencode-go` is the paid fallback and is never counted as a free provider
-- `opencode-zen` is a free-provider candidate only when an explicit equivalence entry maps it to the requested OpenCode Go model id
+- `opencode-zen` is a free-provider candidate only when its live catalog has a matching free model for the requested OpenCode Go model id
 - NVIDIA Build is a free-provider candidate through live catalog discovery
-- ZenMux is a free-provider candidate through explicit equivalence mappings and defaults to 10 RPM
-- Electron Hub is a free-provider candidate through explicit equivalence mappings and defaults to 5 RPM
-- OpenRouter is a free-provider candidate only for explicitly mapped free models
+- ZenMux is a free-provider candidate through live catalog discovery and defaults to 10 RPM
+- Electron Hub is a free-provider candidate through live catalog discovery and defaults to 5 RPM
+- OpenRouter is a free-provider candidate only for live catalog models marked free
 - OpenRouter defaults to 20 RPM when configured, assuming the account has a maintained balance
 - NVIDIA Build and OpenCode Zen default to 30 RPM
 - free providers are selected by sliding-window RPM-aware round robin; `opencode-go` is used only after all eligible free equivalents are exhausted, rate-limited, unavailable, or failed
 
-Default served models:
+Default Hermes models:
 
-- `deepseek-v4-pro`
-  - free equivalents: configured NVIDIA Build, ZenMux, and Electron Hub entries when available
-  - paid fallback: `opencode-go/deepseek-v4-pro`
-- `minimax-m2.7`
-  - free equivalents: configured NVIDIA Build, OpenCode Zen, ZenMux, and Electron Hub entries when available
-  - paid fallback: `opencode-go/minimax-m2.7`
+- Hermes config is pinned to `deepseek-v4-pro` with `minimax-m2.7` fallback.
+- The router can expose any OpenCode Go catalog model whose normalized id matches at least one discovered free-provider model.
+- Free-provider model ids are not hardcoded in the router defaults.
 
 Compatibility notes:
 

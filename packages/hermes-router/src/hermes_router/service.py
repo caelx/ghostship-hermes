@@ -135,16 +135,17 @@ class RouterService:
     def list_models(self) -> ModelsResponse:
         self._ensure_inventory_loaded_for_request()
         alias_cards: list[ModelCard] = []
-        for alias in self.config.aliases:
-            free_providers = self._free_provider_names_for_alias(alias)
-            if not free_providers or not self._has_opencode_go_fallback(alias):
+        for model in self._opencode_go_models():
+            free_models = self._free_equivalent_models(model.id)
+            if not free_models:
                 continue
-            candidates = self.preview_routes(alias.name)
+            free_providers = self._free_provider_names_for_served_model(model.id)
+            candidates = self.preview_routes(model.id)
             alias_cards.append(
                 ModelCard(
-                    id=alias.name,
+                    id=model.id,
                     metadata={
-                        "description": alias.description,
+                        "description": self._served_model_description(model.id),
                         "free_provider_count": len(free_providers),
                         "free_providers": list(free_providers),
                         "free_provider_state": {
@@ -158,25 +159,18 @@ class RouterService:
             )
         return ModelsResponse(data=alias_cards)
 
-    def _free_provider_names_for_alias(self, alias: AliasConfig) -> tuple[str, ...]:
+    def _free_provider_names_for_served_model(self, served_model_id: str) -> tuple[str, ...]:
         providers: list[str] = []
-        for model_id in alias.preferred_models:
-            provider_name = self._provider_name_from_prefixed_model_id(model_id)
-            if provider_name is None or provider_name == "opencode-go":
-                continue
-            if provider_name not in self.providers:
-                continue
-            if provider_name not in providers:
-                providers.append(provider_name)
+        for model in self._free_equivalent_models(served_model_id):
+            if model.provider not in providers:
+                providers.append(model.provider)
         return tuple(providers)
 
-    def _has_opencode_go_fallback(self, alias: AliasConfig) -> bool:
-        expected_model = alias.name
-        for model_id in alias.preferred_models:
-            provider_name = self._provider_name_from_prefixed_model_id(model_id)
-            if provider_name == "opencode-go" and self._normalize_prefixed_model_id(model_id) == expected_model:
-                return True
-        return False
+    def _served_model_description(self, served_model_id: str) -> str:
+        alias = self.config.alias_map().get(served_model_id)
+        if alias is not None and alias.description:
+            return alias.description
+        return f"{served_model_id} through discovered free equivalents first, then OpenCode Go."
 
     def chat_completions(self, request: ChatCompletionRequest, *, session_id: str | None = None) -> tuple[dict[str, Any], dict[str, str]]:
         active_session_id, request_for_routing = self._prepare_chat_request(request, session_id=session_id)
@@ -1175,6 +1169,7 @@ class RouterService:
                     {
                         "name": alias.name,
                         "preferred_models": list(alias.preferred_models),
+                        "selection": "dynamic-opencode-go-catalog",
                     }
                     for alias in self.config.aliases
                 ],
@@ -1223,7 +1218,8 @@ class RouterService:
 
     def debug_summary(self) -> dict[str, Any]:
         provider_state = self.state_store.get_provider_state()
-        primary_alias = self.config.aliases[0].name if self.config.aliases else "deepseek-v4-pro"
+        exposed_models = [model.id for model in self._opencode_go_models() if self._free_equivalent_models(model.id)]
+        primary_alias = self.config.aliases[0].name if self.config.aliases else (exposed_models[0] if exposed_models else "deepseek-v4-pro")
         provider_order = list(self._provider_order())
         enabled_providers = [provider_name for provider_name in self._provider_names if self._provider_enabled(provider_name)]
         providers: list[dict[str, Any]] = []
@@ -1269,47 +1265,49 @@ class RouterService:
             },
             "providers": providers,
             "aliases": {
-                alias.name: {
+                alias: {
                     "provider_order": provider_order,
-                    "selected_provider": (selected_candidates[0]["provider_name"] if alias.name == primary_alias and selected_candidates else None),
-                    "selected_candidates": selected_candidates if alias.name == primary_alias else self.preview_routes(alias.name),
-                    "providers": self.debug_rankings(alias.name)["providers"],
+                    "selected_provider": (selected_candidates[0]["provider_name"] if alias == primary_alias and selected_candidates else None),
+                    "selected_candidates": selected_candidates if alias == primary_alias else self.preview_routes(alias),
+                    "providers": self.debug_rankings(alias)["providers"],
                 }
-                for alias in self.config.aliases
+                for alias in exposed_models
             },
         }
 
     def debug_rankings(self, alias: str) -> dict[str, Any]:
-        alias_config = self.config.alias_map().get(alias)
-        if alias_config is None:
-            raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
+        if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
+            raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
+        if self._opencode_go_model(alias) is None:
+            raise RouterServiceError(404, {"message": f"Unknown OpenCode Go model id '{alias}'."})
         selected_keys = {
             (candidate["provider_name"], candidate["backend_model"])
             for candidate in self.preview_routes(alias)
         }
         providers: list[dict[str, Any]] = []
+        equivalents_by_provider: dict[str, list[ProviderModel]] = {}
+        for model in self._free_equivalent_models(alias):
+            equivalents_by_provider.setdefault(model.provider, []).append(model)
+        go_model = self._opencode_go_model(alias)
+        if go_model is not None:
+            equivalents_by_provider.setdefault("opencode-go", []).append(go_model)
         for provider_name in self.config.provider_priority:
-            seeded_ids = [
-                self._normalize_prefixed_model_id(model_id)
-                for model_id in alias_config.preferred_models
-                if self._provider_name_from_prefixed_model_id(model_id) == provider_name
-            ]
-            if not seeded_ids:
+            provider_models = equivalents_by_provider.get(provider_name, [])
+            if not provider_models:
                 continue
             entries: list[dict[str, Any]] = []
-            for backend_model in seeded_ids:
-                model = self._lookup_model(provider_name, backend_model)
+            for model in provider_models:
                 entries.append(
                     {
-                        "backend_model": backend_model,
+                        "backend_model": model.id,
                         "configured": provider_name in self.providers,
-                        "discovered": model is not None,
-                        "selected_for_routing": (provider_name, backend_model) in selected_keys,
-                        "is_free": bool(model.is_free) if model is not None else False,
-                        "routable": bool(model is not None and self._model_is_routable(model, alias=alias)),
+                        "discovered": True,
+                        "selected_for_routing": (provider_name, model.id) in selected_keys,
+                        "is_free": bool(model.is_free),
+                        "routable": self._model_is_routable(model, alias=alias),
                         "excluded_reason": self._ranked_model_exclusion_reason(
                             provider_name,
-                            backend_model,
+                            model.id,
                             alias=alias,
                             model=model,
                         ),
@@ -1336,8 +1334,10 @@ class RouterService:
     def debug_inventory(self, category: str, *, alias: str = "deepseek-v4-pro") -> dict[str, Any]:
         if category not in {"seeded", "configured", "unconfigured", "inventory"}:
             raise RouterServiceError(404, {"message": f"Unknown inventory category '{category}'."})
-        alias_config = self.config.alias_map().get(alias) or (self.config.aliases[0] if self.config.aliases else None)
-        if alias_config is None:
+        if self._opencode_go_model(alias) is None:
+            fallback_alias = self.config.aliases[0].name if self.config.aliases else ""
+            alias = fallback_alias if fallback_alias and self._opencode_go_model(fallback_alias) is not None else alias
+        if self._opencode_go_model(alias) is None:
             return {"alias": alias, "category": category, "providers": {}}
         providers: dict[str, list[dict[str, Any]]] = {}
         if category == "inventory":
@@ -1350,29 +1350,30 @@ class RouterService:
                         "metadata": model.metadata,
                     }
                 )
-            return {"alias": alias_config.name, "category": category, "providers": providers}
-        for model_id in alias_config.preferred_models:
-            provider_name = self._provider_name_from_prefixed_model_id(model_id)
-            if provider_name is None:
-                continue
-            backend_model = self._normalize_prefixed_model_id(model_id)
+            return {"alias": alias, "category": category, "providers": providers}
+        dynamic_models = [*self._free_equivalent_models(alias)]
+        go_model = self._opencode_go_model(alias)
+        if go_model is not None:
+            dynamic_models.append(go_model)
+        for model in dynamic_models:
+            provider_name = model.provider
+            backend_model = model.id
             configured = provider_name in self.providers
             if category == "configured" and not configured:
                 continue
             if category == "unconfigured" and configured:
                 continue
-            model = self._lookup_model(provider_name, backend_model)
             providers.setdefault(provider_name, []).append(
                 {
                     "backend_model": backend_model,
                     "configured": configured,
-                    "discovered": model is not None,
-                    "is_free": bool(model.is_free) if model is not None else provider_name != "opencode-go",
+                    "discovered": True,
+                    "is_free": bool(model.is_free),
                     "rpm": self._provider_rpm_state(provider_name),
-                    "metadata": model.metadata if model is not None else {},
+                    "metadata": model.metadata,
                 }
             )
-        return {"alias": alias_config.name, "category": category, "providers": providers}
+        return {"alias": alias, "category": category, "providers": providers}
 
     def debug_model(self, provider_name: str, backend_model: str) -> dict[str, Any]:
         model = self._lookup_model(provider_name, backend_model)
@@ -1598,8 +1599,9 @@ class RouterService:
                 "# TYPE ghostship_router_candidate_count gauge",
             ]
         )
-        for alias in self.config.alias_map():
-            lines.append(self._prom_metric("ghostship_router_candidate_count", len(self.preview_routes(alias)), alias=alias))
+        for model in self._opencode_go_models():
+            if self._free_equivalent_models(model.id):
+                lines.append(self._prom_metric("ghostship_router_candidate_count", len(self.preview_routes(model.id)), alias=model.id))
         return "\n".join(lines) + "\n"
 
     def preview_routes(self, alias: str) -> list[dict[str, Any]]:
@@ -1626,8 +1628,6 @@ class RouterService:
             return False
         output_modalities = self._output_modalities(model)
         input_modalities = self._input_modalities(model)
-        if alias is not None and alias not in self.config.alias_map():
-            return False
         if not self._model_supports_tools(model):
             return False
         if {"image", "video"} & input_modalities:
@@ -1656,8 +1656,6 @@ class RouterService:
         output_modalities = self._output_modalities(resolved_model)
         if output_modalities and output_modalities != {"text"}:
             return "non_text_output"
-        if alias is not None and alias not in self.config.alias_map():
-            return "unsupported_alias"
         if not self._model_effectively_enabled(provider_name, backend_model):
             return "disabled"
         if self._is_cooling_down(provider_name, backend_model):
@@ -1714,17 +1712,15 @@ class RouterService:
         session_id: str | None = None,
         ignore_provider_pacing: bool = False,
     ) -> list[RouteCandidate]:
-        alias_config = self.config.alias_map().get(alias)
-        if alias_config is None:
-            direct_candidates = self._resolve_direct_model(alias)
-            if direct_candidates:
-                return direct_candidates
-            if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
-                raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
-            raise RouterServiceError(404, {"message": f"Unknown logical model alias '{alias}'."})
-        candidates = self._preferred_candidates(
-            alias_config.preferred_models,
-            alias=alias,
+        if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
+            raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
+        direct_candidates = self._resolve_direct_model(alias)
+        if direct_candidates:
+            return direct_candidates
+        if not self._served_model_is_exposed(alias):
+            raise RouterServiceError(404, {"message": f"Unknown or unexposed OpenCode Go model id '{alias}'."})
+        candidates = self._served_model_candidates(
+            alias,
             ignore_provider_pacing=ignore_provider_pacing,
             advance_round_robin=False,
         )
@@ -1741,16 +1737,12 @@ class RouterService:
         session_id: str | None = None,
         ignore_provider_pacing: bool = False,
     ) -> list[RouteCandidate]:
-        alias_config = self.config.alias_map().get(alias)
-        if alias_config is None:
-            return [
-                candidate
-                for candidate in self._resolve_candidates(alias, session_id=session_id, ignore_provider_pacing=ignore_provider_pacing)
-                if (candidate.provider_name, candidate.backend_model) not in attempted
-            ]
-        candidates = self._preferred_candidates(
-            alias_config.preferred_models,
-            alias=alias,
+        if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
+            raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
+        if not self._served_model_is_exposed(alias):
+            raise RouterServiceError(404, {"message": f"Unknown or unexposed OpenCode Go model id '{alias}'."})
+        candidates = self._served_model_candidates(
+            alias,
             ignore_provider_pacing=ignore_provider_pacing,
             advance_round_robin=not attempted,
         )
@@ -1768,6 +1760,64 @@ class RouterService:
         if not self.config.allow_direct_models:
             return []
         return self._preferred_candidates((model_name,), alias=model_name)
+
+    def _served_model_candidates(
+        self,
+        served_model_id: str,
+        *,
+        ignore_provider_pacing: bool = False,
+        advance_round_robin: bool = False,
+    ) -> list[RouteCandidate]:
+        free_candidates: list[RouteCandidate] = []
+        fallback_candidates: list[RouteCandidate] = []
+        probe_selected: set[str] = set()
+        for model in [*self._free_equivalent_models(served_model_id), *(go_model for go_model in [self._opencode_go_model(served_model_id)] if go_model is not None)]:
+            if not self._candidate_is_currently_eligible(
+                model,
+                ignore_provider_pacing=ignore_provider_pacing,
+                probe_selected=probe_selected,
+            ):
+                continue
+            breakdown = self._candidate_breakdown(served_model_id, model)
+            candidate = RouteCandidate(
+                provider_name=model.provider,
+                backend_model=model.id,
+                total_score=breakdown["total_score"],
+                score_breakdown=breakdown,
+            )
+            target = fallback_candidates if model.provider == "opencode-go" else free_candidates
+            if candidate not in target:
+                target.append(candidate)
+        return [
+            *self._round_robin_free_candidates(served_model_id, free_candidates, advance=advance_round_robin),
+            *fallback_candidates,
+        ]
+
+    def _candidate_is_currently_eligible(
+        self,
+        model: ProviderModel,
+        *,
+        ignore_provider_pacing: bool,
+        probe_selected: set[str],
+    ) -> bool:
+        if not self._model_is_routable(model):
+            return False
+        if not self._model_effectively_enabled(model.provider, model.id):
+            return False
+        if self._provider_is_cooling_down(model.provider):
+            return False
+        if not ignore_provider_pacing:
+            if self._provider_is_pacing(model.provider):
+                return False
+            if not self._provider_has_rpm_capacity(model.provider):
+                return False
+        if self._is_cooling_down(model.provider, model.id):
+            return False
+        if self._provider_in_probe_mode(model.provider):
+            if model.provider in probe_selected:
+                return False
+            probe_selected.add(model.provider)
+        return True
 
     def _preferred_candidates(
         self,
@@ -1916,12 +1966,56 @@ class RouterService:
     def _inventory_for_all(self) -> list[ProviderModel]:
         return list(self._inventory)
 
+    def _opencode_go_models(self, *, inventory: list[ProviderModel] | None = None) -> list[ProviderModel]:
+        models = [
+            model
+            for model in (inventory if inventory is not None else self._inventory_for_all())
+            if model.provider == "opencode-go" and self._model_is_routable(model) and self._model_effectively_enabled(model.provider, model.id)
+        ]
+        return sorted(models, key=lambda item: item.id)
+
+    def _opencode_go_model(self, served_model_id: str, *, inventory: list[ProviderModel] | None = None) -> ProviderModel | None:
+        for model in self._opencode_go_models(inventory=inventory):
+            if model.id == served_model_id:
+                return model
+        return None
+
+    def _free_equivalent_models(self, served_model_id: str, *, inventory: list[ProviderModel] | None = None) -> list[ProviderModel]:
+        known_inventory = inventory if inventory is not None else self._inventory_for_all()
+        if self._opencode_go_model(served_model_id, inventory=known_inventory) is None:
+            return []
+        target_key = self._canonical_model_key(served_model_id)
+        matches: list[ProviderModel] = []
+        for provider_name in self.config.provider_priority:
+            if provider_name == "opencode-go" or provider_name not in self.providers:
+                continue
+            for model in known_inventory:
+                if model.provider != provider_name:
+                    continue
+                if not model.is_free:
+                    continue
+                if self._canonical_model_key(model.id) != target_key:
+                    continue
+                if not self._model_is_routable(model):
+                    continue
+                if model not in matches:
+                    matches.append(model)
+        return matches
+
+    def _served_model_is_exposed(self, served_model_id: str) -> bool:
+        return self._opencode_go_model(served_model_id) is not None and bool(self._free_equivalent_models(served_model_id))
+
+    @staticmethod
+    def _canonical_model_key(model_id: str) -> str:
+        lowered = model_id.strip().lower()
+        tail = lowered.rsplit("/", 1)[-1]
+        for suffix in (":free", "-free"):
+            if tail.endswith(suffix):
+                tail = tail[: -len(suffix)]
+        return "".join(char for char in tail if char.isalnum())
+
     def _seeded_backend_ids_for_provider(self, provider_name: str) -> set[str]:
         seeded: set[str] = set()
-        for alias in self.config.aliases:
-            for model_id in alias.preferred_models:
-                if self._provider_name_from_prefixed_model_id(model_id) == provider_name:
-                    seeded.add(self._normalize_prefixed_model_id(model_id))
         policy = self.config.provider_seed_map().get(provider_name)
         if policy is not None:
             seeded.update(policy.seeded_models)

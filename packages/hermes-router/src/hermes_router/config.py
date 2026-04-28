@@ -87,7 +87,7 @@ class AliasConfig:
 @dataclass(frozen=True)
 class ProviderSeedPolicy:
     provider_name: str
-    seeded_models: tuple[str, ...]
+    seeded_models: tuple[str, ...] = ()
     unused_models: tuple[str, ...] = ()
     daily_reset_hours: int = 24
 
@@ -240,82 +240,39 @@ class RouterConfig:
             provider_seed_policies=(
                 ProviderSeedPolicy(
                     provider_name="nvidia-build",
-                    seeded_models=(
-                        "minimaxai/minimax-m2.7",
-                        "qwen/qwen3-coder-480b-a35b-instruct",
-                        "moonshotai/kimi-k2-thinking",
-                        "deepseek-ai/deepseek-v4-pro",
-                        "z-ai/glm-4.7",
-                    ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_NVIDIA_BUILD_UNUSED_MODELS"),
                 ),
                 ProviderSeedPolicy(
                     provider_name="opencode-zen",
-                    seeded_models=(
-                        "minimax-m2.7",
-                        "big-pickle",
-                        "minimax-m2.5-free",
-                        "trinity-large-preview-free",
-                    ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_OPENCODE_ZEN_UNUSED_MODELS"),
                 ),
                 ProviderSeedPolicy(
                     provider_name="openrouter",
-                    seeded_models=(
-                        "nvidia/nemotron-3-super-120b-a12b:free",
-                        "minimax/minimax-m2.5:free",
-                        "arcee-ai/trinity-large-preview:free",
-                    ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_OPENROUTER_UNUSED_MODELS"),
                 ),
                 ProviderSeedPolicy(
                     provider_name="zenmux",
-                    seeded_models=(
-                        "deepseek/deepseek-v4-pro-free",
-                        "minimax/minimax-m2.7",
-                    ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_ZENMUX_UNUSED_MODELS"),
                 ),
                 ProviderSeedPolicy(
                     provider_name="electron-hub",
-                    seeded_models=(
-                        "deepseek-v4-pro",
-                        "minimax-m2.7",
-                    ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_ELECTRON_HUB_UNUSED_MODELS"),
                 ),
                 ProviderSeedPolicy(
                     provider_name="opencode-go",
-                    seeded_models=(
-                        "deepseek-v4-pro",
-                        "minimax-m2.7",
-                    ),
                     unused_models=_parse_csv_env("GHOSTSHIP_ROUTER_OPENCODE_GO_UNUSED_MODELS"),
                 ),
             ),
             aliases=(
                 AliasConfig(
                     name="deepseek-v4-pro",
-                    description="DeepSeek V4 Pro through free equivalents first, then OpenCode Go.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_DEEPSEEK_V4_PRO_MODELS")
-                    or (
-                        "nvidia-build/deepseek-ai/deepseek-v4-pro",
-                        "zenmux/deepseek/deepseek-v4-pro-free",
-                        "electron-hub/deepseek-v4-pro:free",
-                        "opencode-go/deepseek-v4-pro",
-                    ),
+                    description="DeepSeek V4 Pro through discovered free equivalents first, then OpenCode Go.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_DEEPSEEK_V4_PRO_MODELS"),
                 ),
                 AliasConfig(
                     name="minimax-m2.7",
-                    description="MiniMax M2.7 through free equivalents first, then OpenCode Go.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_MINIMAX_M2_7_MODELS")
-                    or (
-                        "nvidia-build/minimaxai/minimax-m2.7",
-                        "opencode-zen/minimax-m2.7",
-                        "zenmux/minimax/minimax-m2.7",
-                        "electron-hub/minimax-m2.7",
-                        "opencode-go/minimax-m2.7",
-                    ),
+                    description="MiniMax M2.7 through discovered free equivalents first, then OpenCode Go.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_MINIMAX_M2_7_MODELS"),
                 ),
             ),
         )
