@@ -203,6 +203,24 @@ def paid_messages_tool_model(model_id: str, provider: str, *, tags: tuple[str, .
     )
 
 
+def paid_nested_multimodal_model(model_id: str, provider: str) -> ProviderModel:
+    return ProviderModel(
+        id=model_id,
+        provider=provider,
+        is_free=False,
+        tags=("agentic",),
+        metadata={
+            "provider_metadata": {
+                "modalities": {
+                    "input": ["text", "image", "video"],
+                    "output": ["text"],
+                },
+                "tool_call": True,
+            },
+        },
+    )
+
+
 def make_service(tmp_path: Path, *, providers: dict[str, FakeProvider], config: RouterConfig | None = None) -> RouterService:
     resolved = config or make_config(tmp_path)
     store = SqliteStateStore(resolved.db_path)
@@ -1148,6 +1166,29 @@ def test_messages_family_tool_call_models_remain_tool_candidates(tmp_path: Path)
     assert response.status_code == 200
     assert zenmux.calls == ["qwen/qwen3.5-plus"]
     assert go.calls == ["qwen3.5-plus"]
+
+
+def test_nested_multimodal_input_models_are_not_exposed(tmp_path: Path) -> None:
+    config = make_config(
+        tmp_path,
+        aliases=(
+            AliasConfig(name="deepseek-v4-pro", description="deepseek"),
+            AliasConfig(name="minimax-m2.7", description="minimax"),
+            AliasConfig(name="qwen3.5-plus", description="qwen"),
+        ),
+    )
+    service = make_service(
+        tmp_path,
+        providers={
+            "zenmux": FakeProvider("zenmux", models=[free_model("qwen/qwen3.5-plus", "zenmux")]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_nested_multimodal_model("qwen3.5-plus", "opencode-go")]),
+        },
+        config=config,
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    models = client.get("/v1/models").json()["data"]
+    assert "qwen3.5-plus" not in {item["id"] for item in models}
 
 
 def test_tool_request_skips_endpoint_family_without_tool_adapter(tmp_path: Path) -> None:

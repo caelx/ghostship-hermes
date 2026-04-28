@@ -2306,12 +2306,20 @@ class RouterService:
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
         output_modalities = metadata.get("output_modalities")
         if not isinstance(output_modalities, list):
+            provider_metadata = metadata.get("provider_metadata")
+            modalities = provider_metadata.get("modalities") if isinstance(provider_metadata, dict) else None
+            output_modalities = modalities.get("output") if isinstance(modalities, dict) else None
+        if not isinstance(output_modalities, list):
             return set()
         return {str(item).strip().lower() for item in output_modalities if str(item).strip()}
 
     def _input_modalities(self, model: ProviderModel) -> set[str]:
         metadata = model.metadata if isinstance(model.metadata, dict) else {}
         input_modalities = metadata.get("input_modalities")
+        if not isinstance(input_modalities, list):
+            provider_metadata = metadata.get("provider_metadata")
+            modalities = provider_metadata.get("modalities") if isinstance(provider_metadata, dict) else None
+            input_modalities = modalities.get("input") if isinstance(modalities, dict) else None
         if not isinstance(input_modalities, list):
             return set()
         return {str(item).strip().lower() for item in input_modalities if str(item).strip()}

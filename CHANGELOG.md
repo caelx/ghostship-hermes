@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed Ghostship Router model exposure to honor nested OpenCode Go modality metadata, preventing text+image/video models from being offered as Hermes text/tool models; bumped `ghostship-hermes-router` to `0.5.7`.
 - Fixed Ghostship Router tool-aware routing for OpenCode Go models whose catalog endpoint family is `messages` but explicitly advertises tool calls, so Hermes tool requests do not lose the paid fallback; bumped `ghostship-hermes-router` to `0.5.6`.
 - Hardened Ghostship Router free-provider routing with shape-aware health, adaptive timeout suppression, weighted deficit round robin, aggressive free-provider attempt budgets, `/debug/health`, route-event budget/shape detail, and expanded live stress coverage; bumped `ghostship-hermes-router` to `0.5.5`.
 - Added Ghostship Router route-event diagnostics with `/debug/route-events` filters, event ids, and sanitized request-shape summaries so live provider failures can be traced by alias, provider, backend model, category, success state, and Hermes tool-history shape; bumped `ghostship-hermes-router` to `0.5.4`.
