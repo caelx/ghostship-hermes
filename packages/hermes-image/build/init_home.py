@@ -12,6 +12,8 @@ HERMES_HOME = Path(os.environ.get("HERMES_HOME", str(HOME / ".hermes")))
 WORKSPACE = Path(os.environ.get("GHOSTSHIP_WORKSPACE_ROOT", "/workspace"))
 ROUTER_URL = os.environ.get("GHOSTSHIP_ROUTER_URL", "http://127.0.0.1:8788/v1")
 ROUTER_API_KEY_ENV = "_GHOSTSHIP_ROUTER_API_KEY"
+PRIMARY_MODEL = "deepseek-v4-flash"
+FALLBACK_MODEL = "kimi-k2.6"
 AUXILIARY_MODEL = "gemini-2.5-flash-lite"
 AUXILIARY_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 AUXILIARY_API_KEY = "${GOOGLE_AI_STUDIO_API_KEY}"
@@ -42,7 +44,7 @@ def _direct_gemini() -> dict[str, str]:
 DEFAULT_CONFIG = {
     "model": {
         "provider": "custom:ghostship-router",
-        "default": "deepseek-v4-pro",
+        "default": PRIMARY_MODEL,
     },
     "web": {
         "backend": "firecrawl",
@@ -63,7 +65,7 @@ DEFAULT_CONFIG = {
     },
     "fallback_model": {
         "provider": "custom:ghostship-router",
-        "model": "minimax-m2.7",
+        "model": FALLBACK_MODEL,
     },
     "custom_providers": [
         {
@@ -71,10 +73,10 @@ DEFAULT_CONFIG = {
             "base_url": ROUTER_URL,
             "api_key_env": ROUTER_API_KEY_ENV,
             "api_mode": "chat_completions",
-            "model": "deepseek-v4-pro",
+            "model": PRIMARY_MODEL,
             "models": {
-                "deepseek-v4-pro": {},
-                "minimax-m2.7": {},
+                PRIMARY_MODEL: {},
+                FALLBACK_MODEL: {},
             },
         }
     ],
@@ -274,12 +276,13 @@ def _normalize_router_auth(config: object) -> bool:
             if provider.get("api_key_env") != ROUTER_API_KEY_ENV:
                 provider["api_key_env"] = ROUTER_API_KEY_ENV
                 changed = True
-            if provider.get("model") != "deepseek-v4-pro":
-                provider["model"] = "deepseek-v4-pro"
+            if provider.get("model") != PRIMARY_MODEL:
+                provider["model"] = PRIMARY_MODEL
                 changed = True
             models = provider.get("models")
-            if models != {"deepseek-v4-pro": {}, "minimax-m2.7": {}}:
-                provider["models"] = {"deepseek-v4-pro": {}, "minimax-m2.7": {}}
+            managed_models = {PRIMARY_MODEL: {}, FALLBACK_MODEL: {}}
+            if models != managed_models:
+                provider["models"] = managed_models
                 changed = True
 
     return changed
@@ -294,25 +297,25 @@ def _normalize_managed_model_contract(config: object) -> bool:
     model = config.get("model")
     if (
         isinstance(model, dict)
-        and model.get("provider") in {"opencode-go", "openai-codex"}
-        and model.get("default") in {"minimax-m2.7", "gpt-5.4", "gpt-5.5"}
+        and model.get("provider") in {"opencode-go", "openai-codex", "custom:ghostship-router"}
+        and model.get("default") in {"deepseek-v4-pro", "minimax-m2.7", "gpt-5.4", "gpt-5.5"}
     ):
         model["provider"] = "custom:ghostship-router"
-        model["default"] = "deepseek-v4-pro"
+        model["default"] = PRIMARY_MODEL
         changed = True
     elif isinstance(model, dict) and model.get("provider") == "custom" and model.get("default") in {"agentic", "coding"}:
         model["provider"] = "custom:ghostship-router"
-        model["default"] = "deepseek-v4-pro"
+        model["default"] = PRIMARY_MODEL
         changed = True
 
     fallback_model = config.get("fallback_model")
     if (
         isinstance(fallback_model, dict)
-        and fallback_model.get("provider") in {"openai-codex", "opencode-go", "custom"}
+        and fallback_model.get("provider") in {"openai-codex", "opencode-go", "custom", "custom:ghostship-router"}
         and fallback_model.get("model") in {"gpt-5.4-mini", "minimax-m2.7", "agentic", "coding"}
     ):
         fallback_model["provider"] = "custom:ghostship-router"
-        fallback_model["model"] = "minimax-m2.7"
+        fallback_model["model"] = FALLBACK_MODEL
         changed = True
 
     agent = config.get("agent")

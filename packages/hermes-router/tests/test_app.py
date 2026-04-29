@@ -324,8 +324,8 @@ def test_config_default_rpms_include_zenmux_and_electron_hub(tmp_path: Path, mon
     assert config.free_stream_first_byte_timeout_seconds == 8.0
     assert config.free_total_budget_seconds == 24.0
     assert config.fallback_timeout_seconds == 45.0
-    assert config.primary_served_model == "deepseek-v4-pro"
-    assert config.fallback_served_model == "minimax-m2.7"
+    assert config.primary_served_model == "deepseek-v4-flash"
+    assert config.fallback_served_model == "kimi-k2.6"
     assert config.opencode_go_large_tool_history_primary_timeout_seconds == 25.0
     assert config.opencode_go_large_tool_history_fallback_timeout_seconds == 75.0
 
@@ -474,8 +474,8 @@ def test_default_router_config_does_not_hardcode_provider_backend_models(tmp_pat
     aliases = {alias.name: alias.preferred_models for alias in config.aliases}
     seed_map = config.provider_seed_map()
 
-    assert aliases["deepseek-v4-pro"] == ()
-    assert aliases["minimax-m2.7"] == ()
+    assert aliases["deepseek-v4-flash"] == ()
+    assert aliases["kimi-k2.6"] == ()
     assert all(policy.seeded_models == () for policy in seed_map.values())
 
 

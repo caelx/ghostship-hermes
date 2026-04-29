@@ -337,9 +337,9 @@ Router:
 
 - `ghostship-hermes-router` is mandatory
 - it listens on `127.0.0.1:8788`
-- Hermes default config uses `custom:ghostship-router/deepseek-v4-pro` as the primary lane and `custom:ghostship-router/minimax-m2.7` as the configured fallback
+- Hermes default config uses `custom:ghostship-router/deepseek-v4-flash` as the primary lane and `custom:ghostship-router/kimi-k2.6` as the configured fallback
 - Hermes default config sets `web.backend: firecrawl`
-- the managed Hermes config exposes `ghostship-router` as a local custom provider with `deepseek-v4-pro` and `minimax-m2.7` models
+- the managed Hermes config exposes `ghostship-router` as a local custom provider with `deepseek-v4-flash` and `kimi-k2.6` models
 - when configured, NVIDIA Build, OpenCode Zen, ZenMux, Electron Hub, and explicitly mapped OpenRouter free models participate through explicit equivalence entries
 - router normal routing exposes only OpenCode Go model IDs with explicit free-provider equivalents, uses RPM-weighted deficit round robin with shape-aware health across eligible free providers, and falls back to `opencode-go` with the same model id only when the free equivalents are exhausted, unavailable, suppressed, or the free-provider request budget is spent
 
@@ -385,10 +385,10 @@ Expected config shape after first boot:
 - Hermes home at `/home/hermes/.hermes`
 - `terminal.backend: local`
 - `terminal.cwd: /workspace`
-- root model uses `custom:ghostship-router/deepseek-v4-pro`
-- `fallback_model` uses `custom:ghostship-router/minimax-m2.7`
+- root model uses `custom:ghostship-router/deepseek-v4-flash`
+- `fallback_model` uses `custom:ghostship-router/kimi-k2.6`
 - `web.backend` is `firecrawl`
-- `custom_providers` includes `ghostship-router` with `deepseek-v4-pro` and `minimax-m2.7`
+- `custom_providers` includes `ghostship-router` with `deepseek-v4-flash` and `kimi-k2.6`
 - Discord forced-channel behavior controlled by runtime env, not by hardcoding channel ids into `config.yaml`
 
 ## Verification
@@ -437,7 +437,7 @@ Current baked operator utilities:
 - `uv`
 - `yq`
 
-The image bakes native CloakBrowser into `/opt/ghostship` and exposes it as the standard `google-chrome` binary that `agent-browser` already probes on Linux, so Hermes keeps using the stock local Chrome lane without an executable-path override. The `google-chrome` wrapper injects CloakBrowser's default stealth args, uses `/home/hermes/.local/state/cloakbrowser` when raw Chrome callers omit a profile, preserves explicit `agent-browser` profile paths so native `agent-browser --session` isolation works as intended, and drops extension-disabling launch flags so managed browser policy remains effective. Managed Chrome/Chromium policy force-installs uBlock Origin Lite for CloakBrowser and blocks common permission prompts for agent browsing.
+The image bakes native CloakBrowser into `/opt/ghostship` and exposes it as the standard `google-chrome` binary that `agent-browser` already probes on Linux, so Hermes keeps using the stock local Chrome lane without an executable-path override. The `google-chrome` wrapper injects CloakBrowser's default stealth args, uses `/home/hermes/.local/state/cloakbrowser` when raw Chrome callers omit a profile, and preserves explicit `agent-browser` profile paths so native `agent-browser --session` isolation works as intended. A pinned unpacked uBlock Origin Lite is baked at `/opt/ghostship/extensions/ublock-origin-lite`, configured with complete filtering and the major default/privacy/security/annoyance rulesets, and loaded through `AGENT_BROWSER_EXTENSIONS`.
 
 Bundled upstream Hermes skills are seeded into `/home/hermes/.hermes/skills` from the image on boot, but seeding is file-granular. Existing downstream custom skills are preserved, and only missing default skill files are added.
 

@@ -30,7 +30,7 @@ class ChatCompletionRequest(BaseModel):
 class ResponsesRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    model: str = "deepseek-v4-pro"
+    model: str = "deepseek-v4-flash"
     input: Any
     instructions: str | None = None
     previous_response_id: str | None = None

@@ -1,5 +1,6 @@
 ARG HERMES_REF=v2026.4.13
 ARG S6_OVERLAY_VERSION=3.2.1.0
+ARG UBOL_REF=2026.426.1626
 
 FROM ubuntu:24.04 AS base
 
@@ -7,6 +8,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
 ARG HERMES_REF
 ARG S6_OVERLAY_VERSION
+ARG UBOL_REF
 
 ENV HOME=/home/hermes \
     HERMES_HOME=/home/hermes/.hermes \
@@ -37,6 +39,7 @@ ENV HOME=/home/hermes \
     GHOSTSHIP_TTYD_SOCKET=/run/user/3000/ttyd.sock \
     GHOSTSHIP_TTYD_BASE_PATH=/terminal \
     GHOSTSHIP_TERMINAL_CWD=/workspace \
+    AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite \
     BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli \
     PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
@@ -141,6 +144,7 @@ FROM base AS final
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG HERMES_REF
+ARG UBOL_REF
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -222,6 +226,14 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && cloakbrowser_dir="$(dirname "$cloakbrowser_bin")" \
     && ln -sfn "$cloakbrowser_dir" /opt/ghostship/cloakbrowser-current \
     && touch /opt/ghostship/cloakbrowser-cache/.welcome_shown \
+    && curl -fsSL "https://github.com/uBlockOrigin/uBOL-home/archive/refs/tags/${UBOL_REF}.tar.gz" -o /tmp/ubol-home.tar.gz \
+    && mkdir -p /tmp/ubol-home \
+    && tar -xzf /tmp/ubol-home.tar.gz -C /tmp/ubol-home --strip-components=1 \
+    && python3 /src/packages/hermes-image/build/install_ubol.py \
+      /tmp/ubol-home/chromium \
+      /opt/ghostship/extensions/ublock-origin-lite \
+    && test -f /opt/ghostship/extensions/ublock-origin-lite/manifest.json \
+    && test -f /opt/ghostship/extensions/ublock-origin-lite/managed_storage.json \
     && cd /src \
     && tirith_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin nix --extra-experimental-features 'nix-command flakes' build --impure --no-write-lock-file --no-link --print-out-paths .#tirith)" \
     && ln -sf "${tirith_path}/bin/tirith" /usr/local/bin/tirith \
@@ -233,7 +245,7 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && cp /src/packages/hermes-image/build/init_home.py /opt/ghostship/bin/init_home.py \
     && apt-get purge -y build-essential gnupg pkg-config libffi-dev libssl-dev \
     && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent
+    && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent /tmp/ubol-home /tmp/ubol-home.tar.gz
 
 RUN mkdir -p /opt/ghostship/home-seed/.hermes /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/nixpkgs \
     && printf '%s\n' '{ allowUnfreePredicate = pkg: builtins.elem (builtins.parseDrvName pkg.name).name [ "bitwarden-cli" ]; }' > /opt/ghostship/home-seed/.config/nixpkgs/config.nix \

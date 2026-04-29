@@ -12,12 +12,12 @@ def _load_app_module(monkeypatch, tmp_path: Path):
     (managed_home / 'config.yaml').write_text(
         """model:
   provider: custom:ghostship-router
-  default: deepseek-v4-pro
+  default: deepseek-v4-flash
 web:
   backend: firecrawl
 fallback_model:
   provider: custom:ghostship-router
-  model: minimax-m2.7
+  model: kimi-k2.6
 """,
         encoding='utf-8',
     )

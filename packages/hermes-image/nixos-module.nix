@@ -208,7 +208,7 @@ let
     {
       model = {
         provider = "custom:ghostship-router";
-        default = "deepseek-v4-pro";
+        default = "deepseek-v4-flash";
       };
       web = {
         backend = "firecrawl";
@@ -227,7 +227,7 @@ let
       };
       fallback_model = {
         provider = "custom:ghostship-router";
-        model = "minimax-m2.7";
+        model = "kimi-k2.6";
       };
       custom_providers = [
         {
@@ -235,10 +235,10 @@ let
           base_url = "http://127.0.0.1:8788/v1";
           api_key_env = "_GHOSTSHIP_ROUTER_API_KEY";
           api_mode = "chat_completions";
-          model = "deepseek-v4-pro";
+          model = "deepseek-v4-flash";
           models = {
-            "deepseek-v4-pro" = {};
-            "minimax-m2.7" = {};
+            "deepseek-v4-flash" = {};
+            "kimi-k2.6" = {};
           };
         }
       ];
@@ -742,7 +742,11 @@ EOF
           next
         }
         in_model && $0 == "  default: minimax-m2.7" {
-          print "  default: deepseek-v4-pro"
+          print "  default: deepseek-v4-flash"
+          next
+        }
+        in_model && $0 == "  default: deepseek-v4-pro" {
+          print "  default: deepseek-v4-flash"
           next
         }
         in_model && $0 == "  provider: openai-codex" {
@@ -750,11 +754,11 @@ EOF
           next
         }
         in_model && $0 == "  default: gpt-5.4" {
-          print "  default: deepseek-v4-pro"
+          print "  default: deepseek-v4-flash"
           next
         }
         in_model && $0 == "  default: gpt-5.5" {
-          print "  default: deepseek-v4-pro"
+          print "  default: deepseek-v4-flash"
           next
         }
         in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
@@ -769,7 +773,23 @@ EOF
           next
         }
         in_fallback_model && $0 == "  model: gpt-5.4-mini" {
-          print "  model: minimax-m2.7"
+          print "  model: kimi-k2.6"
+          next
+        }
+        in_fallback_model && $0 == "  model: minimax-m2.7" {
+          print "  model: kimi-k2.6"
+          next
+        }
+        in_custom && $0 == "  model: deepseek-v4-pro" {
+          print "  model: deepseek-v4-flash"
+          next
+        }
+        in_custom && $0 == "    deepseek-v4-pro: {}" {
+          print "    deepseek-v4-flash: {}"
+          next
+        }
+        in_custom && $0 == "    minimax-m2.7: {}" {
+          print "    kimi-k2.6: {}"
           next
         }
         in_agent && $0 == "  reasoning_effort: high" {

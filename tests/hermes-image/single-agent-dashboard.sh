@@ -172,44 +172,18 @@ run_browser_adblock_probe() {
     --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults \
     --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     "$target_container" /usr/bin/timeout 180s /opt/cloakbrowser-venv/bin/python - <<'PY'
-from pathlib import Path
 import os
-import shutil
-import time
+import subprocess
 
 from playwright.sync_api import sync_playwright
 
-extension_id = "ddkjiahejlhfcafbddmgiahcphecmpfh"
-profile_root = Path("/home/hermes/.local/state/cloakbrowser")
-control_profile = Path("/tmp/ghostship-cloakbrowser-control")
+extension_path = "/opt/ghostship/extensions/ublock-origin-lite"
 ad_test_url = "https://canyoublockit.com/extreme-test/"
 ad_probe_urls = [
     "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js",
     "https://securepubads.g.doubleclick.net/tag/js/gpt.js",
     "https://www.googletagservices.com/tag/js/gpt.js",
     "https://googleads.g.doubleclick.net/pagead/id",
-]
-policy_names = [
-    "ExtensionSettings",
-    "DefaultNotificationsSetting",
-    "DefaultGeolocationSetting",
-    "DefaultPopupsSetting",
-    "DefaultClipboardSetting",
-    "DefaultSensorsSetting",
-    "DefaultAutomaticDownloadsSetting",
-    "AudioCaptureAllowed",
-    "VideoCaptureAllowed",
-    "ScreenCaptureAllowed",
-    "DefaultSerialGuardSetting",
-    "DefaultWebUsbGuardSetting",
-    "DefaultWebBluetoothGuardSetting",
-    "DefaultWebHidGuardSetting",
-    "AutoplayAllowed",
-    "FullscreenAllowed",
-    "EnableMediaRouter",
-    "BackgroundModeEnabled",
-    "PromotionalTabsEnabled",
-    "PaymentMethodQueryEnabled",
 ]
 ad_markers = (
     "pagead2.googlesyndication.com",
@@ -221,78 +195,43 @@ ad_markers = (
 )
 
 
-def extension_path(root: Path) -> Path:
-    return root / "Default" / "Extensions" / extension_id
-
-
-def launch(playwright, root: Path, extra_args=None, allow_disable_extensions=False):
-    root.mkdir(parents=True, exist_ok=True)
-    args = ["--disable-dev-shm-usage", "--no-sandbox"]
-    if extra_args:
-        args.extend(extra_args)
-    old_allow = os.environ.get("GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS")
-    if allow_disable_extensions:
-        os.environ["GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS"] = "true"
-    else:
-        os.environ.pop("GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS", None)
-    try:
-        return playwright.chromium.launch_persistent_context(
-            str(root),
-            executable_path="/usr/local/bin/google-chrome",
-            headless=True,
-            args=args,
-        )
-    finally:
-        if old_allow is None:
-            os.environ.pop("GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS", None)
-        else:
-            os.environ["GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS"] = old_allow
-
-
-def assert_policy_visible(page):
-    page.goto("chrome://policy/", wait_until="domcontentloaded", timeout=30_000)
-    page.wait_for_function(
-        "() => document.body && document.body.innerText.includes('ExtensionSettings')",
-        timeout=15_000,
+def run_agent_browser(session, args, env):
+    completed = subprocess.run(
+        ["agent-browser", "--session", session, *args],
+        check=True,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
-    text = page.locator("body").inner_text(timeout=5_000)
-    missing = [name for name in policy_names if name not in text]
-    assert not missing, f"managed policies missing from chrome://policy: {missing}"
-    assert extension_id in text, "uBlock Origin Lite extension id missing from chrome://policy"
+    return completed.stdout.strip()
 
 
-def wait_for_extension_install(playwright):
-    deadline = time.monotonic() + 90
-    last_error = None
-    while time.monotonic() < deadline:
-        context = launch(playwright, profile_root)
-        try:
-            page = context.pages[0] if context.pages else context.new_page()
-            try:
-                assert_policy_visible(page)
-            except Exception as exc:  # chrome://policy can lag on the first launch.
-                last_error = exc
-            page.goto("https://example.com/", wait_until="domcontentloaded", timeout=30_000)
-            page.wait_for_timeout(2_000)
-        finally:
-            context.close()
-        if extension_path(profile_root).is_dir():
-            return
-        time.sleep(2)
-    raise AssertionError(f"{extension_id} was not installed by managed policy; last policy error: {last_error}")
+def close_session(session, env):
+    subprocess.run(
+        ["agent-browser", "--session", session, "close"],
+        env=env,
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
-def browse_and_probe(playwright, root: Path, extra_args=None, allow_disable_extensions=False):
+def launch_agent_browser(session, env):
+    close_session(session, env)
+    run_agent_browser(session, ["open", ad_test_url], env)
+    cdp_url = run_agent_browser(session, ["get", "cdp-url"], env).splitlines()[-1]
+    assert cdp_url, f"agent-browser returned empty CDP URL for {session}"
+    return cdp_url
+
+
+def browse_and_probe(playwright, cdp_url):
     blocked = []
     failed = []
     requested = []
-    context = launch(
-        playwright,
-        root,
-        extra_args=extra_args,
-        allow_disable_extensions=allow_disable_extensions,
-    )
+    browser = playwright.chromium.connect_over_cdp(cdp_url)
     try:
+        context = browser.contexts[0]
         page = context.pages[0] if context.pages else context.new_page()
 
         def is_ad_url(url: str) -> bool:
@@ -329,34 +268,29 @@ def browse_and_probe(playwright, root: Path, extra_args=None, allow_disable_exte
         )
         page.wait_for_timeout(3_000)
     finally:
-        context.close()
+        browser.close()
     return requested, failed, blocked
 
 
-profile_root.mkdir(parents=True, exist_ok=True)
-if control_profile.exists():
-    shutil.rmtree(control_profile)
+managed_env = os.environ.copy()
+managed_env["AGENT_BROWSER_EXTENSIONS"] = extension_path
+control_env = os.environ.copy()
+control_env.pop("AGENT_BROWSER_EXTENSIONS", None)
 
 with sync_playwright() as playwright:
-    wait_for_extension_install(playwright)
-
-    managed_context = launch(playwright, profile_root)
+    managed_session = "ghostship-ubol-managed"
+    control_session = "ghostship-ubol-control"
+    managed_cdp = launch_agent_browser(managed_session, managed_env)
+    control_cdp = launch_agent_browser(control_session, control_env)
     try:
-        policy_page = managed_context.pages[0] if managed_context.pages else managed_context.new_page()
-        assert_policy_visible(policy_page)
+        requested, failed, blocked = browse_and_probe(playwright, managed_cdp)
+        control_requested, control_failed, control_blocked = browse_and_probe(playwright, control_cdp)
     finally:
-        managed_context.close()
-
-    requested, failed, blocked = browse_and_probe(playwright, profile_root)
-    control_requested, control_failed, control_blocked = browse_and_probe(
-        playwright,
-        control_profile,
-        extra_args=["--disable-extensions"],
-        allow_disable_extensions=True,
-    )
+        close_session(managed_session, managed_env)
+        close_session(control_session, control_env)
 
 assert requested, "ad test page/probe made no recognized ad-network requests"
-assert control_requested, "extension-disabled control made no recognized ad-network requests"
+assert control_requested, "extension-free control made no recognized ad-network requests"
 assert len(set(blocked)) >= 2, {
     "requested": requested,
     "failed": failed,
@@ -521,8 +455,48 @@ smoke_note "native browser persistence"
 run_browser_profile_probe "$container_name" write
 run_in_container "$container_name" 'test -d /home/hermes/.local/state/cloakbrowser'
 run_in_container "$container_name" 'command -v google-chrome >/dev/null'
-run_in_container "$container_name" 'test -f /etc/opt/chrome/policies/managed/ghostship-agent-browser.json'
-run_in_container "$container_name" 'test -f /etc/chromium/policies/managed/ghostship-agent-browser.json'
+run_in_container "$container_name" "grep -Fx \"AGENT_BROWSER_EXTENSIONS='/opt/ghostship/extensions/ublock-origin-lite'\" /run/ghostship/hermes.env >/dev/null"
+run_in_container "$container_name" '! grep -q "^AGENT_BROWSER_PROFILE=" /run/ghostship/hermes.env'
+run_in_container "$container_name" 'test -f /opt/ghostship/extensions/ublock-origin-lite/manifest.json'
+run_in_container "$container_name" 'test -f /opt/ghostship/extensions/ublock-origin-lite/managed_storage.json'
+run_in_container "$container_name" 'test -f /opt/ghostship/extensions/ublock-origin-lite.extension-id'
+run_in_container "$container_name" '! find /etc -path "*/policies/managed/*.json" -print -quit | grep -q .'
+run_in_container "$container_name" '/opt/cloakbrowser-venv/bin/python - <<'\''PY'\''
+import json
+from pathlib import Path
+
+extension = Path("/opt/ghostship/extensions/ublock-origin-lite")
+manifest = json.loads((extension / "manifest.json").read_text(encoding="utf-8"))
+assert manifest["version"] == "2026.426.1626"
+assert manifest["key"]
+enabled = [
+    ruleset["id"]
+    for ruleset in manifest["declarative_net_request"]["rule_resources"]
+    if ruleset["enabled"]
+]
+assert enabled == [
+    "ublock-filters",
+    "easylist",
+    "easyprivacy",
+    "pgl",
+    "ublock-badware",
+    "urlhaus-full",
+    "block-lan",
+    "adguard-spyware-url",
+    "annoyances-ai",
+    "annoyances-cookies",
+    "annoyances-overlays",
+    "annoyances-social",
+    "annoyances-widgets",
+    "annoyances-others",
+    "annoyances-notifications",
+]
+config = (extension / "js/config.js").read_text(encoding="utf-8")
+mode = (extension / "js/mode-manager.js").read_text(encoding="utf-8")
+assert "enabledRulesets: [" in config
+assert "strictBlockMode: true" in config
+assert "complete: [ '\''all-urls'\'' ]" in mode
+PY'
 smoke_note "native browser ad blocking"
 run_browser_adblock_probe "$container_name"
 smoke_note "home ownership"
@@ -533,10 +507,10 @@ smoke_note "gateway status"
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
 smoke_note "config assertions"
 run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: deepseek-v4-pro" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: deepseek-v4-flash" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: kimi-k2.6" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
@@ -547,8 +521,8 @@ config = yaml.safe_load(Path("/home/hermes/.hermes/config.yaml").read_text(encod
 providers = config.get("custom_providers") or []
 router = next((entry for entry in providers if entry.get("name") == "ghostship-router"), None)
 assert router is not None
-assert router.get("model") == "deepseek-v4-pro"
-assert sorted((router.get("models") or {}).keys()) == ["deepseek-v4-pro", "minimax-m2.7"]
+assert router.get("model") == "deepseek-v4-flash"
+assert sorted((router.get("models") or {}).keys()) == ["deepseek-v4-flash", "kimi-k2.6"]
 assert router.get("base_url") == "http://127.0.0.1:8788/v1"
 PY'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''

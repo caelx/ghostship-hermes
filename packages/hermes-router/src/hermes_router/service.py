@@ -1991,7 +1991,7 @@ class RouterService:
     def debug_summary(self) -> dict[str, Any]:
         provider_state = self.state_store.get_provider_state()
         exposed_models = [model.id for model in self._opencode_go_models() if self._free_equivalent_models(model.id)]
-        primary_alias = self.config.aliases[0].name if self.config.aliases else (exposed_models[0] if exposed_models else "deepseek-v4-pro")
+        primary_alias = self.config.aliases[0].name if self.config.aliases else (exposed_models[0] if exposed_models else "deepseek-v4-flash")
         provider_order = list(self._provider_order())
         enabled_providers = [provider_name for provider_name in self._provider_names if self._provider_enabled(provider_name)]
         providers: list[dict[str, Any]] = []
@@ -2103,7 +2103,7 @@ class RouterService:
             )
         return {"alias": alias, "providers": providers}
 
-    def debug_inventory(self, category: str, *, alias: str = "deepseek-v4-pro") -> dict[str, Any]:
+    def debug_inventory(self, category: str, *, alias: str = "deepseek-v4-flash") -> dict[str, Any]:
         if category not in {"seeded", "configured", "unconfigured", "inventory"}:
             raise RouterServiceError(404, {"message": f"Unknown inventory category '{category}'."})
         if self._opencode_go_model(alias) is None:

@@ -1,4 +1,4 @@
-import json
+import importlib.util
 import re
 from pathlib import Path
 
@@ -88,81 +88,72 @@ def test_chrome_wrapper_does_not_force_all_launches_into_one_profile() -> None:
     assert 'args+=("--user-data-dir=${profile_root}")' in chrome
     assert 'if [ "$has_log_level" = false ]; then' in chrome
     assert 'args+=("--log-level=3")' in chrome
-    assert '--disable-extensions|--disable-extensions=*)' in chrome
-    assert 'GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS' in chrome
+    assert "--disable-extensions" not in chrome
+    assert "GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS" not in chrome
     assert "AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser" not in dockerfile
     assert 'map_user_data_dir' not in chrome
     assert 'args+=("--user-data-dir=$(map_user_data_dir "${1#--user-data-dir=}")")' not in chrome
     assert 'exec "$binary" "${stealth_args[@]}" "$@" "--user-data-dir=${profile_root}"' not in chrome
 
 
-def test_cloakbrowser_managed_policy_installs_ublock_origin_lite() -> None:
-    extension_id = "ddkjiahejlhfcafbddmgiahcphecmpfh"
-    policy_paths = (
-        "packages/hermes-image/rootfs/etc/opt/chrome/policies/managed/ghostship-agent-browser.json",
-        "packages/hermes-image/rootfs/etc/chromium/policies/managed/ghostship-agent-browser.json",
-    )
-    integer_policies = {
-        "DefaultNotificationsSetting": 2,
-        "DefaultGeolocationSetting": 2,
-        "DefaultPopupsSetting": 2,
-        "DefaultClipboardSetting": 2,
-        "DefaultSensorsSetting": 2,
-        "DefaultAutomaticDownloadsSetting": 2,
-        "DefaultSerialGuardSetting": 2,
-        "DefaultWebUsbGuardSetting": 2,
-        "DefaultWebBluetoothGuardSetting": 2,
-        "DefaultWebHidGuardSetting": 2,
-    }
-    boolean_policies = {
-        "AudioCaptureAllowed": False,
-        "VideoCaptureAllowed": False,
-        "ScreenCaptureAllowed": False,
-        "AutoplayAllowed": False,
-        "FullscreenAllowed": False,
-        "EnableMediaRouter": False,
-        "BackgroundModeEnabled": False,
-        "PromotionalTabsEnabled": False,
-        "PaymentMethodQueryEnabled": False,
-    }
+def test_ublock_origin_lite_is_loaded_by_agent_browser_extension_env() -> None:
+    dockerfile = read("packages/hermes-image/Dockerfile")
+    helper_path = ROOT / "packages/hermes-image/build/install_ubol.py"
+    spec = importlib.util.spec_from_file_location("install_ubol", helper_path)
+    assert spec is not None and spec.loader is not None
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
 
-    policies = [json.loads(read(path)) for path in policy_paths]
-    assert policies[0] == policies[1]
+    assert "ARG UBOL_REF=2026.426.1626" in dockerfile
+    assert "AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite" in dockerfile
+    assert "AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser" not in dockerfile
+    assert "ExtensionSettings" not in dockerfile
+    assert "ghostship-agent-browser.json" not in dockerfile
+    assert "ghostship-ubol-settings.json" not in dockerfile
 
-    policy = policies[0]
-    extension = policy["ExtensionSettings"][extension_id]
-    assert extension == {
-        "installation_mode": "force_installed",
-        "update_url": "https://clients2.google.com/service/update2/crx",
-        "toolbar_pin": "force_pinned",
-    }
-    for key, value in integer_policies.items():
-        assert policy[key] == value
-    for key, value in boolean_policies.items():
-        assert policy[key] is value
-
-    ubol_policy = policy["3rdparty"]["extensions"][extension_id]
-    assert ubol_policy["disableFirstRunPage"] is True
-    assert ubol_policy["defaultFiltering"] == "complete"
-    assert ubol_policy["showBlockedCount"] is True
-    assert ubol_policy["strictBlockMode"] is True
-    assert ubol_policy["disabledFeatures"] == ["develop"]
-    assert ubol_policy["rulesets"] == [
-        "-*",
-        "+default",
-        "+ublock-badware",
-        "+urlhaus-full",
-        "+adguard-spyware-url",
-        "-block-lan",
-        "-adguard-mobile",
-        "+annoyances-ai",
-        "+annoyances-cookies",
-        "+annoyances-notifications",
-        "+annoyances-others",
-        "+annoyances-overlays",
-        "+annoyances-social",
-        "+annoyances-widgets",
+    assert helper.UBOL_EXTENSION_ID == "bfpkagngpehfhmefokecpdmakpacpfac"
+    assert helper.UBOL_EXTENSION_ID == helper.extension_id_from_key(helper.UBOL_MANIFEST_KEY)
+    assert helper.UBOL_DEFAULT_RULESETS == [
+        "ublock-filters",
+        "easylist",
+        "easyprivacy",
+        "pgl",
+        "adguard-spyware-url",
+        "block-lan",
+        "ublock-badware",
+        "urlhaus-full",
+        "annoyances-ai",
+        "annoyances-cookies",
+        "annoyances-notifications",
+        "annoyances-others",
+        "annoyances-overlays",
+        "annoyances-social",
+        "annoyances-widgets",
     ]
+
+    policy_files = list((ROOT / "packages/hermes-image/rootfs/etc").glob("**/policies/managed/*.json"))
+    assert policy_files == []
+    assert "ExtensionSettings" not in read("packages/hermes-image/rootfs/usr/local/bin/google-chrome")
+
+
+def test_managed_router_defaults_use_flash_and_kimi() -> None:
+    init_home = read("packages/hermes-image/build/init_home.py")
+    module = read("packages/hermes-image/nixos-module.nix")
+    router_config = read("packages/hermes-router/src/hermes_router/config.py")
+    router_models = read("packages/hermes-router/src/hermes_router/models.py")
+
+    for text in (init_home, module):
+        assert "deepseek-v4-flash" in text
+        assert "kimi-k2.6" in text
+        assert '"deepseek-v4-pro": {},' not in text
+        assert '"minimax-m2.7": {},' not in text
+
+    assert 'primary_served_model=os.environ.get("GHOSTSHIP_ROUTER_PRIMARY_SERVED_MODEL", "deepseek-v4-flash")' in router_config
+    assert 'fallback_served_model=os.environ.get("GHOSTSHIP_ROUTER_FALLBACK_SERVED_MODEL", "kimi-k2.6")' in router_config
+    assert 'for alias in ("deepseek-v4-flash", "kimi-k2.6")' in router_config
+    assert 'name="deepseek-v4-flash"' in router_config
+    assert 'name="kimi-k2.6"' in router_config
+    assert 'model: str = "deepseek-v4-flash"' in router_models
 
 
 def test_downstream_discord_snowflake_ids_are_not_committed() -> None:

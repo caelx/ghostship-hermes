@@ -205,8 +205,8 @@ class RouterConfig:
             free_stream_first_byte_timeout_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FREE_STREAM_FIRST_BYTE_TIMEOUT_SECONDS", default=8.0),
             free_total_budget_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FREE_TOTAL_BUDGET_SECONDS", default=24.0),
             fallback_timeout_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FALLBACK_TIMEOUT_SECONDS", default=45.0),
-            primary_served_model=os.environ.get("GHOSTSHIP_ROUTER_PRIMARY_SERVED_MODEL", "deepseek-v4-pro"),
-            fallback_served_model=os.environ.get("GHOSTSHIP_ROUTER_FALLBACK_SERVED_MODEL", "minimax-m2.7"),
+            primary_served_model=os.environ.get("GHOSTSHIP_ROUTER_PRIMARY_SERVED_MODEL", "deepseek-v4-flash"),
+            fallback_served_model=os.environ.get("GHOSTSHIP_ROUTER_FALLBACK_SERVED_MODEL", "kimi-k2.6"),
             opencode_go_large_tool_history_primary_timeout_seconds=_parse_float_env(
                 "GHOSTSHIP_ROUTER_OPENCODE_GO_LARGE_TOOL_HISTORY_PRIMARY_TIMEOUT_SECONDS",
                 default=25.0,
@@ -248,7 +248,7 @@ class RouterConfig:
             model_weight_overrides=_parse_assignment_env("GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES", cast=float),
             alias_pin_overrides={
                 alias: _parse_csv_env(f"GHOSTSHIP_ROUTER_ALIAS_PIN_{_env_token(alias)}")
-                for alias in ("deepseek-v4-pro", "minimax-m2.7")
+                for alias in ("deepseek-v4-flash", "kimi-k2.6")
             },
             provider_priority=(
                 "nvidia-build",
@@ -293,14 +293,14 @@ class RouterConfig:
             ),
             aliases=(
                 AliasConfig(
-                    name="deepseek-v4-pro",
-                    description="DeepSeek V4 Pro through discovered free equivalents first, then OpenCode Go.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_DEEPSEEK_V4_PRO_MODELS"),
+                    name="deepseek-v4-flash",
+                    description="DeepSeek V4 Flash through discovered free equivalents first, then OpenCode Go.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_DEEPSEEK_V4_FLASH_MODELS"),
                 ),
                 AliasConfig(
-                    name="minimax-m2.7",
-                    description="MiniMax M2.7 through discovered free equivalents first, then OpenCode Go.",
-                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_MINIMAX_M2_7_MODELS"),
+                    name="kimi-k2.6",
+                    description="Kimi K2.6 through discovered free equivalents first, then OpenCode Go.",
+                    preferred_models=_parse_csv_env("GHOSTSHIP_ROUTER_KIMI_K2_6_MODELS"),
                 ),
             ),
         )

@@ -33,7 +33,7 @@ Provider policy:
 
 Default Hermes models:
 
-- Hermes config is pinned to `deepseek-v4-pro` with `minimax-m2.7` fallback.
+- Hermes config is pinned to `deepseek-v4-flash` with `kimi-k2.6` fallback.
 - The router can expose any OpenCode Go catalog model whose normalized id matches at least one discovered free-provider model.
 - Free-provider model ids are not hardcoded in the router defaults.
 

@@ -195,6 +195,7 @@ Default image behavior:
 - The old service-specific `ghostship-*` CLI layer is retired from the image.
 - The operator utility bundle ships as an image-managed Nix default profile exported from the Ghostship-specific final image phase and reconciled into persisted `/nix` on every boot.
 - native CloakBrowser ships in the image and is exposed as the standard `google-chrome` binary that `agent-browser` already probes on Linux, with the default persistent browser profile rooted at `/home/hermes/.local/state/cloakbrowser`.
+- a pinned unpacked uBlock Origin Lite ships at `/opt/ghostship/extensions/ublock-origin-lite` and is loaded by `AGENT_BROWSER_EXTENSIONS`.
 - Node-native agent tools ship through npm in persisted home state.
 - Nix stays available for extra downstream or Hermes-installed packages through `/home/hermes/.nix-profile/bin` on top of the image-managed defaults.
 - bundled upstream Hermes skills are seeded into `/home/hermes/.hermes/skills` on boot without overwriting downstream custom skills that already exist there.
@@ -206,7 +207,7 @@ Current preinstalled npm tools:
 - `agent-browser`
 - `opencode`
 
-Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. Raw Chrome callers that omit a profile use `/home/hermes/.local/state/cloakbrowser`, while explicit `agent-browser` profile paths are preserved so native `agent-browser --session` isolation is not collapsed into one locked profile.
+Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. Raw Chrome callers that omit a profile use `/home/hermes/.local/state/cloakbrowser`, while explicit `agent-browser` profile paths are preserved so native `agent-browser --session` isolation is not collapsed into one locked profile. `agent-browser` also receives `AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite`, loading the image-pinned uBlock Origin Lite without Chrome Web Store policy.
 
 Known upstream caveat:
 
