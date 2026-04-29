@@ -32,8 +32,23 @@ args=()
 has_user_data_dir=false
 has_log_level=false
 has_no_sandbox=false
+has_extension_arg=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --load-extension=*|--disable-extensions-except=*)
+      has_extension_arg=true
+      args+=("$1")
+      shift
+      ;;
+    --load-extension|--disable-extensions-except)
+      has_extension_arg=true
+      if [ "$#" -lt 2 ]; then
+        echo "$1 requires a value" >&2
+        exit 2
+      fi
+      args+=("$1" "$2")
+      shift 2
+      ;;
     --user-data-dir=*)
       has_user_data_dir=true
       args+=("$1")
@@ -84,6 +99,10 @@ fi
 
 if [ "$has_no_sandbox" = false ]; then
   args+=("--no-sandbox")
+fi
+
+if [ "$has_extension_arg" = true ]; then
+  exec "$binary" "${args[@]}"
 fi
 
 exec "$binary" "${stealth_args[@]}" "${args[@]}"
