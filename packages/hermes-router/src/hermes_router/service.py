@@ -635,7 +635,7 @@ class RouterService:
                 time.sleep(wait_seconds)
                 candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
         if not candidates:
-            raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
+            raise RouterServiceError(424, {"message": f"No route candidates are available for alias '{request.model}'."})
         request_payload["stream"] = False
         errors: list[dict[str, Any]] = []
         while candidates:
@@ -785,7 +785,7 @@ class RouterService:
                 time.sleep(wait_seconds)
                 candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
         if not candidates:
-            raise RouterServiceError(503, {"message": f"No route candidates are available for alias '{request.model}'."})
+            raise RouterServiceError(424, {"message": f"No route candidates are available for alias '{request.model}'."})
         attempt_errors: list[dict[str, Any]] = []
         while candidates:
             index = len(attempted)
@@ -899,7 +899,7 @@ class RouterService:
         categories = [str(error.get("category") or "") for error in errors]
         if any(category in {"bad_request", "tool_choice_unsupported"} for category in categories):
             return 400
-        return 503
+        return 424
 
     @classmethod
     def _request_debug_shape(cls, payload: dict[str, Any], *, response_api: bool = False) -> dict[str, Any]:

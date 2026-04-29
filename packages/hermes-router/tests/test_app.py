@@ -669,6 +669,49 @@ def test_free_provider_wall_clock_deadline_skips_slow_stream_first_byte(tmp_path
     assert event["details"]["provider_error"]["deadline_enforced"] is True
 
 
+def test_all_route_timeouts_return_nonretryable_failed_dependency(tmp_path: Path) -> None:
+    nvidia = FakeProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        failures={
+            "deepseek-ai/deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="nvidia-build",
+                    backend_model="deepseek-ai/deepseek-v4-pro",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    go = FakeProvider(
+        "opencode-go",
+        models=[paid_model("deepseek-v4-pro", "opencode-go")],
+        failures={
+            "deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="opencode-go",
+                    backend_model="deepseek-v4-pro",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-go": go})
+    client = TestClient(create_app(service=service, config=service.config))
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]},
+    )
+
+    assert response.status_code == 424
+    assert "All route candidates failed" in response.json()["error"]["message"]
+
+
 def test_shape_timeout_suppression_does_not_poison_text_shape(tmp_path: Path) -> None:
     nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
     zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
@@ -1423,7 +1466,7 @@ def test_model_auth_failure_does_not_cooldown_successful_fallback_provider(tmp_p
     client = TestClient(create_app(service=service, config=service.config))
 
     assert client.post("/v1/chat/completions", json=simple_chat_payload("minimax-m2.7")).status_code == 200
-    assert client.post("/v1/chat/completions", json=simple_chat_payload("minimax-m2.5")).status_code == 503
+    assert client.post("/v1/chat/completions", json=simple_chat_payload("minimax-m2.5")).status_code == 424
     response = client.post("/v1/chat/completions", json=simple_chat_payload("minimax-m2.7"))
 
     assert response.status_code == 200
