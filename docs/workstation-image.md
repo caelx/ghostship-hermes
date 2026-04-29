@@ -206,7 +206,7 @@ Current preinstalled npm tools:
 - `agent-browser`
 - `opencode`
 
-Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. The image also sets `AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser` internally. When agent-browser still supplies a temp launch directory, the wrapper maps it to a per-session directory under the persisted CloakBrowser root instead of forcing every launch into the same locked profile.
+Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. Raw Chrome callers that omit a profile use `/home/hermes/.local/state/cloakbrowser`, while explicit `agent-browser` profile paths are preserved so native `agent-browser --session` isolation is not collapsed into one locked profile.
 
 Known upstream caveat:
 

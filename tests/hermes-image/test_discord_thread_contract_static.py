@@ -80,16 +80,17 @@ def test_closed_discord_thread_retirement_is_patched_into_gateway() -> None:
 
 
 def test_chrome_wrapper_does_not_force_all_launches_into_one_profile() -> None:
-    text = read("packages/hermes-image/rootfs/usr/local/bin/google-chrome")
+    chrome = read("packages/hermes-image/rootfs/usr/local/bin/google-chrome")
+    dockerfile = read("packages/hermes-image/Dockerfile")
 
-    assert 'session_profile_root="${profile_root}/agent-browser-sessions"' in text
-    assert "/tmp/agent-browser-chrome-*" in text
-    assert 'args+=("--user-data-dir=$(map_user_data_dir "${1#--user-data-dir=}")")' in text
-    assert 'if [ "$has_user_data_dir" = false ]; then' in text
-    assert 'args+=("--user-data-dir=${profile_root}")' in text
-    assert 'if [ "$has_log_level" = false ]; then' in text
-    assert 'args+=("--log-level=3")' in text
-    assert 'exec "$binary" "${stealth_args[@]}" "$@" "--user-data-dir=${profile_root}"' not in text
+    assert 'if [ "$has_user_data_dir" = false ]; then' in chrome
+    assert 'args+=("--user-data-dir=${profile_root}")' in chrome
+    assert 'if [ "$has_log_level" = false ]; then' in chrome
+    assert 'args+=("--log-level=3")' in chrome
+    assert "AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser" not in dockerfile
+    assert 'map_user_data_dir' not in chrome
+    assert 'args+=("--user-data-dir=$(map_user_data_dir "${1#--user-data-dir=}")")' not in chrome
+    assert 'exec "$binary" "${stealth_args[@]}" "$@" "--user-data-dir=${profile_root}"' not in chrome
 
 
 def test_downstream_discord_snowflake_ids_are_not_committed() -> None:
