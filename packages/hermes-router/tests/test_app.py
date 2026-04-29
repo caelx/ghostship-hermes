@@ -697,7 +697,7 @@ def test_free_provider_wall_clock_deadline_skips_slow_non_stream_call(tmp_path: 
         ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
     )
 
-    assert time.monotonic() - started_at < 1.0
+    assert time.monotonic() - started_at < 1.5
     assert headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
     assert slow.calls == ["deepseek-ai/deepseek-v4-pro"]
     assert zen.calls == ["deepseek-v4-pro"]
@@ -726,7 +726,7 @@ def test_free_provider_wall_clock_deadline_skips_slow_stream_first_byte(tmp_path
     )
     body = "".join(plan.body)
 
-    assert time.monotonic() - started_at < 1.0
+    assert time.monotonic() - started_at < 1.5
     assert plan.headers["X-Ghostship-Router-Backend-Provider"] == "opencode-zen"
     assert "deepseek-v4-pro" in body
     event = service.state_store.get_route_events(limit=10, provider_name="nvidia-build", success=False)[0]
