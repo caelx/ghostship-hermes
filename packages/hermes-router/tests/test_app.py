@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -173,11 +174,13 @@ class SlowProvider(FakeProvider):
     def __init__(self, name: str, *, models: list[ProviderModel], sleep_seconds: float) -> None:
         super().__init__(name, models=models)
         self.sleep_seconds = sleep_seconds
+        self.started = threading.Event()
 
     def chat_completions(self, backend_model: str, payload: dict[str, Any], *, timeout: float | None = None) -> ProviderChatResult:
         self.timeouts.append(timeout)
         self.payloads.append(payload)
         self.calls.append(backend_model)
+        self.started.set()
         time.sleep(self.sleep_seconds)
         return ProviderChatResult(
             payload={
@@ -198,6 +201,7 @@ class SlowProvider(FakeProvider):
         state = ProviderChatStreamState()
 
         def chunks() -> Iterator[ProviderChatStreamEvent]:
+            self.started.set()
             time.sleep(self.sleep_seconds)
             state.first_text_latency_ms = round(self.sleep_seconds * 1000, 2)
             state.emitted_text = backend_model
@@ -1045,6 +1049,43 @@ def test_debug_health_reports_shape_health(tmp_path: Path) -> None:
     assert shape["shape_key"] == "stream+tools"
     assert shape["suppression_active"] is True
     assert shape["health_score"] < 1.0
+
+
+def test_readyz_stays_responsive_during_slow_chat_request(tmp_path: Path) -> None:
+    slow = SlowProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        sleep_seconds=1.5,
+    )
+    service = make_service(
+        tmp_path,
+        providers={
+            "nvidia-build": slow,
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
+        },
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+    result: dict[str, Any] = {}
+
+    def post_chat() -> None:
+        result["response"] = client.post(
+            "/v1/chat/completions",
+            json={"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]},
+        )
+
+    thread = threading.Thread(target=post_chat)
+    thread.start()
+    assert slow.started.wait(timeout=2)
+
+    started_at = time.monotonic()
+    ready_response = client.get("/readyz")
+    ready_elapsed = time.monotonic() - started_at
+
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert ready_response.status_code == 200
+    assert ready_elapsed < 0.5
+    assert result["response"].status_code == 200
 
 
 def test_debug_route_events_filters_and_reports_request_shape(tmp_path: Path) -> None:

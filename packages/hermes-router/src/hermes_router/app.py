@@ -194,15 +194,18 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
         except ValidationError as exc:
             return JSONResponse(_openai_error(str(exc.errors()[0].get("msg", "Invalid request"))), status_code=400)
         try:
+            session_id = request.headers.get("X-Hermes-Session-Id", "").strip() or None
             if completion_request.stream:
-                plan = resolved_service.stream_chat_completions(
+                plan = await asyncio.to_thread(
+                    resolved_service.stream_chat_completions,
                     completion_request,
-                    session_id=request.headers.get("X-Hermes-Session-Id", "").strip() or None,
+                    session_id=session_id,
                 )
                 return StreamingResponse(plan.body, media_type="text/event-stream", headers=plan.headers)
-            payload, headers = resolved_service.chat_completions(
+            payload, headers = await asyncio.to_thread(
+                resolved_service.chat_completions,
                 completion_request,
-                session_id=request.headers.get("X-Hermes-Session-Id", "").strip() or None,
+                session_id=session_id,
             )
         except RouterServiceError as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
@@ -224,9 +227,9 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
             return JSONResponse(_openai_error(str(exc.errors()[0].get("msg", "Invalid request"))), status_code=400)
         try:
             if responses_request.stream:
-                plan = resolved_service.responses_create_stream(responses_request)
+                plan = await asyncio.to_thread(resolved_service.responses_create_stream, responses_request)
                 return StreamingResponse(plan.body, media_type="text/event-stream", headers=plan.headers)
-            payload, headers = resolved_service.responses_create(responses_request)
+            payload, headers = await asyncio.to_thread(resolved_service.responses_create, responses_request)
         except RouterServiceError as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
             return JSONResponse(_openai_error(str(detail.get("message", exc.detail))), status_code=exc.status_code)
