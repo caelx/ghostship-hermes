@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed Ghostship Router paid-fallback cooldown scoping so OpenCode Go timeouts on one model do not hide other OpenCode Go fallback models such as `minimax-m2.7`; bumped `ghostship-hermes-router` to `0.5.13`.
 - Fixed Ghostship Router control-plane responsiveness by moving blocking chat and Responses route execution off the FastAPI event loop, keeping `/readyz`, debug, and metrics endpoints responsive during long provider fallbacks; bumped `ghostship-hermes-router` to `0.5.12`.
 - Fixed Ghostship Router free-provider deadlines so slow upstream calls are bounded by router-owned wall-clock timeouts for non-stream requests and streaming first-byte opens, preventing providers that keep sockets alive from outliving the free-attempt budget; bumped `ghostship-hermes-router` to `0.5.11`.
 - Extended Ghostship Router unauthorized model cooldowns to one day so model-scoped paid-fallback auth failures do not quickly reappear in `/v1/models`; bumped `ghostship-hermes-router` to `0.5.10`.

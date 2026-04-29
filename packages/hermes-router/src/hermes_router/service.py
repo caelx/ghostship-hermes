@@ -2903,6 +2903,11 @@ class RouterService:
 
     def _provider_is_cooling_down(self, provider_name: str, *, state: dict[str, Any] | None = None) -> bool:
         provider_state = state or self.state_store.get_provider_state().get(provider_name, {})
+        if provider_name == "opencode-go":
+            category = str(provider_state.get("last_error_category") or "")
+            recent_auth_failure = float(provider_state.get("recent_auth_failure", 0) or 0)
+            recent_success = float(provider_state.get("recent_success", 0) or 0)
+            return category == "unauthorized" and recent_auth_failure >= 1.0 and recent_success < 0.1 and float(provider_state.get("cooldown_until", 0) or 0) > time.time()
         return float(provider_state.get("cooldown_until", 0) or 0) > time.time()
 
     def _provider_is_pacing(self, provider_name: str, *, state: dict[str, Any] | None = None) -> bool:
@@ -3111,6 +3116,8 @@ class RouterService:
         recent_success = float(provider_state.get("recent_success", 0) or 0)
         if recent_auth_failure >= 1.0 and recent_success < 0.1:
             category = "unauthorized"
+        elif provider_name == "opencode-go":
+            return
         elif float(provider_state.get("recent_timeout", 0)) >= self.config.provider_timeout_threshold:
             category = "timeout"
         elif float(provider_state.get("recent_server_error", 0)) >= self.config.provider_failure_threshold:

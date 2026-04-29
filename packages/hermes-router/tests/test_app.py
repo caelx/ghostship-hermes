@@ -813,6 +813,44 @@ def test_timeout_score_suppresses_only_unhealthy_free_candidate(tmp_path: Path) 
     assert route_debug["skipped"][0]["state"]["timeout_guard_until"] is not None
 
 
+def test_opencode_go_timeout_cooldown_does_not_hide_other_fallback_models(tmp_path: Path) -> None:
+    service = make_service(
+        tmp_path,
+        providers={
+            "zenmux": FakeProvider("zenmux", models=[free_model("minimax/minimax-m2.7", "zenmux")]),
+            "opencode-go": FakeProvider(
+                "opencode-go",
+                models=[
+                    paid_model("deepseek-v4-pro", "opencode-go"),
+                    paid_model("minimax-m2.7", "opencode-go"),
+                ],
+            ),
+        },
+    )
+    service.state_store.set_provider_cooldown(
+        "opencode-go",
+        cooldown_until=time.time() + 300,
+        category="timeout",
+        details={"source": "test"},
+    )
+    service.state_store.apply_failure(
+        "opencode-go",
+        "deepseek-v4-pro",
+        category="request_timeout",
+        retryable=True,
+        cooldown_model=False,
+    )
+
+    routes = service.debug_routes("minimax-m2.7", shape_key="stream+tools+tool_history+reasoning")
+    candidates = [(candidate["provider_name"], candidate["backend_model"]) for candidate in routes["candidates"]]
+
+    assert ("opencode-go", "minimax-m2.7") in candidates
+    assert not any(
+        skipped["provider_name"] == "opencode-go" and skipped["reason"] == "provider_cooldown"
+        for skipped in routes["skipped"]
+    )
+
+
 def test_slow_latency_score_suppresses_unhealthy_free_candidate(tmp_path: Path) -> None:
     nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
     zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
