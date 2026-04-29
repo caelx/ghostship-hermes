@@ -1794,7 +1794,7 @@ def test_model_scoped_exhaustion_applies_model_cooldown() -> None:
     assert RouterService._should_apply_model_cooldown(exc) is True
 
 
-def test_all_candidates_bad_request_returns_client_error(tmp_path: Path) -> None:
+def test_all_candidates_bad_request_returns_failed_dependency(tmp_path: Path) -> None:
     zenmux = FakeProvider(
         "zenmux",
         models=[free_model("deepseek/deepseek-v4-pro-free", "zenmux")],
@@ -1830,4 +1830,4 @@ def test_all_candidates_bad_request_returns_client_error(tmp_path: Path) -> None
 
     response = client.post("/v1/chat/completions", json={"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello"}]})
 
-    assert response.status_code == 400
+    assert response.status_code == 424

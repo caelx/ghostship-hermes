@@ -375,13 +375,51 @@ class OpencodeZenProvider:
 
     @staticmethod
     def _normalize_chat_messages_for_model(backend_model: str, messages: Any) -> list[dict[str, Any]]:
-        normalized = [dict(message) for message in messages if isinstance(message, dict)]
+        normalized = [OpencodeZenProvider._normalize_chat_message_for_provider(message) for message in messages if isinstance(message, dict)]
         if not OpencodeZenProvider._is_deepseek_model(backend_model):
             return normalized
         for message in normalized:
             if message.get("role") == "assistant" and "reasoning_content" not in message:
                 message["reasoning_content"] = ""
         return normalized
+
+    @staticmethod
+    def _normalize_chat_message_for_provider(message: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(message)
+        if normalized.get("role") != "assistant" or not isinstance(normalized.get("tool_calls"), list):
+            return normalized
+
+        tool_calls: list[Any] = []
+        for raw_tool_call in normalized["tool_calls"]:
+            if not isinstance(raw_tool_call, dict):
+                tool_calls.append(raw_tool_call)
+                continue
+            tool_call = dict(raw_tool_call)
+            function = tool_call.get("function")
+            if isinstance(function, dict):
+                normalized_function = dict(function)
+                normalized_function["arguments"] = OpencodeZenProvider._json_object_arguments(normalized_function.get("arguments"))
+                tool_call["function"] = normalized_function
+            tool_calls.append(tool_call)
+        normalized["tool_calls"] = tool_calls
+        return normalized
+
+    @staticmethod
+    def _json_object_arguments(arguments: Any) -> str:
+        if isinstance(arguments, dict):
+            return json.dumps(arguments, separators=(",", ":"))
+        if not isinstance(arguments, str):
+            return "{}"
+        stripped = arguments.strip()
+        if not stripped:
+            return "{}"
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return "{}"
+        if not isinstance(parsed, dict):
+            return "{}"
+        return stripped
 
     @staticmethod
     def _is_deepseek_model(backend_model: str) -> bool:

@@ -196,6 +196,64 @@ def test_deepseek_tool_history_gets_reasoning_placeholder_for_opencode_thinking_
     assert messages[1]["reasoning_content"] == ""
 
 
+def test_assistant_tool_call_arguments_are_normalized_to_json_objects() -> None:
+    seen_body: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path not in {"/chat/completions", "/v1/chat/completions"}:
+            raise AssertionError(f"unexpected path: {request.url.path}")
+        seen_body.update(json.loads(request.content.decode()))
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "model": "minimax-m2.7",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            },
+        )
+
+    provider = OpencodeZenProvider("secret", base_url="https://opencode.example/v1", transport=make_transport(handler))
+    provider._family_cache["minimax-m2.7"] = "chat_completions"
+    provider.chat_completions(
+        "minimax-m2.7",
+        {
+            "messages": [
+                {"role": "user", "content": "call tools"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {"id": "call_empty", "type": "function", "function": {"name": "ping", "arguments": ""}},
+                        {"id": "call_bad", "type": "function", "function": {"name": "ping", "arguments": "not json"}},
+                        {"id": "call_list", "type": "function", "function": {"name": "ping", "arguments": "[]"}},
+                        {"id": "call_dict", "type": "function", "function": {"name": "ping", "arguments": {"ok": True}}},
+                        {"id": "call_good", "type": "function", "function": {"name": "ping", "arguments": "{\"name\":\"health\"}"}},
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call_empty", "content": "ok"},
+                {"role": "tool", "tool_call_id": "call_bad", "content": "ok"},
+                {"role": "tool", "tool_call_id": "call_list", "content": "ok"},
+                {"role": "tool", "tool_call_id": "call_dict", "content": "ok"},
+                {"role": "tool", "tool_call_id": "call_good", "content": "ok"},
+                {"role": "user", "content": "continue"},
+            ],
+            "tools": [{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}],
+        },
+    )
+
+    messages = seen_body["messages"]
+    assert isinstance(messages, list)
+    tool_calls = messages[1]["tool_calls"]
+    assert [tool_call["function"]["arguments"] for tool_call in tool_calls] == [
+        "{}",
+        "{}",
+        "{}",
+        "{\"ok\":true}",
+        "{\"name\":\"health\"}",
+    ]
+
+
 def test_deepseek_slash_model_gets_reasoning_placeholder_for_assistant_history() -> None:
     seen_body: dict[str, object] = {}
 

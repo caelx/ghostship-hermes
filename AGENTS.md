@@ -107,6 +107,8 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Default free-provider RPMs are NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20.
 - Candidate selection is RPM-weighted deficit round robin across eligible free equivalents, adjusted by shape-aware health and bounded free-provider timeouts, then `opencode-go/<same model id>` as paid fallback.
 - Router health must include Hermes request shape and message-count size; large `stream+tools+tool_history+reasoning` failures must not poison simple text traffic or other OpenCode Go fallback models.
+- Provider-origin route failures should surface as non-retryable `424`; reserve router `400` for local request validation failures before routing.
+- OpenCode-compatible providers need assistant tool-call history arguments normalized to JSON-object strings before upstream calls.
 - `opencode-go` is the canonical model catalog and paid fallback; it is never counted as a free provider.
 
 ### Packaging Split

@@ -940,9 +940,7 @@ class RouterService:
 
     @staticmethod
     def _status_code_for_attempt_failures(errors: list[dict[str, Any]]) -> int:
-        categories = [str(error.get("category") or "") for error in errors]
-        if any(category in {"bad_request", "tool_choice_unsupported"} for category in categories):
-            return 400
+        del errors
         return 424
 
     @classmethod
