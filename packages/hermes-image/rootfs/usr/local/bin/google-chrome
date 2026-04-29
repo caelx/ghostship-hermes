@@ -3,6 +3,7 @@ set -euo pipefail
 
 binary="/opt/ghostship/cloakbrowser-current/chrome"
 profile_root="/home/hermes/.local/state/cloakbrowser"
+session_profile_root="${profile_root}/agent-browser-sessions"
 python_bin="/opt/cloakbrowser-venv/bin/python"
 
 if [ ! -x "$binary" ]; then
@@ -17,6 +18,8 @@ fi
 
 mkdir -p "$profile_root"
 chmod 0750 "$profile_root" 2>/dev/null || true
+mkdir -p "$session_profile_root"
+chmod 0750 "$session_profile_root" 2>/dev/null || true
 
 mapfile -d '' -t stealth_args < <("$python_bin" - <<'PY'
 from cloakbrowser.config import get_default_stealth_args
@@ -28,4 +31,66 @@ for arg in get_default_stealth_args():
 PY
 )
 
-exec "$binary" "${stealth_args[@]}" "$@" "--user-data-dir=${profile_root}"
+map_user_data_dir() {
+  local requested="$1"
+  local base
+  case "$requested" in
+    /tmp/agent-browser-chrome-*)
+      base="$(basename "$requested")"
+      printf '%s/%s' "$session_profile_root" "$base"
+      ;;
+    *)
+      printf '%s' "$requested"
+      ;;
+  esac
+}
+
+args=()
+has_user_data_dir=false
+has_log_level=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --user-data-dir=*)
+      has_user_data_dir=true
+      args+=("--user-data-dir=$(map_user_data_dir "${1#--user-data-dir=}")")
+      shift
+      ;;
+    --user-data-dir)
+      has_user_data_dir=true
+      if [ "$#" -lt 2 ]; then
+        echo "--user-data-dir requires a value" >&2
+        exit 2
+      fi
+      args+=("--user-data-dir" "$(map_user_data_dir "$2")")
+      shift 2
+      ;;
+    --log-level=*)
+      has_log_level=true
+      args+=("$1")
+      shift
+      ;;
+    --log-level)
+      has_log_level=true
+      if [ "$#" -lt 2 ]; then
+        echo "--log-level requires a value" >&2
+        exit 2
+      fi
+      args+=("$1" "$2")
+      shift 2
+      ;;
+    *)
+      args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [ "$has_user_data_dir" = false ]; then
+  args+=("--user-data-dir=${profile_root}")
+fi
+
+if [ "$has_log_level" = false ]; then
+  args+=("--log-level=3")
+fi
+
+exec "$binary" "${stealth_args[@]}" "${args[@]}"

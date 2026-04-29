@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed the image-owned `google-chrome` CloakBrowser wrapper so agent-browser temp profile launches are mapped to per-session persisted profile directories instead of being forced into one shared profile that triggers Chromium `SingletonLock` aborts, and defaulted Chrome to quiet benign DBus stderr noise in headless containers.
 - Added sanitized router-level `route_exhausted` events for post-attempt failures where one or more candidates failed and remaining candidates were skipped, so live `424 Failed Dependency` responses explain both attempted providers and suppressed fallback reasons; bumped `ghostship-hermes-router` to `0.5.19`.
 - Added sanitized router-level `route_exhausted` events when no provider candidate is eligible, so fast `424 Failed Dependency` responses are visible through `/debug/route-events` with request shape, size bucket, attempted candidates, and skipped-candidate reasons; bumped `ghostship-hermes-router` to `0.5.18`.
 - Stopped force-marking all OpenCode-compatible free-provider lane models as free, so paid/credit-required ZenMux/OpenCode Zen/Electron Hub backend IDs are no longer attempted before real `:free`/`-free` or zero-cost equivalents; bumped `ghostship-hermes-router` to `0.5.17`.

@@ -252,4 +252,4 @@ These commands are expected to exist in the image without downstream installatio
 
 For the Nix-backed defaults, the image guarantees them through the managed profile at `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin`, not through raw `/opt/ghostship/bin -> /nix/store/...` symlinks.
 
-The image exposes native CloakBrowser as the standard `google-chrome` binary that `agent-browser` already probes on Linux, so Hermes' stock local browser path launches it without an executable-path override. The persistent browser profile root is `/home/hermes/.local/state/cloakbrowser`.
+The image exposes native CloakBrowser as the standard `google-chrome` binary that `agent-browser` already probes on Linux, so Hermes' stock local browser path launches it without an executable-path override. The persistent browser profile root is `/home/hermes/.local/state/cloakbrowser`; agent-browser temp profile launches are mapped into per-session directories below that root to avoid shared-profile `SingletonLock` failures.

@@ -194,7 +194,7 @@ Default image behavior:
 - Hermes/runtime-required Linux tools ship in the image.
 - The old service-specific `ghostship-*` CLI layer is retired from the image.
 - The operator utility bundle ships as an image-managed Nix default profile exported from the Ghostship-specific final image phase and reconciled into persisted `/nix` on every boot.
-- native CloakBrowser ships in the image and is exposed as the standard `google-chrome` binary that `agent-browser` already probes on Linux, with the persistent browser profile rooted at `/home/hermes/.local/state/cloakbrowser`.
+- native CloakBrowser ships in the image and is exposed as the standard `google-chrome` binary that `agent-browser` already probes on Linux, with the default persistent browser profile rooted at `/home/hermes/.local/state/cloakbrowser`.
 - Node-native agent tools ship through npm in persisted home state.
 - Nix stays available for extra downstream or Hermes-installed packages through `/home/hermes/.nix-profile/bin` on top of the image-managed defaults.
 - bundled upstream Hermes skills are seeded into `/home/hermes/.hermes/skills` on boot without overwriting downstream custom skills that already exist there.
@@ -206,7 +206,7 @@ Current preinstalled npm tools:
 - `agent-browser`
 - `opencode`
 
-Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. The image also sets `AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser` internally so `agent-browser` reuses the persistent CloakBrowser profile instead of switching to a temp launch directory.
+Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. The image also sets `AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser` internally. When agent-browser still supplies a temp launch directory, the wrapper maps it to a per-session directory under the persisted CloakBrowser root instead of forcing every launch into the same locked profile.
 
 Known upstream caveat:
 
