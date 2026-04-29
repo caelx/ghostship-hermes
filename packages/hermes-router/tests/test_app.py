@@ -385,6 +385,31 @@ def test_models_endpoint_exposes_only_opencode_go_ids_with_free_equivalents(tmp_
     assert deepseek["free_provider_state"]["nvidia-build"]["rpm_limit"] == 30
 
 
+def test_model_retrieval_endpoint_returns_served_model_card(tmp_path: Path) -> None:
+    service = make_service(
+        tmp_path,
+        providers={
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
+            "opencode-go": FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")]),
+        },
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    response = client.get("/v1/models/deepseek-v4-pro")
+    api_alias = client.get("/api/v1/models")
+    missing = client.get("/v1/models/not-served")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == "deepseek-v4-pro"
+    assert payload["object"] == "model"
+    assert payload["metadata"]["free_provider_count"] == 1
+    assert api_alias.status_code == 200
+    assert [item["id"] for item in api_alias.json()["data"]] == ["deepseek-v4-pro"]
+    assert missing.status_code == 404
+    assert "not-served" in missing.json()["error"]["message"]
+
+
 def test_deepseek_routes_free_equivalents_before_opencode_go_fallback(tmp_path: Path) -> None:
     service = make_service(
         tmp_path,

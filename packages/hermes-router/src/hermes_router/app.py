@@ -95,11 +95,24 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
 
     @app.get("/models")
     @app.get("/v1/models")
+    @app.get("/api/v1/models")
     def list_models(request: Request):
         if not _authorized(request, resolved_config):
             return JSONResponse(_openai_error("Invalid API key", code="invalid_api_key"), status_code=401)
         try:
             return resolved_service.list_models()
+        except RouterServiceError as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+            return JSONResponse(_openai_error(str(detail.get("message", exc.detail))), status_code=exc.status_code)
+
+    @app.get("/models/{model_id:path}")
+    @app.get("/v1/models/{model_id:path}")
+    @app.get("/api/v1/models/{model_id:path}")
+    def retrieve_model(model_id: str, request: Request):
+        if not _authorized(request, resolved_config):
+            return JSONResponse(_openai_error("Invalid API key", code="invalid_api_key"), status_code=401)
+        try:
+            return resolved_service.get_model(model_id)
         except RouterServiceError as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
             return JSONResponse(_openai_error(str(detail.get("message", exc.detail))), status_code=exc.status_code)

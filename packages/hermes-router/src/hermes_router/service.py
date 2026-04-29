@@ -172,6 +172,12 @@ class RouterService:
             )
         return ModelsResponse(data=alias_cards)
 
+    def get_model(self, model_id: str) -> ModelCard:
+        for model in self.list_models().data:
+            if model.id == model_id:
+                return model
+        raise RouterServiceError(404, {"message": f"Model '{model_id}' is not available."})
+
     def _free_provider_names_for_served_model(self, served_model_id: str) -> tuple[str, ...]:
         providers: list[str] = []
         for model in self._free_equivalent_models(served_model_id):
