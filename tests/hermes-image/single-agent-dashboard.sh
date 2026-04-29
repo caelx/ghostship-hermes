@@ -51,7 +51,7 @@ dump_failure_state() {
   "$container_engine" logs "$container_name" >&2 || true
 
   echo "===== browser profile tree =====" >&2
-  "$container_engine" exec "$container_name" /bin/sh -lc "find /home/hermes/.local/state/cloakbrowser -maxdepth 2 -printf '%u:%g %y %p -> %l\\n' 2>/dev/null | sed -n '1,80p'" >&2 || true
+  "$container_engine" exec "$container_name" /bin/sh -lc "find /home/hermes/.local/state/cloakbrowser -maxdepth 4 -printf '%u:%g %y %p -> %l\\n' 2>/dev/null | sed -n '1,120p'" >&2 || true
   echo >&2
 
   echo "===== non-hermes owned paths =====" >&2
@@ -160,6 +160,195 @@ with sync_playwright() as playwright:
         assert value == "warm", value
     finally:
         context.close()
+PY
+}
+
+run_browser_adblock_probe() {
+  local target_container="$1"
+
+  "$container_engine" exec -i --user 3000:3000 \
+    --env HOME=/home/hermes \
+    --env HERMES_HOME=/home/hermes/.hermes \
+    --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults \
+    --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    "$target_container" /usr/bin/timeout 180s /opt/cloakbrowser-venv/bin/python - <<'PY'
+from pathlib import Path
+import shutil
+import time
+
+from playwright.sync_api import sync_playwright
+
+extension_id = "ddkjiahejlhfcafbddmgiahcphecmpfh"
+profile_root = Path("/home/hermes/.local/state/cloakbrowser")
+control_profile = Path("/tmp/ghostship-cloakbrowser-control")
+ad_test_url = "https://canyoublockit.com/extreme-test/"
+ad_probe_urls = [
+    "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js",
+    "https://securepubads.g.doubleclick.net/tag/js/gpt.js",
+    "https://www.googletagservices.com/tag/js/gpt.js",
+    "https://googleads.g.doubleclick.net/pagead/id",
+]
+policy_names = [
+    "ExtensionSettings",
+    "DefaultNotificationsSetting",
+    "DefaultGeolocationSetting",
+    "DefaultPopupsSetting",
+    "DefaultClipboardSetting",
+    "DefaultSensorsSetting",
+    "DefaultAutomaticDownloadsSetting",
+    "AudioCaptureAllowed",
+    "VideoCaptureAllowed",
+    "ScreenCaptureAllowed",
+    "DefaultSerialGuardSetting",
+    "DefaultWebUsbGuardSetting",
+    "DefaultWebBluetoothGuardSetting",
+    "DefaultWebHidGuardSetting",
+    "AutoplayAllowed",
+    "FullscreenAllowed",
+    "EnableMediaRouter",
+    "BackgroundModeEnabled",
+    "PromotionalTabsEnabled",
+    "PaymentMethodQueryEnabled",
+]
+ad_markers = (
+    "pagead2.googlesyndication.com",
+    "securepubads.g.doubleclick.net",
+    "googletagservices.com",
+    "googleads.g.doubleclick.net",
+    "doubleclick.net",
+    "googlesyndication.com",
+)
+
+
+def extension_path(root: Path) -> Path:
+    return root / "Default" / "Extensions" / extension_id
+
+
+def launch(playwright, root: Path, extra_args=None):
+    root.mkdir(parents=True, exist_ok=True)
+    args = ["--disable-dev-shm-usage", "--no-sandbox"]
+    if extra_args:
+        args.extend(extra_args)
+    return playwright.chromium.launch_persistent_context(
+        str(root),
+        executable_path="/usr/local/bin/google-chrome",
+        headless=True,
+        args=args,
+    )
+
+
+def assert_policy_visible(page):
+    page.goto("chrome://policy/", wait_until="domcontentloaded", timeout=30_000)
+    page.wait_for_function(
+        "() => document.body && document.body.innerText.includes('ExtensionSettings')",
+        timeout=15_000,
+    )
+    text = page.locator("body").inner_text(timeout=5_000)
+    missing = [name for name in policy_names if name not in text]
+    assert not missing, f"managed policies missing from chrome://policy: {missing}"
+    assert extension_id in text, "uBlock Origin Lite extension id missing from chrome://policy"
+
+
+def wait_for_extension_install(playwright):
+    deadline = time.monotonic() + 90
+    last_error = None
+    while time.monotonic() < deadline:
+        context = launch(playwright, profile_root)
+        try:
+            page = context.pages[0] if context.pages else context.new_page()
+            try:
+                assert_policy_visible(page)
+            except Exception as exc:  # chrome://policy can lag on the first launch.
+                last_error = exc
+            page.goto("https://example.com/", wait_until="domcontentloaded", timeout=30_000)
+            page.wait_for_timeout(2_000)
+        finally:
+            context.close()
+        if extension_path(profile_root).is_dir():
+            return
+        time.sleep(2)
+    raise AssertionError(f"{extension_id} was not installed by managed policy; last policy error: {last_error}")
+
+
+def browse_and_probe(playwright, root: Path, extra_args=None):
+    blocked = []
+    failed = []
+    requested = []
+    context = launch(playwright, root, extra_args=extra_args)
+    try:
+        page = context.pages[0] if context.pages else context.new_page()
+
+        def is_ad_url(url: str) -> bool:
+            return any(marker in url for marker in ad_markers)
+
+        def on_request(request):
+            if is_ad_url(request.url):
+                requested.append(request.url)
+
+        def on_request_failed(request):
+            if not is_ad_url(request.url):
+                return
+            failure = request.failure or ""
+            failed.append((request.url, failure))
+            if "ERR_BLOCKED_BY_CLIENT" in failure:
+                blocked.append(request.url)
+
+        page.on("request", on_request)
+        page.on("requestfailed", on_request_failed)
+        page.goto(ad_test_url, wait_until="domcontentloaded", timeout=45_000)
+        page.wait_for_timeout(5_000)
+        page.evaluate(
+            """async urls => {
+                await Promise.all(urls.map(url => new Promise(resolve => {
+                    const script = document.createElement('script');
+                    script.src = `${url}${url.includes('?') ? '&' : '?'}ghostshipSmoke=${Date.now()}`;
+                    script.onload = () => resolve();
+                    script.onerror = () => resolve();
+                    document.head.appendChild(script);
+                    setTimeout(resolve, 6000);
+                })));
+            }""",
+            ad_probe_urls,
+        )
+        page.wait_for_timeout(3_000)
+    finally:
+        context.close()
+    return requested, failed, blocked
+
+
+profile_root.mkdir(parents=True, exist_ok=True)
+if control_profile.exists():
+    shutil.rmtree(control_profile)
+
+with sync_playwright() as playwright:
+    wait_for_extension_install(playwright)
+
+    managed_context = launch(playwright, profile_root)
+    try:
+        policy_page = managed_context.pages[0] if managed_context.pages else managed_context.new_page()
+        assert_policy_visible(policy_page)
+    finally:
+        managed_context.close()
+
+    requested, failed, blocked = browse_and_probe(playwright, profile_root)
+    control_requested, control_failed, control_blocked = browse_and_probe(
+        playwright,
+        control_profile,
+        extra_args=["--disable-extensions"],
+    )
+
+assert requested, "ad test page/probe made no recognized ad-network requests"
+assert control_requested, "extension-disabled control made no recognized ad-network requests"
+assert len(set(blocked)) >= 2, {
+    "requested": requested,
+    "failed": failed,
+    "blocked": blocked,
+}
+assert not control_blocked, {
+    "control_requested": control_requested,
+    "control_failed": control_failed,
+    "control_blocked": control_blocked,
+}
 PY
 }
 
@@ -314,6 +503,10 @@ smoke_note "native browser persistence"
 run_browser_profile_probe "$container_name" write
 run_in_container "$container_name" 'test -d /home/hermes/.local/state/cloakbrowser'
 run_in_container "$container_name" 'command -v google-chrome >/dev/null'
+run_in_container "$container_name" 'test -f /etc/opt/chrome/policies/managed/ghostship-agent-browser.json'
+run_in_container "$container_name" 'test -f /etc/chromium/policies/managed/ghostship-agent-browser.json'
+smoke_note "native browser ad blocking"
+run_browser_adblock_probe "$container_name"
 smoke_note "home ownership"
 run_in_container "$container_name" 'test -z "$(find /home/hermes \! -user hermes -print -quit)"'
 smoke_note "memory plugin import"

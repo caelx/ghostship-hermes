@@ -437,7 +437,7 @@ Current baked operator utilities:
 - `uv`
 - `yq`
 
-The image bakes native CloakBrowser into `/opt/ghostship` and exposes it as the standard `google-chrome` binary that `agent-browser` already probes on Linux, so Hermes keeps using the stock local Chrome lane without an executable-path override. The `google-chrome` wrapper injects CloakBrowser's default stealth args, uses `/home/hermes/.local/state/cloakbrowser` when raw Chrome callers omit a profile, and preserves explicit `agent-browser` profile paths so native `agent-browser --session` isolation works as intended.
+The image bakes native CloakBrowser into `/opt/ghostship` and exposes it as the standard `google-chrome` binary that `agent-browser` already probes on Linux, so Hermes keeps using the stock local Chrome lane without an executable-path override. The `google-chrome` wrapper injects CloakBrowser's default stealth args, uses `/home/hermes/.local/state/cloakbrowser` when raw Chrome callers omit a profile, and preserves explicit `agent-browser` profile paths so native `agent-browser --session` isolation works as intended. Managed Chrome/Chromium policy force-installs uBlock Origin Lite for CloakBrowser and blocks common permission prompts for agent browsing.
 
 Bundled upstream Hermes skills are seeded into `/home/hermes/.hermes/skills` from the image on boot, but seeding is file-granular. Existing downstream custom skills are preserved, and only missing default skill files are added.
 

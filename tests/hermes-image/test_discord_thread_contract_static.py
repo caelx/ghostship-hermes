@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -91,6 +92,75 @@ def test_chrome_wrapper_does_not_force_all_launches_into_one_profile() -> None:
     assert 'map_user_data_dir' not in chrome
     assert 'args+=("--user-data-dir=$(map_user_data_dir "${1#--user-data-dir=}")")' not in chrome
     assert 'exec "$binary" "${stealth_args[@]}" "$@" "--user-data-dir=${profile_root}"' not in chrome
+
+
+def test_cloakbrowser_managed_policy_installs_ublock_origin_lite() -> None:
+    extension_id = "ddkjiahejlhfcafbddmgiahcphecmpfh"
+    policy_paths = (
+        "packages/hermes-image/rootfs/etc/opt/chrome/policies/managed/ghostship-agent-browser.json",
+        "packages/hermes-image/rootfs/etc/chromium/policies/managed/ghostship-agent-browser.json",
+    )
+    integer_policies = {
+        "DefaultNotificationsSetting": 2,
+        "DefaultGeolocationSetting": 2,
+        "DefaultPopupsSetting": 2,
+        "DefaultClipboardSetting": 2,
+        "DefaultSensorsSetting": 2,
+        "DefaultAutomaticDownloadsSetting": 2,
+        "DefaultSerialGuardSetting": 2,
+        "DefaultWebUsbGuardSetting": 2,
+        "DefaultWebBluetoothGuardSetting": 2,
+        "DefaultWebHidGuardSetting": 2,
+    }
+    boolean_policies = {
+        "AudioCaptureAllowed": False,
+        "VideoCaptureAllowed": False,
+        "ScreenCaptureAllowed": False,
+        "AutoplayAllowed": False,
+        "FullscreenAllowed": False,
+        "EnableMediaRouter": False,
+        "BackgroundModeEnabled": False,
+        "PromotionalTabsEnabled": False,
+        "PaymentMethodQueryEnabled": False,
+    }
+
+    policies = [json.loads(read(path)) for path in policy_paths]
+    assert policies[0] == policies[1]
+
+    policy = policies[0]
+    extension = policy["ExtensionSettings"][extension_id]
+    assert extension == {
+        "installation_mode": "force_installed",
+        "update_url": "https://clients2.google.com/service/update2/crx",
+        "toolbar_pin": "force_pinned",
+    }
+    for key, value in integer_policies.items():
+        assert policy[key] == value
+    for key, value in boolean_policies.items():
+        assert policy[key] is value
+
+    ubol_policy = policy["3rdparty"]["extensions"][extension_id]
+    assert ubol_policy["disableFirstRunPage"] is True
+    assert ubol_policy["defaultFiltering"] == "complete"
+    assert ubol_policy["showBlockedCount"] is True
+    assert ubol_policy["strictBlockMode"] is True
+    assert ubol_policy["disabledFeatures"] == ["develop"]
+    assert ubol_policy["rulesets"] == [
+        "-*",
+        "+default",
+        "+ublock-badware",
+        "+urlhaus-full",
+        "+adguard-spyware-url",
+        "-block-lan",
+        "-adguard-mobile",
+        "+annoyances-ai",
+        "+annoyances-cookies",
+        "+annoyances-notifications",
+        "+annoyances-others",
+        "+annoyances-overlays",
+        "+annoyances-social",
+        "+annoyances-widgets",
+    ]
 
 
 def test_downstream_discord_snowflake_ids_are_not_committed() -> None:
