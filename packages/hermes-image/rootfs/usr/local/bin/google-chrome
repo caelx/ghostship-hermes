@@ -102,6 +102,12 @@ if [ "$has_no_sandbox" = false ]; then
 fi
 
 if [ "$has_extension_arg" = true ]; then
+  shopt -s nullglob
+  extension_binaries=(/opt/ghostship/cloakbrowser-cache/chromium-*/chrome)
+  shopt -u nullglob
+  if [ "${#extension_binaries[@]}" -gt 0 ] && [ -x "${extension_binaries[0]}" ]; then
+    exec "${extension_binaries[0]}" "${args[@]}"
+  fi
   exec "$binary" "${args[@]}"
 fi
 

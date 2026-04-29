@@ -91,7 +91,8 @@ def test_chrome_wrapper_does_not_force_all_launches_into_one_profile() -> None:
     assert 'args+=("--no-sandbox")' in chrome
     assert "has_extension_arg=true" in chrome
     assert 'if [ "$has_extension_arg" = true ]; then' in chrome
-    assert 'exec "$binary" "${args[@]}"' in chrome
+    assert "extension_binaries=(/opt/ghostship/cloakbrowser-cache/chromium-*/chrome)" in chrome
+    assert 'exec "${extension_binaries[0]}" "${args[@]}"' in chrome
     assert "--disable-extensions)" not in chrome
     assert "GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS" not in chrome
     assert "AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser" not in dockerfile
