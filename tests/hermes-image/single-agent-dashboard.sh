@@ -196,13 +196,26 @@ ad_markers = (
 
 
 def run_agent_browser(session, args, env):
-    completed = subprocess.run(
-        ["agent-browser", "--session", session, *args],
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        completed = subprocess.run(
+            ["agent-browser", "--session", session, *args],
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(
+            "agent-browser timed out\n"
+            f"session={session}\n"
+            f"args={args}\n"
+            f"stdout={exc.stdout or ''}\n"
+            f"stderr={exc.stderr or ''}\n"
+            f"AGENT_BROWSER_EXTENSIONS={env.get('AGENT_BROWSER_EXTENSIONS', '')}\n"
+            f"AGENT_BROWSER_ARGS={env.get('AGENT_BROWSER_ARGS', '')}\n"
+            f"DISPLAY={env.get('DISPLAY', '')}\n"
+        ) from exc
     if completed.returncode != 0:
         raise AssertionError(
             "agent-browser failed\n"
@@ -227,7 +240,7 @@ def close_session(session, env):
 
 def launch_agent_browser(session, env):
     close_session(session, env)
-    run_agent_browser(session, ["open", ad_test_url], env)
+    run_agent_browser(session, ["open", "about:blank"], env)
     cdp_url = run_agent_browser(session, ["get", "cdp-url"], env).splitlines()[-1]
     assert cdp_url, f"agent-browser returned empty CDP URL for {session}"
     return cdp_url
