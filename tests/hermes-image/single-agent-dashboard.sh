@@ -485,7 +485,6 @@ run_in_container "$container_name" "grep -Fx \"AGENT_BROWSER_ARGS='--no-sandbox'
 run_in_container "$container_name" '! grep -q "^AGENT_BROWSER_PROFILE=" /run/ghostship/hermes.env'
 run_in_container "$container_name" 'test -f /opt/ghostship/extensions/ublock-origin-lite/manifest.json'
 run_in_container "$container_name" 'test -f /opt/ghostship/extensions/ublock-origin-lite/managed_storage.json'
-run_in_container "$container_name" 'test -f /opt/ghostship/extensions/ublock-origin-lite.extension-id'
 run_in_container "$container_name" '! find /etc -path "*/policies/managed/*.json" -print -quit | grep -q .'
 run_in_container "$container_name" '/opt/cloakbrowser-venv/bin/python - <<'\''PY'\''
 import json
@@ -494,7 +493,7 @@ from pathlib import Path
 extension = Path("/opt/ghostship/extensions/ublock-origin-lite")
 manifest = json.loads((extension / "manifest.json").read_text(encoding="utf-8"))
 assert manifest["version"] == "2026.426.1626"
-assert manifest["key"]
+assert "key" not in manifest
 enabled = [
     ruleset["id"]
     for ruleset in manifest["declarative_net_request"]["rule_resources"]

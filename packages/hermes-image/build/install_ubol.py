@@ -2,26 +2,10 @@
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
 import json
 import shutil
 from pathlib import Path
 
-
-UBOL_MANIFEST_KEY = (
-    "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp/MSGg4v7Hu7nTUgWcxphFKUqUbghGuuflP0qxbAgT1vwp67s3/"
-    "ZR1Rd4RbrB1fzq4V6725eD5rX/bx6qooObsNe4UgNzWwHzwH1/Q/1cSC8Exdv8qkqooTL/WqjwWoe+WfRo4XaPHQqVCmb/"
-    "ttkdDs6MEJXPYvk0ueNOKaApOG2mDhx5/uP1/cJ0UlNdI0cGMaalfWcQX/cIoq0abJVKyKTk76i9zXQWluuhScaYNSY1aISOlIAuQlpJZywP/"
-    "ttMu8HtEfedbusb1qtLiBb/n30MZnbzyRg5iW8arOl6tvh9RIZkQYHtWK5szAuXm825ESX89RiB72+Cj8K86LHXQIDAQAB"
-)
-
-def extension_id_from_key(key: str) -> str:
-    digest = hashlib.sha256(base64.b64decode(key)).digest()[:16]
-    return "".join(chr(ord("a") + (byte >> 4)) + chr(ord("a") + (byte & 15)) for byte in digest)
-
-
-UBOL_EXTENSION_ID = extension_id_from_key(UBOL_MANIFEST_KEY)
 
 UBOL_DEFAULT_RULESETS = [
     "ublock-filters",
@@ -49,7 +33,6 @@ def js_array(values: list[str]) -> str:
 def patch_manifest(target_dir: Path) -> None:
     manifest_path = target_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["key"] = UBOL_MANIFEST_KEY
 
     enabled_ids = set(UBOL_DEFAULT_RULESETS)
     rulesets = manifest["declarative_net_request"]["rule_resources"]
@@ -107,7 +90,6 @@ def install_extension(source_dir: Path, target_dir: Path) -> None:
 
     if not (target_dir / "managed_storage.json").is_file():
         raise FileNotFoundError(target_dir / "managed_storage.json")
-    (target_dir.with_suffix(".extension-id")).write_text(UBOL_EXTENSION_ID + "\n", encoding="utf-8")
 
 
 def main() -> None:

@@ -116,8 +116,8 @@ def test_ublock_origin_lite_is_loaded_by_agent_browser_extension_env() -> None:
     assert "ghostship-agent-browser.json" not in dockerfile
     assert "ghostship-ubol-settings.json" not in dockerfile
 
-    assert helper.UBOL_EXTENSION_ID == "bfpkagngpehfhmefokecpdmakpacpfac"
-    assert helper.UBOL_EXTENSION_ID == helper.extension_id_from_key(helper.UBOL_MANIFEST_KEY)
+    assert "manifest[\"key\"]" not in helper_path.read_text(encoding="utf-8")
+    assert "UBOL_MANIFEST_KEY" not in helper_path.read_text(encoding="utf-8")
     assert helper.UBOL_DEFAULT_RULESETS == [
         "ublock-filters",
         "easylist",

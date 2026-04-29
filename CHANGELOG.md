@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Switched CloakBrowser ad blocking to a pinned unpacked uBlock Origin Lite loaded through `AGENT_BROWSER_EXTENSIONS`, patched its baked defaults for complete filtering plus the major default/privacy/security/annoyance rulesets, removed the old managed Chrome/Chromium force-install policy, and smoke-test real ad-network blocking against an extension-free control.
+- Fixed the baked uBlock Origin Lite install to avoid injecting an unpacked-extension manifest key that prevents CloakBrowser/Chrome from reaching CDP startup.
 - Changed the managed Hermes/router primary model to `deepseek-v4-flash` and fallback model to `kimi-k2.6`, including persisted-home config convergence and router default aliases.
 - Fixed CloakBrowser session isolation by removing the image-wide `AGENT_BROWSER_PROFILE` default and preserving explicit Chrome profile paths so native `agent-browser --session` isolation is not collapsed into one shared Chromium profile.
 - Added OpenAI-compatible router model retrieval endpoints (`/v1/models/{model}` and `/api/v1/models`) so Hermes/Discord model probes no longer log misleading 404s for served router model IDs; bumped `ghostship-hermes-router` to `0.5.20`.

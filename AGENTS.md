@@ -78,6 +78,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Install high-backtracking upstream Hermes extras in the Dockerfile with `uv pip` plus constraints; broad messaging, matrix, Daytona, OpenTelemetry, Alibaba/DingTalk, Mistral, and related ranges can make pip hit `resolution-too-deep` before it finds valid leaves.
 - Do not install upstream Hermes in the Dockerfile base stage; the final stage owns the repo-patched Hermes install, and duplicating it doubles resolver/build exposure.
 - Build `tirith` from the repo flake's pinned `.#tirith` package, not from ad-hoc `nixpkgs#tirith`, so exact-source Docker builds stay deterministic and do not depend on live `nixpkgs-unstable` GitHub API lookups.
+- Do not inject a manifest `key` into baked uBO Lite; CloakBrowser/Chrome can hang before `DevToolsActivePort` when the unpacked extension has that key.
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
 - The managed Hermes runtime primary lane is `custom:ghostship-router/deepseek-v4-flash`, fallback is `custom:ghostship-router/kimi-k2.6`, and managed agent defaults are `reasoning_effort = "high"` and `max_turns = 500`.
 - The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Higher-level Bitwarden workflow helpers are model-authored, not image-owned.
