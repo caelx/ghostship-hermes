@@ -61,6 +61,12 @@ while [ "$#" -gt 0 ]; do
       args+=("$1" "$2")
       shift 2
       ;;
+    --disable-extensions|--disable-extensions=*)
+      if [ "${GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS:-}" = true ]; then
+        args+=("$1")
+      fi
+      shift
+      ;;
     *)
       args+=("$1")
       shift

@@ -67,6 +67,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Hermes browser tools should use the stock local `agent-browser` lane by exposing native CloakBrowser as the standard `google-chrome` binary that `agent-browser` already probes on Linux.
 - Build-time image prep must install native CloakBrowser under `/opt/ghostship` and prefetch its browser binary so runtime launches do not depend on first-boot network access.
 - The wrapper at `/usr/local/bin/google-chrome` must inject CloakBrowser's default stealth args on each launch, default raw Chrome calls to `/home/hermes/.local/state/cloakbrowser` only when callers omit `--user-data-dir`, preserve explicit `--user-data-dir` values, and default Chrome to `--log-level=3` unless the caller supplies a log level.
+- The wrapper must drop `--disable-extensions` by default so managed uBlock Origin Lite policy still applies even when browser automation supplies extension-disabling Chromium defaults.
 - Do not set image-wide `AGENT_BROWSER_PROFILE` or wrap `agent-browser`; native `agent-browser --session` must control its own profile/session behavior.
 - Fresh homes must pre-create `/home/hermes/.local/state/cloakbrowser` as `hermes`; browser launches must not leave root-owned state behind in that tree.
 - Managed Chrome/Chromium policy must force-install uBlock Origin Lite for CloakBrowser and smoke-test actual ad-network blocking, not just extension installation.

@@ -173,6 +173,7 @@ run_browser_adblock_probe() {
     --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     "$target_container" /usr/bin/timeout 180s /opt/cloakbrowser-venv/bin/python - <<'PY'
 from pathlib import Path
+import os
 import shutil
 import time
 
@@ -224,17 +225,28 @@ def extension_path(root: Path) -> Path:
     return root / "Default" / "Extensions" / extension_id
 
 
-def launch(playwright, root: Path, extra_args=None):
+def launch(playwright, root: Path, extra_args=None, allow_disable_extensions=False):
     root.mkdir(parents=True, exist_ok=True)
     args = ["--disable-dev-shm-usage", "--no-sandbox"]
     if extra_args:
         args.extend(extra_args)
-    return playwright.chromium.launch_persistent_context(
-        str(root),
-        executable_path="/usr/local/bin/google-chrome",
-        headless=True,
-        args=args,
-    )
+    old_allow = os.environ.get("GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS")
+    if allow_disable_extensions:
+        os.environ["GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS"] = "true"
+    else:
+        os.environ.pop("GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS", None)
+    try:
+        return playwright.chromium.launch_persistent_context(
+            str(root),
+            executable_path="/usr/local/bin/google-chrome",
+            headless=True,
+            args=args,
+        )
+    finally:
+        if old_allow is None:
+            os.environ.pop("GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS", None)
+        else:
+            os.environ["GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS"] = old_allow
 
 
 def assert_policy_visible(page):
@@ -270,11 +282,16 @@ def wait_for_extension_install(playwright):
     raise AssertionError(f"{extension_id} was not installed by managed policy; last policy error: {last_error}")
 
 
-def browse_and_probe(playwright, root: Path, extra_args=None):
+def browse_and_probe(playwright, root: Path, extra_args=None, allow_disable_extensions=False):
     blocked = []
     failed = []
     requested = []
-    context = launch(playwright, root, extra_args=extra_args)
+    context = launch(
+        playwright,
+        root,
+        extra_args=extra_args,
+        allow_disable_extensions=allow_disable_extensions,
+    )
     try:
         page = context.pages[0] if context.pages else context.new_page()
 
@@ -335,6 +352,7 @@ with sync_playwright() as playwright:
         playwright,
         control_profile,
         extra_args=["--disable-extensions"],
+        allow_disable_extensions=True,
     )
 
 assert requested, "ad test page/probe made no recognized ad-network requests"
