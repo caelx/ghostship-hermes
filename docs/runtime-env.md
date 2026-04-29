@@ -32,9 +32,6 @@ These are internal image-owned variables. They are already set in the image, and
 - `GHOSTSHIP_WEB_PORT=7681`
 - `GHOSTSHIP_DASHBOARD_HOST=127.0.0.1`
 - `GHOSTSHIP_DASHBOARD_PORT=9119`
-- `GHOSTSHIP_ROUTER_HOST=127.0.0.1`
-- `GHOSTSHIP_ROUTER_PORT=8788`
-- `GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1`
 - `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
 - `DISCORD_REACTIONS=false`
 - `DISCORD_REQUIRE_MENTION=false`
@@ -48,7 +45,7 @@ These variables are internal because they define:
 - the canonical persisted home layout
 - the XDG layout under `/home/hermes`
 - where npm/cargo/rustup write mutable userland state
-- the internal dashboard/router/ttyd topology
+- the internal dashboard/ttyd topology
 
 Downstream override of any of these values is unsupported.
 
@@ -60,7 +57,6 @@ The image also bakes a PATH that prefers:
 - `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin`
 - `/opt/ghostship/bin`
 - `/opt/hermes/venv/bin`
-- `/opt/ghostship-router/venv/bin`
 
 Notes:
 
@@ -84,9 +80,6 @@ Do not set these in downstream runtime env:
 - `GHOSTSHIP_WEB_PORT`
 - `GHOSTSHIP_DASHBOARD_HOST`
 - `GHOSTSHIP_DASHBOARD_PORT`
-- `GHOSTSHIP_ROUTER_HOST`
-- `GHOSTSHIP_ROUTER_PORT`
-- `GHOSTSHIP_ROUTER_URL`
 - `GHOSTSHIP_NIX_DEFAULT_PROFILE`
 - `GHOSTSHIP_TTYD_SOCKET`
 - `GHOSTSHIP_TTYD_BASE_PATH`
@@ -103,21 +96,9 @@ These provider credentials should be present for the default Ghostship runtime:
 - `OPENCODE_GO_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
 
-The local router can additionally use any configured provider credential:
-
-- `NVIDIA_BUILD_API_KEY`
-- `OPENCODE_ZEN_API_KEY` or legacy `OPENCODE_API_KEY`
-- `ZENMUX_API_KEY`
-- `ELECTRON_HUB_API_KEY`
-- `OPENROUTER_API_KEY`
-
 Notes:
 
-- `NVIDIA_BUILD_API_KEY` enables free NVIDIA Build equivalents in the local router.
-- `OPENCODE_ZEN_API_KEY`, `ZENMUX_API_KEY`, `ELECTRON_HUB_API_KEY`, and `OPENROUTER_API_KEY` enable explicit free-provider equivalents when they are seeded for the requested OpenCode Go model id.
-- `OPENCODE_GO_API_KEY` backs the router paid fallback lane for exposed OpenCode Go model IDs.
-- Router free-provider RPM defaults are NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20; override them with `GHOSTSHIP_ROUTER_PROVIDER_RPM_*` env vars.
-- Router free-provider attempts default to a 10s non-stream timeout, 8s streaming first-byte timeout, and 24s total free-provider budget before same-model OpenCode Go fallback; override with `GHOSTSHIP_ROUTER_FREE_ATTEMPT_TIMEOUT_SECONDS`, `GHOSTSHIP_ROUTER_FREE_STREAM_FIRST_BYTE_TIMEOUT_SECONDS`, `GHOSTSHIP_ROUTER_FREE_TOTAL_BUDGET_SECONDS`, and `GHOSTSHIP_ROUTER_FALLBACK_TIMEOUT_SECONDS`. Large Hermes `stream+tools+tool_history+reasoning` requests use `GHOSTSHIP_ROUTER_PRIMARY_SERVED_MODEL` / `GHOSTSHIP_ROUTER_FALLBACK_SERVED_MODEL` plus `GHOSTSHIP_ROUTER_OPENCODE_GO_LARGE_TOOL_HISTORY_PRIMARY_TIMEOUT_SECONDS` and `GHOSTSHIP_ROUTER_OPENCODE_GO_LARGE_TOOL_HISTORY_FALLBACK_TIMEOUT_SECONDS` to fail unhealthy primary routes quickly while allowing the configured fallback longer to complete.
+- `OPENCODE_GO_API_KEY` backs the direct `opencode-go/deepseek-v4-flash` primary and `opencode-go/kimi-k2.6` fallback.
 - `GOOGLE_AI_STUDIO_API_KEY` is required because the runtime uses Gemini-backed supplemental tasks.
 - Codex auth is not an env var; it is persisted in `/home/hermes/.hermes/auth.json` for the forced Codex channel.
 
@@ -201,18 +182,6 @@ The old image-baked service CLIs are retired, but the env contract remains avail
 - `CHAPTARR_API_KEY`
 - `N8N_URL`
 - `N8N_API_KEY`
-
-### Internal Runtime Env
-
-These are internal image-owned or boot-generated variables. Downstream must not set them.
-
-- `_GHOSTSHIP_ROUTER_API_KEY`
-
-Notes:
-
-- `_GHOSTSHIP_ROUTER_API_KEY` is optional router auth.
-- the image may auto-generate it at boot and share it between Hermes and the local router
-- it is not a public/downstream credential and should never appear in deployment env files
 
 ## Codex Auth Is Not An Env Var
 

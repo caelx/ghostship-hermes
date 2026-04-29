@@ -34,7 +34,6 @@ writeShellApplication {
     export HERMES_HOME="''${HERMES_HOME:-/home/hermes/.hermes}"
     export GHOSTSHIP_WORKSPACE_ROOT="''${GHOSTSHIP_WORKSPACE_ROOT:-/workspace}"
     export GHOSTSHIP_DASHBOARD_STATE_DIR="''${GHOSTSHIP_DASHBOARD_STATE_DIR:-/home/hermes/.local/state/ghostship-hermes/dashboard}"
-    export GHOSTSHIP_ROUTER_STATE_DIR="''${GHOSTSHIP_ROUTER_STATE_DIR:-/home/hermes/.local/state/ghostship-hermes/router}"
     export GHOSTSHIP_DASHBOARD_HOST="''${GHOSTSHIP_DASHBOARD_HOST:-0.0.0.0}"
     export GHOSTSHIP_DASHBOARD_PORT="''${GHOSTSHIP_DASHBOARD_PORT:-7681}"
     export GHOSTSHIP_TTYD_PORT_BASE="''${GHOSTSHIP_TTYD_PORT_BASE:-7682}"
@@ -80,7 +79,6 @@ writeShellApplication {
       ensure_dir "$HOME" 0750
       ensure_dir "$HERMES_HOME" 0750
       ensure_dir "$GHOSTSHIP_DASHBOARD_STATE_DIR" 0750
-      ensure_dir "$GHOSTSHIP_ROUTER_STATE_DIR" 0750
       ensure_dir "/run/user/$HERMES_UID" 0700
 
       prepare_nix_profile_state

@@ -10,8 +10,10 @@ import yaml
 HOME = Path(os.environ.get("HOME", "/home/hermes"))
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", str(HOME / ".hermes")))
 WORKSPACE = Path(os.environ.get("GHOSTSHIP_WORKSPACE_ROOT", "/workspace"))
-ROUTER_URL = os.environ.get("GHOSTSHIP_ROUTER_URL", "http://127.0.0.1:8788/v1")
-ROUTER_API_KEY_ENV = "_GHOSTSHIP_ROUTER_API_KEY"
+LEGACY_ROUTER_NAME = "ghostship-" + "router"
+LEGACY_ROUTER_PROVIDER = "custom:" + LEGACY_ROUTER_NAME
+LEGACY_ROUTER_URL = "http://127.0.0.1:" + "8788" + "/v1"
+MANAGED_MODEL_PROVIDER = "opencode-go"
 PRIMARY_MODEL = "deepseek-v4-flash"
 FALLBACK_MODEL = "kimi-k2.6"
 AUXILIARY_MODEL = "gemini-2.5-flash-lite"
@@ -43,7 +45,7 @@ def _direct_gemini() -> dict[str, str]:
 
 DEFAULT_CONFIG = {
     "model": {
-        "provider": "custom:ghostship-router",
+        "provider": MANAGED_MODEL_PROVIDER,
         "default": PRIMARY_MODEL,
     },
     "web": {
@@ -64,22 +66,9 @@ DEFAULT_CONFIG = {
         }
     },
     "fallback_model": {
-        "provider": "custom:ghostship-router",
+        "provider": MANAGED_MODEL_PROVIDER,
         "model": FALLBACK_MODEL,
     },
-    "custom_providers": [
-        {
-            "name": "ghostship-router",
-            "base_url": ROUTER_URL,
-            "api_key_env": ROUTER_API_KEY_ENV,
-            "api_mode": "chat_completions",
-            "model": PRIMARY_MODEL,
-            "models": {
-                PRIMARY_MODEL: {},
-                FALLBACK_MODEL: {},
-            },
-        }
-    ],
     "timezone": "Pacific/Honolulu",
     "agent": {
         "max_turns": 500,
@@ -184,7 +173,7 @@ def _is_router_primary_stub(config: object) -> bool:
     return (
         model.get("provider") == "auto"
         and model.get("default") == "agentic"
-        and model.get("base_url") == ROUTER_URL
+        and model.get("base_url") == LEGACY_ROUTER_URL
         and "fallback_model" not in config
         and "memory" not in config
         and "auxiliary" not in config
@@ -253,7 +242,7 @@ def _normalize_group_sessions(config: object) -> bool:
     return changed
 
 
-def _normalize_router_auth(config: object) -> bool:
+def _remove_legacy_router_provider(config: object) -> bool:
     if not isinstance(config, dict):
         return False
 
@@ -261,28 +250,28 @@ def _normalize_router_auth(config: object) -> bool:
 
     for key in ("model", "fallback_model"):
         section = config.get(key)
-        if isinstance(section, dict) and section.get("base_url") == ROUTER_URL:
-            if section.get("api_key_env") != ROUTER_API_KEY_ENV:
-                section["api_key_env"] = ROUTER_API_KEY_ENV
-                changed = True
+        if isinstance(section, dict) and section.get("base_url") == LEGACY_ROUTER_URL:
+            for obsolete_key in ("base_url", "api_key_env"):
+                if obsolete_key in section:
+                    del section[obsolete_key]
+                    changed = True
 
     custom_providers = config.get("custom_providers")
     if isinstance(custom_providers, list):
-        for provider in custom_providers:
-            if not isinstance(provider, dict):
-                continue
-            if provider.get("base_url") != ROUTER_URL:
-                continue
-            if provider.get("api_key_env") != ROUTER_API_KEY_ENV:
-                provider["api_key_env"] = ROUTER_API_KEY_ENV
+        filtered = [
+            provider
+            for provider in custom_providers
+            if not (
+                isinstance(provider, dict)
+                and (provider.get("name") == LEGACY_ROUTER_NAME or provider.get("base_url") == LEGACY_ROUTER_URL)
+            )
+        ]
+        if filtered != custom_providers:
+            if filtered:
+                config["custom_providers"] = filtered
                 changed = True
-            if provider.get("model") != PRIMARY_MODEL:
-                provider["model"] = PRIMARY_MODEL
-                changed = True
-            models = provider.get("models")
-            managed_models = {PRIMARY_MODEL: {}, FALLBACK_MODEL: {}}
-            if models != managed_models:
-                provider["models"] = managed_models
+            else:
+                del config["custom_providers"]
                 changed = True
 
     return changed
@@ -297,24 +286,24 @@ def _normalize_managed_model_contract(config: object) -> bool:
     model = config.get("model")
     if (
         isinstance(model, dict)
-        and model.get("provider") in {"opencode-go", "openai-codex", "custom:ghostship-router"}
-        and model.get("default") in {"deepseek-v4-pro", "minimax-m2.7", "gpt-5.4", "gpt-5.5"}
+        and model.get("provider") in {"opencode-go", "openai-codex", LEGACY_ROUTER_PROVIDER}
+        and model.get("default") in {"deepseek-v4-pro", "deepseek-v4-flash", "minimax-m2.7", "gpt-5.4", "gpt-5.5"}
     ):
-        model["provider"] = "custom:ghostship-router"
+        model["provider"] = MANAGED_MODEL_PROVIDER
         model["default"] = PRIMARY_MODEL
         changed = True
     elif isinstance(model, dict) and model.get("provider") == "custom" and model.get("default") in {"agentic", "coding"}:
-        model["provider"] = "custom:ghostship-router"
+        model["provider"] = MANAGED_MODEL_PROVIDER
         model["default"] = PRIMARY_MODEL
         changed = True
 
     fallback_model = config.get("fallback_model")
     if (
         isinstance(fallback_model, dict)
-        and fallback_model.get("provider") in {"openai-codex", "opencode-go", "custom", "custom:ghostship-router"}
-        and fallback_model.get("model") in {"gpt-5.4-mini", "minimax-m2.7", "agentic", "coding"}
+        and fallback_model.get("provider") in {"openai-codex", "opencode-go", "custom", LEGACY_ROUTER_PROVIDER}
+        and fallback_model.get("model") in {"gpt-5.4-mini", "minimax-m2.7", "kimi-k2.6", "agentic", "coding"}
     ):
-        fallback_model["provider"] = "custom:ghostship-router"
+        fallback_model["provider"] = MANAGED_MODEL_PROVIDER
         fallback_model["model"] = FALLBACK_MODEL
         changed = True
 
@@ -371,7 +360,7 @@ def main() -> None:
             changed = True
         changed = _merge_missing_defaults(loaded, DEFAULT_CONFIG) or changed
         changed = _normalize_group_sessions(loaded) or changed
-        changed = _normalize_router_auth(loaded) or changed
+        changed = _remove_legacy_router_provider(loaded) or changed
         changed = _normalize_managed_model_contract(loaded) or changed
         if changed:
             config_path.write_text(

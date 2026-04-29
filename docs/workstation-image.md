@@ -49,7 +49,7 @@ Fixed image defaults are already baked into the image:
 - XDG paths under `/home/hermes`
 - npm/cargo/rustup roots under `/home/hermes`
 - `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
-- router/dashboard/ttyd internal ports and paths
+- dashboard/ttyd internal ports and paths
 
 These are internal image-owned variables and paths. Downstream must not override them through runtime env.
 
@@ -58,11 +58,6 @@ Downstream should pass only the operator-facing runtime env vars. The full list 
 The common downstream set for the default Ghostship runtime is:
 
 - `OPENCODE_GO_API_KEY`
-- `OPENCODE_ZEN_API_KEY`
-- `NVIDIA_BUILD_API_KEY`
-- `ZENMUX_API_KEY`
-- `ELECTRON_HUB_API_KEY`
-- `OPENROUTER_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_ALLOWED_USERS`
@@ -82,16 +77,12 @@ Discord channel contract:
 - `DISCORD_WEBHOOK_CHANNEL` points at `#webhooks` and is the default channel used when Hermes creates a Discord webhook subscription without an explicit `--deliver-chat-id`.
 - The managed gateway retires closed Discord thread sessions after 05:00 local Hermes time and keeps their historical SQLite transcripts.
 
-Internal-only runtime auth may be auto-generated for Hermes compatibility:
-
-- `_GHOSTSHIP_ROUTER_API_KEY`
-
-Router free-provider defaults are RPM-limited before the paid OpenCode Go fallback: NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20. Free attempts are also bounded by adaptive shape-and-size-aware health and timeout budgets. Override RPM with `GHOSTSHIP_ROUTER_PROVIDER_RPM_*`; override timeout budgets with `GHOSTSHIP_ROUTER_FREE_ATTEMPT_TIMEOUT_SECONDS`, `GHOSTSHIP_ROUTER_FREE_STREAM_FIRST_BYTE_TIMEOUT_SECONDS`, `GHOSTSHIP_ROUTER_FREE_TOTAL_BUDGET_SECONDS`, and `GHOSTSHIP_ROUTER_FALLBACK_TIMEOUT_SECONDS`. Large Hermes tool-history reasoning requests additionally honor `GHOSTSHIP_ROUTER_OPENCODE_GO_LARGE_TOOL_HISTORY_PRIMARY_TIMEOUT_SECONDS` and `GHOSTSHIP_ROUTER_OPENCODE_GO_LARGE_TOOL_HISTORY_FALLBACK_TIMEOUT_SECONDS`.
+The managed Hermes model config calls OpenCode Go directly with `deepseek-v4-flash` as primary and `kimi-k2.6` as fallback.
 
 Codex OAuth is not set by env var. Authenticate once inside the persisted home for the forced `#foodstamps` Codex channel:
 
 ```fish
-docker exec -it --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
+docker exec -it --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
 ```
 
 That writes `/home/hermes/.hermes/auth.json`, which persists with the home volume.
@@ -173,8 +164,8 @@ Quick smoke:
 
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
-docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw gcloud blogwatcher-cli agent-browser ghostship-hermes-router'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw gcloud blogwatcher-cli agent-browser'
 docker exec ghostship-hermes sh -lc 'test -d /home/hermes/.local/state/cloakbrowser && command -v google-chrome'
 ```
 

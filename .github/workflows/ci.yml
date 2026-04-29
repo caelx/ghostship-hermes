@@ -27,9 +27,6 @@ jobs:
       - name: Install uv
         run: python3 -m pip install --user uv
 
-      - name: Run router tests
-        run: cd packages/hermes-router && ~/.local/bin/uv run --extra dev python -m pytest tests -q -s
-
       - name: Run dashboard tests
         run: cd packages/hermes-dashboard && ~/.local/bin/uv run --extra dev python -m pytest tests -q -s
 

@@ -24,12 +24,7 @@ chmod 0700 /run/user/3000
 mkdir -p "$HOME/.local/state/cloakbrowser"
 chown -R 3000:3000 "$HOME/.local/state/cloakbrowser"
 
-router_api_key="$(python3 - <<'PY'
-import secrets
-print(secrets.token_urlsafe(32))
-PY
-)"
-printf '_GHOSTSHIP_ROUTER_API_KEY=%s\n' "$router_api_key" > "$internal_env_file"
+touch "$internal_env_file"
 chown 3000:3000 "$internal_env_file"
 chmod 0600 "$internal_env_file"
 
@@ -76,4 +71,4 @@ ln -sfn /nix/var/nix/profiles/per-user/hermes/profile "$HOME/.nix-profile"
 chown -h 3000:3000 "$HOME/.nix-profile"
 
 HOME="$HOME" HERMES_HOME="$HERMES_HOME" GHOSTSHIP_WORKSPACE_ROOT="$GHOSTSHIP_WORKSPACE_ROOT" /command/s6-setuidgid hermes /opt/hermes/venv/bin/python /opt/ghostship/bin/init_home.py
-HOME="$HOME" HERMES_HOME="$HERMES_HOME" PATH="/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:$HOME/.local/bin:$HOME/.nix-profile/bin:$GHOSTSHIP_NIX_DEFAULT_PROFILE/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" /command/s6-setuidgid hermes /opt/hermes/venv/bin/hermes skills list >/dev/null 2>&1 || true
+HOME="$HOME" HERMES_HOME="$HERMES_HOME" PATH="/opt/ghostship/bin:/opt/hermes/venv/bin:$HOME/.local/bin:$HOME/.nix-profile/bin:$GHOSTSHIP_NIX_DEFAULT_PROFILE/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" /command/s6-setuidgid hermes /opt/hermes/venv/bin/hermes skills list >/dev/null 2>&1 || true

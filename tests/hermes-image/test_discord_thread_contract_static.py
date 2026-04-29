@@ -146,24 +146,22 @@ def test_ublock_origin_lite_is_loaded_by_agent_browser_extension_env() -> None:
     assert "ExtensionSettings" not in read("packages/hermes-image/rootfs/usr/local/bin/google-chrome")
 
 
-def test_managed_router_defaults_use_flash_and_kimi() -> None:
+def test_managed_opencode_go_defaults_use_flash_and_kimi() -> None:
     init_home = read("packages/hermes-image/build/init_home.py")
     module = read("packages/hermes-image/nixos-module.nix")
-    router_config = read("packages/hermes-router/src/hermes_router/config.py")
-    router_models = read("packages/hermes-router/src/hermes_router/models.py")
 
     for text in (init_home, module):
+        assert "opencode-go" in text
         assert "deepseek-v4-flash" in text
         assert "kimi-k2.6" in text
         assert '"deepseek-v4-pro": {},' not in text
         assert '"minimax-m2.7": {},' not in text
 
-    assert 'primary_served_model=os.environ.get("GHOSTSHIP_ROUTER_PRIMARY_SERVED_MODEL", "deepseek-v4-flash")' in router_config
-    assert 'fallback_served_model=os.environ.get("GHOSTSHIP_ROUTER_FALLBACK_SERVED_MODEL", "kimi-k2.6")' in router_config
-    assert 'for alias in ("deepseek-v4-flash", "kimi-k2.6")' in router_config
-    assert 'name="deepseek-v4-flash"' in router_config
-    assert 'name="kimi-k2.6"' in router_config
-    assert 'model: str = "deepseek-v4-flash"' in router_models
+    assert 'MANAGED_MODEL_PROVIDER = "opencode-go"' in init_home
+    assert 'provider = "opencode-go";' in module
+    assert 'name = "ghostship-" "router"' not in module
+    assert '/opt/ghostship-' 'router' not in module
+    assert '_GHOSTSHIP_' 'ROUTER_API_KEY' not in init_home
 
 
 def test_downstream_discord_snowflake_ids_are_not_committed() -> None:

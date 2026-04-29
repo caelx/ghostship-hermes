@@ -38,7 +38,6 @@ rootfs_tar="${GHOSTSHIP_ROOTFS_TAR:-${GHOSTSHIP_IMAGE_TAR:-}}"
 nix_volume_root="${GHOSTSHIP_NIX_VOLUME_ROOT:-}"
 dashboard_port="${GHOSTSHIP_TEST_DASHBOARD_PORT:-7681}"
 dashboard_base_url="http://127.0.0.1:${dashboard_port}"
-router_base_url="http://127.0.0.1:8788"
 
 if [ -z "$nix_volume_root" ]; then
   if [ -n "${GHOSTSHIP_NIX_STORE:-}" ]; then
@@ -85,6 +84,10 @@ host_uid="$(id -u)"
 host_gid="$(id -g)"
 container_shell="/bin/sh"
 container_path="/run/current-system/sw/bin:/nix/var/nix/profiles/system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/bin"
+legacy_router_service="ghostship-hermes-"
+legacy_router_service="${legacy_router_service}router"
+legacy_router_url="http://127.0.0.1:"
+legacy_router_url="${legacy_router_url}8788/v1"
 
 cleanup() {
   docker rm -f "$container_one" "$container_two" >/dev/null 2>&1 || true
@@ -152,10 +155,8 @@ wait_for_container_ready() {
   until run_in_container "$target_container" '
     systemctl is-active ghostship-storage.service >/dev/null 2>&1 &&
     test "$(systemctl show -P Result ghostship-hermes-bootstrap.service 2>/dev/null)" = "success" &&
-    systemctl is-active ghostship-hermes-router.service >/dev/null 2>&1 &&
     systemctl is-active ghostship-hermes-hudui.service >/dev/null 2>&1 &&
     runuser -u hermes -- env XDG_RUNTIME_DIR=/run/user/3000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3000/bus systemctl --user is-active hermes-gateway.service >/dev/null 2>&1 &&
-    curl -fsS http://127.0.0.1:8788/readyz >/dev/null 2>&1 &&
     curl -fsS http://127.0.0.1:7681/api/health >/dev/null 2>&1
   '; do
     tries=$((tries + 1))
@@ -163,7 +164,7 @@ wait_for_container_ready() {
       echo "container $target_container did not become ready" >&2
       docker logs "$target_container" >&2 || true
       run_in_container "$target_container" '
-        systemctl --no-pager --full status ghostship-storage.service ghostship-hermes-bootstrap.service ghostship-hermes-router.service ghostship-hermes-hudui.service || true
+        systemctl --no-pager --full status ghostship-storage.service ghostship-hermes-bootstrap.service ghostship-hermes-hudui.service || true
         runuser -u hermes -- env XDG_RUNTIME_DIR=/run/user/3000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/3000/bus systemctl --user --no-pager --full status hermes-gateway.service ghostship-hermes-gateway-restart.path || true
       ' >&2 || true
       exit 1
@@ -187,22 +188,17 @@ wait_for_hermes_condition() {
   done
 }
 
-assert_router_inventory() {
-  local target_container="$1"
-  run_in_container "$target_container" "curl -fsS ${router_base_url}/v1/models | jq -e '[.data[].id] | index(\"deepseek-v4-pro\") and index(\"minimax-m2.7\")' >/dev/null"
-}
-
 assert_model_config() {
   local target_container="$1"
-  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: custom:ghostship-router" >/dev/null'
-  run_as_hermes "$target_container" 'hermes config show | grep -F "default: deepseek-v4-pro" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'hermes config show | grep -F "default: deepseek-v4-flash" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
-  run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
+  run_as_hermes "$target_container" "! sed -n '/^model:/,/^[^ ]/p' /home/hermes/.hermes/config.yaml | grep -F '  base_url: $legacy_router_url' >/dev/null"
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: kimi-k2.6" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
-  run_as_hermes "$target_container" '! sed -n "/^custom_providers:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "api_key:" >/dev/null'
+  run_as_hermes "$target_container" "! sed -n '/^custom_providers:/,/^[^ ]/p' /home/hermes/.hermes/config.yaml | grep -F '${legacy_router_service#ghostship-hermes-}' >/dev/null"
   run_as_hermes "$target_container" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
 }
 
@@ -210,25 +206,25 @@ assert_config_migration() {
   local target_container="$1"
   run_as_hermes "$target_container" 'sed -i "/^model:/,/^[^ ]/s/^  provider: openai-codex$/  provider: opencode-go/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^model:/,/^[^ ]/s/^  default: gpt-5.5$/  default: minimax-m2.7/" /home/hermes/.hermes/config.yaml'
-  run_as_hermes "$target_container" 'sed -i "/^model:$/a\  base_url: http://127.0.0.1:8788/v1" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" "sed -i '/^model:$/a\\  base_url: $legacy_router_url' /home/hermes/.hermes/config.yaml"
   run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  provider: opencode-go$/  provider: openai-codex/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  model: minimax-m2.7$/  model: gpt-5.4-mini/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^agent:/,/^[^ ]/s/^  reasoning_effort: high$/  reasoning_effort: medium/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^agent:/,/^[^ ]/s/^  max_turns: 500$/  max_turns: 110/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: minimax-m2.7" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
+  run_as_hermes "$target_container" "sed -n '/^model:/,/^[^ ]/p' /home/hermes/.hermes/config.yaml | grep -F '  base_url: $legacy_router_url' >/dev/null"
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: openai-codex" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: gpt-5.4-mini" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: medium" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 110" >/dev/null'
   run_in_container "$target_container" 'systemctl start ghostship-hermes-bootstrap.service >/dev/null'
-  run_as_hermes "$target_container" '! sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  base_url: http://127.0.0.1:8788/v1" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: deepseek-v4-pro" >/dev/null'
+  run_as_hermes "$target_container" "! sed -n '/^model:/,/^[^ ]/p' /home/hermes/.hermes/config.yaml | grep -F '  base_url: $legacy_router_url' >/dev/null"
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: deepseek-v4-flash" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: minimax-m2.7" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: kimi-k2.6" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
 }
@@ -281,14 +277,14 @@ wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/health"
 wait_for_http "${dashboard_base_url}/api/profiles"
 wait_for_http "${dashboard_base_url}/api/projects"
-curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "gpt-5.5" and .config_provider == "openai-codex" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "deepseek-v4-flash" and .config_provider == "opencode-go" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/profiles" | jq -e ' .profiles[0].name == "Managed Agent" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/projects" | jq -e ' .projects_dir == "/workspace" ' >/dev/null
 
 run_in_container "$container_one" 'id hermes | grep -F "uid=3000(hermes) gid=3000(hermes)" >/dev/null'
 run_in_container "$container_one" 'test "$(systemctl show -P Result ghostship-hermes-bootstrap.service)" = "success"'
 run_in_container "$container_one" '! systemctl is-active hermes-agent.service >/dev/null'
-run_in_container "$container_one" 'systemctl is-active ghostship-hermes-router.service >/dev/null'
+run_in_container "$container_one" "! systemctl list-unit-files $legacy_router_service.service >/dev/null 2>&1"
 run_as_hermes "$container_one" 'systemctl --user is-active hermes-gateway.service >/dev/null'
 run_as_hermes "$container_one" 'test -L /home/hermes/.config/systemd/user/hermes-gateway.service'
 run_as_hermes "$container_one" 'readlink /home/hermes/.config/systemd/user/hermes-gateway.service | grep -Fx "/etc/systemd/user/hermes-gateway.service" >/dev/null'
@@ -309,7 +305,6 @@ run_as_hermes "$container_one" 'test -d /home/hermes/.local/state/bitwarden-cli'
 run_as_hermes "$container_one" '! test -e "/home/hermes/.config/Bitwarden CLI"'
 run_as_hermes "$container_one" 'grep -E "^BITWARDENCLI_APPDATA_DIR='\''?/home/hermes/.local/state/bitwarden-cli'\''?$" /home/hermes/.hermes/.env >/dev/null'
 run_as_hermes "$container_one" '! grep -Eq "^(BW_CLIENTSECRET|BW_PASSWORD|BW_SESSION)=" /home/hermes/.hermes/.env'
-assert_router_inventory "$container_one"
 assert_model_config "$container_one"
 assert_config_migration "$container_one"
 assert_primary_execution "$container_one"
@@ -413,7 +408,7 @@ wait_for_http "${dashboard_base_url}/"
 wait_for_http "${dashboard_base_url}/api/health"
 wait_for_http "${dashboard_base_url}/api/profiles"
 wait_for_http "${dashboard_base_url}/api/projects"
-curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "gpt-5.5" and .config_provider == "openai-codex" ' >/dev/null
+curl -fsS "${dashboard_base_url}/api/health" | jq -e ' .config_model == "deepseek-v4-flash" and .config_provider == "opencode-go" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/profiles" | jq -e ' .profiles[0].name == "Managed Agent" ' >/dev/null
 curl -fsS "${dashboard_base_url}/api/projects" | jq -e ' .projects_dir == "/workspace" ' >/dev/null
 

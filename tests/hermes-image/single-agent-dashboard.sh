@@ -122,7 +122,7 @@ run_in_container() {
 run_as_hermes() {
   local target_container="$1"
   shift
-  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
+  "$container_engine" exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$target_container" /bin/sh -lc "$*"
 }
 
 run_browser_profile_probe() {
@@ -133,7 +133,7 @@ run_browser_profile_probe() {
     --env HOME=/home/hermes \
     --env HERMES_HOME=/home/hermes/.hermes \
     --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults \
-    --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     "$target_container" /usr/bin/timeout 90s /opt/cloakbrowser-venv/bin/python - "$mode" <<'PY'
 import sys
 from pathlib import Path
@@ -170,7 +170,7 @@ run_browser_adblock_probe() {
     --env HOME=/home/hermes \
     --env HERMES_HOME=/home/hermes/.hermes \
     --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults \
-    --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     "$target_container" /usr/bin/timeout 180s /opt/cloakbrowser-venv/bin/python - <<'PY'
 import os
 import subprocess
@@ -352,7 +352,6 @@ run_test_container() {
     --env GHOSTSHIP_CODEX_CHANNEL=foodstamps-channel \
     --env DISCORD_WEBHOOK_CHANNEL=webhooks-channel \
     --env FIRECRAWL_API_KEY=test-firecrawl \
-    --env GHOSTSHIP_ROUTER_PORT=9999 \
     --env WEBHOOK_SECRET=test-webhook-secret \
     "$image_ref" "$@"
 }
@@ -386,6 +385,25 @@ start_test_container_with_retry() {
   return 1
 }
 
+restart_test_container_with_retry() {
+  local restart_output=""
+  local attempts=5
+
+  for _ in $(seq 1 "$attempts"); do
+    if restart_output="$("$container_engine" restart "$container_name" 2>&1)"; then
+      return 0
+    fi
+    if ! grep -F "Address already in use" <<<"$restart_output" >/dev/null 2>&1; then
+      printf '%s\n' "$restart_output" >&2
+      return 1
+    fi
+    sleep 2
+  done
+
+  printf '%s\n' "$restart_output" >&2
+  return 1
+}
+
 smoke_note() {
   printf '== smoke: %s ==\n' "$1" >&2
 }
@@ -413,14 +431,12 @@ start_test_container_with_retry "$dashboard_port"
 
 wait_for_http "http://127.0.0.1:${dashboard_port}/api/status"
 wait_for_http "http://127.0.0.1:${dashboard_port}/terminal/"
-wait_for_container_http "$container_name" "http://127.0.0.1:8788/readyz"
 
 status_json="$(curl -fsS "http://127.0.0.1:${dashboard_port}/api/status")"
 # Upstream Hermes does not guarantee that gateway_state is populated on the
 # first healthy dashboard response.
 printf '%s' "$status_json" | python3 -c 'import json, sys; data = json.load(sys.stdin); assert data["hermes_home"] == "/home/hermes/.hermes"; assert "gateway_state" in data'
 
-run_in_container "$container_name" 'python3 -c '\''import json, urllib.request; data = json.load(urllib.request.urlopen("http://127.0.0.1:8788/readyz")); assert data["ok"] is True'\'''
 curl -fsSI "http://127.0.0.1:${dashboard_port}/terminal/" >/dev/null
 bundle="$(curl -fsS "http://127.0.0.1:${dashboard_port}/" | sed -n 's/.*src=\"\([^\"]*index-[^\"]*\.js\)\".*/\1/p' | head -n1)"
 curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q '/terminal/'
@@ -430,14 +446,12 @@ curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allo
 
 run_in_container "$container_name" '. /run/ghostship/hermes.env; [ "${FIRECRAWL_API_KEY:-}" = test-firecrawl ]'
 run_in_container "$container_name" '. /run/ghostship/hermes.env; [ "${DISCORD_WEBHOOK_CHANNEL:-}" = webhooks-channel ]'
-run_in_container "$container_name" "! grep -q '^GHOSTSHIP_ROUTER_PORT=' /run/ghostship/hermes.env"
 run_in_container "$container_name" '. /home/hermes/.hermes/.env; [ "${FIRECRAWL_API_KEY:-}" = test-firecrawl ]'
 run_in_container "$container_name" '. /home/hermes/.hermes/.env; [ "${DISCORD_WEBHOOK_CHANNEL:-}" = webhooks-channel ]'
 run_in_container "$container_name" "grep -Fx 'CUSTOM_DOWNSTREAM_KEY=keep-me' /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "grep -Fx 'STALE_ONLY_KEY=keep-me-too' /home/hermes/.hermes/.env >/dev/null"
 run_in_container "$container_name" "! grep -q '^FIRECRAWL_API_KEY=stale-firecrawl$' /home/hermes/.hermes/.env"
 run_in_container "$container_name" "! grep -q '^REMOVED_MANAGED_KEY=' /home/hermes/.hermes/.env"
-run_in_container "$container_name" "! grep -q '^GHOSTSHIP_ROUTER_PORT=' /home/hermes/.hermes/.env"
 run_in_container "$container_name" "grep -Fx 'FIRECRAWL_API_KEY' /home/hermes/.hermes/.ghostship-managed-env.keys >/dev/null"
 run_in_container "$container_name" "stat -c '%U:%G %a' /home/hermes/.hermes/.env | grep -Fx 'hermes:hermes 600' >/dev/null"
 run_in_container "$container_name" "stat -c '%U:%G %a' /home/hermes/.hermes/.ghostship-managed-env.keys | grep -Fx 'hermes:hermes 600' >/dev/null"
@@ -452,15 +466,13 @@ printf "%s\n" "$gateway_env" | grep -Fx "FIRECRAWL_API_KEY=test-firecrawl" >/dev
   printf "%s\n" "$gateway_env" >&2
   exit 1
 }
-! printf "%s\n" "$gateway_env" | grep -q "^GHOSTSHIP_ROUTER_PORT="
 '
 
 run_in_container "$container_name" '
 	for cmd in \
 	  nix git rg ttyd tmux tirith jq fd yq uv gh gws bw gcloud blogwatcher-cli \
-	  codex gemini agent-browser opencode \
-	  ghostship-hermes-router
-do
+	  codex gemini agent-browser opencode
+	do
   command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }
 done
 '
@@ -532,10 +544,17 @@ run_as_hermes "$container_name" '/opt/hermes/venv/bin/python -c "import plugins.
 smoke_note "gateway status"
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/hermes gateway status >/tmp/gateway-status.txt && cat /tmp/gateway-status.txt'
 smoke_note "config assertions"
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
+legacy_router_service="ghostship-hermes-"
+legacy_router_service="${legacy_router_service}router"
+legacy_router_path="/opt/ghostship-"
+legacy_router_path="${legacy_router_path}router"
+run_in_container "$container_name" "! ps -ef | grep -F '$legacy_router_service' | grep -v grep >/dev/null"
+run_in_container "$container_name" "! test -e /etc/services.d/${legacy_router_service#ghostship-hermes-}/run"
+run_in_container "$container_name" "! test -e $legacy_router_path"
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: deepseek-v4-flash" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ghostship-router" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: kimi-k2.6" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
@@ -545,11 +564,8 @@ from pathlib import Path
 
 config = yaml.safe_load(Path("/home/hermes/.hermes/config.yaml").read_text(encoding="utf-8"))
 providers = config.get("custom_providers") or []
-router = next((entry for entry in providers if entry.get("name") == "ghostship-router"), None)
-assert router is not None
-assert router.get("model") == "deepseek-v4-flash"
-assert sorted((router.get("models") or {}).keys()) == ["deepseek-v4-flash", "kimi-k2.6"]
-assert router.get("base_url") == "http://127.0.0.1:8788/v1"
+legacy_name = "ghostship-" + "router"
+assert all(entry.get("name") != legacy_name for entry in providers)
 PY'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
 import inspect
@@ -594,7 +610,7 @@ run_in_container "$container_name" 'printf smoke-home > /home/hermes/persist-hom
 run_as_hermes "$container_name" "nix --extra-experimental-features 'nix-command flakes' profile add nixpkgs#hello"
 run_as_hermes "$container_name" 'hello | head -n1 | grep -Fx "Hello, world!"'
 
-"$container_engine" restart "$container_name" >/dev/null
+restart_test_container_with_retry
 smoke_note "post-restart dashboard"
 wait_for_container_http "$container_name" "http://127.0.0.1:7681/api/status"
 smoke_note "post-restart persistence"

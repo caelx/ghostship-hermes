@@ -3,7 +3,7 @@
 ## Purpose
 
 - Build and publish `ghcr.io/caelx/ghostship-hermes`.
-- Treat this repo as a monorepo for the Hermes workstation image, Ghostship Router, and supporting runtime packages.
+- Treat this repo as a monorepo for the Hermes workstation image and supporting runtime packages.
 
 ## Project Invariants
 
@@ -15,10 +15,8 @@
 - `/workspace` is the separate persisted work-products mount.
 - `/nix` persists user-installed Nix packages across container replacement.
 - Hermes core lives in `/opt/hermes` and is image-owned.
-- Router lives in `/opt/ghostship-router` and is image-owned.
 - Dashboard is upstream Hermes `0.9` with one repo-owned `Terminal` entry patch.
 - `ttyd` is a sidecar service, not a native Hermes PTY implementation.
-- Router is mandatory.
 - Discord forced-channel routing is mandatory.
 - The only repo-owned Hermes patches are:
   - Discord Codex-pinned channel
@@ -57,13 +55,13 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Reused non-empty `/nix` volumes must be reconciled on boot with the image-managed default Nix profile at `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`; do not rely on raw `/opt/ghostship/bin -> /nix/store/...` symlinks for image-managed defaults.
 - Persisting `/home/hermes` preserves Hermes config, Codex auth, npm CLIs, XDG state, and other tool state in the way workstation users expect.
 - Upstream bundled Hermes skills must be copied into the image home seed under `.hermes/skills`; `hermes skills list` alone does not seed them. Use file-granular seeding so downstream custom skills survive while missing defaults are added.
-- Treat `HOME`, `HERMES_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `NPM_CONFIG_PREFIX`, `CARGO_HOME`, `RUSTUP_HOME`, `GHOSTSHIP_WORKSPACE_ROOT`, `GHOSTSHIP_WEB_PORT`, `GHOSTSHIP_DASHBOARD_HOST`, `GHOSTSHIP_DASHBOARD_PORT`, `GHOSTSHIP_ROUTER_HOST`, `GHOSTSHIP_ROUTER_PORT`, `GHOSTSHIP_ROUTER_URL`, `GHOSTSHIP_NIX_DEFAULT_PROFILE`, `GHOSTSHIP_TTYD_SOCKET`, `GHOSTSHIP_TTYD_BASE_PATH`, and `GHOSTSHIP_TERMINAL_CWD` as internal image-owned variables. Do not expose them as downstream-facing env knobs and do not override them from runtime env.
+- Treat `HOME`, `HERMES_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `NPM_CONFIG_PREFIX`, `CARGO_HOME`, `RUSTUP_HOME`, `GHOSTSHIP_WORKSPACE_ROOT`, `GHOSTSHIP_WEB_PORT`, `GHOSTSHIP_DASHBOARD_HOST`, `GHOSTSHIP_DASHBOARD_PORT`, `GHOSTSHIP_NIX_DEFAULT_PROFILE`, `GHOSTSHIP_TTYD_SOCKET`, `GHOSTSHIP_TTYD_BASE_PATH`, and `GHOSTSHIP_TERMINAL_CWD` as internal image-owned variables. Do not expose them as downstream-facing env knobs and do not override them from runtime env.
 - `nix` itself must stay reachable even when `/home/hermes` is replaced by a fresh persisted mount. Keep `/usr/local/bin/nix` symlinked to the installed binary.
 - Upstream `hermes gateway status` shells out to `ps eww -ax -o pid=,command=`. Ubuntu `procps` rejects that exact argument order in this container. Keep the narrow `/usr/local/bin/ps` wrapper that rewrites only that invocation to `ps axeww -o pid=,command=`.
 - `ttyd` should bind a unix socket under `/run/user/3000`, not `/run`, because the runtime service runs as `hermes`.
 - `ttyd` should be backed by `tmux new -A -s webterm` so browser reconnects do not kill the terminal session.
 - Keep ttyd styling aligned to the dashboard palette.
-- Bind the public web surface to `0.0.0.0:7681`, but keep internal dashboard and router listeners on localhost.
+- Bind the public web surface to `0.0.0.0:7681`, but keep the internal dashboard listener on localhost.
 - Hermes browser tools should use the stock local `agent-browser` lane by exposing native CloakBrowser as the standard `google-chrome` binary that `agent-browser` already probes on Linux.
 - Build-time image prep must install native CloakBrowser under `/opt/ghostship` and prefetch its browser binary so runtime launches do not depend on first-boot network access.
 - The wrapper at `/usr/local/bin/google-chrome` must inject CloakBrowser's default stealth args for normal launches, route extension launches to the cached Chromium binary, default raw Chrome calls to `/home/hermes/.local/state/cloakbrowser` only when callers omit `--user-data-dir`, preserve explicit `--user-data-dir` values, default Chrome to `--log-level=3` unless the caller supplies a log level, and include `--no-sandbox` because agent-browser extension launches otherwise crash before `DevToolsActivePort` in the container.
@@ -83,12 +81,11 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Do not launch baked uBO Lite through `cloakbrowser-current/chrome`; route extension launches to the cached Chromium binary because the CloakBrowser launcher can still hang before `DevToolsActivePort`.
 - Keep the baked uBO Lite extension tree owned by `hermes`; Chrome can hang before `DevToolsActivePort` when the unpacked extension path is root-owned.
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
-- The managed Hermes runtime primary lane is `custom:ghostship-router/deepseek-v4-flash`, fallback is `custom:ghostship-router/kimi-k2.6`, and managed agent defaults are `reasoning_effort = "high"` and `max_turns = 500`.
+- The managed Hermes runtime primary lane is `opencode-go/deepseek-v4-flash`, fallback is `opencode-go/kimi-k2.6`, and managed agent defaults are `reasoning_effort = "high"` and `max_turns = 500`.
 - The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Higher-level Bitwarden workflow helpers are model-authored, not image-owned.
 - Export `BITWARDENCLI_APPDATA_DIR` at the image/global env layer too; raw `bw` commands otherwise fall back to `~/.config/Bitwarden CLI`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.
 - Managed Hermes-facing env must be emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`; preserve unrelated persisted `.env` keys while refreshing the managed subset from current runtime env.
-- The router service must hard-code its image-owned `127.0.0.1:8788` bind target; do not let downstream `GHOSTSHIP_ROUTER_HOST` or `GHOSTSHIP_ROUTER_PORT` runtime env move it.
 
 ### Discord Routing
 
@@ -102,27 +99,6 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - The managed gateway retires closed Discord thread sessions after 05:00 local Hermes time by removing only the live `sessions.json` mapping and preserving SQLite transcripts.
 - The forced Codex channel depends on persisted Codex OAuth in `/home/hermes/.hermes/auth.json`.
 - Do not use `OPENAI_API_KEY` anywhere in this repo's active runtime contract.
-- Do not expose router auth as a downstream env knob. If Hermes uses a router token, keep it internal as an underscore-prefixed env such as `_GHOSTSHIP_ROUTER_API_KEY`; the router itself must treat that auth as optional.
-
-### Router Policy
-
-- `NVIDIA_BUILD_API_KEY` enables the repo-owned `nvidia-build` provider.
-- `ZENMUX_API_KEY` enables the repo-owned `zenmux` free-provider lane; default RPM is 10.
-- `ELECTRON_HUB_API_KEY` enables the repo-owned `electron-hub` free-provider lane; default RPM is 5.
-- NVIDIA free inventory discovery should use the filtered `build.nvidia.com/models?filters=nimType%3Anim_type_preview` catalog page and dedupe repeated model ids before persisting inventory.
-- Normal router routing exposes OpenCode Go model IDs only when explicit free-provider equivalents are configured.
-- Free providers route only through explicit equivalence entries for an exposed OpenCode Go model id.
-- Free-provider lanes must still classify individual backend models by actual free metadata or `:free`/`-free` ids; do not force all models on ZenMux/OpenCode Zen/Electron Hub to free.
-- Normal routing must not use alias/family/top-five reserve selection. Use only the requested OpenCode Go model id's explicit equivalence table.
-- Default free-provider RPMs are NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20.
-- Candidate selection is RPM-weighted deficit round robin across eligible free equivalents, adjusted by shape-aware health and bounded free-provider timeouts, then `opencode-go/<same model id>` as paid fallback.
-- Router health must include Hermes request shape and message-count size; large `stream+tools+tool_history+reasoning` failures must not poison simple text traffic or other OpenCode Go fallback models.
-- Provider-origin route failures should surface as non-retryable `424`; reserve router `400` for local request validation failures before routing.
-- Fast route exhaustion with no eligible candidates must still create a sanitized `router`/`route_exhausted` route event so live 424s can be debugged after the request.
-- Post-attempt route exhaustion must also create a sanitized `router`/`route_exhausted` route event with attempted providers, attempt errors, and skipped fallback reasons.
-- OpenCode-compatible providers need assistant tool-call history arguments normalized to JSON-object strings before upstream calls.
-- `opencode-go` is the canonical model catalog and paid fallback; it is never counted as a free provider.
-
 ### Packaging Split
 
 - Image-owned layer is Hermes core plus true runtime dependencies only.
@@ -131,18 +107,18 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Native CloakBrowser should be image-owned under `/opt/ghostship`, while the persisted browser profile root lives under `/home/hermes/.local/state/cloakbrowser`.
 - Use the same iframe sandbox policy for the live browser tab as the terminal tab: `allow-same-origin allow-scripts allow-forms`, no modal permission.
 - Node-native CLIs such as `codex`, `gemini-cli`, `agent-browser`, and `opencode` belong in npm under `/home/hermes`.
-- Avoid convenience-driven image bloat. If a binary is not required by boot, supervision, router, dashboard, ttyd, native Hermes runtime, or upstream doctor/runtime expectations, move it out of base.
+- Avoid convenience-driven image bloat. If a binary is not required by boot, supervision, dashboard, ttyd, native Hermes runtime, or upstream doctor/runtime expectations, move it out of base.
 
 ### Testing
 
 - Live validation on `chill-penguin` is the real deployment proof path.
-- Router changes need Hermes-shaped replay tests with tool history, reasoning, streaming, and fallback behavior before publish; direct provider smoke alone is not enough.
+- Model-provider changes need Hermes-shaped replay tests with tool history, reasoning, streaming, and fallback behavior before publish; direct provider smoke alone is not enough.
 - Rootless Podman on `chill-penguin` can hand `pasta` an already-occupied published host port during rapid recreate tests, even when the host port is auto-assigned. The workstation smoke should let the container engine choose the published port, query the selected port after startup, and retry recreate startup on `Address already in use`.
 - After container restart or recreation, dashboard `/api/status` can return before the persisted hermes user Nix profile is fully callable again. The workstation smoke should retry a user-profile command such as `hello` separately instead of assuming API readiness implies `~/.nix-profile` readiness.
 - On GitHub Actions Docker runners, the host-published random dashboard port can flap across container restart even while the in-container dashboard at `127.0.0.1:7681` is healthy. Keep the external host-port assertion on initial startup, but use container-internal dashboard readiness checks for restart and recreate persistence phases.
 - The smoke test should cover:
   - dashboard `/api/status`
-  - router readiness
+  - absence of router service/processes
   - terminal path `/terminal/`
   - native local browser launch against the dashboard origin `/`
   - native `hermes gateway status`

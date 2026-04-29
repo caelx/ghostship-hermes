@@ -32,7 +32,7 @@
             inherit system;
             config.allowUnfree = true;
           };
-          routerPython311Packages = pkgs.python311Packages.overrideScope (
+          ghostshipPython311Packages = pkgs.python311Packages.overrideScope (
             final: prev: {
               watchfiles = prev.watchfiles.overridePythonAttrs (_: {
                 doCheck = false;
@@ -50,7 +50,7 @@
           );
 
           hermesDashboard = pkgs.callPackage ./packages/hermes-dashboard/package.nix {
-            python311Packages = routerPython311Packages;
+            python311Packages = ghostshipPython311Packages;
           };
           agentBrowser = pkgs.callPackage ./packages/agent-browser/package.nix { };
           blogwatcher = pkgs.callPackage ./packages/blogwatcher/package.nix { };
@@ -61,7 +61,7 @@
           };
           ghostshipSharedPython = pkgs.buildEnv {
             name = "ghostship-shared-python-deps";
-            paths = with routerPython311Packages; [
+            paths = with ghostshipPython311Packages; [
               httpx
               fastapi
               uvicorn
@@ -94,9 +94,6 @@
               propcache
             ];
           };
-          ghostshipHermesRouter = pkgs.callPackage ./packages/hermes-router/package.nix {
-            python311Packages = routerPython311Packages;
-          };
           hermesRelease = lib.strings.removeSuffix "\n" (
             builtins.readFile ./packages/hermes-image/hermes-release.txt
           );
@@ -123,7 +120,6 @@
           ];
 
           overlayUtilities = [
-            ghostshipHermesRouter
             ghostshipHermesRuntime
             hermesDashboard
           ] ++ baseToolPackages;
@@ -164,7 +160,6 @@
             extraSpecialArgs = {
               inherit
                 blogwatcher
-                ghostshipHermesRouter
                 ghostshipHermesRuntime
                 hermesDashboard
                 ;
@@ -208,7 +203,6 @@
           blogwatcher = blogwatcher;
           gws = googleWorkspaceCli;
           hermes-dashboard = hermesDashboard;
-          ghostship-hermes-router = ghostshipHermesRouter;
           ghostship-hermes-runtime = ghostshipHermesRuntime;
           hermes-agent-wrapped = wrappedHermesAgent;
           ghostship-hermes-system = ghostshipHermesSystem.config.system.build.toplevel;
@@ -236,7 +230,6 @@
             blogwatcher
             gws
             hermes-dashboard
-            ghostship-hermes-router
             ghostship-hermes-runtime
             hermes-agent-wrapped
             ghostship-hermes-system
@@ -254,7 +247,7 @@
             inherit system;
             config.allowUnfree = true;
           };
-          routerPython311Packages = pkgs.python311Packages.overrideScope (
+          ghostshipPython311Packages = pkgs.python311Packages.overrideScope (
             final: prev: {
               watchfiles = prev.watchfiles.overridePythonAttrs (_: {
                 doCheck = false;
@@ -277,8 +270,8 @@
               mypy
               pytest
               typer
-              routerPython311Packages.fastapi
-              routerPython311Packages.uvicorn
+              ghostshipPython311Packages.fastapi
+              ghostshipPython311Packages.uvicorn
             ]
           );
         in
@@ -301,7 +294,6 @@
             ];
             shellHook = ''
               export PIP_DISABLE_PIP_VERSION_CHECK=1
-              export PYTHONPATH="$PWD/packages/hermes-router/src${PYTHONPATH:+:$PYTHONPATH}"
             '';
           };
         }

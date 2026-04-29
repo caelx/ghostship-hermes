@@ -29,9 +29,6 @@ ENV HOME=/home/hermes \
     GHOSTSHIP_WEB_PORT=7681 \
     GHOSTSHIP_DASHBOARD_HOST=127.0.0.1 \
     GHOSTSHIP_DASHBOARD_PORT=9119 \
-    GHOSTSHIP_ROUTER_HOST=127.0.0.1 \
-    GHOSTSHIP_ROUTER_PORT=8788 \
-    GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1 \
     GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults \
     DISCORD_REACTIONS=false \
     DISCORD_REQUIRE_MENTION=false \
@@ -43,7 +40,7 @@ ENV HOME=/home/hermes \
     AGENT_BROWSER_ARGS=--no-sandbox \
     DISPLAY=:99 \
     BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli \
-    PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -156,7 +153,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship /opt/ghostship-router
+RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship
 COPY flake.nix /src/
 COPY flake.lock /src/
 COPY packages /src/packages
@@ -216,9 +213,6 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
       'tzlocal==5.3.1' \
       > /tmp/hermes-pip-constraints.txt \
     && UV_EXCLUDE_NEWER=2026-04-24T00:00:00Z /opt/hermes/venv/bin/uv pip install --python /opt/hermes/venv/bin/python --constraint /tmp/hermes-pip-constraints.txt "/tmp/hermes-agent[all]" \
-    && python3 -m venv /opt/ghostship-router/venv \
-    && /opt/ghostship-router/venv/bin/pip install --upgrade pip setuptools wheel \
-    && /opt/ghostship-router/venv/bin/pip install /src/packages/hermes-router \
     && python3 -m venv /opt/cloakbrowser-venv \
     && /opt/cloakbrowser-venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/cloakbrowser-venv/bin/pip install "cloakbrowser==0.3.25" \
@@ -278,7 +272,6 @@ RUN chmod +x /etc/cont-init.d/10-ghostship-prepare \
     /etc/services.d/hermes-dashboard/run \
     /etc/services.d/nginx/run \
     /etc/services.d/ttyd/run \
-    /etc/services.d/ghostship-router/run \
     /usr/local/bin/google-chrome \
     /usr/local/bin/nix \
     /usr/local/bin/nix-store \

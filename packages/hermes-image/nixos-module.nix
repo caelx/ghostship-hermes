@@ -3,7 +3,6 @@
   lib,
   modulesPath,
   pkgs,
-  ghostshipHermesRouter ? null,
   ghostshipHermesRuntime ? null,
   hermesDashboard ? null,
   hermesRelease,
@@ -37,7 +36,6 @@ let
   auxiliaryApiKeyRef = "\${GOOGLE_AI_STUDIO_API_KEY}";
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   repoOverlayBinDir = "/opt/ghostship-overlay/bin";
-  routerCommand = if includeRepoContent then "${ghostshipHermesRouter}/bin/ghostship-hermes-router" else "${repoOverlayBinDir}/ghostship-hermes-router";
   runtimeCommand = if includeRepoContent then "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime" else "${repoOverlayBinDir}/ghostship-hermes-runtime";
   dashboardCommand = if includeRepoContent then "${hermesDashboard}/bin/hermes-dashboard" else "${repoOverlayBinDir}/hermes-dashboard";
   yamlFormat = pkgs.formats.yaml { };
@@ -207,7 +205,7 @@ let
     in
     {
       model = {
-        provider = "custom:ghostship-router";
+        provider = "opencode-go";
         default = "deepseek-v4-flash";
       };
       web = {
@@ -226,22 +224,9 @@ let
         default_trust = 0.5;
       };
       fallback_model = {
-        provider = "custom:ghostship-router";
+        provider = "opencode-go";
         model = "kimi-k2.6";
       };
-      custom_providers = [
-        {
-          name = "ghostship-router";
-          base_url = "http://127.0.0.1:8788/v1";
-          api_key_env = "_GHOSTSHIP_ROUTER_API_KEY";
-          api_mode = "chat_completions";
-          model = "deepseek-v4-flash";
-          models = {
-            "deepseek-v4-flash" = {};
-            "kimi-k2.6" = {};
-          };
-        }
-      ];
       timezone = "Pacific/Honolulu";
       agent = {
         max_turns = 500;
@@ -353,7 +338,6 @@ let
 
   repoCommandPackages = lib.optionals includeRepoContent (
     [
-      ghostshipHermesRouter
       ghostshipHermesRuntime
       hermesDashboard
     ]
@@ -375,7 +359,6 @@ let
     export HERMES_HOME="''${HERMES_HOME:-/home/hermes/.hermes}"
     export GHOSTSHIP_WORKSPACE_ROOT="''${GHOSTSHIP_WORKSPACE_ROOT:-/workspace}"
     export GHOSTSHIP_DASHBOARD_STATE_DIR="''${GHOSTSHIP_DASHBOARD_STATE_DIR:-/home/hermes/.local/state/ghostship-hermes/dashboard}"
-    export GHOSTSHIP_ROUTER_STATE_DIR="''${GHOSTSHIP_ROUTER_STATE_DIR:-/home/hermes/.local/state/ghostship-hermes/router}"
     export XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-$HOME/.config}"
     export XDG_DATA_HOME="''${XDG_DATA_HOME:-$HOME/.local/share}"
     export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
@@ -411,7 +394,6 @@ let
     ensure_dir "$HOME" 0750
     ensure_dir "$HERMES_HOME" 0750
     ensure_dir "$GHOSTSHIP_DASHBOARD_STATE_DIR" 0750
-    ensure_dir "$GHOSTSHIP_ROUTER_STATE_DIR" 0750
     ensure_dir "/run/user/$HERMES_UID" 0700
 
     prepare_nix_profile_state
@@ -451,7 +433,7 @@ EOF
     config_path=${lib.escapeShellArg (managedHermesHome + "/config.yaml")}
     env_path=${lib.escapeShellArg managedEnvPath}
     for _ in $(${pkgs.coreutils}/bin/seq 1 60); do
-      if [ -f "$config_path" ] && [ -f "$env_path" ] && ${pkgs.curl}/bin/curl -fsS http://127.0.0.1:8788/readyz >/dev/null 2>&1; then
+      if [ -f "$config_path" ] && [ -f "$env_path" ]; then
         exit 0
       fi
       ${pkgs.coreutils}/bin/sleep 1
@@ -628,7 +610,12 @@ EOF
 
       tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
       ${pkgs.gawk}/bin/awk '
-        BEGIN { in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0; in_web = 0; in_session_reset = 0; seen_web = 0; seen_web_backend = 0 }
+        BEGIN {
+          in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0; in_web = 0; in_session_reset = 0; seen_web = 0; seen_web_backend = 0
+          legacy_url = "  base_url: http://127.0.0.1:" "8788" "/v1"
+          legacy_key = "  api_key_env: _GHOSTSHIP_" "ROUTER_API_KEY"
+          legacy_provider = "  provider: custom:" "ghostship-" "router"
+        }
         /^model:[[:space:]]*$/ {
           in_model = 1
           in_fallback_model = 0
@@ -705,7 +692,6 @@ EOF
           in_agent = 0
           in_web = 0
           in_session_reset = 0
-          print
           next
         }
         /^agent:[[:space:]]*$/ {
@@ -734,11 +720,18 @@ EOF
           in_web = 0
           in_session_reset = 0
         }
-        in_model && $0 == "  base_url: http://127.0.0.1:8788/v1" {
+        in_model && $0 == legacy_url {
+          next
+        }
+        in_model && $0 == legacy_key {
+          next
+        }
+        in_model && $0 == legacy_provider {
+          print "  provider: opencode-go"
           next
         }
         in_model && $0 == "  provider: opencode-go" {
-          print "  provider: custom:ghostship-router"
+          print "  provider: opencode-go"
           next
         }
         in_model && $0 == "  default: minimax-m2.7" {
@@ -750,7 +743,7 @@ EOF
           next
         }
         in_model && $0 == "  provider: openai-codex" {
-          print "  provider: custom:ghostship-router"
+          print "  provider: opencode-go"
           next
         }
         in_model && $0 == "  default: gpt-5.4" {
@@ -764,12 +757,16 @@ EOF
         in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
           next
         }
+        in_fallback_model && $0 == legacy_provider {
+          print "  provider: opencode-go"
+          next
+        }
         in_fallback_model && $0 == "  provider: openai-codex" {
-          print "  provider: custom:ghostship-router"
+          print "  provider: opencode-go"
           next
         }
         in_fallback_model && $0 == "  provider: opencode-go" {
-          print "  provider: custom:ghostship-router"
+          print "  provider: opencode-go"
           next
         }
         in_fallback_model && $0 == "  model: gpt-5.4-mini" {
@@ -790,6 +787,9 @@ EOF
         }
         in_custom && $0 == "    minimax-m2.7: {}" {
           print "    kimi-k2.6: {}"
+          next
+        }
+        in_custom {
           next
         }
         in_agent && $0 == "  reasoning_effort: high" {
@@ -868,15 +868,15 @@ EOF
       is_hermes_passthrough_key() {
         key="$1"
         case "$key" in
-          DISCORD_WEBHOOK_CHANNEL|GHOSTSHIP_CODEX_CHANNEL|_GHOSTSHIP_ROUTER_API_KEY)
+          DISCORD_WEBHOOK_CHANNEL|GHOSTSHIP_CODEX_CHANNEL)
             return 0
             ;;
         esac
         case "$key" in
-          ""|_[A-Z0-9_]*|AGENT_BROWSER_PROFILE|API_SERVER_HOST|API_SERVER_PORT|BASH_FUNC_*|CARGO_HOME|DBUS_SESSION_BUS_ADDRESS|GHOSTSHIP_DASHBOARD_HOST|GHOSTSHIP_DASHBOARD_PORT|GHOSTSHIP_HERMES_GATEWAY_SERVICE|GHOSTSHIP_HERMES_MANAGED_PROFILE|GHOSTSHIP_HERMES_PROJECT_ROOT|GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF|GHOSTSHIP_NIX_DEFAULT_PROFILE|GHOSTSHIP_ROUTER_HOST|GHOSTSHIP_ROUTER_PORT|GHOSTSHIP_ROUTER_URL|GHOSTSHIP_TERMINAL_CWD|GHOSTSHIP_TOOLING_MODE|GHOSTSHIP_TTYD_BASE_PATH|GHOSTSHIP_TTYD_SOCKET|GHOSTSHIP_WEB_PORT|GHOSTSHIP_WORKSPACE_ROOT|HERMES_HOME|HOME|HOSTNAME|LOGNAME|NIX_SSL_CERT_FILE|NPM_CONFIG_PREFIX|OPENAI_API_KEY|PATH|PWD|RUSTUP_HOME|SHELL|SHLVL|SSL_CERT_FILE|TERM|TERMINAL_CWD|USER|XDG_CACHE_HOME|XDG_CONFIG_HOME|XDG_DATA_HOME|XDG_RUNTIME_DIR|XDG_STATE_HOME)
+          ""|_[A-Z0-9_]*|AGENT_BROWSER_PROFILE|API_SERVER_HOST|API_SERVER_PORT|BASH_FUNC_*|CARGO_HOME|DBUS_SESSION_BUS_ADDRESS|GHOSTSHIP_DASHBOARD_HOST|GHOSTSHIP_DASHBOARD_PORT|GHOSTSHIP_HERMES_GATEWAY_SERVICE|GHOSTSHIP_HERMES_MANAGED_PROFILE|GHOSTSHIP_HERMES_PROJECT_ROOT|GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF|GHOSTSHIP_NIX_DEFAULT_PROFILE|GHOSTSHIP_TERMINAL_CWD|GHOSTSHIP_TOOLING_MODE|GHOSTSHIP_TTYD_BASE_PATH|GHOSTSHIP_TTYD_SOCKET|GHOSTSHIP_WEB_PORT|GHOSTSHIP_WORKSPACE_ROOT|HERMES_HOME|HOME|HOSTNAME|LOGNAME|NIX_SSL_CERT_FILE|NPM_CONFIG_PREFIX|OPENAI_API_KEY|PATH|PWD|RUSTUP_HOME|SHELL|SHLVL|SSL_CERT_FILE|TERM|TERMINAL_CWD|USER|XDG_CACHE_HOME|XDG_CONFIG_HOME|XDG_DATA_HOME|XDG_RUNTIME_DIR|XDG_STATE_HOME)
             return 1
             ;;
-          API_SERVER_*|GHOSTSHIP_DASHBOARD_*|GHOSTSHIP_HERMES_*|GHOSTSHIP_HUD_*|GHOSTSHIP_ROUTER_*|GHOSTSHIP_TOOLING_*|GHOSTSHIP_TTYD_*|HERMES_HUD_*|INVOCATION_*|JOURNAL_*|LC_*|LISTEN_*|SYSTEMD_*)
+          API_SERVER_*|GHOSTSHIP_DASHBOARD_*|GHOSTSHIP_HERMES_*|GHOSTSHIP_HUD_*|GHOSTSHIP_TOOLING_*|GHOSTSHIP_TTYD_*|HERMES_HUD_*|INVOCATION_*|JOURNAL_*|LC_*|LISTEN_*|SYSTEMD_*)
             return 1
             ;;
         esac
@@ -1158,14 +1158,6 @@ PY2
     GHOSTSHIP_HERMES_GATEWAY_SERVICE = "${managedGatewayServiceName}.service";
     HERMES_HUD_PROJECTS_DIR = "/workspace";
     GHOSTSHIP_HUD_DEFAULT_PROFILE_NAME = "Managed Agent";
-    GHOSTSHIP_ROUTER_HOST = "127.0.0.1";
-    GHOSTSHIP_ROUTER_PORT = "8788";
-    API_SERVER_HOST = "127.0.0.1";
-    API_SERVER_PORT = "8788";
-    GHOSTSHIP_ROUTER_STATE_DIR = "/home/hermes/.local/state/ghostship-hermes/router";
-    GHOSTSHIP_ROUTER_DB_PATH = "/home/hermes/.local/state/ghostship-hermes/router/router.db";
-    GHOSTSHIP_ROUTER_REFRESH_INTERVAL = "300";
-    GHOSTSHIP_ROUTER_DISABLED_MODELS = "openrouter/free";
   };
 
   userServiceEnvironment = serviceEnvironment // {
@@ -1300,7 +1292,6 @@ in
       "hermes-agent.service"
     ] ++ lib.optionals includeManagedRuntime [
       "ghostship-hermes-hudui.service"
-      "ghostship-hermes-router.service"
       "${managedGatewayServiceName}.service"
     ];
     serviceConfig = {
@@ -1341,7 +1332,6 @@ in
     ];
     before = [
       "ghostship-hermes-bootstrap.service"
-      "ghostship-hermes-router.service"
       "ghostship-hermes-hudui.service"
       "${managedGatewayServiceName}.service"
     ];
@@ -1397,8 +1387,7 @@ in
         set -euo pipefail
         ${pkgs.systemd}/bin/systemctl start \
           user@3000.service \
-          ghostship-hermes-hudui.service \
-          ghostship-hermes-router.service
+          ghostship-hermes-hudui.service
 
         for _ in $(${pkgs.coreutils}/bin/seq 1 30); do
           if [ -S ${managedUserRuntimeDir}/bus ]; then
@@ -1414,77 +1403,6 @@ in
             ghostship-hermes-gateway-restart.path \
             ${managedGatewayServiceName}.service
       '';
-    };
-  };
-
-  systemd.services.ghostship-hermes-router = lib.mkIf includeManagedRuntime {
-    description = "ghostship-hermes model router";
-    wantedBy = [ ];
-    wants = [ "network-online.target" ];
-    after = [
-      "ghostship-storage.service"
-      "ghostship-hermes-bootstrap.service"
-      "network-online.target"
-    ];
-    requires = [
-      "ghostship-storage.service"
-      "ghostship-hermes-bootstrap.service"
-    ];
-    environment = userServiceEnvironment;
-    path = servicePath;
-    serviceConfig = {
-      Type = "simple";
-      User = "hermes";
-      Group = "hermes";
-      WorkingDirectory = "/home/hermes";
-      PassEnvironment = [
-        "OPENROUTER_API_KEY"
-        "OPENROUTER_BASE_URL"
-        "OPENROUTER_HTTP_REFERER"
-        "OPENROUTER_TITLE"
-        "OPENCODE_API_KEY"
-        "OPENCODE_ZEN_API_KEY"
-        "OPENCODE_ZEN_BASE_URL"
-        "OPENCODE_GO_API_KEY"
-        "OPENCODE_GO_BASE_URL"
-        "OPENCODE_BASE_URL"
-        "ZENMUX_API_KEY"
-        "ZENMUX_BASE_URL"
-        "ELECTRON_HUB_API_KEY"
-        "ELECTRON_HUB_BASE_URL"
-        "GHOSTSHIP_ROUTER_CORS_ORIGINS"
-        "_GHOSTSHIP_ROUTER_API_KEY"
-        "API_SERVER_CORS_ORIGINS"
-        "GHOSTSHIP_ROUTER_ROLLING_WINDOW_SECONDS"
-        "GHOSTSHIP_ROUTER_PROVIDER_RPM_NVIDIA_BUILD"
-        "GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENCODE_ZEN"
-        "GHOSTSHIP_ROUTER_PROVIDER_RPM_ZENMUX"
-        "GHOSTSHIP_ROUTER_PROVIDER_RPM_ELECTRON_HUB"
-        "GHOSTSHIP_ROUTER_PROVIDER_RPM_OPENROUTER"
-        "GHOSTSHIP_ROUTER_PROVIDER_COOLDOWN_SECONDS"
-        "GHOSTSHIP_ROUTER_PROVIDER_FAILURE_THRESHOLD"
-        "GHOSTSHIP_ROUTER_PROVIDER_RATE_LIMIT_THRESHOLD"
-        "GHOSTSHIP_ROUTER_PROVIDER_TIMEOUT_THRESHOLD"
-        "GHOSTSHIP_ROUTER_PROVIDER_EXHAUSTION_THRESHOLD"
-        "GHOSTSHIP_ROUTER_DISABLED_PROVIDERS"
-        "GHOSTSHIP_ROUTER_DISABLED_MODELS"
-        "GHOSTSHIP_ROUTER_PROVIDER_WEIGHT_OVERRIDES"
-        "GHOSTSHIP_ROUTER_MODEL_WEIGHT_OVERRIDES"
-        "GHOSTSHIP_ROUTER_ALIAS_PIN_DEEPSEEK_V4_PRO"
-        "GHOSTSHIP_ROUTER_ALIAS_PIN_MINIMAX_M2_7"
-        "GHOSTSHIP_ROUTER_DEEPSEEK_V4_PRO_MODELS"
-        "GHOSTSHIP_ROUTER_MINIMAX_M2_7_MODELS"
-        "GHOSTSHIP_ROUTER_NVIDIA_BUILD_UNUSED_MODELS"
-        "GHOSTSHIP_ROUTER_OPENCODE_ZEN_UNUSED_MODELS"
-        "GHOSTSHIP_ROUTER_ZENMUX_UNUSED_MODELS"
-        "GHOSTSHIP_ROUTER_ELECTRON_HUB_UNUSED_MODELS"
-        "GHOSTSHIP_ROUTER_OPENROUTER_UNUSED_MODELS"
-        "GHOSTSHIP_ROUTER_OPENCODE_GO_UNUSED_MODELS"
-      ];
-      ExecStart = routerCommand;
-      Restart = "always";
-      RestartSec = "2s";
-      LimitNOFILE = 65536;
     };
   };
 

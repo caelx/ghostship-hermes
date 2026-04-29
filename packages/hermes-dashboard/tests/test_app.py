@@ -11,12 +11,12 @@ def _load_app_module(monkeypatch, tmp_path: Path):
     managed_home.mkdir(parents=True)
     (managed_home / 'config.yaml').write_text(
         """model:
-  provider: custom:ghostship-router
+  provider: opencode-go
   default: deepseek-v4-flash
 web:
   backend: firecrawl
 fallback_model:
-  provider: custom:ghostship-router
+  provider: opencode-go
   model: kimi-k2.6
 """,
         encoding='utf-8',
@@ -103,7 +103,7 @@ def test_console_routes_open_and_close_session(monkeypatch, tmp_path: Path) -> N
     assert closed.json()['session'] is None
 
 
-def test_health_treats_router_bearer_token_as_optional(monkeypatch, tmp_path: Path) -> None:
+def test_health_reports_required_keys_without_router_token(monkeypatch, tmp_path: Path) -> None:
     _app_module, runtime_module = _load_app_module(monkeypatch, tmp_path)
     import hermes_dashboard.collectors.health as health_module
 
@@ -112,7 +112,6 @@ def test_health_treats_router_bearer_token_as_optional(monkeypatch, tmp_path: Pa
     monkeypatch.setenv('OPENROUTER_API_KEY', 'test-openrouter')
     monkeypatch.setenv('DISCORD_TOKEN', 'test-discord')
     monkeypatch.setenv('BITWARDENCLI_APPDATA_DIR', str(tmp_path / '.local' / 'state' / 'bitwarden-cli'))
-    monkeypatch.delenv('_GHOSTSHIP_ROUTER_API_KEY', raising=False)
     monkeypatch.setattr(
         health_module,
         '_check_pid_file',
@@ -130,9 +129,6 @@ def test_health_treats_router_bearer_token_as_optional(monkeypatch, tmp_path: Pa
     )
 
     health = health_module.collect_health(str(tmp_path / '.hermes'))
-    router_key = next(item for item in health.keys if item.name == '_GHOSTSHIP_ROUTER_API_KEY')
 
-    assert router_key.present is False
-    assert router_key.required is False
     assert health.keys_missing == 0
     assert health.all_healthy is True

@@ -4,7 +4,6 @@
 
 - upstream Hermes `0.9` dashboard
 - upstream Hermes gateway runtime
-- repo-owned `ghostship-hermes-router`
 - repo-owned Discord forced-channel routing patch
 - repo-owned dashboard `Terminal` entry backed by same-origin `ttyd`
 - persisted `/home/hermes`, `/workspace`, and `/nix`
@@ -17,7 +16,6 @@ The image is intentionally not NixOS. Docker owns container lifecycle. `s6-overl
 - PID 1: `s6-overlay`
 - Runtime user: `hermes` (`3000:3000`)
 - Hermes core: `/opt/hermes`
-- Router: `/opt/ghostship-router`
 - Canonical persisted home: `/home/hermes`
 - Canonical Hermes home: `/home/hermes/.hermes`
 - Canonical workspace: `/workspace`
@@ -25,7 +23,6 @@ The image is intentionally not NixOS. Docker owns container lifecycle. `s6-overl
 - Public web surface: `0.0.0.0:7681`
 - Internal services:
   - dashboard: `127.0.0.1:9119`
-  - router: `127.0.0.1:8788`
   - ttyd: unix socket at `/run/user/3000/ttyd.sock`
 
 This is a workstation container. Use `terminal.backend: local`. Do not use nested Docker terminal sandboxes for the normal path.
@@ -36,7 +33,6 @@ Immutable image-owned layer:
 
 - Ubuntu base OS
 - Hermes core in `/opt/hermes`
-- router in `/opt/ghostship-router`
 - `s6`, `nginx`, `ttyd`
 - repo-owned Hermes patches:
   - Discord Codex-pinned channel
@@ -61,7 +57,7 @@ Persistent downstream-owned layer:
 
 Package ownership split:
 
-- image: Hermes core, router, dashboard/runtime services, and the small operator utility bundle for the workstation contract
+- image: Hermes core, dashboard/runtime services, and the small operator utility bundle for the workstation contract
 - native npm seed in persisted home: `codex`, `gemini-cli`, `agent-browser`, `opencode`
 - image-managed Nix defaults: `bw`, `gh`, `gcloud`, `gws`, `blogwatcher-cli`
 - image-managed local browser tooling: native CloakBrowser under `/opt/ghostship` launched through `agent-browser`, with the persistent Chrome profile rooted at `/home/hermes/.local/state/cloakbrowser`
@@ -72,7 +68,7 @@ Package ownership split:
 The Dockerfile is intentionally split into two stages:
 
 - `base`: Ubuntu + Hermes core + system/runtime dependencies only, with no Ghostship-specific overlay content
-- `final`: Ghostship router, dashboard patch, runtime rootfs, seeded userland defaults, exported managed Nix default-tool closure, and other repo-owned overlay content
+- `final`: dashboard patch, runtime rootfs, seeded userland defaults, exported managed Nix default-tool closure, and other repo-owned overlay content
 
 Local image build:
 
@@ -99,7 +95,6 @@ Service topology:
 
 - `nginx` binds `0.0.0.0:7681`
 - upstream Hermes dashboard listens on `127.0.0.1:9119`
-- `ghostship-hermes-router` listens on `127.0.0.1:8788`
 - `ttyd` listens on unix socket `/run/user/3000/ttyd.sock`
 - `nginx` proxies:
   - `/` -> upstream Hermes dashboard
@@ -230,9 +225,6 @@ These are internal image-owned variables. Downstream must not set or override th
 - `GHOSTSHIP_WEB_PORT=7681`
 - `GHOSTSHIP_DASHBOARD_HOST=127.0.0.1`
 - `GHOSTSHIP_DASHBOARD_PORT=9119`
-- `GHOSTSHIP_ROUTER_HOST=127.0.0.1`
-- `GHOSTSHIP_ROUTER_PORT=8788`
-- `GHOSTSHIP_ROUTER_URL=http://127.0.0.1:8788/v1`
 - `GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults`
 - `DISCORD_REACTIONS=false`
 - `DISCORD_REQUIRE_MENTION=false`
@@ -251,7 +243,6 @@ The image `PATH` prefers:
 - `/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin`
 - `/opt/ghostship/bin`
 - `/opt/hermes/venv/bin`
-- `/opt/ghostship-router/venv/bin`
 
 ### Where Downstream Env Vars Go
 
@@ -270,18 +261,10 @@ Important rule:
 
 ### Downstream Operator Env Summary
 
-Required for the default router-backed runtime lane:
+Required for the default OpenCode Go runtime lane:
 
 - `OPENCODE_GO_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
-
-Optional router-provider credentials:
-
-- `NVIDIA_BUILD_API_KEY`
-- `OPENCODE_ZEN_API_KEY` or legacy `OPENCODE_API_KEY`
-- `ZENMUX_API_KEY`
-- `ELECTRON_HUB_API_KEY`
-- `OPENROUTER_API_KEY`
 
 Required when Discord gateway is enabled:
 
@@ -305,10 +288,6 @@ Supported but not recommended for downstream:
 - `BROWSERBASE_PROJECT_ID`
 - `BROWSER_USE_API_KEY`
 
-Internal-only runtime env:
-
-- `_GHOSTSHIP_ROUTER_API_KEY`
-
 Important behavior:
 
 - `DISCORD_HOME_CHANNEL` is the downstream-owned Discord home channel id; set it to `#assistant`.
@@ -319,13 +298,11 @@ Important behavior:
 - `DISCORD_WEBHOOK_CHANNEL` is the default Discord destination for `hermes webhook subscribe --deliver discord` when `--deliver-chat-id` is omitted; set it to `#webhooks`.
 - `/model` cannot override the Codex-pinned `#foodstamps` sessions, including sessions inside Discord threads.
 - Closed, archived, locked, deleted, or inaccessible Discord thread sessions are retired by the managed gateway after 05:00 local Hermes time; historical SQLite transcripts are preserved.
-- `_GHOSTSHIP_ROUTER_API_KEY` is optional internal router auth. The image may still auto-generate it for Hermes integration, but the router does not require it to run.
-
 Codex OAuth is not an env var. Run `hermes auth` or `hermes model` in the container. Hermes stores Codex auth in `/home/hermes/.hermes/auth.json`, so it persists with the home volume and backs the forced `#foodstamps` Codex lane.
 
 The full fixed env contract is also documented in [docs/runtime-env.md](/home/nixos/dev/ghostship-hermes/docs/runtime-env.md).
 
-## Dashboard, Router, And Forced Channels
+## Dashboard, Models, And Forced Channels
 
 Dashboard:
 
@@ -333,15 +310,13 @@ Dashboard:
 - repo patch adds one `Terminal` entry only
 - `Terminal` renders an embedded iframe for `/terminal/`, which is served by `ttyd`
 
-Router:
+Models:
 
-- `ghostship-hermes-router` is mandatory
-- it listens on `127.0.0.1:8788`
-- Hermes default config uses `custom:ghostship-router/deepseek-v4-flash` as the primary lane and `custom:ghostship-router/kimi-k2.6` as the configured fallback
+- Hermes default config calls OpenCode Go directly
+- primary model is `opencode-go/deepseek-v4-flash`
+- fallback model is `opencode-go/kimi-k2.6`
 - Hermes default config sets `web.backend: firecrawl`
-- the managed Hermes config exposes `ghostship-router` as a local custom provider with `deepseek-v4-flash` and `kimi-k2.6` models
-- when configured, NVIDIA Build, OpenCode Zen, ZenMux, Electron Hub, and explicitly mapped OpenRouter free models participate through explicit equivalence entries
-- router normal routing exposes only OpenCode Go model IDs with explicit free-provider equivalents, uses RPM-weighted deficit round robin with shape-aware health across eligible free providers, and falls back to `opencode-go` with the same model id only when the free equivalents are exhausted, unavailable, suppressed, or the free-provider request budget is spent
+- reused persisted homes are converged away from the old local router provider and URL fields
 
 Forced Discord channels:
 
@@ -358,7 +333,7 @@ Inside the container, manage Hermes like a normal host install:
 - edit `/home/hermes/.hermes/config.yaml`
 - edit `/home/hermes/.hermes/.env`
 
-Do not use `hermes gateway install` inside the container. `s6` already supervises `hermes gateway run`, `hermes dashboard`, `ghostship-hermes-router`, `ttyd`, and `nginx`.
+Do not use `hermes gateway install` inside the container. `s6` already supervises `hermes gateway run`, `hermes dashboard`, `ttyd`, and `nginx`.
 
 ## Post-Setup Checklist
 
@@ -366,18 +341,18 @@ After the first successful container boot:
 
 1. authenticate Codex if you use the forced `#foodstamps` Codex channel
 2. verify provider and gateway env are present in both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`
-3. inspect `config.yaml` once and confirm the expected router-primary defaults
+3. inspect `config.yaml` once and confirm the expected OpenCode Go defaults
 4. run `hermes doctor`
 5. open the dashboard and confirm `/terminal/` works through the same origin
 
 Recommended post-setup flow:
 
 ```fish
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes auth'
 
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
 
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'sed -n "1,220p" /home/hermes/.hermes/config.yaml'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc 'sed -n "1,220p" /home/hermes/.hermes/config.yaml'
 ```
 
 Expected config shape after first boot:
@@ -385,10 +360,10 @@ Expected config shape after first boot:
 - Hermes home at `/home/hermes/.hermes`
 - `terminal.backend: local`
 - `terminal.cwd: /workspace`
-- root model uses `custom:ghostship-router/deepseek-v4-flash`
-- `fallback_model` uses `custom:ghostship-router/kimi-k2.6`
+- root model uses `opencode-go/deepseek-v4-flash`
+- `fallback_model` uses `opencode-go/kimi-k2.6`
 - `web.backend` is `firecrawl`
-- `custom_providers` includes `ghostship-router` with `deepseek-v4-flash` and `kimi-k2.6`
+- `custom_providers` has no local router entry
 - Discord forced-channel behavior controlled by runtime env, not by hardcoding channel ids into `config.yaml`
 
 ## Verification
@@ -404,10 +379,10 @@ Useful live checks:
 ```fish
 curl -fsS http://127.0.0.1:7681/api/status | jq
 curl -fsS http://127.0.0.1:7681/terminal/ >/dev/null
-docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw gcloud blogwatcher-cli agent-browser ghostship-hermes-router'
+docker exec ghostship-hermes sh -lc 'command -v nix git rg jq fd yq uv gh gws bw gcloud blogwatcher-cli agent-browser'
 docker exec ghostship-hermes sh -lc 'test -d /home/hermes/.local/state/cloakbrowser && command -v google-chrome'
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
-docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes gateway status'
+docker exec --user 3000:3000 --env HOME=/home/hermes --env HERMES_HOME=/home/hermes/.hermes --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ghostship-hermes /bin/sh -lc '/opt/hermes/venv/bin/hermes doctor'
 ```
 
 ## CI And Release
