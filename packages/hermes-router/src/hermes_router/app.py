@@ -149,9 +149,9 @@ def create_app(*, config: RouterConfig | None = None, service: RouterService | N
             return JSONResponse(_openai_error(str(detail.get("message", exc.detail))), status_code=exc.status_code)
 
     @app.get("/debug/routes/{alias}")
-    def debug_routes(alias: str, shape_key: str = "text"):
+    def debug_routes(alias: str, shape_key: str = "text", size_bucket: str = "any"):
         try:
-            return resolved_service.debug_routes(alias, shape_key=shape_key)
+            return resolved_service.debug_routes(alias, shape_key=shape_key, size_bucket=size_bucket)
         except RouterServiceError as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
             return JSONResponse(_openai_error(str(detail.get("message", exc.detail))), status_code=exc.status_code)

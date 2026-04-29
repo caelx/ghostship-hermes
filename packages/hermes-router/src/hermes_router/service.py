@@ -48,6 +48,8 @@ class RouteContext:
     request_id: str
     session_id: str | None
     shape_key: str
+    size_bucket: str
+    health_key: str
     free_budget_seconds: float
     free_started_at: float
 
@@ -557,20 +559,44 @@ class RouterService:
         return {"id": response_id, "object": "response", "deleted": True}
 
     def _route_context(self, request_payload: dict[str, Any], *, session_id: str | None, response_api: bool = False) -> RouteContext:
+        shape_key = self._request_shape_key(request_payload, response_api=response_api)
+        size_bucket = self._request_size_bucket(request_payload)
         return RouteContext(
             request_id=f"route_{uuid.uuid4().hex[:24]}",
             session_id=session_id,
-            shape_key=self._request_shape_key(request_payload, response_api=response_api),
+            shape_key=shape_key,
+            size_bucket=size_bucket,
+            health_key=self._health_shape_key(shape_key, size_bucket),
             free_budget_seconds=max(0.0, float(self.config.free_total_budget_seconds)),
             free_started_at=time.monotonic(),
         )
 
-    def _candidate_timeout(self, candidate: RouteCandidate, request_timeout: float | None, *, stream_first_byte: bool = False) -> float:
+    def _candidate_timeout(
+        self,
+        candidate: RouteCandidate,
+        request_timeout: float | None,
+        *,
+        served_model_id: str,
+        context: RouteContext,
+        stream_first_byte: bool = False,
+    ) -> float:
         if candidate.provider_name == "opencode-go":
-            return float(request_timeout or self.config.fallback_timeout_seconds)
+            configured = float(request_timeout or 0)
+            default_timeout = float(self.config.fallback_timeout_seconds)
+            if self._is_large_tool_history_shape(context):
+                if served_model_id == self.config.primary_served_model:
+                    default_timeout = float(self.config.opencode_go_large_tool_history_primary_timeout_seconds)
+                elif served_model_id == self.config.fallback_served_model:
+                    default_timeout = float(self.config.opencode_go_large_tool_history_fallback_timeout_seconds)
+            return max(0.1, configured or default_timeout)
         free_limit = self.config.free_stream_first_byte_timeout_seconds if stream_first_byte else self.config.free_attempt_timeout_seconds
         upstream_limit = request_timeout or self.config.default_timeout
         return max(0.1, min(float(upstream_limit), float(free_limit)))
+
+    @staticmethod
+    def _is_large_tool_history_shape(context: RouteContext) -> bool:
+        shape_parts = {part for part in context.shape_key.split("+") if part}
+        return context.size_bucket == "large" and {"stream", "tools", "tool_history", "reasoning"}.issubset(shape_parts)
 
     def _free_budget_remaining(self, context: RouteContext) -> float:
         return context.free_budget_seconds - (time.monotonic() - context.free_started_at)
@@ -623,17 +649,17 @@ class RouterService:
         context = self._route_context(request_payload, session_id=session_id)
         request_shape = self._request_debug_shape(request_payload)
         attempted: set[tuple[str, str]] = set()
-        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
         if not candidates:
-            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
             if wait_seconds is not None:
                 time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
         if not candidates:
-            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
             if wait_seconds is not None:
                 time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
         if not candidates:
             raise RouterServiceError(424, {"message": f"No route candidates are available for alias '{request.model}'."})
         request_payload["stream"] = False
@@ -642,7 +668,13 @@ class RouterService:
             index = len(attempted)
             candidate = candidates[0]
             attempted.add((candidate.provider_name, candidate.backend_model))
-            attempt_timeout = self._candidate_timeout(candidate, request.timeout, stream_first_byte=False)
+            attempt_timeout = self._candidate_timeout(
+                candidate,
+                request.timeout,
+                served_model_id=request.model,
+                context=context,
+                stream_first_byte=False,
+            )
             if candidate.provider_name != "opencode-go" and self._free_budget_remaining(context) <= 0:
                 self._record_skip(
                     candidate,
@@ -662,11 +694,11 @@ class RouterService:
                         "details": {"free_budget_seconds": context.free_budget_seconds},
                     }
                 )
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
                 continue
             provider = self.providers.get(candidate.provider_name)
             if provider is None:
-                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
                 continue
             self.state_store.note_provider_request(candidate.provider_name, next_request_at=time.time() + self._provider_spacing_seconds(candidate.provider_name))
             self._trace_route(
@@ -674,6 +706,8 @@ class RouterService:
                 request_id=context.request_id,
                 session_id=context.session_id,
                 shape_key=context.shape_key,
+                size_bucket=context.size_bucket,
+                health_key=context.health_key,
                 alias=request.model,
                 provider=candidate.provider_name,
                 backend_model=candidate.backend_model,
@@ -713,6 +747,8 @@ class RouterService:
                             "request_id": context.request_id,
                             "session_id": context.session_id,
                             "shape_key": context.shape_key,
+                            "size_bucket": context.size_bucket,
+                            "health_key": context.health_key,
                             "candidate_rank": index,
                             "attempt_timeout_seconds": attempt_timeout,
                             "free_budget_seconds": context.free_budget_seconds,
@@ -753,12 +789,12 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
                 if not candidates:
-                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
-                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
         raise RouterServiceError(
             self._status_code_for_attempt_failures(errors),
             {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors},
@@ -778,12 +814,12 @@ class RouterService:
         context = self._route_context(request_payload, session_id=session_id)
         request_shape = self._request_debug_shape(request_payload)
         attempted: set[tuple[str, str]] = set()
-        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
         if not candidates:
-            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+            wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
             if wait_seconds is not None:
                 time.sleep(wait_seconds)
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
         if not candidates:
             raise RouterServiceError(424, {"message": f"No route candidates are available for alias '{request.model}'."})
         attempt_errors: list[dict[str, Any]] = []
@@ -791,7 +827,13 @@ class RouterService:
             index = len(attempted)
             candidate = candidates[0]
             attempted.add((candidate.provider_name, candidate.backend_model))
-            attempt_timeout = self._candidate_timeout(candidate, request.timeout, stream_first_byte=True)
+            attempt_timeout = self._candidate_timeout(
+                candidate,
+                request.timeout,
+                served_model_id=request.model,
+                context=context,
+                stream_first_byte=True,
+            )
             if candidate.provider_name != "opencode-go" and self._free_budget_remaining(context) <= 0:
                 self._record_skip(
                     candidate,
@@ -811,11 +853,11 @@ class RouterService:
                         "details": {"free_budget_seconds": context.free_budget_seconds},
                     }
                 )
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
                 continue
             provider = self.providers.get(candidate.provider_name)
             if provider is None:
-                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
                 continue
             self.state_store.note_provider_request(candidate.provider_name, next_request_at=time.time() + self._provider_spacing_seconds(candidate.provider_name))
             self._trace_route(
@@ -823,6 +865,8 @@ class RouterService:
                 request_id=context.request_id,
                 session_id=context.session_id,
                 shape_key=context.shape_key,
+                size_bucket=context.size_bucket,
+                health_key=context.health_key,
                 alias=request.model,
                 provider=candidate.provider_name,
                 backend_model=candidate.backend_model,
@@ -864,12 +908,12 @@ class RouterService:
                 )
                 if exc.category == "model_missing":
                     self.refresh_inventory(reason="model_missing")
-                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
                 if not candidates:
-                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol)
+                    wait_seconds = self._paced_wait_seconds(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
-                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.shape_key)
+                        candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
         raise RouterServiceError(
             self._status_code_for_attempt_failures(attempt_errors),
             {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors},
@@ -923,6 +967,8 @@ class RouterService:
         return {
             "model": payload.get("model"),
             "shape_key": cls._request_shape_key(payload, response_api=response_api),
+            "size_bucket": cls._request_size_bucket(payload),
+            "prompt_token_estimate": cls._estimate_prompt_tokens(payload),
             "stream": bool(payload.get("stream")),
             "message_count": len(messages),
             "role_counts": role_counts,
@@ -954,6 +1000,49 @@ class RouterService:
         if any("reasoning_content" in message or "reasoning" in message for message in messages):
             parts.append("reasoning")
         return "+".join(parts) if parts else "text"
+
+    @classmethod
+    def _request_size_bucket(cls, payload: dict[str, Any]) -> str:
+        messages = [message for message in payload.get("messages") or [] if isinstance(message, dict)]
+        if len(messages) >= 32:
+            return "large"
+        if len(messages) >= 16:
+            return "medium"
+        return "small"
+
+    @classmethod
+    def _estimate_prompt_tokens(cls, payload: dict[str, Any]) -> int:
+        messages = [message for message in payload.get("messages") or [] if isinstance(message, dict)]
+        tool_payload = payload.get("tools") if isinstance(payload.get("tools"), list) else []
+        char_count = sum(cls._rough_serialized_length(message) for message in messages)
+        char_count += cls._rough_serialized_length(tool_payload)
+        return max(1, math.ceil(char_count / 4)) if char_count else 0
+
+    @classmethod
+    def _rough_serialized_length(cls, value: Any) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, str):
+            return len(value)
+        if isinstance(value, (int, float, bool)):
+            return len(str(value))
+        if isinstance(value, dict):
+            return sum(len(str(key)) + cls._rough_serialized_length(item) for key, item in value.items())
+        if isinstance(value, list):
+            return sum(cls._rough_serialized_length(item) for item in value)
+        return len(str(value))
+
+    @staticmethod
+    def _health_shape_key(shape_key: str, size_bucket: str) -> str:
+        bucket = size_bucket if size_bucket in {"small", "medium", "large", "any"} else "any"
+        return f"{shape_key}|size={bucket}"
+
+    @staticmethod
+    def _split_health_shape_key(health_key: str) -> tuple[str, str]:
+        if "|size=" not in health_key:
+            return health_key, "any"
+        shape_key, size_bucket = health_key.rsplit("|size=", 1)
+        return shape_key or "text", size_bucket or "any"
 
     def _ensure_inventory_loaded_for_request(self) -> None:
         if self._inventory or not self.providers:
@@ -1305,13 +1394,16 @@ class RouterService:
             details=exc.details,
             zero_output=zero_output,
             suspect_window_seconds=self.config.provider_suspect_window_seconds,
-            disable_seconds=self.config.provider_disable_seconds,
+            disable_seconds=self._provider_exhaustion_disable_seconds(exc.category),
             probe_escalation_factor=self.config.provider_probe_escalation_factor,
             max_disable_seconds=self.config.provider_max_disable_seconds,
         )
         shape_health = None
-        shape_key = context.shape_key if context is not None else (request_shape or {}).get("shape_key")
-        if shape_key and candidate.provider_name != "opencode-go":
+        shape_key = context.health_key if context is not None else self._health_shape_key(
+            str((request_shape or {}).get("shape_key") or "text"),
+            str((request_shape or {}).get("size_bucket") or "any"),
+        )
+        if shape_key:
             shape_health = self.state_store.record_shape_result(
                 candidate.provider_name,
                 candidate.backend_model,
@@ -1344,7 +1436,9 @@ class RouterService:
                     "route": {
                         "request_id": context.request_id if context else None,
                         "session_id": context.session_id if context else None,
-                        "shape_key": shape_key,
+                        "shape_key": context.shape_key if context else (request_shape or {}).get("shape_key"),
+                        "size_bucket": context.size_bucket if context else (request_shape or {}).get("size_bucket"),
+                        "health_key": shape_key,
                         "candidate_rank": candidate_rank,
                         "attempt_timeout_seconds": attempt_timeout_seconds,
                         "free_budget_seconds": context.free_budget_seconds if context else None,
@@ -1385,6 +1479,8 @@ class RouterService:
                         "request_id": context.request_id,
                         "session_id": context.session_id,
                         "shape_key": context.shape_key,
+                        "size_bucket": context.size_bucket,
+                        "health_key": context.health_key,
                         "candidate_rank": candidate_rank,
                         "attempt_timeout_seconds": attempt_timeout_seconds,
                         "free_budget_seconds": context.free_budget_seconds,
@@ -1412,12 +1508,12 @@ class RouterService:
             first_text_latency_ms=first_text_latency_ms,
         )
         request_shape = details.get("request_shape") if isinstance(details.get("request_shape"), dict) else {}
-        shape_key = str(request_shape.get("shape_key") or "")
+        shape_key = self._health_shape_key(str(request_shape.get("shape_key") or "text"), str(request_shape.get("size_bucket") or "any"))
         slow_success = candidate.provider_name != "opencode-go" and (
             (first_text_latency_ms is not None and first_text_latency_ms >= self.config.provider_slow_first_text_threshold_ms)
             or (latency_ms is not None and latency_ms >= self.config.provider_slow_total_threshold_ms)
         )
-        if shape_key and candidate.provider_name != "opencode-go":
+        if shape_key:
             details = {
                 **details,
                 "shape_health": self.state_store.record_shape_result(
@@ -2192,24 +2288,30 @@ class RouterService:
                 lines.append(self._prom_metric("ghostship_router_candidate_count", len(self.preview_routes(model.id)), alias=model.id))
         return "\n".join(lines) + "\n"
 
-    def preview_routes(self, alias: str, *, shape_key: str = "text", requires_tool_protocol: bool | None = None) -> list[dict[str, Any]]:
+    def preview_routes(self, alias: str, *, shape_key: str = "text", size_bucket: str = "any", requires_tool_protocol: bool | None = None) -> list[dict[str, Any]]:
+        public_shape_key, parsed_size_bucket = self._split_health_shape_key(shape_key)
+        resolved_size_bucket = size_bucket if size_bucket != "any" else parsed_size_bucket
+        health_key = self._health_shape_key(public_shape_key, resolved_size_bucket)
         try:
             candidates = self._resolve_candidates(
                 alias,
-                shape_key=shape_key,
-                requires_tool_protocol=self._shape_key_requires_tool_protocol(shape_key) if requires_tool_protocol is None else requires_tool_protocol,
+                shape_key=health_key,
+                requires_tool_protocol=self._shape_key_requires_tool_protocol(public_shape_key) if requires_tool_protocol is None else requires_tool_protocol,
             )
         except RouterServiceError:
             return []
         return self._render_candidates(candidates)
 
-    def debug_routes(self, alias: str, *, shape_key: str = "text") -> dict[str, Any]:
+    def debug_routes(self, alias: str, *, shape_key: str = "text", size_bucket: str = "any") -> dict[str, Any]:
         if alias in {"auxiliary", "coding", "agentic", "vision", "tts"}:
             raise RouterServiceError(404, {"message": f"Logical model alias '{alias}' is retired. Use an exposed OpenCode Go model id."})
         if self._opencode_go_model(alias) is None:
             raise RouterServiceError(404, {"message": f"Unknown OpenCode Go model id '{alias}'."})
-        requires_tool_protocol = self._shape_key_requires_tool_protocol(shape_key)
-        candidates = self.preview_routes(alias, shape_key=shape_key, requires_tool_protocol=requires_tool_protocol)
+        public_shape_key, parsed_size_bucket = self._split_health_shape_key(shape_key)
+        resolved_size_bucket = size_bucket if size_bucket != "any" else parsed_size_bucket
+        health_key = self._health_shape_key(public_shape_key, resolved_size_bucket)
+        requires_tool_protocol = self._shape_key_requires_tool_protocol(public_shape_key)
+        candidates = self.preview_routes(alias, shape_key=public_shape_key, size_bucket=resolved_size_bucket, requires_tool_protocol=requires_tool_protocol)
         active_keys = {(item["provider_name"], item["backend_model"]) for item in candidates}
         skipped: list[dict[str, Any]] = []
         for model in [*self._free_equivalent_models(alias), *(go_model for go_model in [self._opencode_go_model(alias)] if go_model is not None)]:
@@ -2225,13 +2327,13 @@ class RouterService:
                         model.id,
                         alias=alias,
                         model=model,
-                        shape_key=shape_key,
+                        shape_key=health_key,
                         requires_tool_protocol=requires_tool_protocol,
                     ),
-                    "state": self._candidate_state(model.provider, model.id, shape_key=shape_key),
+                    "state": self._candidate_state(model.provider, model.id, shape_key=health_key),
                 }
             )
-        return {"alias": alias, "shape_key": shape_key, "candidates": candidates, "skipped": skipped}
+        return {"alias": alias, "shape_key": public_shape_key, "size_bucket": resolved_size_bucket, "health_key": health_key, "candidates": candidates, "skipped": skipped}
 
     def debug_health(self) -> dict[str, Any]:
         now = time.time()
@@ -2240,13 +2342,17 @@ class RouterService:
         shape_health = self.state_store.get_shape_health()
         shapes: list[dict[str, Any]] = []
         for key, state in shape_health.items():
-            provider_name, backend_model, shape_key = key.split("::", 2)
+            provider_name, backend_model, health_key = key.split("::", 2)
+            shape_key, size_bucket = self._split_health_shape_key(health_key)
             shapes.append(
                 {
                     **state,
-                    "health_score": self._shape_health_score(provider_name, backend_model, shape_key),
+                    "shape_key": shape_key,
+                    "size_bucket": size_bucket,
+                    "health_key": health_key,
+                    "health_score": self._shape_health_score(provider_name, backend_model, health_key),
                     "suppression_active": float(state.get("suppressed_until", 0) or 0) > now,
-                    "probe_available": self._shape_probe_available(provider_name, backend_model, shape_key),
+                    "probe_available": self._shape_probe_available(provider_name, backend_model, health_key),
                     "suppressed_remaining_seconds": max(0.0, float(state.get("suppressed_until", 0) or 0) - now),
                     "next_probe_in_seconds": max(0.0, float(state.get("next_probe_at", 0) or 0) - now),
                 }
@@ -2338,6 +2444,7 @@ class RouterService:
 
     @staticmethod
     def _shape_key_requires_tool_protocol(shape_key: str) -> bool:
+        shape_key = RouterService._split_health_shape_key(shape_key)[0]
         parts = {part for part in shape_key.split("+") if part}
         return bool(parts & {"tools", "tool_history"})
 
@@ -2493,7 +2600,12 @@ class RouterService:
             return False
         if not self._model_effectively_enabled(model.provider, model.id):
             return False
-        if model.provider != "opencode-go" and self._rolling_health_suppression_reason(model.provider, model.id, shape_key=shape_key) is not None:
+        if self._shape_suppression_reason(model.provider, model.id, shape_key) is not None:
+            return False
+        if model.provider != "opencode-go" and (
+            self._rolling_timeout_suppression_reason(model.provider, model.id) is not None
+            or self._rolling_slow_suppression_reason(model.provider, model.id) is not None
+        ):
             return False
         if self._provider_is_cooling_down(model.provider):
             return False
@@ -2603,10 +2715,13 @@ class RouterService:
         health_score = self._shape_health_score(model.provider, model.id, shape_key)
         base_weight = max(1, self._provider_rpm_limit(model.provider) or 1)
         effective_weight = max(1.0, round(base_weight * health_score, 2))
+        public_shape_key, size_bucket = self._split_health_shape_key(shape_key)
         return {
             "model": alias,
             "total_score": effective_weight,
-            "shape_key": shape_key,
+            "shape_key": public_shape_key,
+            "size_bucket": size_bucket,
+            "health_key": self._health_shape_key(public_shape_key, size_bucket),
             "health_score": health_score,
             "effective_weight": effective_weight,
             "rpm": self._provider_rpm_state(model.provider),
@@ -2631,18 +2746,22 @@ class RouterService:
         return f"{provider_name}::{backend_model}::{shape_key}"
 
     def _shape_health(self, provider_name: str, backend_model: str, shape_key: str) -> dict[str, Any]:
-        return self.state_store.get_shape_health().get(self._shape_health_key(provider_name, backend_model, shape_key), {})
+        all_health = self.state_store.get_shape_health()
+        state = all_health.get(self._shape_health_key(provider_name, backend_model, shape_key), {})
+        if not state and "|size=" in shape_key:
+            public_shape_key, size_bucket = self._split_health_shape_key(shape_key)
+            if size_bucket == "any":
+                state = all_health.get(self._shape_health_key(provider_name, backend_model, public_shape_key), {})
+        return state
 
     def _shape_health_score(self, provider_name: str, backend_model: str, shape_key: str) -> float:
-        if provider_name == "opencode-go":
-            return 1.0
         state = self._shape_health(provider_name, backend_model, shape_key)
         recent_timeout = self._decayed_state_value(state, "recent_timeout")
         recent_failure = self._decayed_state_value(state, "recent_failure")
         recent_slow = self._decayed_state_value(state, "recent_slow_success")
         level = int(state.get("suppression_level", 0) or 0)
         score = 1.0 / (1.0 + (recent_timeout * 3.0) + recent_failure + (recent_slow * 0.75) + level)
-        if self._shape_probe_available(provider_name, backend_model, shape_key):
+        if provider_name != "opencode-go" and self._shape_probe_available(provider_name, backend_model, shape_key):
             score = min(score, 0.1)
         return round(max(0.05, min(1.0, score)), 4)
 
@@ -2654,12 +2773,12 @@ class RouterService:
         return float(state.get("suppressed_until", 0) or 0) > now and float(state.get("next_probe_at", 0) or 0) <= now
 
     def _shape_suppression_reason(self, provider_name: str, backend_model: str, shape_key: str) -> str | None:
-        if provider_name == "opencode-go":
-            return None
         state = self._shape_health(provider_name, backend_model, shape_key)
         if not state:
             return None
         now = time.time()
+        if provider_name == "opencode-go" and float(state.get("suppressed_until", 0) or 0) > now:
+            return "shape_suppressed"
         if float(state.get("suppressed_until", 0) or 0) > now and float(state.get("next_probe_at", 0) or 0) > now:
             return "shape_suppressed"
         return None
@@ -2708,6 +2827,7 @@ class RouterService:
         provider_state = self.state_store.get_provider_state().get(provider_name, {})
         model_state = self.state_store.get_model_state().get(self._model_key(provider_name, backend_model), {})
         shape_state = self._shape_health(provider_name, backend_model, shape_key)
+        public_shape_key, size_bucket = self._split_health_shape_key(shape_key)
         return {
             "provider_cooldown_until": provider_state.get("cooldown_until", 0),
             "model_cooldown_until": model_state.get("cooldown_until", 0),
@@ -2724,7 +2844,9 @@ class RouterService:
             "recent_model_latency_ms": self._decayed_state_value(model_state, "latency_avg_ms"),
             "slow_guard_active": self._rolling_slow_suppression_reason(provider_name, backend_model) is not None,
             "slow_guard_until": self._slow_guard_until(provider_name, backend_model),
-            "shape_key": shape_key,
+            "shape_key": public_shape_key,
+            "size_bucket": size_bucket,
+            "health_key": self._health_shape_key(public_shape_key, size_bucket),
             "shape_health": shape_state,
             "shape_health_score": self._shape_health_score(provider_name, backend_model, shape_key),
             "shape_suppression_reason": self._shape_suppression_reason(provider_name, backend_model, shape_key),
@@ -3015,6 +3137,13 @@ class RouterService:
             return not RouterService._is_temporary_provider_throttle(exc.details)
         return True
 
+    def _provider_exhaustion_disable_seconds(self, category: str) -> float:
+        if category == "insufficient_balance":
+            return 86400.0
+        if category == "quota_exhausted":
+            return 3600.0
+        return float(self.config.provider_disable_seconds)
+
     def _paced_wait_seconds(
         self,
         alias: str,
@@ -3022,6 +3151,7 @@ class RouterService:
         *,
         session_id: str | None = None,
         requires_tool_protocol: bool = False,
+        shape_key: str = "text|size=any",
     ) -> float | None:
         provider_state = self.state_store.get_provider_state()
         max_wait_seconds = max(
@@ -3035,6 +3165,7 @@ class RouterService:
             session_id=session_id,
             ignore_provider_pacing=True,
             requires_tool_protocol=requires_tool_protocol,
+            shape_key=shape_key,
         ):
             if (candidate.provider_name, candidate.backend_model) in attempted:
                 continue

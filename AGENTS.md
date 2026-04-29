@@ -106,6 +106,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Normal routing must not use alias/family/top-five reserve selection. Use only the requested OpenCode Go model id's explicit equivalence table.
 - Default free-provider RPMs are NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20.
 - Candidate selection is RPM-weighted deficit round robin across eligible free equivalents, adjusted by shape-aware health and bounded free-provider timeouts, then `opencode-go/<same model id>` as paid fallback.
+- Router health must include Hermes request shape and message-count size; large `stream+tools+tool_history+reasoning` failures must not poison simple text traffic or other OpenCode Go fallback models.
 - `opencode-go` is the canonical model catalog and paid fallback; it is never counted as a free provider.
 
 ### Packaging Split
@@ -121,6 +122,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 ### Testing
 
 - Live validation on `chill-penguin` is the real deployment proof path.
+- Router changes need Hermes-shaped replay tests with tool history, reasoning, streaming, and fallback behavior before publish; direct provider smoke alone is not enough.
 - Rootless Podman on `chill-penguin` can hand `pasta` an already-occupied published host port during rapid recreate tests, even when the host port is auto-assigned. The workstation smoke should let the container engine choose the published port, query the selected port after startup, and retry recreate startup on `Address already in use`.
 - After container restart or recreation, dashboard `/api/status` can return before the persisted hermes user Nix profile is fully callable again. The workstation smoke should retry a user-profile command such as `hello` separately instead of assuming API readiness implies `~/.nix-profile` readiness.
 - On GitHub Actions Docker runners, the host-published random dashboard port can flap across container restart even while the in-container dashboard at `127.0.0.1:7681` is healthy. Keep the external host-port assertion on initial startup, but use container-internal dashboard readiness checks for restart and recreate persistence phases.

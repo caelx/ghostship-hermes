@@ -945,7 +945,7 @@ class SqliteStateStore(StateStore):
             probe_success_count = int(row["probe_success_count"] or 0) if row else 0
             if is_timeout:
                 suppression_level = min(3, previous_level + 1)
-                durations = {1: 600.0, 2: 1800.0, 3: 7200.0}
+                durations = {1: 1800.0, 2: 7200.0, 3: 7200.0}
                 duration = durations[suppression_level]
                 suppressed_until = max(suppressed_until, now + duration)
                 next_probe_at = max(next_probe_at, now + min(duration, max(60.0, duration * 0.25)))

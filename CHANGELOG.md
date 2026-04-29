@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Hardened Ghostship Router production fallback behavior by keying route health on request shape plus message-count size, suppressing timed-out OpenCode Go primary routes without hiding the configured Minimax fallback, adding large Hermes tool-history timeout controls, and exposing size/token estimates in debug route diagnostics; bumped `ghostship-hermes-router` to `0.5.15`.
 - Changed Ghostship Router exhausted-route failures from retryable `503` responses to non-retryable `424 Failed Dependency` responses so Hermes can switch to its configured fallback model without retrying the same exhausted primary route repeatedly; bumped `ghostship-hermes-router` to `0.5.14`.
 - Fixed Ghostship Router paid-fallback cooldown scoping so OpenCode Go timeouts on one model do not hide other OpenCode Go fallback models such as `minimax-m2.7`; bumped `ghostship-hermes-router` to `0.5.13`.
 - Fixed Ghostship Router control-plane responsiveness by moving blocking chat and Responses route execution off the FastAPI event loop, keeping `/readyz`, debug, and metrics endpoints responsive during long provider fallbacks; bumped `ghostship-hermes-router` to `0.5.12`.

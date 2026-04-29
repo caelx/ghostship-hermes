@@ -62,6 +62,10 @@ def make_config(tmp_path: Path, **overrides: Any) -> RouterConfig:
         free_stream_first_byte_timeout_seconds=8.0,
         free_total_budget_seconds=24.0,
         fallback_timeout_seconds=45.0,
+        primary_served_model="deepseek-v4-pro",
+        fallback_served_model="minimax-m2.7",
+        opencode_go_large_tool_history_primary_timeout_seconds=25.0,
+        opencode_go_large_tool_history_fallback_timeout_seconds=75.0,
         trace_routing=False,
         openrouter_min_request_spacing_seconds=3.0,
         opencode_min_request_spacing_seconds=2.0,
@@ -267,6 +271,38 @@ def simple_chat_payload(model: str) -> dict[str, Any]:
     return {"model": model, "messages": [{"role": "user", "content": "ok"}], "max_tokens": 16}
 
 
+def large_tool_history_payload(model: str) -> dict[str, Any]:
+    messages: list[dict[str, Any]] = []
+    for index in range(11):
+        call_id = f"call_{index}"
+        messages.extend(
+            [
+                {"role": "user", "content": f"step {index}"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "reasoning_content": "thinking",
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {"name": "skill_view", "arguments": "{\"name\":\"health\"}"},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": call_id, "content": "ok"},
+            ]
+        )
+    messages.append({"role": "user", "content": "continue"})
+    return {
+        "model": model,
+        "stream": True,
+        "messages": messages,
+        "tools": [{"type": "function", "function": {"name": "skill_view", "parameters": {"type": "object"}}}],
+        "tool_choice": "auto",
+    }
+
+
 def make_service(tmp_path: Path, *, providers: dict[str, FakeProvider], config: RouterConfig | None = None) -> RouterService:
     resolved = config or make_config(tmp_path)
     store = SqliteStateStore(resolved.db_path)
@@ -288,6 +324,10 @@ def test_config_default_rpms_include_zenmux_and_electron_hub(tmp_path: Path, mon
     assert config.free_stream_first_byte_timeout_seconds == 8.0
     assert config.free_total_budget_seconds == 24.0
     assert config.fallback_timeout_seconds == 45.0
+    assert config.primary_served_model == "deepseek-v4-pro"
+    assert config.fallback_served_model == "minimax-m2.7"
+    assert config.opencode_go_large_tool_history_primary_timeout_seconds == 25.0
+    assert config.opencode_go_large_tool_history_fallback_timeout_seconds == 75.0
 
 
 def test_config_provider_rpms_are_overrideable(tmp_path: Path, monkeypatch) -> None:
@@ -712,6 +752,124 @@ def test_all_route_timeouts_return_nonretryable_failed_dependency(tmp_path: Path
     assert "All route candidates failed" in response.json()["error"]["message"]
 
 
+def test_large_tool_history_deepseek_opencode_go_timeout_fast_fails_next_attempt(tmp_path: Path) -> None:
+    nvidia = FakeProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        failures={
+            "deepseek-ai/deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="nvidia-build",
+                    backend_model="deepseek-ai/deepseek-v4-pro",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    go = FakeProvider(
+        "opencode-go",
+        models=[paid_model("deepseek-v4-pro", "opencode-go")],
+        failures={
+            "deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="opencode-go",
+                    backend_model="deepseek-v4-pro",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-go": go})
+    client = TestClient(create_app(service=service, config=service.config))
+
+    first = client.post("/v1/chat/completions", json=large_tool_history_payload("deepseek-v4-pro"))
+    second = client.post("/v1/chat/completions", json=large_tool_history_payload("deepseek-v4-pro"))
+    routes = service.debug_routes("deepseek-v4-pro", shape_key="stream+tools+tool_history+reasoning", size_bucket="large")
+
+    assert first.status_code == 424
+    assert second.status_code == 424
+    assert nvidia.timeouts == [10.0]
+    assert go.timeouts == [25.0]
+    skipped = {(item["provider_name"], item["backend_model"]): item["reason"] for item in routes["skipped"]}
+    assert skipped[("opencode-go", "deepseek-v4-pro")] == "shape_suppressed"
+
+
+def test_large_tool_history_minimax_fallback_timeout_survives_deepseek_suppression(tmp_path: Path) -> None:
+    config = make_config(tmp_path, free_total_budget_seconds=0.0)
+    zenmux = FakeProvider("zenmux", models=[free_model("minimax/minimax-m2.7", "zenmux")])
+    go = FakeProvider(
+        "opencode-go",
+        models=[
+            paid_model("deepseek-v4-pro", "opencode-go"),
+            paid_model("minimax-m2.7", "opencode-go"),
+        ],
+    )
+    service = make_service(tmp_path, config=config, providers={"zenmux": zenmux, "opencode-go": go})
+    service.state_store.record_shape_result(
+        "opencode-go",
+        "deepseek-v4-pro",
+        "stream+tools+tool_history+reasoning|size=large",
+        success=False,
+        category="request_timeout",
+        latency_ms=25000.0,
+        first_text_latency_ms=None,
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    response = client.post("/v1/chat/completions", json=large_tool_history_payload("minimax-m2.7"))
+    routes = service.debug_routes("minimax-m2.7", shape_key="stream+tools+tool_history+reasoning", size_bucket="large")
+
+    assert response.status_code == 200
+    assert response.headers["x-ghostship-router-backend-provider"] == "opencode-go"
+    assert go.timeouts == [75.0]
+    assert ("opencode-go", "minimax-m2.7") in {
+        (candidate["provider_name"], candidate["backend_model"]) for candidate in routes["candidates"]
+    }
+
+
+def test_hermes_style_fallback_after_primary_424_does_not_retry_primary(tmp_path: Path) -> None:
+    config = make_config(tmp_path, free_total_budget_seconds=0.0)
+    go = FakeProvider(
+        "opencode-go",
+        models=[
+            paid_model("deepseek-v4-pro", "opencode-go"),
+            paid_model("minimax-m2.7", "opencode-go"),
+        ],
+        failures={
+            "deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="opencode-go",
+                    backend_model="deepseek-v4-pro",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    service = make_service(
+        tmp_path,
+        config=config,
+        providers={
+            "nvidia-build": FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")]),
+            "zenmux": FakeProvider("zenmux", models=[free_model("minimax/minimax-m2.7", "zenmux")]),
+            "opencode-go": go,
+        },
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    primary = client.post("/v1/chat/completions", json=large_tool_history_payload("deepseek-v4-pro"))
+    fallback = client.post("/v1/chat/completions", json=large_tool_history_payload("minimax-m2.7"))
+
+    assert primary.status_code == 424
+    assert fallback.status_code == 200
+    assert go.calls == ["deepseek-v4-pro", "minimax-m2.7"]
+
+
 def test_shape_timeout_suppression_does_not_poison_text_shape(tmp_path: Path) -> None:
     nvidia = FakeProvider("nvidia-build", models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")])
     zen = FakeProvider("opencode-zen", models=[free_model("deepseek-v4-pro", "opencode-zen")])
@@ -1128,6 +1286,7 @@ def test_debug_health_reports_shape_health(tmp_path: Path) -> None:
     shape = response.json()["shapes"][0]
     assert shape["provider_name"] == "nvidia-build"
     assert shape["shape_key"] == "stream+tools"
+    assert shape["size_bucket"] == "any"
     assert shape["suppression_active"] is True
     assert shape["health_score"] < 1.0
 
@@ -1216,6 +1375,8 @@ def test_debug_route_events_filters_and_reports_request_shape(tmp_path: Path) ->
     request_shape = event["details"]["request_shape"]
     assert request_shape["model"] == "deepseek-v4-pro"
     assert request_shape["shape_key"] == "tools"
+    assert request_shape["size_bucket"] == "small"
+    assert request_shape["prompt_token_estimate"] > 0
     assert request_shape["message_count"] == 1
     assert request_shape["role_counts"] == {"user": 1}
     assert request_shape["has_tools"] is True
@@ -1250,6 +1411,8 @@ def test_request_debug_shape_counts_hermes_tool_history() -> None:
     )
 
     assert shape["message_count"] == 3
+    assert shape["size_bucket"] == "small"
+    assert shape["prompt_token_estimate"] > 0
     assert shape["role_counts"] == {"assistant": 1, "tool": 1, "user": 1}
     assert shape["assistant_tool_call_messages"] == 1
     assert shape["assistant_reasoning_messages"] == 1

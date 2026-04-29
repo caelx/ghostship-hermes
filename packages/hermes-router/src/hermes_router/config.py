@@ -128,6 +128,10 @@ class RouterConfig:
     free_stream_first_byte_timeout_seconds: float
     free_total_budget_seconds: float
     fallback_timeout_seconds: float
+    primary_served_model: str
+    fallback_served_model: str
+    opencode_go_large_tool_history_primary_timeout_seconds: float
+    opencode_go_large_tool_history_fallback_timeout_seconds: float
     trace_routing: bool
     openrouter_min_request_spacing_seconds: float
     opencode_min_request_spacing_seconds: float
@@ -201,6 +205,16 @@ class RouterConfig:
             free_stream_first_byte_timeout_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FREE_STREAM_FIRST_BYTE_TIMEOUT_SECONDS", default=8.0),
             free_total_budget_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FREE_TOTAL_BUDGET_SECONDS", default=24.0),
             fallback_timeout_seconds=_parse_float_env("GHOSTSHIP_ROUTER_FALLBACK_TIMEOUT_SECONDS", default=45.0),
+            primary_served_model=os.environ.get("GHOSTSHIP_ROUTER_PRIMARY_SERVED_MODEL", "deepseek-v4-pro"),
+            fallback_served_model=os.environ.get("GHOSTSHIP_ROUTER_FALLBACK_SERVED_MODEL", "minimax-m2.7"),
+            opencode_go_large_tool_history_primary_timeout_seconds=_parse_float_env(
+                "GHOSTSHIP_ROUTER_OPENCODE_GO_LARGE_TOOL_HISTORY_PRIMARY_TIMEOUT_SECONDS",
+                default=25.0,
+            ),
+            opencode_go_large_tool_history_fallback_timeout_seconds=_parse_float_env(
+                "GHOSTSHIP_ROUTER_OPENCODE_GO_LARGE_TOOL_HISTORY_FALLBACK_TIMEOUT_SECONDS",
+                default=75.0,
+            ),
             trace_routing=_parse_bool_env("GHOSTSHIP_ROUTER_TRACE_ROUTING", default=False),
             openrouter_min_request_spacing_seconds=_parse_float_env(
                 "GHOSTSHIP_ROUTER_OPENROUTER_MIN_REQUEST_SPACING_SECONDS",

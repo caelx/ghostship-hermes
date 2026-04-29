@@ -1,7 +1,7 @@
 { python311Packages }:
 python311Packages.buildPythonApplication {
   pname = "ghostship-hermes-router";
-  version = "0.5.14";
+  version = "0.5.15";
   pyproject = true;
   src = ./.;
 
