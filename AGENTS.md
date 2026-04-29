@@ -81,6 +81,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Do not inject a manifest `key` into baked uBO Lite; CloakBrowser/Chrome can hang before `DevToolsActivePort` when the unpacked extension has that key.
 - Do not apply CloakBrowser's stealth fingerprint args to extension launches; the baked uBO Lite path needs extension args without the stealth bundle so Chrome reaches `DevToolsActivePort`.
 - Do not launch baked uBO Lite through `cloakbrowser-current/chrome`; route extension launches to the cached Chromium binary because the CloakBrowser launcher can still hang before `DevToolsActivePort`.
+- Keep the baked uBO Lite extension tree owned by `hermes`; Chrome can hang before `DevToolsActivePort` when the unpacked extension path is root-owned.
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
 - The managed Hermes runtime primary lane is `custom:ghostship-router/deepseek-v4-flash`, fallback is `custom:ghostship-router/kimi-k2.6`, and managed agent defaults are `reasoning_effort = "high"` and `max_turns = 500`.
 - The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Higher-level Bitwarden workflow helpers are model-authored, not image-owned.

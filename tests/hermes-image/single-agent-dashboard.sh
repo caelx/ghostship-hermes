@@ -485,6 +485,7 @@ run_in_container "$container_name" "grep -Fx \"AGENT_BROWSER_ARGS='--no-sandbox'
 run_in_container "$container_name" '! grep -q "^AGENT_BROWSER_PROFILE=" /run/ghostship/hermes.env'
 run_in_container "$container_name" 'test -f /opt/ghostship/extensions/ublock-origin-lite/manifest.json'
 run_in_container "$container_name" 'test -f /opt/ghostship/extensions/ublock-origin-lite/managed_storage.json'
+run_in_container "$container_name" 'test -z "$(find /opt/ghostship/extensions/ublock-origin-lite \! -user hermes -print -quit)"'
 run_in_container "$container_name" '! find /etc -path "*/policies/managed/*.json" -print -quit | grep -q .'
 run_in_container "$container_name" '/opt/cloakbrowser-venv/bin/python - <<'\''PY'\''
 import json

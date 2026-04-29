@@ -235,6 +235,7 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && python3 /src/packages/hermes-image/build/install_ubol.py \
       /tmp/ubol-home/chromium \
       /opt/ghostship/extensions/ublock-origin-lite \
+    && chown -R 3000:3000 /opt/ghostship/extensions/ublock-origin-lite \
     && test -f /opt/ghostship/extensions/ublock-origin-lite/manifest.json \
     && test -f /opt/ghostship/extensions/ublock-origin-lite/managed_storage.json \
     && cd /src \

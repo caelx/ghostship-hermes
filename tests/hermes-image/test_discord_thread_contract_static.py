@@ -111,6 +111,7 @@ def test_ublock_origin_lite_is_loaded_by_agent_browser_extension_env() -> None:
 
     assert "ARG UBOL_REF=2026.426.1626" in dockerfile
     assert "AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite" in dockerfile
+    assert "chown -R 3000:3000 /opt/ghostship/extensions/ublock-origin-lite" in dockerfile
     assert "AGENT_BROWSER_ARGS=--no-sandbox" in dockerfile
     assert "DISPLAY=:99" in dockerfile
     assert "xvfb \\" in dockerfile
