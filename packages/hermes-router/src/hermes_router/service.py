@@ -658,6 +658,7 @@ class RouterService:
                 time.sleep(wait_seconds)
                 candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
         if not candidates:
+            self._record_route_exhausted(request.model, request_shape=request_shape, context=context, attempted=attempted)
             raise RouterServiceError(424, {"message": f"No route candidates are available for alias '{request.model}'."})
         request_payload["stream"] = False
         errors: list[dict[str, Any]] = []
@@ -818,6 +819,7 @@ class RouterService:
                 time.sleep(wait_seconds)
                 candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
         if not candidates:
+            self._record_route_exhausted(request.model, request_shape=request_shape, context=context, attempted=attempted)
             raise RouterServiceError(424, {"message": f"No route candidates are available for alias '{request.model}'."})
         attempt_errors: list[dict[str, Any]] = []
         while candidates:
@@ -1478,6 +1480,72 @@ class RouterService:
                         "health_key": context.health_key,
                         "candidate_rank": candidate_rank,
                         "attempt_timeout_seconds": attempt_timeout_seconds,
+                        "free_budget_seconds": context.free_budget_seconds,
+                        "free_budget_remaining_seconds": self._free_budget_remaining(context),
+                    },
+                },
+                created_at=time.time(),
+            )
+        )
+
+    def _record_route_exhausted(
+        self,
+        alias: str,
+        *,
+        request_shape: dict[str, Any] | None,
+        context: RouteContext,
+        attempted: set[tuple[str, str]],
+    ) -> None:
+        skipped: list[dict[str, Any]] = []
+        for model in [
+            *self._free_equivalent_models(alias),
+            *(go_model for go_model in [self._opencode_go_model(alias)] if go_model is not None),
+        ]:
+            provider_model = (model.provider, model.id)
+            if provider_model in attempted:
+                continue
+            skipped.append(
+                {
+                    "provider_name": model.provider,
+                    "backend_model": model.id,
+                    "is_free": bool(model.is_free),
+                    "reason": self._ranked_model_exclusion_reason(
+                        model.provider,
+                        model.id,
+                        alias=alias,
+                        model=model,
+                        shape_key=context.health_key,
+                        requires_tool_protocol=self._shape_key_requires_tool_protocol(context.shape_key),
+                    ),
+                }
+            )
+        self.state_store.record_attempt(
+            RouteEvent(
+                alias=alias,
+                provider_name="router",
+                backend_model=alias,
+                success=False,
+                retryable=False,
+                is_fallback=False,
+                category="route_exhausted",
+                latency_ms=0.0,
+                first_text_latency_ms=None,
+                details={
+                    "message": f"No route candidates are available for alias '{alias}'.",
+                    "request_shape": request_shape,
+                    "attempted": [
+                        {"provider_name": provider_name, "backend_model": backend_model}
+                        for provider_name, backend_model in sorted(attempted)
+                    ],
+                    "skipped": skipped,
+                    "route": {
+                        "request_id": context.request_id,
+                        "session_id": context.session_id,
+                        "shape_key": context.shape_key,
+                        "size_bucket": context.size_bucket,
+                        "health_key": context.health_key,
+                        "candidate_rank": None,
+                        "attempt_timeout_seconds": None,
                         "free_budget_seconds": context.free_budget_seconds,
                         "free_budget_remaining_seconds": self._free_budget_remaining(context),
                     },

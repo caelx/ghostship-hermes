@@ -796,6 +796,24 @@ def test_large_tool_history_deepseek_opencode_go_timeout_fast_fails_next_attempt
     assert go.timeouts == [25.0]
     skipped = {(item["provider_name"], item["backend_model"]): item["reason"] for item in routes["skipped"]}
     assert skipped[("opencode-go", "deepseek-v4-pro")] == "shape_suppressed"
+    exhausted = service.state_store.get_route_events(limit=1, provider_name="router", category="route_exhausted")[0]
+    assert exhausted["retryable"] is False
+    assert exhausted["details"]["route"]["shape_key"] == "stream+tools+tool_history+reasoning"
+    assert exhausted["details"]["route"]["size_bucket"] == "large"
+    assert exhausted["details"]["skipped"] == [
+        {
+            "provider_name": "nvidia-build",
+            "backend_model": "deepseek-ai/deepseek-v4-pro",
+            "is_free": True,
+            "reason": "shape_suppressed",
+        },
+        {
+            "provider_name": "opencode-go",
+            "backend_model": "deepseek-v4-pro",
+            "is_free": False,
+            "reason": "shape_suppressed",
+        },
+    ]
 
 
 def test_large_tool_history_minimax_fallback_timeout_survives_deepseek_suppression(tmp_path: Path) -> None:

@@ -81,7 +81,7 @@ wheels = [
 
 [[package]]
 name = "ghostship-hermes-router"
-version = "0.5.17"
+version = "0.5.18"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

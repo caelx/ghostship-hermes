@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added sanitized router-level `route_exhausted` events when no provider candidate is eligible, so fast `424 Failed Dependency` responses are visible through `/debug/route-events` with request shape, size bucket, attempted candidates, and skipped-candidate reasons; bumped `ghostship-hermes-router` to `0.5.18`.
 - Stopped force-marking all OpenCode-compatible free-provider lane models as free, so paid/credit-required ZenMux/OpenCode Zen/Electron Hub backend IDs are no longer attempted before real `:free`/`-free` or zero-cost equivalents; bumped `ghostship-hermes-router` to `0.5.17`.
 - Normalized outbound assistant tool-call history for OpenCode-compatible providers so empty or malformed historical function arguments are sent upstream as JSON-object arguments instead of tripping MiniMax/OpenCode Go tool adapters, and made provider-origin route exhaustion consistently return non-retryable `424 Failed Dependency` while preserving router-owned validation `400`s; bumped `ghostship-hermes-router` to `0.5.16`.
 - Hardened Ghostship Router production fallback behavior by keying route health on request shape plus message-count size, suppressing timed-out OpenCode Go primary routes without hiding the configured Minimax fallback, adding large Hermes tool-history timeout controls, and exposing size/token estimates in debug route diagnostics; bumped `ghostship-hermes-router` to `0.5.15`.
