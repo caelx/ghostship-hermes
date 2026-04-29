@@ -463,6 +463,7 @@ smoke_note "native browser persistence"
 run_browser_profile_probe "$container_name" write
 run_in_container "$container_name" 'test -d /home/hermes/.local/state/cloakbrowser'
 run_in_container "$container_name" 'command -v google-chrome >/dev/null'
+run_in_container "$container_name" 'test -S /tmp/.X11-unix/X99'
 run_in_container "$container_name" "grep -Fx \"AGENT_BROWSER_EXTENSIONS='/opt/ghostship/extensions/ublock-origin-lite'\" /run/ghostship/hermes.env >/dev/null"
 run_in_container "$container_name" "grep -Fx \"AGENT_BROWSER_ARGS='--no-sandbox'\" /run/ghostship/hermes.env >/dev/null"
 run_in_container "$container_name" '! grep -q "^AGENT_BROWSER_PROFILE=" /run/ghostship/hermes.env'

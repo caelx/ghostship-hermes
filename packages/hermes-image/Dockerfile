@@ -41,6 +41,7 @@ ENV HOME=/home/hermes \
     GHOSTSHIP_TERMINAL_CWD=/workspace \
     AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite \
     AGENT_BROWSER_ARGS=--no-sandbox \
+    DISPLAY=:99 \
     BITWARDENCLI_APPDATA_DIR=/home/hermes/.local/state/bitwarden-cli \
     PATH=/home/hermes/.local/bin:/home/hermes/.cargo/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/opt/ghostship/bin:/opt/hermes/venv/bin:/opt/ghostship-router/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
@@ -107,6 +108,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux \
     ttyd \
     util-linux \
+    xvfb \
     xdg-utils \
     xz-utils \
     yq \

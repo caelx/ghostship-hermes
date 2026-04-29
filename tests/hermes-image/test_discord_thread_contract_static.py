@@ -108,6 +108,9 @@ def test_ublock_origin_lite_is_loaded_by_agent_browser_extension_env() -> None:
     assert "ARG UBOL_REF=2026.426.1626" in dockerfile
     assert "AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite" in dockerfile
     assert "AGENT_BROWSER_ARGS=--no-sandbox" in dockerfile
+    assert "DISPLAY=:99" in dockerfile
+    assert "xvfb \\" in dockerfile
+    assert "exec Xvfb \"$display\"" in read("packages/hermes-image/rootfs/etc/services.d/xvfb/run")
     assert "AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser" not in dockerfile
     assert "ExtensionSettings" not in dockerfile
     assert "ghostship-agent-browser.json" not in dockerfile
