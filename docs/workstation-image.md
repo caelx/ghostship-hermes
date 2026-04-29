@@ -207,7 +207,7 @@ Current preinstalled npm tools:
 - `agent-browser`
 - `opencode`
 
-Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. Raw Chrome callers that omit a profile use `/home/hermes/.local/state/cloakbrowser`, while explicit `agent-browser` profile paths are preserved so native `agent-browser --session` isolation is not collapsed into one locked profile. `agent-browser` also receives `AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite`, loading the image-pinned uBlock Origin Lite without Chrome Web Store policy.
+Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. Raw Chrome callers that omit a profile use `/home/hermes/.local/state/cloakbrowser`, while explicit `agent-browser` profile paths are preserved so native `agent-browser --session` isolation is not collapsed into one locked profile. `agent-browser` also receives `AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite`, loading the image-pinned uBlock Origin Lite without Chrome Web Store policy, plus `AGENT_BROWSER_ARGS=--no-sandbox` for container launches.
 
 Known upstream caveat:
 
