@@ -793,6 +793,14 @@ class RouterService:
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
                         candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
+        self._record_route_exhausted(
+            request.model,
+            request_shape=request_shape,
+            context=context,
+            attempted=attempted,
+            message=f"All route candidates failed for alias '{request.model}'.",
+            attempt_errors=errors,
+        )
         raise RouterServiceError(
             self._status_code_for_attempt_failures(errors),
             {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": errors},
@@ -913,6 +921,14 @@ class RouterService:
                     if wait_seconds is not None:
                         time.sleep(wait_seconds)
                         candidates = self._resolve_remaining_candidates(request.model, attempted, session_id=session_id, requires_tool_protocol=requires_tool_protocol, shape_key=context.health_key)
+        self._record_route_exhausted(
+            request.model,
+            request_shape=request_shape,
+            context=context,
+            attempted=attempted,
+            message=f"All route candidates failed for alias '{request.model}'.",
+            attempt_errors=attempt_errors,
+        )
         raise RouterServiceError(
             self._status_code_for_attempt_failures(attempt_errors),
             {"message": f"All route candidates failed for alias '{request.model}'.", "attempts": attempt_errors},
@@ -1495,6 +1511,8 @@ class RouterService:
         request_shape: dict[str, Any] | None,
         context: RouteContext,
         attempted: set[tuple[str, str]],
+        message: str | None = None,
+        attempt_errors: list[dict[str, Any]] | None = None,
     ) -> None:
         skipped: list[dict[str, Any]] = []
         for model in [
@@ -1531,12 +1549,13 @@ class RouterService:
                 latency_ms=0.0,
                 first_text_latency_ms=None,
                 details={
-                    "message": f"No route candidates are available for alias '{alias}'.",
+                    "message": message or f"No route candidates are available for alias '{alias}'.",
                     "request_shape": request_shape,
                     "attempted": [
                         {"provider_name": provider_name, "backend_model": backend_model}
                         for provider_name, backend_model in sorted(attempted)
                     ],
+                    "attempt_errors": attempt_errors or [],
                     "skipped": skipped,
                     "route": {
                         "request_id": context.request_id,

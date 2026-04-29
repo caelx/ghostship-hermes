@@ -752,6 +752,60 @@ def test_all_route_timeouts_return_nonretryable_failed_dependency(tmp_path: Path
     assert "All route candidates failed" in response.json()["error"]["message"]
 
 
+def test_post_attempt_exhaustion_records_skipped_suppressed_fallback(tmp_path: Path) -> None:
+    nvidia = FakeProvider(
+        "nvidia-build",
+        models=[free_model("deepseek-ai/deepseek-v4-pro", "nvidia-build")],
+        failures={
+            "deepseek-ai/deepseek-v4-pro": [
+                NormalizedProviderError(
+                    "timeout",
+                    "request timed out",
+                    provider="nvidia-build",
+                    backend_model="deepseek-ai/deepseek-v4-pro",
+                    retryable=True,
+                )
+            ]
+        },
+    )
+    go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
+    service = make_service(tmp_path, providers={"nvidia-build": nvidia, "opencode-go": go})
+    service.state_store.record_shape_result(
+        "opencode-go",
+        "deepseek-v4-pro",
+        "stream+tools+tool_history+reasoning|size=large",
+        success=False,
+        category="request_timeout",
+        latency_ms=25000.0,
+        first_text_latency_ms=None,
+    )
+    client = TestClient(create_app(service=service, config=service.config))
+
+    response = client.post("/v1/chat/completions", json=large_tool_history_payload("deepseek-v4-pro"))
+
+    assert response.status_code == 424
+    assert nvidia.calls == ["deepseek-ai/deepseek-v4-pro"]
+    assert go.calls == []
+    exhausted = service.state_store.get_route_events(limit=1, provider_name="router", category="route_exhausted")[0]
+    assert exhausted["retryable"] is False
+    assert exhausted["details"]["message"] == "All route candidates failed for alias 'deepseek-v4-pro'."
+    assert exhausted["details"]["route"]["shape_key"] == "stream+tools+tool_history+reasoning"
+    assert exhausted["details"]["route"]["size_bucket"] == "large"
+    assert exhausted["details"]["attempted"] == [
+        {"provider_name": "nvidia-build", "backend_model": "deepseek-ai/deepseek-v4-pro"}
+    ]
+    assert exhausted["details"]["attempt_errors"][0]["provider"] == "nvidia-build"
+    assert exhausted["details"]["attempt_errors"][0]["category"] == "request_timeout"
+    assert exhausted["details"]["skipped"] == [
+        {
+            "provider_name": "opencode-go",
+            "backend_model": "deepseek-v4-pro",
+            "is_free": False,
+            "reason": "shape_suppressed",
+        }
+    ]
+
+
 def test_large_tool_history_deepseek_opencode_go_timeout_fast_fails_next_attempt(tmp_path: Path) -> None:
     nvidia = FakeProvider(
         "nvidia-build",
