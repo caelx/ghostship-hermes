@@ -124,10 +124,8 @@ class OpencodeZenProvider:
         transport: httpx.BaseTransport | None = None,
         default_timeout: float = 30.0,
         provider_name: str = "opencode-zen",
-        force_free_models: bool = False,
     ):
         self.name = provider_name
-        self._force_free_models = force_free_models
         self.client = BaseHttpClient(
             base_url.rstrip("/"),
             default_headers={
@@ -159,7 +157,7 @@ class OpencodeZenProvider:
             model = ProviderModel(
                 id=model_id,
                 provider=self.name,
-                is_free=self._force_free_models or self._is_free_model(model_id, flattened_metadata),
+                is_free=self._is_free_model(model_id, flattened_metadata),
                 tags=self._tags_for_model(model_id),
                 metadata=flattened_metadata,
             )

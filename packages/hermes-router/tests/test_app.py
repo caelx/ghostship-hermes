@@ -1114,25 +1114,13 @@ def test_slow_free_provider_falls_back_to_opencode_go_when_no_other_free_is_elig
     assert go.calls == ["deepseek-v4-pro"]
 
 
-def test_model_scoped_exhaustion_keeps_same_provider_free_backend_available(tmp_path: Path) -> None:
+def test_paid_free_provider_backend_is_not_used_as_free_equivalent(tmp_path: Path) -> None:
     zenmux = FakeProvider(
         "zenmux",
         models=[
-            free_model("deepseek/deepseek-v4-pro", "zenmux"),
+            paid_model("deepseek/deepseek-v4-pro", "zenmux"),
             free_model("deepseek/deepseek-v4-pro-free", "zenmux"),
         ],
-        failures={
-            "deepseek/deepseek-v4-pro": [
-                NormalizedProviderError(
-                    "quota_exhausted",
-                    "Credit required for this model.",
-                    provider="zenmux",
-                    backend_model="deepseek/deepseek-v4-pro",
-                    retryable=False,
-                    details={"model_scoped": True},
-                )
-            ]
-        },
     )
     go = FakeProvider("opencode-go", models=[paid_model("deepseek-v4-pro", "opencode-go")])
     service = make_service(tmp_path, providers={"zenmux": zenmux, "opencode-go": go})
@@ -1142,18 +1130,14 @@ def test_model_scoped_exhaustion_keeps_same_provider_free_backend_available(tmp_
     )
 
     assert headers["X-Ghostship-Router-Backend-Provider"] == "zenmux"
-    assert zenmux.calls == ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-pro-free"]
+    assert zenmux.calls == ["deepseek/deepseek-v4-pro-free"]
     assert go.calls == []
-    provider_state = service.state_store.get_provider_state()["zenmux"]
-    assert provider_state["cooldown_until"] == 0
-    paid_model_state = service.state_store.get_model_state()["zenmux::deepseek/deepseek-v4-pro"]
-    assert paid_model_state["cooldown_until"] > time.time()
 
     service.chat_completions(
         ChatCompletionRequest.model_validate({"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hello again"}]})
     )
 
-    assert zenmux.calls == ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-pro-free", "deepseek/deepseek-v4-pro-free"]
+    assert zenmux.calls == ["deepseek/deepseek-v4-pro-free", "deepseek/deepseek-v4-pro-free"]
 
 
 def test_opencode_go_fallback_is_not_removed_by_provider_pacing(tmp_path: Path) -> None:

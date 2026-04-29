@@ -103,6 +103,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - NVIDIA free inventory discovery should use the filtered `build.nvidia.com/models?filters=nimType%3Anim_type_preview` catalog page and dedupe repeated model ids before persisting inventory.
 - Normal router routing exposes OpenCode Go model IDs only when explicit free-provider equivalents are configured.
 - Free providers route only through explicit equivalence entries for an exposed OpenCode Go model id.
+- Free-provider lanes must still classify individual backend models by actual free metadata or `:free`/`-free` ids; do not force all models on ZenMux/OpenCode Zen/Electron Hub to free.
 - Normal routing must not use alias/family/top-five reserve selection. Use only the requested OpenCode Go model id's explicit equivalence table.
 - Default free-provider RPMs are NVIDIA Build 30, OpenCode Zen 30, ZenMux 10, Electron Hub 5, and OpenRouter 20.
 - Candidate selection is RPM-weighted deficit round robin across eligible free equivalents, adjusted by shape-aware health and bounded free-provider timeouts, then `opencode-go/<same model id>` as paid fallback.

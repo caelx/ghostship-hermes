@@ -106,7 +106,6 @@ class RouterService:
                 base_url=self.config.opencode_base_url,
                 default_timeout=self.config.default_timeout,
                 provider_name="opencode-zen",
-                force_free_models=True,
             )
         if self.config.zenmux_api_key:
             providers["zenmux"] = OpencodeZenProvider(
@@ -114,7 +113,6 @@ class RouterService:
                 base_url=self.config.zenmux_base_url,
                 default_timeout=self.config.default_timeout,
                 provider_name="zenmux",
-                force_free_models=True,
             )
         if self.config.electron_hub_api_key:
             providers["electron-hub"] = OpencodeZenProvider(
@@ -122,7 +120,6 @@ class RouterService:
                 base_url=self.config.electron_hub_base_url,
                 default_timeout=self.config.default_timeout,
                 provider_name="electron-hub",
-                force_free_models=True,
             )
         if self.config.opencode_go_api_key:
             providers["opencode-go"] = OpencodeZenProvider(
