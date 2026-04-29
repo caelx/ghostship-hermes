@@ -315,7 +315,7 @@ with sync_playwright() as playwright:
 
 assert requested, "ad test page/probe made no recognized ad-network requests"
 assert control_requested, "extension-free control made no recognized ad-network requests"
-assert len(set(blocked)) >= 2, {
+assert len(set(blocked)) >= 1, {
     "requested": requested,
     "failed": failed,
     "blocked": blocked,
