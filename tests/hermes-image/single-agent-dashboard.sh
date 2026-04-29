@@ -229,17 +229,20 @@ def run_agent_browser(session, args, env):
 
 
 def close_session(session, env):
-    subprocess.run(
-        ["agent-browser", "--session", session, "close"],
-        env=env,
-        text=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    try:
+        subprocess.run(
+            ["agent-browser", "--session", session, "close"],
+            env=env,
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def launch_agent_browser(session, env):
-    close_session(session, env)
     run_agent_browser(session, ["open", "about:blank"], env)
     cdp_url = run_agent_browser(session, ["get", "cdp-url"], env).splitlines()[-1]
     assert cdp_url, f"agent-browser returned empty CDP URL for {session}"
