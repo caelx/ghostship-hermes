@@ -198,12 +198,20 @@ ad_markers = (
 def run_agent_browser(session, args, env):
     completed = subprocess.run(
         ["agent-browser", "--session", session, *args],
-        check=True,
         env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+    if completed.returncode != 0:
+        raise AssertionError(
+            "agent-browser failed\n"
+            f"session={session}\n"
+            f"args={args}\n"
+            f"returncode={completed.returncode}\n"
+            f"stdout={completed.stdout}\n"
+            f"stderr={completed.stderr}\n"
+        )
     return completed.stdout.strip()
 
 
