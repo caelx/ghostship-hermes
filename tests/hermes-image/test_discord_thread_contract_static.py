@@ -88,6 +88,7 @@ def test_chrome_wrapper_does_not_force_all_launches_into_one_profile() -> None:
     assert 'args+=("--user-data-dir=${profile_root}")' in chrome
     assert 'if [ "$has_log_level" = false ]; then' in chrome
     assert 'args+=("--log-level=3")' in chrome
+    assert 'args+=("--no-sandbox")' in chrome
     assert "--disable-extensions" not in chrome
     assert "GHOSTSHIP_CHROME_ALLOW_DISABLE_EXTENSIONS" not in chrome
     assert "AGENT_BROWSER_PROFILE=/home/hermes/.local/state/cloakbrowser" not in dockerfile

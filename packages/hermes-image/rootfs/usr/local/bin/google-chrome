@@ -31,6 +31,7 @@ PY
 args=()
 has_user_data_dir=false
 has_log_level=false
+has_no_sandbox=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --user-data-dir=*)
@@ -61,6 +62,11 @@ while [ "$#" -gt 0 ]; do
       args+=("$1" "$2")
       shift 2
       ;;
+    --no-sandbox)
+      has_no_sandbox=true
+      args+=("$1")
+      shift
+      ;;
     *)
       args+=("$1")
       shift
@@ -74,6 +80,10 @@ fi
 
 if [ "$has_log_level" = false ]; then
   args+=("--log-level=3")
+fi
+
+if [ "$has_no_sandbox" = false ]; then
+  args+=("--no-sandbox")
 fi
 
 exec "$binary" "${stealth_args[@]}" "${args[@]}"
