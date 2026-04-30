@@ -538,6 +538,10 @@ def main() -> None:
             "            turn_route = self._resolve_turn_agent_config(message, model, runtime_kwargs)\n",
             "            turn_route = self._resolve_turn_agent_config(message, model, runtime_kwargs, source)\n",
         ),
+    ):
+        if old in gateway_text:
+            gateway_text = gateway_text.replace(old, new, 1)
+    for old, new in (
         (
             """        # No args: show interactive picker (Telegram/Discord) or text list\n        if not model_input and not explicit_provider:\n""",
             """        forced_channel = self._ghostship_discord_forced_channel(source)\n        if forced_channel == \"codex\":\n            self._session_model_overrides.pop(session_key, None)\n            return \"This Discord Codex channel is pinned to openai-codex (`gpt-5.5`).\"\n\n        # No args: show interactive picker (Telegram/Discord) or text list\n        if not model_input and not explicit_provider:\n""",
@@ -550,8 +554,13 @@ def main() -> None:
             "            agent.reasoning_config = reasoning_config\n            agent.service_tier = self._service_tier\n            agent.request_overrides = turn_route.get(\"request_overrides\")\n",
             "            agent.reasoning_config = turn_route.get(\"reasoning_config\", reasoning_config)\n            agent.service_tier = turn_route.get(\"service_tier\", self._service_tier)\n            agent.request_overrides = turn_route.get(\"request_overrides\")\n",
         ),
+        (
+            "            agent.reasoning_config = reasoning_config\n            agent.service_tier = self._service_tier\n            agent.request_overrides = turn_route.get(\"request_overrides\") or {}\n",
+            "            agent.reasoning_config = turn_route.get(\"reasoning_config\", reasoning_config)\n            agent.service_tier = turn_route.get(\"service_tier\", self._service_tier)\n            agent.request_overrides = turn_route.get(\"request_overrides\") or {}\n",
+        ),
     ):
-        gateway_text = replace_once(gateway_text, old, new, path=gateway_run)
+        if old in gateway_text:
+            gateway_text = gateway_text.replace(old, new, 1)
     gateway_text = replace_once(
         gateway_text,
         "    async def _session_expiry_watcher(self, interval: int = 300):\n",
@@ -746,18 +755,18 @@ def main() -> None:
 
     config_py = root / "hermes_cli" / "config.py"
     config_text = config_py.read_text(encoding="utf-8")
-    config_text = replace_once(
-        config_text,
-        '        "keyEnv": "key_env",\n        "defaultModel": "default_model",\n',
-        '        "keyEnv": "key_env",\n        "apiKeyEnv": "api_key_env",\n        "defaultModel": "default_model",\n',
-        path=config_py,
-    )
-    config_text = replace_once(
-        config_text,
-        '        "name", "api", "url", "base_url", "api_key", "key_env",\n        "api_mode", "transport", "model", "default_model", "models",\n',
-        '        "name", "api", "url", "base_url", "api_key", "key_env", "api_key_env",\n        "api_mode", "transport", "model", "default_model", "models",\n',
-        path=config_py,
-    )
+    for old, new in (
+        (
+            '        "keyEnv": "key_env",\n        "defaultModel": "default_model",\n',
+            '        "keyEnv": "key_env",\n        "apiKeyEnv": "api_key_env",\n        "defaultModel": "default_model",\n',
+        ),
+        (
+            '        "name", "api", "url", "base_url", "api_key", "key_env",\n        "api_mode", "transport", "model", "default_model", "models",\n',
+            '        "name", "api", "url", "base_url", "api_key", "key_env", "api_key_env",\n        "api_mode", "transport", "model", "default_model", "models",\n',
+        ),
+    ):
+        if old in config_text:
+            config_text = config_text.replace(old, new, 1)
     config_text = replace_once(
         config_text,
         '    key_env = entry.get("key_env")\n    if isinstance(key_env, str) and key_env.strip():\n        normalized["key_env"] = key_env.strip()\n',
@@ -800,18 +809,25 @@ def main() -> None:
 
     run_agent_py = root / "run_agent.py"
     run_agent_text = run_agent_py.read_text(encoding="utf-8")
-    run_agent_text = replace_once(
-        run_agent_text,
+    for old in (
         "    def _try_activate_fallback(self) -> bool:\n",
-        "    def _try_activate_fallback(self, trigger=None, error=None, status_code=None) -> bool:\n",
-        path=run_agent_py,
-    )
-    run_agent_text = replace_once(
-        run_agent_text,
-        "            return self._try_activate_fallback()  # skip invalid, try next\n",
-        "            return self._try_activate_fallback(trigger=trigger, error=error, status_code=status_code)  # skip invalid, try next\n",
-        path=run_agent_py,
-    )
+        '    def _try_activate_fallback(self, reason: "FailoverReason | None" = None) -> bool:\n',
+    ):
+        if old in run_agent_text:
+            run_agent_text = run_agent_text.replace(
+                old,
+                "    def _try_activate_fallback(self, reason=None, trigger=None, error=None, status_code=None) -> bool:\n",
+                1,
+            )
+            break
+    else:
+        raise RuntimeError(f"missing patch marker in {run_agent_py}: _try_activate_fallback signature")
+    if "            return self._try_activate_fallback()  # skip invalid, try next\n" in run_agent_text:
+        run_agent_text = run_agent_text.replace(
+            "            return self._try_activate_fallback()  # skip invalid, try next\n",
+            "            return self._try_activate_fallback(reason=reason, trigger=trigger, error=error, status_code=status_code)  # skip invalid, try next\n",
+            1,
+        )
     run_agent_text = replace_once(
         run_agent_text,
         "            old_model = self.model\n            self.model = fb_model\n",
@@ -833,7 +849,7 @@ def main() -> None:
                 logging.warning(
                     "Primary model failure before fallback: trigger=%s primary=%s (%s) "
                     "fallback=%s (%s) status=%s error_type=%s error=%s",
-                    trigger or "unspecified",
+                    trigger or getattr(reason, "value", reason) or "unspecified",
                     old_model,
                     old_provider,
                     fb_model,
@@ -976,7 +992,32 @@ def main() -> None:
 
     app_tsx = root / "web" / "src" / "App.tsx"
     app_text = app_tsx.read_text(encoding="utf-8")
-    if 'const BUILTIN_ROUTES: Record<string, React.ComponentType> = {' in app_text:
+    if "const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {" in app_text:
+        app_text = replace_once(
+            app_text,
+            "  Terminal,\n  Wrench,\n",
+            "  Terminal,\n  TerminalSquare,\n  Wrench,\n",
+            path=app_tsx,
+        )
+        app_text = replace_once(
+            app_text,
+            'import CronPage from "@/pages/CronPage";\n',
+            'import CronPage from "@/pages/CronPage";\nimport ConsolePage from "@/pages/ConsolePage";\n',
+            path=app_tsx,
+        )
+        app_text = replace_once(
+            app_text,
+            '  "/env": EnvPage,\n  "/docs": DocsPage,\n',
+            '  "/env": EnvPage,\n  "/console": ConsolePage,\n  "/docs": DocsPage,\n',
+            path=app_tsx,
+        )
+        app_text = replace_once(
+            app_text,
+            '  { path: "/env", labelKey: "keys", label: "Keys", icon: KeyRound },\n  {\n    path: "/docs",\n',
+            '  { path: "/env", labelKey: "keys", label: "Keys", icon: KeyRound },\n  { path: "/console", label: "Terminal", icon: TerminalSquare },\n  {\n    path: "/docs",\n',
+            path=app_tsx,
+        )
+    elif 'const BUILTIN_ROUTES: Record<string, React.ComponentType> = {' in app_text:
         app_text = replace_once(
             app_text,
             '  Terminal,\n  Globe,\n',
