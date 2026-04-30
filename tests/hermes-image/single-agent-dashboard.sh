@@ -538,10 +538,11 @@ printf '%s' "$status_json" | python3 -c 'import json, sys; data = json.load(sys.
 
 curl -fsSI "http://127.0.0.1:${dashboard_port}/terminal/" >/dev/null
 bundle="$(curl -fsS "http://127.0.0.1:${dashboard_port}/" | sed -n 's/.*src=\"\([^\"]*index-[^\"]*\.js\)\".*/\1/p' | head -n1)"
-curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q '/terminal/'
-curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'sandbox:"allow-same-origin allow-scripts allow-forms"'
-! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'allow-modals'
-! curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}" | grep -q 'href:"/terminal/",target:"_blank"'
+bundle_content="$(curl -fsS "http://127.0.0.1:${dashboard_port}${bundle}")"
+grep -q '/terminal/' <<<"$bundle_content"
+grep -q 'sandbox:"allow-same-origin allow-scripts allow-forms"' <<<"$bundle_content"
+! grep -q 'allow-modals' <<<"$bundle_content"
+! grep -q 'href:"/terminal/",target:"_blank"' <<<"$bundle_content"
 
 run_in_container "$container_name" '. /run/ghostship/hermes.env; [ "${FIRECRAWL_API_KEY:-}" = test-firecrawl ]'
 run_in_container "$container_name" '. /run/ghostship/hermes.env; [ "${DISCORD_WEBHOOK_CHANNEL:-}" = webhooks-channel ]'
