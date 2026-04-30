@@ -340,6 +340,7 @@ run_browser_humanize_probe() {
     "$target_container" /usr/bin/timeout 120s /opt/cloakbrowser-venv/bin/python - <<'PY'
 import os
 import subprocess
+import time
 import urllib.parse
 
 from playwright.sync_api import sync_playwright
@@ -366,6 +367,20 @@ def run_agent_browser(session, args, env):
     return completed.stdout.strip()
 
 
+def find_test_page(browser):
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        for context in browser.contexts:
+            for page in context.pages:
+                try:
+                    if page.evaluate("Boolean(document.querySelector('#q'))"):
+                        return page
+                except Exception:
+                    pass
+        time.sleep(0.2)
+    raise AssertionError("test page with #q not found")
+
+
 env = os.environ.copy()
 session = "ghostship-humanize-smoke"
 html = """<!doctype html>
@@ -390,7 +405,7 @@ try:
     with sync_playwright() as playwright:
         browser = playwright.chromium.connect_over_cdp(cdp_url)
         try:
-            page = browser.contexts[0].pages[0]
+            page = find_test_page(browser)
             moves = page.evaluate("window.__moves")
             clicked = page.evaluate("window.__clicked")
             value = page.evaluate("document.querySelector('#q').value")
