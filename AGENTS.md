@@ -48,6 +48,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Hermes `0.9` has an upstream web dashboard. Use that as the primary browser surface.
 - The runtime is a workstation container, not a NixOS module container. Hermes state is user-owned under `/home/hermes/.hermes`.
 - The correct service split is Docker for container lifecycle and `s6` for in-container supervision.
+- Downstream container services should stop the s6-based image with `SIGTERM`; `SIGRTMIN+3` does not trigger s6-overlay shutdown and causes Podman to SIGKILL the container after timeout.
 - `terminal.backend: local` is the right backend for this image. Nested Docker terminal sandboxes are the wrong model here.
 - Hermes core must stay outside `/home/hermes`; keep it in `/opt/hermes` so replacing the image actually replaces Hermes.
 - Downstream persistence contract is `/home/hermes`, `/workspace`, and `/nix`.
