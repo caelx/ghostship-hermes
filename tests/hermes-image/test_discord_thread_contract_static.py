@@ -175,6 +175,19 @@ def test_opencode_go_replays_tool_calls_with_reasoning_content_placeholder() -> 
         assert 'api_msg["reasoning_content"] = ""' in text
 
 
+def test_fallback_logs_primary_failure_reason_when_switching_models() -> None:
+    for path in (
+        "packages/hermes-agent-wrapped/package.nix",
+        "packages/hermes-image/build/prepare_upstream_hermes.py",
+    ):
+        text = read(path)
+        assert "Primary model failure before fallback" in text
+        assert "non_retryable_client_error" in text
+        assert "max_retries_exhausted" in text
+        assert "rate_limited" in text
+        assert "self._summarize_api_error(error)" in text
+
+
 def test_downstream_discord_snowflake_ids_are_not_committed() -> None:
     tracked_paths = [
         "README.md",

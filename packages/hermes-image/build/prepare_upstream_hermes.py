@@ -788,6 +788,83 @@ def main() -> None:
     run_agent_text = run_agent_py.read_text(encoding="utf-8")
     run_agent_text = replace_once(
         run_agent_text,
+        "    def _try_activate_fallback(self) -> bool:\n",
+        "    def _try_activate_fallback(self, trigger=None, error=None, status_code=None) -> bool:\n",
+        path=run_agent_py,
+    )
+    run_agent_text = replace_once(
+        run_agent_text,
+        "            return self._try_activate_fallback()  # skip invalid, try next\n",
+        "            return self._try_activate_fallback(trigger=trigger, error=error, status_code=status_code)  # skip invalid, try next\n",
+        path=run_agent_py,
+    )
+    run_agent_text = replace_once(
+        run_agent_text,
+        "            old_model = self.model\n            self.model = fb_model\n",
+        "            old_model = self.model\n            old_provider = self.provider\n            self.model = fb_model\n",
+        path=run_agent_py,
+    )
+    run_agent_text = replace_once(
+        run_agent_text,
+        """            logging.info(
+                "Fallback activated: %s → %s (%s)",
+                old_model, fb_model, fb_provider,
+            )
+""",
+        """            logging.info(
+                "Fallback activated: %s → %s (%s)",
+                old_model, fb_model, fb_provider,
+            )
+            if trigger or error is not None:
+                logging.warning(
+                    "Primary model failure before fallback: trigger=%s primary=%s (%s) "
+                    "fallback=%s (%s) status=%s error_type=%s error=%s",
+                    trigger or "unspecified",
+                    old_model,
+                    old_provider,
+                    fb_model,
+                    fb_provider,
+                    status_code or "",
+                    type(error).__name__ if error is not None else "",
+                    self._summarize_api_error(error) if error is not None else "",
+                )
+""",
+        path=run_agent_py,
+    )
+    for old, new in (
+        (
+            "                            if self._try_activate_fallback():\n",
+            "                            if self._try_activate_fallback(trigger=\"nous_rate_guard\"):\n",
+        ),
+        (
+            "                        if self._try_activate_fallback():\n",
+            "                        if self._try_activate_fallback(trigger=\"invalid_response\", error=response):\n",
+        ),
+        (
+            "                            if self._try_activate_fallback():\n",
+            "                            if self._try_activate_fallback(trigger=\"invalid_response_max_retries\", error=response):\n",
+        ),
+        (
+            "                            if self._try_activate_fallback():\n",
+            "                            if self._try_activate_fallback(trigger=\"rate_limited\", error=api_error, status_code=status_code):\n",
+        ),
+        (
+            "                        if self._try_activate_fallback():\n",
+            "                        if self._try_activate_fallback(trigger=\"non_retryable_client_error\", error=api_error, status_code=status_code):\n",
+        ),
+        (
+            "                        if self._try_activate_fallback():\n",
+            "                        if self._try_activate_fallback(trigger=\"max_retries_exhausted\", error=api_error, status_code=status_code):\n",
+        ),
+        (
+            "                            if self._try_activate_fallback():\n",
+            "                            if self._try_activate_fallback(trigger=\"empty_response_exhausted\"):\n",
+        ),
+    ):
+        if old in run_agent_text:
+            run_agent_text = run_agent_text.replace(old, new, 1)
+    run_agent_text = replace_once(
+        run_agent_text,
         '''        kimi_requires_reasoning = (
             self.provider in {"kimi-coding", "kimi-coding-cn"}
             or base_url_host_matches(self.base_url, "api.kimi.com")
@@ -812,6 +889,8 @@ def main() -> None:
     )
     if 'api_msg["reasoning_content"] = ""' not in run_agent_text:
         raise RuntimeError("failed to verify opencode-go reasoning_content replay fallback")
+    if "Primary model failure before fallback" not in run_agent_text:
+        raise RuntimeError("failed to add primary fallback failure logging")
     run_agent_py.write_text(run_agent_text, encoding="utf-8")
 
     app_tsx = root / "web" / "src" / "App.tsx"
