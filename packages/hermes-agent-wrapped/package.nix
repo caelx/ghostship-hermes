@@ -787,10 +787,45 @@ run_agent_text = run_agent_text.replace(
 """,
     1,
 )
+run_agent_text = run_agent_text.replace(
+    """        if kimi_requires_reasoning and source_msg.get("tool_calls"):
+            api_msg["reasoning_content"] = ""
+""",
+    """        if ghostship_opencode_go_reasoning:
+            api_msg["reasoning_content"] = ""
+            return
+
+        if kimi_requires_reasoning and source_msg.get("tool_calls"):
+            api_msg["reasoning_content"] = ""
+""",
+    1,
+)
+run_agent_text = run_agent_text.replace(
+    """            for msg in messages:
+                api_msg = msg.copy()
+                for internal_field in ("reasoning", "finish_reason", "_thinking_prefill"):
+                    api_msg.pop(internal_field, None)
+                if _needs_sanitize:
+                    self._sanitize_tool_calls_for_strict_api(api_msg)
+                api_messages.append(api_msg)
+""",
+    """            for msg in messages:
+                api_msg = msg.copy()
+                self._copy_reasoning_content_for_api(msg, api_msg)
+                for internal_field in ("reasoning", "finish_reason", "_thinking_prefill"):
+                    api_msg.pop(internal_field, None)
+                if _needs_sanitize:
+                    self._sanitize_tool_calls_for_strict_api(api_msg)
+                api_messages.append(api_msg)
+""",
+    1,
+)
 if 'self.provider == "opencode-go"' not in run_agent_text:
-    raise RuntimeError("failed to replay opencode-go tool-call history with reasoning_content")
+    raise RuntimeError("failed to replay opencode-go assistant history with reasoning_content")
 if 'api_msg["reasoning_content"] = ""' not in run_agent_text:
     raise RuntimeError("failed to verify opencode-go reasoning_content replay fallback")
+if 'if ghostship_opencode_go_reasoning:\n            api_msg["reasoning_content"] = ""' not in run_agent_text:
+    raise RuntimeError("failed to verify opencode-go all-assistant reasoning_content replay fallback")
 if "Primary model failure before fallback" not in run_agent_text:
     raise RuntimeError("failed to add primary fallback failure logging")
 run_agent.write_text(run_agent_text)
