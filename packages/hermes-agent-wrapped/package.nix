@@ -53,6 +53,7 @@ config_py = site / "hermes_cli" / "config.py"
 runtime_provider = site / "hermes_cli" / "runtime_provider.py"
 auxiliary_client = site / "agent" / "auxiliary_client.py"
 webhook_cli = site / "hermes_cli" / "webhook.py"
+run_agent = site / "run_agent.py"
 
 tools_text = tools.read_text()
 tools_text = tools_text.replace(
@@ -688,6 +689,36 @@ auxiliary_client_text = auxiliary_client_text.replace(
 if 'custom_entry.get("api_key_env", "")' not in auxiliary_client_text:
     raise RuntimeError("failed to teach agent named custom providers about api_key_env")
 auxiliary_client.write_text(auxiliary_client_text)
+
+run_agent_text = run_agent.read_text()
+run_agent_text = run_agent_text.replace(
+    """        kimi_requires_reasoning = (
+            self.provider in {"kimi-coding", "kimi-coding-cn"}
+            or base_url_host_matches(self.base_url, "api.kimi.com")
+            or base_url_host_matches(self.base_url, "moonshot.ai")
+            or base_url_host_matches(self.base_url, "moonshot.cn")
+        )
+""",
+    """        ghostship_opencode_go_reasoning = (
+            self.provider == "opencode-go"
+            and isinstance(getattr(self, "reasoning_config", None), dict)
+            and self.reasoning_config.get("enabled") is not False
+        )
+        kimi_requires_reasoning = (
+            self.provider in {"kimi-coding", "kimi-coding-cn"}
+            or ghostship_opencode_go_reasoning
+            or base_url_host_matches(self.base_url, "api.kimi.com")
+            or base_url_host_matches(self.base_url, "moonshot.ai")
+            or base_url_host_matches(self.base_url, "moonshot.cn")
+        )
+""",
+    1,
+)
+if 'self.provider == "opencode-go"' not in run_agent_text:
+    raise RuntimeError("failed to replay opencode-go tool-call history with reasoning_content")
+if 'api_msg["reasoning_content"] = ""' not in run_agent_text:
+    raise RuntimeError("failed to verify opencode-go reasoning_content replay fallback")
+run_agent.write_text(run_agent_text)
 
 model_switch_text = model_switch.read_text()
 old_user_provider_block = """    # --- 3. User-defined endpoints from config ---\n    if user_providers and isinstance(user_providers, dict):\n        for ep_name, ep_cfg in user_providers.items():\n            if not isinstance(ep_cfg, dict):\n                continue\n            display_name = ep_cfg.get(\"name\", \"\") or ep_name\n            api_url = ep_cfg.get(\"api\", \"\") or ep_cfg.get(\"url\", \"\") or \"\"\n            default_model = ep_cfg.get(\"default_model\", \"\")\n\n            models_list = []\n            if default_model:\n                models_list.append(default_model)\n\n            # Try to probe /v1/models if URL is set (but don't block on it)\n            # For now just show what we know from config\n            results.append({\n                \"slug\": ep_name,\n                \"name\": display_name,\n                \"is_current\": ep_name == current_provider,\n                \"is_user_defined\": True,\n                \"models\": models_list,\n                \"total_models\": len(models_list) if models_list else 0,\n                \"source\": \"user-config\",\n                \"api_url\": api_url,\n            })\n"""

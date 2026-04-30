@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Fixed direct OpenCode Go reasoning/tool-call replay by patching Hermes to add the required empty `reasoning_content` marker for prior assistant tool-call messages when managed reasoning is enabled, preventing Moonshot/Kimi `HTTP 400` failures after the local router removal.
 - Breaking: removed Ghostship Router from the image, flake outputs, CI, docs, and smoke contract; Hermes now calls OpenCode Go directly with `deepseek-v4-flash` as primary and `kimi-k2.6` as fallback, and persisted homes are converged away from the old `custom:ghostship-router` provider.
 - Switched CloakBrowser ad blocking to a pinned unpacked uBlock Origin Lite loaded through `AGENT_BROWSER_EXTENSIONS`, patched its baked defaults for complete filtering plus the major default/privacy/security/annoyance rulesets, removed the old managed Chrome/Chromium force-install policy, and smoke-test real ad-network blocking against an extension-free control.
 - Fixed the baked uBlock Origin Lite install to avoid injecting an unpacked-extension manifest key that prevents CloakBrowser/Chrome from reaching CDP startup.

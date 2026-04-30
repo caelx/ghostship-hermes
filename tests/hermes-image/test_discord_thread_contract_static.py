@@ -164,6 +164,17 @@ def test_managed_opencode_go_defaults_use_flash_and_kimi() -> None:
     assert '_GHOSTSHIP_' 'ROUTER_API_KEY' not in init_home
 
 
+def test_opencode_go_replays_tool_calls_with_reasoning_content_placeholder() -> None:
+    for path in (
+        "packages/hermes-agent-wrapped/package.nix",
+        "packages/hermes-image/build/prepare_upstream_hermes.py",
+    ):
+        text = read(path)
+        assert 'self.provider == "opencode-go"' in text
+        assert "ghostship_opencode_go_reasoning" in text
+        assert 'api_msg["reasoning_content"] = ""' in text
+
+
 def test_downstream_discord_snowflake_ids_are_not_committed() -> None:
     tracked_paths = [
         "README.md",

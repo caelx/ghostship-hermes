@@ -784,6 +784,36 @@ def main() -> None:
     )
     auxiliary_client_py.write_text(auxiliary_client_text, encoding="utf-8")
 
+    run_agent_py = root / "run_agent.py"
+    run_agent_text = run_agent_py.read_text(encoding="utf-8")
+    run_agent_text = replace_once(
+        run_agent_text,
+        '''        kimi_requires_reasoning = (
+            self.provider in {"kimi-coding", "kimi-coding-cn"}
+            or base_url_host_matches(self.base_url, "api.kimi.com")
+            or base_url_host_matches(self.base_url, "moonshot.ai")
+            or base_url_host_matches(self.base_url, "moonshot.cn")
+        )
+''',
+        '''        ghostship_opencode_go_reasoning = (
+            self.provider == "opencode-go"
+            and isinstance(getattr(self, "reasoning_config", None), dict)
+            and self.reasoning_config.get("enabled") is not False
+        )
+        kimi_requires_reasoning = (
+            self.provider in {"kimi-coding", "kimi-coding-cn"}
+            or ghostship_opencode_go_reasoning
+            or base_url_host_matches(self.base_url, "api.kimi.com")
+            or base_url_host_matches(self.base_url, "moonshot.ai")
+            or base_url_host_matches(self.base_url, "moonshot.cn")
+        )
+''',
+        path=run_agent_py,
+    )
+    if 'api_msg["reasoning_content"] = ""' not in run_agent_text:
+        raise RuntimeError("failed to verify opencode-go reasoning_content replay fallback")
+    run_agent_py.write_text(run_agent_text, encoding="utf-8")
+
     app_tsx = root / "web" / "src" / "App.tsx"
     app_text = app_tsx.read_text(encoding="utf-8")
     if 'const BUILTIN_ROUTES: Record<string, React.ComponentType> = {' in app_text:
