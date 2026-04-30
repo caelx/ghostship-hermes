@@ -194,6 +194,13 @@ turn_route_direct_marker = """    def _resolve_turn_agent_config(self, user_mess
         route["request_overrides"] = overrides
         return route
 """
+turn_route_direct_marker_empty_overrides = turn_route_direct_marker.replace(
+    'route["request_overrides"] = None',
+    'route["request_overrides"] = {}',
+).replace(
+    'route["request_overrides"] = overrides\n',
+    'route["request_overrides"] = overrides or {}\n',
+)
 turn_route_helpers = """    @staticmethod
     def _ghostship_is_discord_codex_channel(source) -> bool:
         if source is None:
@@ -317,19 +324,21 @@ turn_route_direct_replacement = turn_route_helpers + """    def _resolve_turn_ag
 
         service_tier = getattr(self, "_service_tier", None)
         if not service_tier:
-            route["request_overrides"] = None
+            route["request_overrides"] = {}
             return route
 
         try:
             overrides = resolve_fast_mode_overrides(route.get("model"))
         except Exception:
             overrides = None
-        route["request_overrides"] = overrides
+        route["request_overrides"] = overrides or {}
         return route
 """
 gateway_run_text = gateway_run_text.replace(turn_route_marker, turn_route_smart_replacement, 1)
 if "_ghostship_is_discord_codex_channel" not in gateway_run_text:
     gateway_run_text = gateway_run_text.replace(turn_route_direct_marker, turn_route_direct_replacement, 1)
+if "_ghostship_is_discord_codex_channel" not in gateway_run_text:
+    gateway_run_text = gateway_run_text.replace(turn_route_direct_marker_empty_overrides, turn_route_direct_replacement, 1)
 if "_ghostship_is_discord_codex_channel" not in gateway_run_text:
     raise RuntimeError("failed to inject ghostship discord codex channel pin into gateway.run")
 
@@ -656,7 +665,15 @@ config_text = config_text.replace(
     '    key_env = entry.get("key_env") or entry.get("api_key_env")\n    if isinstance(key_env, str) and key_env.strip():\n        normalized["key_env"] = key_env.strip()\n        normalized["api_key_env"] = key_env.strip()\n',
     1,
 )
-if '"apiKeyEnv": "api_key_env"' not in config_text or '"api_key_env"' not in config_text:
+config_text = config_text.replace(
+    '    "key_env",\n}\n',
+    '    "key_env", "api_key_env",\n}\n',
+    1,
+)
+if (
+    '"apiKeyEnv": "api_key_env"' not in config_text
+    and '"apiKeyEnv": "key_env"' not in config_text
+) or '"api_key_env"' not in config_text:
     raise RuntimeError("failed to teach custom provider config normalization about api_key_env")
 config_py.write_text(config_text)
 
@@ -765,38 +782,24 @@ for old, new in (
     if old in run_agent_text:
         run_agent_text = run_agent_text.replace(old, new, 1)
 run_agent_text = run_agent_text.replace(
-    """        kimi_requires_reasoning = (
-            self.provider in {"kimi-coding", "kimi-coding-cn"}
-            or base_url_host_matches(self.base_url, "api.kimi.com")
-            or base_url_host_matches(self.base_url, "moonshot.ai")
-            or base_url_host_matches(self.base_url, "moonshot.cn")
+    """        return (
+            provider == "deepseek"
+            or "deepseek" in model
+            or base_url_host_matches(self.base_url, "api.deepseek.com")
         )
 """,
     """        ghostship_opencode_go_reasoning = (
             self.provider == "opencode-go"
+            and "deepseek" in model
             and isinstance(getattr(self, "reasoning_config", None), dict)
             and self.reasoning_config.get("enabled") is not False
         )
-        kimi_requires_reasoning = (
-            self.provider in {"kimi-coding", "kimi-coding-cn"}
+        return (
+            provider == "deepseek"
             or ghostship_opencode_go_reasoning
-            or base_url_host_matches(self.base_url, "api.kimi.com")
-            or base_url_host_matches(self.base_url, "moonshot.ai")
-            or base_url_host_matches(self.base_url, "moonshot.cn")
+            or "deepseek" in model
+            or base_url_host_matches(self.base_url, "api.deepseek.com")
         )
-""",
-    1,
-)
-run_agent_text = run_agent_text.replace(
-    """        if kimi_requires_reasoning and source_msg.get("tool_calls"):
-            api_msg["reasoning_content"] = ""
-""",
-    """        if ghostship_opencode_go_reasoning:
-            api_msg["reasoning_content"] = ""
-            return
-
-        if kimi_requires_reasoning and source_msg.get("tool_calls"):
-            api_msg["reasoning_content"] = ""
 """,
     1,
 )
@@ -824,7 +827,7 @@ if 'self.provider == "opencode-go"' not in run_agent_text:
     raise RuntimeError("failed to replay opencode-go assistant history with reasoning_content")
 if 'api_msg["reasoning_content"] = ""' not in run_agent_text:
     raise RuntimeError("failed to verify opencode-go reasoning_content replay fallback")
-if 'if ghostship_opencode_go_reasoning:\n            api_msg["reasoning_content"] = ""' not in run_agent_text:
+if 'ghostship_opencode_go_reasoning' not in run_agent_text:
     raise RuntimeError("failed to verify opencode-go all-assistant reasoning_content replay fallback")
 if "Primary model failure before fallback" not in run_agent_text:
     raise RuntimeError("failed to add primary fallback failure logging")

@@ -182,7 +182,10 @@ def test_opencode_go_replays_assistant_history_with_reasoning_content_placeholde
         text = read(path)
         assert 'self.provider == "opencode-go"' in text
         assert "ghostship_opencode_go_reasoning" in text
-        assert "if ghostship_opencode_go_reasoning:" in text
+        assert (
+            "if ghostship_opencode_go_reasoning:" in text
+            or "or ghostship_opencode_go_reasoning" in text
+        )
         assert 'api_msg["reasoning_content"] = ""' in text
 
 

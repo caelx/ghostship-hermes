@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Refreshed pinned software versions through the managed updater.
+
 - Pinned Hermes release updated to `v2026.4.30`.
 - Breaking: switched the managed Hermes primary lane to Ollama Pro `custom:ollama-pro/deepseek-v4-pro:cloud`, changed fallback to `opencode-go/deepseek-v4-pro`, added `OLLAMA_API_KEY` to the managed runtime env contract, and moved only vision, approval, and curator auxiliary tasks to `gemini-3.1-flash-lite-preview`.
 - Updated pinned runtime packages, including `agent-browser` `0.26.0`, `blogwatcher-cli` `0.2.0`, the frontend package lock, and flake inputs.

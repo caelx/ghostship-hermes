@@ -88,7 +88,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Export `BITWARDENCLI_APPDATA_DIR` at the image/global env layer too; raw `bw` commands otherwise fall back to `~/.config/Bitwarden CLI`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.
 - Managed Hermes-facing env must be emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`; preserve unrelated persisted `.env` keys while refreshing the managed subset from current runtime env.
-- Direct `opencode-go` reasoning replay must add an empty `reasoning_content` marker for prior assistant messages that lack stored reasoning when reasoning is enabled; DeepSeek can require it on non-tool assistant history, and the aggregator hides the final Moonshot/Kimi host, so host-only Kimi checks do not fire.
+- Direct `opencode-go` DeepSeek reasoning replay must add an empty `reasoning_content` marker for prior assistant messages that lack stored reasoning when reasoning is enabled; host-only DeepSeek/Kimi checks miss aggregator-routed traffic.
 - Bake `/home/hermes/ghostship-wiki` from repo-managed Markdown plus restored `docs/api`; sync managed files on boot and never delete agent-created wiki files outside `.ghostship-managed-files`.
 - Hermes primary-to-fallback model switches must log the primary failure trigger and sanitized error even when fallback succeeds; otherwise live diagnosis loses the only useful failure reason.
 

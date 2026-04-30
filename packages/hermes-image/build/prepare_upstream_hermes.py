@@ -506,9 +506,23 @@ def main() -> None:
     turn_route_marker_old = """    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:\n        from agent.smart_model_routing import resolve_turn_route\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        primary = {\n            \"model\": model,\n            \"api_key\": runtime_kwargs.get(\"api_key\"),\n            \"base_url\": runtime_kwargs.get(\"base_url\"),\n            \"provider\": runtime_kwargs.get(\"provider\"),\n            \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n            \"command\": runtime_kwargs.get(\"command\"),\n            \"args\": list(runtime_kwargs.get(\"args\") or []),\n            \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n        }\n        route = resolve_turn_route(user_message, getattr(self, \"_smart_model_routing\", {}), primary)\n"""
     turn_route_replacement_old = """    @staticmethod\n    def _ghostship_discord_forced_channel(source) -> str | None:\n        if source is None:\n            return None\n        platform = getattr(source, \"platform\", None)\n        platform_value = getattr(platform, \"value\", platform)\n        if platform_value != \"discord\":\n            return None\n        if getattr(source, \"chat_type\", None) == \"dm\":\n            return None\n        codex_channel = os.getenv(\"GHOSTSHIP_CODEX_CHANNEL\", \"\").strip()\n        if not codex_channel:\n            return None\n        chat_id = getattr(source, \"chat_id\", None)\n        parent_chat_id = getattr(source, \"chat_id_alt\", None)\n        if chat_id == codex_channel or parent_chat_id == codex_channel:\n            return \"codex\"\n        return None\n\n    @staticmethod\n    def _ghostship_force_discord_codex_channel_route(runtime_kwargs: dict) -> dict:\n        forced_runtime = dict(runtime_kwargs)\n        forced_runtime[\"base_url\"] = None\n        forced_runtime[\"provider\"] = \"openai-codex\"\n        forced_runtime[\"api_mode\"] = \"codex_responses\"\n        forced_runtime[\"command\"] = None\n        forced_runtime[\"args\"] = []\n        forced_runtime[\"credential_pool\"] = None\n        return forced_runtime\n\n    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:\n        from agent.smart_model_routing import resolve_turn_route\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        forced_channel = self._ghostship_discord_forced_channel(source)\n        if forced_channel == \"codex\":\n            primary = {\n                \"model\": \"gpt-5.5\",\n                \"base_url\": None,\n                \"provider\": \"openai-codex\",\n                \"api_mode\": \"codex_responses\",\n                \"command\": None,\n                \"args\": [],\n                \"credential_pool\": None,\n            }\n            route = resolve_turn_route(user_message, getattr(self, \"_smart_model_routing\", {}), primary)\n            route[\"model\"] = \"gpt-5.5\"\n            route[\"runtime\"] = self._ghostship_force_discord_codex_channel_route(route.get(\"runtime\", {}))\n            route[\"label\"] = \"ghostship discord codex channel pin\"\n            route[\"request_overrides\"] = None\n            route[\"signature\"] = (\n                route[\"model\"],\n                route[\"runtime\"].get(\"provider\"),\n                route[\"runtime\"].get(\"base_url\"),\n                route[\"runtime\"].get(\"api_mode\"),\n                route[\"runtime\"].get(\"command\"),\n                tuple(route[\"runtime\"].get(\"args\") or ()),\n            )\n        else:\n            primary = {\n                \"model\": model,\n                \"api_key\": runtime_kwargs.get(\"api_key\"),\n                \"base_url\": runtime_kwargs.get(\"base_url\"),\n                \"provider\": runtime_kwargs.get(\"provider\"),\n                \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n                \"command\": runtime_kwargs.get(\"command\"),\n                \"args\": list(runtime_kwargs.get(\"args\") or []),\n                \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n            }\n            route = resolve_turn_route(user_message, getattr(self, \"_smart_model_routing\", {}), primary)\n"""
     turn_route_marker_new = """    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:\n        \"\"\"Build the effective model/runtime config for a single turn.\n\n        Always uses the session's primary model/provider.  If `/fast` is\n        enabled and the model supports Priority Processing / Anthropic fast\n        mode, attach `request_overrides` so the API call is marked\n        accordingly.\n        \"\"\"\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        runtime = {\n            \"api_key\": runtime_kwargs.get(\"api_key\"),\n            \"base_url\": runtime_kwargs.get(\"base_url\"),\n            \"provider\": runtime_kwargs.get(\"provider\"),\n            \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n            \"command\": runtime_kwargs.get(\"command\"),\n            \"args\": list(runtime_kwargs.get(\"args\") or []),\n            \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n        }\n        route = {\n            \"model\": model,\n            \"runtime\": runtime,\n            \"signature\": (\n                model,\n                runtime[\"provider\"],\n                runtime[\"base_url\"],\n                runtime[\"api_mode\"],\n                runtime[\"command\"],\n                tuple(runtime[\"args\"]),\n            ),\n        }\n"""
+    turn_route_marker_new_empty_overrides = turn_route_marker_new.replace(
+        'route[\\"request_overrides\\"] = None',
+        'route[\\"request_overrides\\"] = {}',
+    ).replace(
+        'route[\\"request_overrides\\"] = overrides\\n',
+        'route[\\"request_overrides\\"] = overrides or {}\\n',
+    )
     turn_route_replacement_new = """    @staticmethod\n    def _ghostship_discord_forced_channel(source) -> str | None:\n        if source is None:\n            return None\n        platform = getattr(source, \"platform\", None)\n        platform_value = getattr(platform, \"value\", platform)\n        if platform_value != \"discord\":\n            return None\n        if getattr(source, \"chat_type\", None) == \"dm\":\n            return None\n        codex_channel = os.getenv(\"GHOSTSHIP_CODEX_CHANNEL\", \"\").strip()\n        if not codex_channel:\n            return None\n        chat_id = getattr(source, \"chat_id\", None)\n        parent_chat_id = getattr(source, \"chat_id_alt\", None)\n        if chat_id == codex_channel or parent_chat_id == codex_channel:\n            return \"codex\"\n        return None\n\n    @staticmethod\n    def _ghostship_force_discord_codex_channel_route(runtime_kwargs: dict) -> dict:\n        forced_runtime = dict(runtime_kwargs)\n        forced_runtime[\"base_url\"] = None\n        forced_runtime[\"provider\"] = \"openai-codex\"\n        forced_runtime[\"api_mode\"] = \"codex_responses\"\n        forced_runtime[\"command\"] = None\n        forced_runtime[\"args\"] = []\n        forced_runtime[\"credential_pool\"] = None\n        return forced_runtime\n\n    def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict, source=None) -> dict:\n        \"\"\"Build the effective model/runtime config for a single turn.\n\n        Always uses the session's primary model/provider.  If `/fast` is\n        enabled and the model supports Priority Processing / Anthropic fast\n        mode, attach `request_overrides` so the API call is marked\n        accordingly.\n        \"\"\"\n        from hermes_cli.models import resolve_fast_mode_overrides\n\n        forced_channel = self._ghostship_discord_forced_channel(source)\n        if forced_channel == \"codex\":\n            runtime = self._ghostship_force_discord_codex_channel_route(runtime_kwargs)\n            route = {\n                \"model\": \"gpt-5.5\",\n                \"runtime\": runtime,\n                \"signature\": (\n                    \"gpt-5.5\",\n                    runtime[\"provider\"],\n                    runtime[\"base_url\"],\n                    runtime[\"api_mode\"],\n                    runtime[\"command\"],\n                    tuple(runtime[\"args\"]),\n                ),\n            }\n            route[\"label\"] = \"ghostship discord codex channel pin\"\n            route[\"request_overrides\"] = None\n            return route\n\n        runtime = {\n            \"api_key\": runtime_kwargs.get(\"api_key\"),\n            \"base_url\": runtime_kwargs.get(\"base_url\"),\n            \"provider\": runtime_kwargs.get(\"provider\"),\n            \"api_mode\": runtime_kwargs.get(\"api_mode\"),\n            \"command\": runtime_kwargs.get(\"command\"),\n            \"args\": list(runtime_kwargs.get(\"args\") or []),\n            \"credential_pool\": runtime_kwargs.get(\"credential_pool\"),\n        }\n        route = {\n            \"model\": model,\n            \"runtime\": runtime,\n            \"signature\": (\n                model,\n                runtime[\"provider\"],\n                runtime[\"base_url\"],\n                runtime[\"api_mode\"],\n                runtime[\"command\"],\n                tuple(runtime[\"args\"]),\n            ),\n        }\n"""
     if turn_route_marker_old in gateway_text:
         gateway_text = replace_once(gateway_text, turn_route_marker_old, turn_route_replacement_old, path=gateway_run)
+    elif turn_route_marker_new_empty_overrides in gateway_text:
+        gateway_text = replace_once(
+            gateway_text,
+            turn_route_marker_new_empty_overrides,
+            turn_route_replacement_new,
+            path=gateway_run,
+        )
     else:
         gateway_text = replace_once(gateway_text, turn_route_marker_new, turn_route_replacement_new, path=gateway_run)
     for old, new in (
@@ -863,16 +877,42 @@ def main() -> None:
     ):
         if old in run_agent_text:
             run_agent_text = run_agent_text.replace(old, new, 1)
-    run_agent_text = replace_once(
-        run_agent_text,
-        '''        kimi_requires_reasoning = (
+    deepseek_reasoning_marker = '''        return (
+            provider == "deepseek"
+            or "deepseek" in model
+            or base_url_host_matches(self.base_url, "api.deepseek.com")
+        )
+'''
+    if deepseek_reasoning_marker in run_agent_text:
+        run_agent_text = replace_once(
+            run_agent_text,
+            deepseek_reasoning_marker,
+            '''        ghostship_opencode_go_reasoning = (
+            self.provider == "opencode-go"
+            and "deepseek" in model
+            and isinstance(getattr(self, "reasoning_config", None), dict)
+            and self.reasoning_config.get("enabled") is not False
+        )
+        return (
+            provider == "deepseek"
+            or ghostship_opencode_go_reasoning
+            or "deepseek" in model
+            or base_url_host_matches(self.base_url, "api.deepseek.com")
+        )
+''',
+            path=run_agent_py,
+        )
+    else:
+        run_agent_text = replace_once(
+            run_agent_text,
+            '''        kimi_requires_reasoning = (
             self.provider in {"kimi-coding", "kimi-coding-cn"}
             or base_url_host_matches(self.base_url, "api.kimi.com")
             or base_url_host_matches(self.base_url, "moonshot.ai")
             or base_url_host_matches(self.base_url, "moonshot.cn")
         )
 ''',
-        '''        ghostship_opencode_go_reasoning = (
+            '''        ghostship_opencode_go_reasoning = (
             self.provider == "opencode-go"
             and isinstance(getattr(self, "reasoning_config", None), dict)
             and self.reasoning_config.get("enabled") is not False
@@ -885,22 +925,22 @@ def main() -> None:
             or base_url_host_matches(self.base_url, "moonshot.cn")
         )
 ''',
-        path=run_agent_py,
-    )
-    run_agent_text = replace_once(
-        run_agent_text,
-        '''        if kimi_requires_reasoning and source_msg.get("tool_calls"):
+            path=run_agent_py,
+        )
+        run_agent_text = replace_once(
+            run_agent_text,
+            '''        if kimi_requires_reasoning and source_msg.get("tool_calls"):
             api_msg["reasoning_content"] = ""
 ''',
-        '''        if ghostship_opencode_go_reasoning:
+            '''        if ghostship_opencode_go_reasoning:
             api_msg["reasoning_content"] = ""
             return
 
         if kimi_requires_reasoning and source_msg.get("tool_calls"):
             api_msg["reasoning_content"] = ""
 ''',
-        path=run_agent_py,
-    )
+            path=run_agent_py,
+        )
     run_agent_text = run_agent_text.replace(
         '''            for msg in messages:
                 api_msg = msg.copy()
@@ -921,9 +961,14 @@ def main() -> None:
 ''',
         1,
     )
+    if 'self.provider == "opencode-go"' not in run_agent_text:
+        raise RuntimeError("failed to replay opencode-go assistant history with reasoning_content")
     if 'api_msg["reasoning_content"] = ""' not in run_agent_text:
         raise RuntimeError("failed to verify opencode-go reasoning_content replay fallback")
-    if 'if ghostship_opencode_go_reasoning:\n            api_msg["reasoning_content"] = ""' not in run_agent_text:
+    if (
+        'ghostship_opencode_go_reasoning' not in run_agent_text
+        and 'if ghostship_opencode_go_reasoning:\n            api_msg["reasoning_content"] = ""' not in run_agent_text
+    ):
         raise RuntimeError("failed to verify opencode-go all-assistant reasoning_content replay fallback")
     if "Primary model failure before fallback" not in run_agent_text:
         raise RuntimeError("failed to add primary fallback failure logging")

@@ -12,7 +12,7 @@ let
     };
     aarch64-linux = {
       url = "https://github.com/JulienTant/blogwatcher-cli/releases/download/v0.2.0/blogwatcher-cli_linux_arm64.tar.gz";
-      hash = "sha256-c22C0Txzf0ndlNnAeeaEDV0R1/MVcLc+HPgL60Z4IMM=";
+      hash = "sha256-y/YuHFPSYPSDrO73l5+q3Ky+bFepB4ZQd2t6gmwmHxk=";
     };
   };
   source =
