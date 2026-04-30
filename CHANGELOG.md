@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Restored the `docs/api` reference set and added an image-baked `/home/hermes/ghostship-wiki` that syncs repo-managed Markdown/API references on boot while preserving agent-created wiki files outside the managed manifest.
+- Pinned the image npm `agent-browser` package to `0.26.0` and replace its native binary with a repo-patched build that adds humanized local CDP interactions for mouse movement, click timing, scrolling, form fill, and shifted-symbol typing while keeping the stock local CloakBrowser lane.
 - Added Hermes fallback diagnostics that log the primary model, fallback target, trigger, HTTP status, exception type, and sanitized provider error whenever the managed primary switches to `kimi-k2.6`.
 - Fixed direct OpenCode Go reasoning/tool-call replay by patching Hermes to add the required empty `reasoning_content` marker for prior assistant tool-call messages when managed reasoning is enabled, preventing Moonshot/Kimi `HTTP 400` failures after the local router removal.
 - Breaking: removed Ghostship Router from the image, flake outputs, CI, docs, and smoke contract; Hermes now calls OpenCode Go directly with `deepseek-v4-flash` as primary and `kimi-k2.6` as fallback, and persisted homes are converged away from the old `custom:ghostship-router` provider.

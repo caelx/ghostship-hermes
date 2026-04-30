@@ -61,6 +61,7 @@ Package ownership split:
 - native npm seed in persisted home: `codex`, `gemini-cli`, `agent-browser`, `opencode`
 - image-managed Nix defaults: `bw`, `gh`, `gcloud`, `gws`, `blogwatcher-cli`
 - image-managed local browser tooling: native CloakBrowser under `/opt/ghostship` launched through `agent-browser`, with the persistent Chrome profile rooted at `/home/hermes/.local/state/cloakbrowser`
+- image-managed reference docs: `/home/hermes/ghostship-wiki`, seeded from `docs/ghostship-wiki` plus the restored `docs/api` reference set
 - persisted Nix user profile: extra downstream or Hermes-installed packages on top of the image defaults
 
 ## Build
@@ -412,9 +413,11 @@ Current baked operator utilities:
 - `uv`
 - `yq`
 
-The image bakes native CloakBrowser into `/opt/ghostship` and exposes it as the standard `google-chrome` binary that `agent-browser` already probes on Linux, so Hermes keeps using the stock local Chrome lane without an executable-path override. The `google-chrome` wrapper injects CloakBrowser's default stealth args for normal launches, routes extension launches to the cached Chromium binary so Chrome reaches CDP startup, uses `/home/hermes/.local/state/cloakbrowser` when raw Chrome callers omit a profile, and preserves explicit `agent-browser` profile paths so native `agent-browser --session` isolation works as intended. A pinned unpacked uBlock Origin Lite is baked at `/opt/ghostship/extensions/ublock-origin-lite`, configured with complete filtering and the major default/privacy/security/annoyance rulesets, and loaded through `AGENT_BROWSER_EXTENSIONS`; `AGENT_BROWSER_ARGS=--no-sandbox` and `DISPLAY=:99` are set for container Chrome launches, with Xvfb supervised in the image.
+The image bakes native CloakBrowser into `/opt/ghostship` and exposes it as the standard `google-chrome` binary that `agent-browser` already probes on Linux, so Hermes keeps using the stock local Chrome lane without an executable-path override. The `google-chrome` wrapper injects CloakBrowser's default stealth args for normal launches, routes extension launches to the cached Chromium binary so Chrome reaches CDP startup, uses `/home/hermes/.local/state/cloakbrowser` when raw Chrome callers omit a profile, and preserves explicit `agent-browser` profile paths so native `agent-browser --session` isolation works as intended. The image pins npm `agent-browser` and installs a repo-patched native binary that humanizes local CDP mouse movement, click timing, wheel scrolling, and typing. A pinned unpacked uBlock Origin Lite is baked at `/opt/ghostship/extensions/ublock-origin-lite`, configured with complete filtering and the major default/privacy/security/annoyance rulesets, and loaded through `AGENT_BROWSER_EXTENSIONS`; `AGENT_BROWSER_ARGS=--no-sandbox` and `DISPLAY=:99` are set for container Chrome launches, with Xvfb supervised in the image.
 
 Bundled upstream Hermes skills are seeded into `/home/hermes/.hermes/skills` from the image on boot, but seeding is file-granular. Existing downstream custom skills are preserved, and only missing default skill files are added.
+
+The image also syncs `/home/hermes/ghostship-wiki` from repo-owned Markdown at boot. Managed wiki files and the restored `docs/api` references are refreshed on image updates, while files outside `.ghostship-managed-files` are left for Hermes to maintain as its own working knowledge base.
 
 ## Upstream References
 

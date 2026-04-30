@@ -57,6 +57,30 @@ if [ -d /opt/ghostship/home-seed ]; then
   tar -C /opt/ghostship/home-seed -cf - . | tar -C "$HOME" --skip-old-files -xf -
 fi
 
+case "$(uname -m)" in
+  x86_64) agent_browser_binary="agent-browser-linux-x64" ;;
+  aarch64|arm64) agent_browser_binary="agent-browser-linux-arm64" ;;
+  *) agent_browser_binary="" ;;
+esac
+
+if [ -n "$agent_browser_binary" ] \
+  && [ -d /opt/ghostship/home-seed/.local/lib/node_modules/agent-browser ] \
+  && [ -x "/opt/ghostship/bin/$agent_browser_binary" ]; then
+  rm -rf "$HOME/.local/lib/node_modules/agent-browser"
+  mkdir -p "$HOME/.local/lib/node_modules" "$HOME/.local/bin"
+  tar -C /opt/ghostship/home-seed/.local/lib/node_modules -cf - agent-browser \
+    | tar -C "$HOME/.local/lib/node_modules" -xf -
+  install -m0755 "/opt/ghostship/bin/$agent_browser_binary" "$HOME/.local/lib/node_modules/agent-browser/bin/$agent_browser_binary"
+  ln -sfn "$HOME/.local/lib/node_modules/agent-browser/bin/$agent_browser_binary" "$HOME/.local/bin/agent-browser"
+  chown -R 3000:3000 "$HOME/.local/lib/node_modules/agent-browser"
+  chown -h 3000:3000 "$HOME/.local/bin/agent-browser"
+fi
+
+if [ -d /opt/ghostship/ghostship-wiki ]; then
+  HOME="$HOME" GHOSTSHIP_WIKI_SOURCE=/opt/ghostship/ghostship-wiki GHOSTSHIP_WIKI_DEST="$HOME/ghostship-wiki" \
+    /command/s6-setuidgid hermes /opt/hermes/venv/bin/python /opt/ghostship/bin/sync_ghostship_wiki.py
+fi
+
 declare -A hermes_env_values=()
 ghostship_collect_hermes_env hermes_env_values "${GHOSTSHIP_TERMINAL_CWD:-/workspace}"
 ghostship_write_hermes_env_file "$hermes_env_file" hermes_env_values

@@ -188,6 +188,54 @@ def test_fallback_logs_primary_failure_reason_when_switching_models() -> None:
         assert "self._summarize_api_error(error)" in text
 
 
+def test_restored_api_docs_and_ghostship_wiki_are_baked() -> None:
+    assert (ROOT / "docs/api/pyload-ng.md").exists()
+    assert (ROOT / "docs/api/pyload-openapi.json").exists()
+    assert (ROOT / "docs/api/prowlarr-openapi.json").exists()
+    assert (ROOT / "docs/api/n8n-openapi.json").exists()
+
+    dockerfile = read("packages/hermes-image/Dockerfile")
+    prepare = read("packages/hermes-image/rootfs/etc/cont-init.d/10-ghostship-prepare")
+    sync = read("packages/hermes-image/build/sync_ghostship_wiki.py")
+
+    assert "COPY docs /src/docs" in dockerfile
+    assert "cp -R /src/docs/ghostship-wiki/. /opt/ghostship/ghostship-wiki/" in dockerfile
+    assert "cp -R /src/docs/api /opt/ghostship/ghostship-wiki/api/reference" in dockerfile
+    assert "sync_ghostship_wiki.py" in dockerfile
+    assert "GHOSTSHIP_WIKI_DEST=\"$HOME/ghostship-wiki\"" in prepare
+    assert "MANIFEST_NAME = \".ghostship-managed-files\"" in sync
+    assert "Agent-created files outside this list are preserved" in sync
+
+    assert "FIRECRAWL_API_URL" in read("docs/ghostship-wiki/api/firecrawl.md")
+    assert "PYLOAD_API_KEY" in read("docs/ghostship-wiki/api/service-env.md")
+    assert "gws" in read("docs/ghostship-wiki/utilities.md")
+    assert "reasoning_content" in read("docs/ghostship-wiki/models-and-reasoning.md")
+
+
+def test_agent_browser_is_pinned_and_humanized_in_image() -> None:
+    dockerfile = read("packages/hermes-image/Dockerfile")
+    patcher = read("packages/hermes-image/build/prepare_agent_browser.py")
+    prepare = read("packages/hermes-image/rootfs/etc/cont-init.d/10-ghostship-prepare")
+
+    assert "ARG AGENT_BROWSER_REF=v0.26.0" in dockerfile
+    assert "agent-browser@0.26.0" in dockerfile
+    assert "prepare_agent_browser.py" in dockerfile
+    assert ".#agent-browser-build-tools" in dockerfile
+    assert "cargo build --release --manifest-path /tmp/agent-browser/cli/Cargo.toml" in dockerfile
+    assert "install -m0755 /tmp/agent-browser/cli/target/release/agent-browser" in dockerfile
+    assert "rm -rf \"$HOME/.local/lib/node_modules/agent-browser\"" in prepare
+    assert "ln -sfn \"$HOME/.local/lib/node_modules/agent-browser/bin/$agent_browser_binary\" \"$HOME/.local/bin/agent-browser\"" in prepare
+
+    for marker in (
+        "GHOSTSHIP_HUMANIZED_AGENT_BROWSER",
+        "ghostship_human_mouse_move",
+        "ghostship_human_wheel",
+        "ghostship_type_shift_symbol",
+        "ghostship_human_type_text",
+    ):
+        assert marker in patcher
+
+
 def test_downstream_discord_snowflake_ids_are_not_committed() -> None:
     tracked_paths = [
         "README.md",

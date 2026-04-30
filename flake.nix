@@ -111,6 +111,14 @@
             pathsToLink = [ "/bin" ];
             ignoreCollisions = true;
           };
+          agentBrowserBuildTools = pkgs.buildEnv {
+            name = "agent-browser-build-tools";
+            paths = [
+              pkgs.cargo
+              pkgs.rustc
+            ];
+            pathsToLink = [ "/bin" ];
+          };
 
           baseToolPackages = [
             pkgs.bitwarden-cli
@@ -195,6 +203,7 @@
           };
         in
         {
+          agent-browser-build-tools = agentBrowserBuildTools;
           ghostship-default-tools = ghostshipDefaultTools;
           bw = pkgs.bitwarden-cli;
           gcloud = pkgs.google-cloud-sdk;

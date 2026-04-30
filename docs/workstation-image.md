@@ -187,6 +187,7 @@ Default image behavior:
 - The operator utility bundle ships as an image-managed Nix default profile exported from the Ghostship-specific final image phase and reconciled into persisted `/nix` on every boot.
 - native CloakBrowser ships in the image and is exposed as the standard `google-chrome` binary that `agent-browser` already probes on Linux, with the default persistent browser profile rooted at `/home/hermes/.local/state/cloakbrowser`.
 - a pinned unpacked uBlock Origin Lite ships at `/opt/ghostship/extensions/ublock-origin-lite` and is loaded by `AGENT_BROWSER_EXTENSIONS`.
+- `/home/hermes/ghostship-wiki` is synced from image-managed Markdown and restored API references on boot; repo-managed files are overwritten on image updates, and agent-created files outside the managed manifest are preserved.
 - Node-native agent tools ship through npm in persisted home state.
 - Nix stays available for extra downstream or Hermes-installed packages through `/home/hermes/.nix-profile/bin` on top of the image-managed defaults.
 - bundled upstream Hermes skills are seeded into `/home/hermes/.hermes/skills` on boot without overwriting downstream custom skills that already exist there.
@@ -198,7 +199,7 @@ Current preinstalled npm tools:
 - `agent-browser`
 - `opencode`
 
-Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. Raw Chrome callers that omit a profile use `/home/hermes/.local/state/cloakbrowser`, while explicit `agent-browser` profile paths are preserved so native `agent-browser --session` isolation is not collapsed into one locked profile. `agent-browser` also receives `AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite`, loading the image-pinned uBlock Origin Lite without Chrome Web Store policy, plus `AGENT_BROWSER_ARGS=--no-sandbox` and the supervised `DISPLAY=:99` Xvfb display for container launches.
+Separate from those npm CLIs, the image exposes native CloakBrowser as `google-chrome`, so Hermes browser skills keep using the standard local Chrome path without a sidecar browser service or executable-path override. Raw Chrome callers that omit a profile use `/home/hermes/.local/state/cloakbrowser`, while explicit `agent-browser` profile paths are preserved so native `agent-browser --session` isolation is not collapsed into one locked profile. The npm `agent-browser` package is pinned and its native binary is replaced with a repo-built patch that humanizes local CDP mouse movement, click timing, wheel scrolling, form fill, and shifted-symbol typing. `agent-browser` also receives `AGENT_BROWSER_EXTENSIONS=/opt/ghostship/extensions/ublock-origin-lite`, loading the image-pinned uBlock Origin Lite without Chrome Web Store policy, plus `AGENT_BROWSER_ARGS=--no-sandbox` and the supervised `DISPLAY=:99` Xvfb display for container launches.
 
 Known upstream caveat:
 

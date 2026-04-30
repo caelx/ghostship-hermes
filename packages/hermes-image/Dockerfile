@@ -1,6 +1,7 @@
 ARG HERMES_REF=v2026.4.13
 ARG S6_OVERLAY_VERSION=3.2.1.0
 ARG UBOL_REF=2026.426.1626
+ARG AGENT_BROWSER_REF=v0.26.0
 
 FROM ubuntu:24.04 AS base
 
@@ -9,6 +10,7 @@ ARG TARGETARCH
 ARG HERMES_REF
 ARG S6_OVERLAY_VERSION
 ARG UBOL_REF
+ARG AGENT_BROWSER_REF
 
 ENV HOME=/home/hermes \
     HERMES_HOME=/home/hermes/.hermes \
@@ -145,6 +147,7 @@ FROM base AS final
 ARG DEBIAN_FRONTEND=noninteractive
 ARG HERMES_REF
 ARG UBOL_REF
+ARG AGENT_BROWSER_REF
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -157,11 +160,23 @@ RUN mkdir -p /src /opt/ghostship/bin /opt/ghostship
 COPY flake.nix /src/
 COPY flake.lock /src/
 COPY packages /src/packages
+COPY docs /src/docs
 
 RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/${HERMES_REF}.tar.gz" -o /tmp/hermes-agent.tar.gz \
     && mkdir -p /tmp/hermes-agent \
     && tar -xzf /tmp/hermes-agent.tar.gz -C /tmp/hermes-agent --strip-components=1 \
     && rm -f /tmp/hermes-agent.tar.gz \
+    && cd /src \
+    && rust_toolchain_path="$(runuser -u hermes -- env HOME=/home/hermes PATH=/home/hermes/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin nix --extra-experimental-features 'nix-command flakes' build --impure --no-write-lock-file --no-link --print-out-paths .#agent-browser-build-tools)" \
+    && git clone --depth 1 --branch "${AGENT_BROWSER_REF}" https://github.com/vercel-labs/agent-browser.git /tmp/agent-browser \
+    && python3 /src/packages/hermes-image/build/prepare_agent_browser.py /tmp/agent-browser \
+    && PATH="${rust_toolchain_path}/bin:${PATH}" cargo build --release --manifest-path /tmp/agent-browser/cli/Cargo.toml \
+    && case "$TARGETARCH" in \
+      amd64) agent_browser_binary="agent-browser-linux-x64" ;; \
+      arm64) agent_browser_binary="agent-browser-linux-arm64" ;; \
+      *) echo "unsupported TARGETARCH for agent-browser: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && install -m0755 /tmp/agent-browser/cli/target/release/agent-browser "/opt/ghostship/bin/${agent_browser_binary}" \
     && find /src/packages -type d \( -name .venv -o -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache \) -prune -exec rm -rf {} + \
     && python3 /src/packages/hermes-image/build/prepare_upstream_hermes.py /tmp/hermes-agent \
     && cd /tmp/hermes-agent/web \
@@ -218,6 +233,9 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
     && /opt/cloakbrowser-venv/bin/pip install "cloakbrowser==0.3.25" \
     && mkdir -p /opt/ghostship/cloakbrowser-cache \
     && mkdir -p /opt/ghostship/home-seed/.hermes \
+    && mkdir -p /opt/ghostship/ghostship-wiki/api \
+    && cp -R /src/docs/ghostship-wiki/. /opt/ghostship/ghostship-wiki/ \
+    && cp -R /src/docs/api /opt/ghostship/ghostship-wiki/api/reference \
     && cp -R /tmp/hermes-agent/skills /opt/ghostship/home-seed/.hermes/skills \
     && cloakbrowser_bin="$(HOME=/root CLOAKBROWSER_CACHE_DIR=/opt/ghostship/cloakbrowser-cache /opt/cloakbrowser-venv/bin/python -c 'import os; from cloakbrowser.download import ensure_binary; print(ensure_binary(), flush=True); os._exit(0)')" \
     && cloakbrowser_dir="$(dirname "$cloakbrowser_bin")" \
@@ -241,9 +259,10 @@ RUN curl -fsSL "https://github.com/NousResearch/hermes-agent/archive/refs/tags/$
       | zstd -19 -T0 -o /opt/ghostship/nix-default-tools.export.zst \
     && ln -sf /usr/bin/fdfind /opt/ghostship/bin/fd \
     && cp /src/packages/hermes-image/build/init_home.py /opt/ghostship/bin/init_home.py \
+    && cp /src/packages/hermes-image/build/sync_ghostship_wiki.py /opt/ghostship/bin/sync_ghostship_wiki.py \
     && apt-get purge -y build-essential gnupg pkg-config libffi-dev libssl-dev \
     && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent /tmp/ubol-home /tmp/ubol-home.tar.gz
+    && rm -rf /var/lib/apt/lists/* /tmp/hermes-agent /tmp/agent-browser /tmp/ubol-home /tmp/ubol-home.tar.gz
 
 RUN mkdir -p /opt/ghostship/home-seed/.hermes /opt/ghostship/home-seed/.local /opt/ghostship/home-seed/.config/nixpkgs \
     && printf '%s\n' '{ allowUnfreePredicate = pkg: builtins.elem (builtins.parseDrvName pkg.name).name [ "bitwarden-cli" ]; }' > /opt/ghostship/home-seed/.config/nixpkgs/config.nix \
@@ -260,7 +279,13 @@ RUN mkdir -p /opt/ghostship/home-seed/.hermes /opt/ghostship/home-seed/.local /o
       "set -g window-status-current-format '#[fg=#041C1C,bg=#FFBD38,bold] #I:#W '" \
       "set -g window-status-format '#[fg=#FFE6CB,bg=#0A2E2E] #I:#W '" \
       > /opt/ghostship/home-seed/.tmux.conf \
-    && npm install --prefix /opt/ghostship/home-seed/.local -g --no-audit --no-fund @openai/codex @google/gemini-cli agent-browser opencode-ai
+    && npm install --prefix /opt/ghostship/home-seed/.local -g --no-audit --no-fund @openai/codex @google/gemini-cli agent-browser@0.26.0 opencode-ai \
+    && case "$TARGETARCH" in \
+      amd64) agent_browser_binary="agent-browser-linux-x64" ;; \
+      arm64) agent_browser_binary="agent-browser-linux-arm64" ;; \
+      *) echo "unsupported TARGETARCH for agent-browser: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && install -m0755 "/opt/ghostship/bin/${agent_browser_binary}" "/opt/ghostship/home-seed/.local/lib/node_modules/agent-browser/bin/${agent_browser_binary}"
 
 RUN mkdir -p /opt/ghostship \
     && tar --zstd -cpf /opt/ghostship/nix-seed.tar.zst /nix
@@ -272,6 +297,7 @@ RUN chmod +x /etc/cont-init.d/10-ghostship-prepare \
     /etc/services.d/hermes-dashboard/run \
     /etc/services.d/nginx/run \
     /etc/services.d/ttyd/run \
+    /opt/ghostship/bin/sync_ghostship_wiki.py \
     /usr/local/bin/google-chrome \
     /usr/local/bin/nix \
     /usr/local/bin/nix-store \

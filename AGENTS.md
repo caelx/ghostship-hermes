@@ -65,6 +65,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Hermes browser tools should use the stock local `agent-browser` lane by exposing native CloakBrowser as the standard `google-chrome` binary that `agent-browser` already probes on Linux.
 - Build-time image prep must install native CloakBrowser under `/opt/ghostship` and prefetch its browser binary so runtime launches do not depend on first-boot network access.
 - The wrapper at `/usr/local/bin/google-chrome` must inject CloakBrowser's default stealth args for normal launches, route extension launches to the cached Chromium binary, default raw Chrome calls to `/home/hermes/.local/state/cloakbrowser` only when callers omit `--user-data-dir`, preserve explicit `--user-data-dir` values, default Chrome to `--log-level=3` unless the caller supplies a log level, and include `--no-sandbox` because agent-browser extension launches otherwise crash before `DevToolsActivePort` in the container.
+- Pin image `agent-browser`, patch its native binary from matching upstream source, and keep local CDP actions humanized in the binary instead of switching Hermes to CloakBrowser Manager or remote CDP.
 - Do not set image-wide `AGENT_BROWSER_PROFILE` or wrap `agent-browser`; native `agent-browser --session` must control its own profile/session behavior.
 - Keep image-wide `AGENT_BROWSER_ARGS=--no-sandbox` so agent-browser's own launch path passes the required container Chrome flag even when it bypasses the `google-chrome` wrapper defaults.
 - Keep an image-owned Xvfb service on `DISPLAY=:99`; agent-browser extension sessions can take a headed Chrome path and otherwise exit before `DevToolsActivePort` in headless containers.
@@ -87,6 +88,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.
 - Managed Hermes-facing env must be emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`; preserve unrelated persisted `.env` keys while refreshing the managed subset from current runtime env.
 - Direct `opencode-go` reasoning/tool-call replay must add an empty `reasoning_content` marker for prior assistant tool-call messages when reasoning is enabled; the aggregator hides the final Moonshot/Kimi host, so host-only Kimi checks do not fire.
+- Bake `/home/hermes/ghostship-wiki` from repo-managed Markdown plus restored `docs/api`; sync managed files on boot and never delete agent-created wiki files outside `.ghostship-managed-files`.
 - Hermes primary-to-`kimi-k2.6` fallback must log the primary failure trigger and sanitized error even when fallback succeeds; otherwise live diagnosis loses the only useful failure reason.
 
 ### Discord Routing

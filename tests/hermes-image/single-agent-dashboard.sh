@@ -328,6 +328,89 @@ assert not control_blocked, {
 PY
 }
 
+run_browser_humanize_probe() {
+  local target_container="$1"
+
+  "$container_engine" exec -i --user 3000:3000 \
+    --env HOME=/home/hermes \
+    --env HERMES_HOME=/home/hermes/.hermes \
+    --env GHOSTSHIP_AGENT_BROWSER_HUMANIZE=1 \
+    --env GHOSTSHIP_NIX_DEFAULT_PROFILE=/nix/var/nix/profiles/per-user/hermes/ghostship-defaults \
+    --env PATH=/opt/ghostship/bin:/opt/hermes/venv/bin:/home/hermes/.local/bin:/home/hermes/.nix-profile/bin:/nix/var/nix/profiles/per-user/hermes/ghostship-defaults/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    "$target_container" /usr/bin/timeout 120s /opt/cloakbrowser-venv/bin/python - <<'PY'
+import os
+import subprocess
+import urllib.parse
+
+from playwright.sync_api import sync_playwright
+
+
+def run_agent_browser(session, args, env):
+    completed = subprocess.run(
+        ["agent-browser", "--session", session, *args],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=60,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            "agent-browser failed\n"
+            f"session={session}\n"
+            f"args={args}\n"
+            f"returncode={completed.returncode}\n"
+            f"stdout={completed.stdout}\n"
+            f"stderr={completed.stderr}\n"
+        )
+    return completed.stdout.strip()
+
+
+env = os.environ.copy()
+session = "ghostship-humanize-smoke"
+html = """<!doctype html>
+<html>
+  <body>
+    <input id="q" value="">
+    <button id="btn" onclick="window.__clicked=(window.__clicked||0)+1">Click</button>
+    <script>
+      window.__moves = 0;
+      document.addEventListener('mousemove', () => { window.__moves += 1; });
+    </script>
+  </body>
+</html>"""
+url = "data:text/html;charset=utf-8," + urllib.parse.quote(html)
+
+try:
+    run_agent_browser(session, ["open", url], env)
+    cdp_url = run_agent_browser(session, ["get", "cdp-url"], env).splitlines()[-1]
+    run_agent_browser(session, ["click", "#btn"], env)
+    run_agent_browser(session, ["fill", "#q", "abcdef!"], env)
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(cdp_url)
+        try:
+            page = browser.contexts[0].pages[0]
+            moves = page.evaluate("window.__moves")
+            clicked = page.evaluate("window.__clicked")
+            value = page.evaluate("document.querySelector('#q').value")
+            assert moves >= 5, f"expected humanized multi-step mouse move, got {moves}"
+            assert clicked == 1, clicked
+            assert value == "abcdef!", value
+        finally:
+            browser.close()
+finally:
+    subprocess.run(
+        ["agent-browser", "--session", session, "close"],
+        env=env,
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=15,
+    )
+PY
+}
+
 run_test_container() {
   local publish_arg=""
   if [ -n "${1:-}" ]; then
@@ -537,6 +620,18 @@ assert "complete: [ '\''all-urls'\'' ]" in mode
 PY'
 smoke_note "native browser ad blocking"
 run_browser_adblock_probe "$container_name"
+smoke_note "agent-browser humanized interactions"
+run_browser_humanize_probe "$container_name"
+smoke_note "ghostship wiki"
+run_as_hermes "$container_name" 'test -f /home/hermes/ghostship-wiki/index.md'
+run_as_hermes "$container_name" 'test -f /home/hermes/ghostship-wiki/api/firecrawl.md'
+run_as_hermes "$container_name" 'test -f /home/hermes/ghostship-wiki/api/reference/pyload-ng.md'
+run_as_hermes "$container_name" 'grep -Fx "api/reference/pyload-ng.md" /home/hermes/ghostship-wiki/.ghostship-managed-files >/dev/null'
+run_as_hermes "$container_name" 'printf "%s\n" "agent-created-note" > /home/hermes/ghostship-wiki/agent-created-note.md'
+run_as_hermes "$container_name" 'printf "%s\n" "stale-managed-index" > /home/hermes/ghostship-wiki/index.md'
+run_in_container "$container_name" 'HOME=/home/hermes GHOSTSHIP_WIKI_SOURCE=/opt/ghostship/ghostship-wiki GHOSTSHIP_WIKI_DEST=/home/hermes/ghostship-wiki /command/s6-setuidgid hermes /opt/hermes/venv/bin/python /opt/ghostship/bin/sync_ghostship_wiki.py'
+run_as_hermes "$container_name" 'grep -Fx "# Ghostship Wiki Index" /home/hermes/ghostship-wiki/index.md >/dev/null'
+run_as_hermes "$container_name" 'grep -Fx "agent-created-note" /home/hermes/ghostship-wiki/agent-created-note.md >/dev/null'
 smoke_note "home ownership"
 run_in_container "$container_name" 'test -z "$(find /home/hermes \! -user hermes -print -quit)"'
 smoke_note "memory plugin import"
