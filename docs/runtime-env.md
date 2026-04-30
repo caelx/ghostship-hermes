@@ -93,13 +93,15 @@ These are the variables downstream may set when the deployment needs them.
 
 These provider credentials should be present for the default Ghostship runtime:
 
+- `OLLAMA_API_KEY`
 - `OPENCODE_GO_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
 
 Notes:
 
-- `OPENCODE_GO_API_KEY` backs the direct `opencode-go/deepseek-v4-flash` primary and `opencode-go/kimi-k2.6` fallback.
-- `GOOGLE_AI_STUDIO_API_KEY` is required because the runtime uses Gemini-backed supplemental tasks.
+- `OLLAMA_API_KEY` backs the `custom:ollama-pro/deepseek-v4-pro:cloud` primary.
+- `OPENCODE_GO_API_KEY` backs the direct `opencode-go/deepseek-v4-pro` fallback.
+- `GOOGLE_AI_STUDIO_API_KEY` is required because the runtime uses Gemini-backed supplemental tasks, including vision, approval, and curator review.
 - Codex auth is not an env var; it is persisted in `/home/hermes/.hermes/auth.json` for the forced Codex channel.
 
 ### Required When Discord Gateway Is Enabled

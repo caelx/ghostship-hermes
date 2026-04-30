@@ -442,6 +442,7 @@ run_test_container() {
     --volume "$workspace_dir:/workspace" \
     --volume "$nix_dir:/nix" \
     --env OPENROUTER_API_KEY=test-openrouter \
+    --env OLLAMA_API_KEY=test-ollama \
     --env OPENCODE_GO_API_KEY=test-opencode \
     --env GOOGLE_AI_STUDIO_API_KEY=test-google \
     --env DISCORD_ALLOWED_USERS=test-user \
@@ -661,11 +662,11 @@ legacy_router_path="${legacy_router_path}router"
 run_in_container "$container_name" "! ps -ef | grep -F '$legacy_router_service' | grep -v grep >/dev/null"
 run_in_container "$container_name" "! test -e /etc/services.d/${legacy_router_service#ghostship-hermes-}/run"
 run_in_container "$container_name" "! test -e $legacy_router_path"
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: deepseek-v4-flash" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: custom:ollama-pro" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: deepseek-v4-pro:cloud" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: kimi-k2.6" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: deepseek-v4-pro" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
@@ -676,6 +677,10 @@ config = yaml.safe_load(Path("/home/hermes/.hermes/config.yaml").read_text(encod
 providers = config.get("custom_providers") or []
 legacy_name = "ghostship-" + "router"
 assert all(entry.get("name") != legacy_name for entry in providers)
+ollama = next(entry for entry in providers if entry.get("name") == "ollama-pro")
+assert ollama["base_url"] == "https://ollama.com/v1"
+assert ollama["api_key_env"] == "OLLAMA_API_KEY"
+assert ollama["model"] == "deepseek-v4-pro:cloud"
 PY'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
 import inspect
@@ -689,9 +694,19 @@ assert "openai-codex (`gpt-5.5`)" in text
 PY'
 run_as_hermes "$container_name" 'sed -n "/^memory:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: holographic" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^plugins:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    db_path: \$HERMES_HOME/memory_store.db" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    model: gemini-2.5-flash-lite" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    base_url: https://generativelanguage.googleapis.com/v1beta/openai/" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^auxiliary:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "    api_key: \${GOOGLE_AI_STUDIO_API_KEY}" >/dev/null'
+run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
+import yaml
+from pathlib import Path
+
+config = yaml.safe_load(Path("/home/hermes/.hermes/config.yaml").read_text(encoding="utf-8"))
+auxiliary = config["auxiliary"]
+for key in ("vision", "approval", "curator"):
+    assert auxiliary[key]["model"] == "gemini-3.1-flash-lite-preview"
+    assert auxiliary[key]["base_url"] == "https://generativelanguage.googleapis.com/v1beta/openai/"
+    assert auxiliary[key]["api_key"] == "${GOOGLE_AI_STUDIO_API_KEY}"
+for key in ("web_extract", "compression", "session_search", "skills_hub", "mcp", "flush_memories"):
+    assert auxiliary[key]["model"] == "gemini-2.5-flash-lite"
+PY'
 run_as_hermes "$container_name" 'grep -F "group_sessions_per_user: true" /home/hermes/.hermes/config.yaml >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^terminal:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  timeout: 180" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^browser:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  cloud_provider: local" >/dev/null'

@@ -60,7 +60,8 @@ class HealthState:
 
 
 EXPECTED_KEYS = [
-    ('OPENCODE_GO_API_KEY', 'env', 'Primary model provider', True),
+    ('OLLAMA_API_KEY', 'env', 'Primary model provider', True),
+    ('OPENCODE_GO_API_KEY', 'env', 'Fallback model provider', True),
     ('GOOGLE_AI_STUDIO_API_KEY', 'env', 'Auxiliary task provider', True),
     ('OPENROUTER_API_KEY', 'env', 'Optional fallback provider', True),
     ('DISCORD_TOKEN', 'env', 'Messaging gateway bot token', True),

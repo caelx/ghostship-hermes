@@ -11,17 +11,22 @@ def _load_app_module(monkeypatch, tmp_path: Path):
     managed_home.mkdir(parents=True)
     (managed_home / 'config.yaml').write_text(
         """model:
-  provider: opencode-go
-  default: deepseek-v4-flash
+  provider: custom:ollama-pro
+  default: deepseek-v4-pro:cloud
 web:
   backend: firecrawl
+custom_providers:
+- name: ollama-pro
+  base_url: https://ollama.com/v1
+  api_key_env: OLLAMA_API_KEY
+  model: deepseek-v4-pro:cloud
 fallback_model:
   provider: opencode-go
-  model: kimi-k2.6
+  model: deepseek-v4-pro
 """,
         encoding='utf-8',
     )
-    (managed_home / '.env').write_text('OPENCODE_GO_API_KEY=test-go\n', encoding='utf-8')
+    (managed_home / '.env').write_text('OLLAMA_API_KEY=test-ollama\nOPENCODE_GO_API_KEY=test-go\n', encoding='utf-8')
     (managed_home / 'SOUL.md').write_text('seeded soul\n', encoding='utf-8')
     (managed_home / 'gateway.pid').write_text('{"pid":123,"kind":"hermes-gateway"}\n', encoding='utf-8')
     projects_dir = tmp_path / 'workspace'

@@ -5,18 +5,20 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Pinned Hermes release updated to `v2026.4.30`.
+- Breaking: switched the managed Hermes primary lane to Ollama Pro `custom:ollama-pro/deepseek-v4-pro:cloud`, changed fallback to `opencode-go/deepseek-v4-pro`, added `OLLAMA_API_KEY` to the managed runtime env contract, and moved only vision, approval, and curator auxiliary tasks to `gemini-3.1-flash-lite-preview`.
+- Updated pinned runtime packages, including `agent-browser` `0.26.0`, `blogwatcher-cli` `0.2.0`, the frontend package lock, and flake inputs.
 
 - Restored the `docs/api` reference set and added an image-baked `/home/hermes/ghostship-wiki` that syncs repo-managed Markdown/API references on boot while preserving agent-created wiki files outside the managed manifest.
 - Pinned the image npm `agent-browser` package to `0.26.0` and replace its native binary with a repo-patched build that adds humanized local CDP interactions for mouse movement, click timing, scrolling, form fill, and shifted-symbol typing while keeping the stock local CloakBrowser lane.
-- Added Hermes fallback diagnostics that log the primary model, fallback target, trigger, HTTP status, exception type, and sanitized provider error whenever the managed primary switches to `kimi-k2.6`.
+- Added Hermes fallback diagnostics that log the primary model, fallback target, trigger, HTTP status, exception type, and sanitized provider error whenever the managed primary switches to fallback.
 - Fixed direct OpenCode Go reasoning replay by patching Hermes to add the required empty `reasoning_content` marker for prior assistant replay messages that lack stored reasoning when managed reasoning is enabled, preventing DeepSeek and Moonshot/Kimi `HTTP 400` failures after the local router removal.
 - Updated the live runtime contract for the s6-based workstation image by waiting for dashboard readiness after service starts/restarts and replacing the retired in-container systemd tooling probe with direct Ghostship runtime checks.
-- Breaking: removed Ghostship Router from the image, flake outputs, CI, docs, and smoke contract; Hermes now calls OpenCode Go directly with `deepseek-v4-flash` as primary and `kimi-k2.6` as fallback, and persisted homes are converged away from the old `custom:ghostship-router` provider.
+- Breaking: removed Ghostship Router from the image, flake outputs, CI, docs, and smoke contract; persisted homes are converged away from the old `custom:ghostship-router` provider.
 - Switched CloakBrowser ad blocking to a pinned unpacked uBlock Origin Lite loaded through `AGENT_BROWSER_EXTENSIONS`, patched its baked defaults for complete filtering plus the major default/privacy/security/annoyance rulesets, removed the old managed Chrome/Chromium force-install policy, and smoke-test real ad-network blocking against an extension-free control.
 - Fixed the baked uBlock Origin Lite install to avoid injecting an unpacked-extension manifest key that prevents CloakBrowser/Chrome from reaching CDP startup.
 - Fixed the CloakBrowser wrapper to route extension launches to the cached Chromium binary, allowing agent-browser sessions with the baked uBlock Origin Lite extension to reach CDP startup.
 - Fixed the baked uBlock Origin Lite extension tree ownership so Chrome can load the unpacked extension under the non-root `hermes` user.
-- Changed the managed Hermes/router primary model to `deepseek-v4-flash` and fallback model to `kimi-k2.6`, including persisted-home config convergence and router default aliases.
+- Changed the managed Hermes/router primary model to `deepseek-v4-flash` and fallback model to `kimi-k2.6`, including persisted-home config convergence and router default aliases. Superseded in Unreleased by the Ollama Pro primary and DeepSeek V4 Pro fallback contract.
 - Fixed CloakBrowser session isolation by removing the image-wide `AGENT_BROWSER_PROFILE` default and preserving explicit Chrome profile paths so native `agent-browser --session` isolation is not collapsed into one shared Chromium profile.
 - Added OpenAI-compatible router model retrieval endpoints (`/v1/models/{model}` and `/api/v1/models`) so Hermes/Discord model probes no longer log misleading 404s for served router model IDs; bumped `ghostship-hermes-router` to `0.5.20`.
 - Fixed the image-owned `google-chrome` CloakBrowser wrapper to avoid forcing launches into one shared profile that triggers Chromium `SingletonLock` aborts, and defaulted Chrome to quiet benign DBus stderr noise in headless containers.

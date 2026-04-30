@@ -262,8 +262,9 @@ Important rule:
 
 ### Downstream Operator Env Summary
 
-Required for the default OpenCode Go runtime lane:
+Required for the default Ollama Pro primary lane and OpenCode Go fallback:
 
+- `OLLAMA_API_KEY`
 - `OPENCODE_GO_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
 
@@ -313,11 +314,11 @@ Dashboard:
 
 Models:
 
-- Hermes default config calls OpenCode Go directly
-- primary model is `opencode-go/deepseek-v4-flash`
-- fallback model is `opencode-go/kimi-k2.6`
+- Hermes default config calls Ollama Pro directly through the `ollama-pro` custom provider
+- primary model is `custom:ollama-pro/deepseek-v4-pro:cloud`
+- fallback model is `opencode-go/deepseek-v4-pro`
 - Hermes default config sets `web.backend: firecrawl`
-- reused persisted homes are converged away from the old local router provider and URL fields
+- reused persisted homes are converged away from older managed model lanes and the old local router provider/URL fields
 
 Forced Discord channels:
 
@@ -342,7 +343,7 @@ After the first successful container boot:
 
 1. authenticate Codex if you use the forced `#foodstamps` Codex channel
 2. verify provider and gateway env are present in both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`
-3. inspect `config.yaml` once and confirm the expected OpenCode Go defaults
+3. inspect `config.yaml` once and confirm the expected Ollama Pro and OpenCode Go defaults
 4. run `hermes doctor`
 5. open the dashboard and confirm `/terminal/` works through the same origin
 
@@ -361,10 +362,10 @@ Expected config shape after first boot:
 - Hermes home at `/home/hermes/.hermes`
 - `terminal.backend: local`
 - `terminal.cwd: /workspace`
-- root model uses `opencode-go/deepseek-v4-flash`
-- `fallback_model` uses `opencode-go/kimi-k2.6`
+- root model uses `custom:ollama-pro/deepseek-v4-pro:cloud`
+- `fallback_model` uses `opencode-go/deepseek-v4-pro`
 - `web.backend` is `firecrawl`
-- `custom_providers` has no local router entry
+- `custom_providers` includes `ollama-pro` at `https://ollama.com/v1` and has no local router entry
 - Discord forced-channel behavior controlled by runtime env, not by hardcoding channel ids into `config.yaml`
 
 ## Verification

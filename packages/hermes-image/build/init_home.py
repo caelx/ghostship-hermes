@@ -13,12 +13,17 @@ WORKSPACE = Path(os.environ.get("GHOSTSHIP_WORKSPACE_ROOT", "/workspace"))
 LEGACY_ROUTER_NAME = "ghostship-" + "router"
 LEGACY_ROUTER_PROVIDER = "custom:" + LEGACY_ROUTER_NAME
 LEGACY_ROUTER_URL = "http://127.0.0.1:" + "8788" + "/v1"
-MANAGED_MODEL_PROVIDER = "opencode-go"
-PRIMARY_MODEL = "deepseek-v4-flash"
-FALLBACK_MODEL = "kimi-k2.6"
+OLLAMA_PROVIDER_NAME = "ollama-pro"
+MANAGED_MODEL_PROVIDER = "custom:" + OLLAMA_PROVIDER_NAME
+PRIMARY_MODEL = "deepseek-v4-pro:cloud"
+FALLBACK_MODEL_PROVIDER = "opencode-go"
+FALLBACK_MODEL = "deepseek-v4-pro"
 AUXILIARY_MODEL = "gemini-2.5-flash-lite"
+CURATOR_AUXILIARY_MODEL = "gemini-3.1-flash-lite-preview"
 AUXILIARY_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 AUXILIARY_API_KEY = "${GOOGLE_AI_STUDIO_API_KEY}"
+OLLAMA_BASE_URL = "https://ollama.com/v1"
+OLLAMA_API_KEY_ENV = "OLLAMA_API_KEY"
 
 
 def _env_flag(name: str, default: str) -> bool:
@@ -43,11 +48,27 @@ def _direct_gemini() -> dict[str, str]:
     }
 
 
+def _curator_gemini() -> dict[str, str]:
+    return {
+        "model": CURATOR_AUXILIARY_MODEL,
+        "base_url": AUXILIARY_BASE_URL,
+        "api_key": AUXILIARY_API_KEY,
+    }
+
+
 DEFAULT_CONFIG = {
     "model": {
         "provider": MANAGED_MODEL_PROVIDER,
         "default": PRIMARY_MODEL,
     },
+    "custom_providers": [
+        {
+            "name": OLLAMA_PROVIDER_NAME,
+            "base_url": OLLAMA_BASE_URL,
+            "api_key_env": OLLAMA_API_KEY_ENV,
+            "model": PRIMARY_MODEL,
+        },
+    ],
     "web": {
         "backend": "firecrawl",
     },
@@ -66,7 +87,7 @@ DEFAULT_CONFIG = {
         }
     },
     "fallback_model": {
-        "provider": MANAGED_MODEL_PROVIDER,
+        "provider": FALLBACK_MODEL_PROVIDER,
         "model": FALLBACK_MODEL,
     },
     "timezone": "Pacific/Honolulu",
@@ -124,14 +145,15 @@ DEFAULT_CONFIG = {
         "mode": "off",
     },
     "auxiliary": {
-        "vision": _direct_gemini(),
+        "vision": _curator_gemini(),
         "web_extract": _direct_gemini(),
-        "approval": _direct_gemini(),
+        "approval": _curator_gemini(),
         "compression": _direct_gemini(),
         "session_search": _direct_gemini(),
         "skills_hub": _direct_gemini(),
         "mcp": _direct_gemini(),
         "flush_memories": _direct_gemini(),
+        "curator": _curator_gemini(),
     },
     "terminal": {
         "backend": "local",
@@ -277,6 +299,48 @@ def _remove_legacy_router_provider(config: object) -> bool:
     return changed
 
 
+def _normalize_ollama_provider(config: object) -> bool:
+    if not isinstance(config, dict):
+        return False
+
+    defaults = DEFAULT_CONFIG["custom_providers"][0]
+    providers = config.get("custom_providers")
+    if not isinstance(providers, list):
+        config["custom_providers"] = [deepcopy(defaults)]
+        return True
+
+    changed = False
+    for provider in providers:
+        if isinstance(provider, dict) and provider.get("name") == OLLAMA_PROVIDER_NAME:
+            for key, value in defaults.items():
+                if provider.get(key) != value:
+                    provider[key] = value
+                    changed = True
+            return changed
+
+    providers.append(deepcopy(defaults))
+    return True
+
+
+def _normalize_auxiliary_model_contract(config: object) -> bool:
+    if not isinstance(config, dict):
+        return False
+
+    auxiliary = config.get("auxiliary")
+    if not isinstance(auxiliary, dict):
+        config["auxiliary"] = deepcopy(DEFAULT_CONFIG["auxiliary"])
+        return True
+
+    changed = False
+    for key in ("vision", "approval", "curator"):
+        wanted = _curator_gemini()
+        current = auxiliary.get(key)
+        if current != wanted:
+            auxiliary[key] = wanted
+            changed = True
+    return changed
+
+
 def _normalize_managed_model_contract(config: object) -> bool:
     if not isinstance(config, dict):
         return False
@@ -286,8 +350,15 @@ def _normalize_managed_model_contract(config: object) -> bool:
     model = config.get("model")
     if (
         isinstance(model, dict)
-        and model.get("provider") in {"opencode-go", "openai-codex", LEGACY_ROUTER_PROVIDER}
-        and model.get("default") in {"deepseek-v4-pro", "deepseek-v4-flash", "minimax-m2.7", "gpt-5.4", "gpt-5.5"}
+        and model.get("provider") in {"opencode-go", "openai-codex", LEGACY_ROUTER_PROVIDER, MANAGED_MODEL_PROVIDER}
+        and model.get("default") in {
+            PRIMARY_MODEL,
+            "deepseek-v4-pro",
+            "deepseek-v4-flash",
+            "minimax-m2.7",
+            "gpt-5.4",
+            "gpt-5.5",
+        }
     ):
         model["provider"] = MANAGED_MODEL_PROVIDER
         model["default"] = PRIMARY_MODEL
@@ -301,9 +372,16 @@ def _normalize_managed_model_contract(config: object) -> bool:
     if (
         isinstance(fallback_model, dict)
         and fallback_model.get("provider") in {"openai-codex", "opencode-go", "custom", LEGACY_ROUTER_PROVIDER}
-        and fallback_model.get("model") in {"gpt-5.4-mini", "minimax-m2.7", "kimi-k2.6", "agentic", "coding"}
+        and fallback_model.get("model") in {
+            FALLBACK_MODEL,
+            "gpt-5.4-mini",
+            "minimax-m2.7",
+            "kimi-k2.6",
+            "agentic",
+            "coding",
+        }
     ):
-        fallback_model["provider"] = MANAGED_MODEL_PROVIDER
+        fallback_model["provider"] = FALLBACK_MODEL_PROVIDER
         fallback_model["model"] = FALLBACK_MODEL
         changed = True
 
@@ -361,6 +439,8 @@ def main() -> None:
         changed = _merge_missing_defaults(loaded, DEFAULT_CONFIG) or changed
         changed = _normalize_group_sessions(loaded) or changed
         changed = _remove_legacy_router_provider(loaded) or changed
+        changed = _normalize_ollama_provider(loaded) or changed
+        changed = _normalize_auxiliary_model_contract(loaded) or changed
         changed = _normalize_managed_model_contract(loaded) or changed
         if changed:
             config_path.write_text(

@@ -21,7 +21,7 @@ let
     pname = "hermes-dashboard-frontend";
     version = "0.2.0";
     src = ./frontend;
-    npmDepsHash = "sha256-NWkzm4w8kXrg1a6MEcs6fEjfRs3U1w74PtrycF0XrE4=";
+    npmDepsHash = "sha256-g5bomVRNBylt85+jMCVtOeotoDzQCRbFpUNl8Uhj//U=";
     installPhase = ''
       runHook preInstall
       mkdir -p "$out"

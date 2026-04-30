@@ -146,19 +146,29 @@ def test_ublock_origin_lite_is_loaded_by_agent_browser_extension_env() -> None:
     assert "ExtensionSettings" not in read("packages/hermes-image/rootfs/usr/local/bin/google-chrome")
 
 
-def test_managed_opencode_go_defaults_use_flash_and_kimi() -> None:
+def test_managed_defaults_use_ollama_pro_and_opencode_go_fallback() -> None:
     init_home = read("packages/hermes-image/build/init_home.py")
     module = read("packages/hermes-image/nixos-module.nix")
 
-    for text in (init_home, module):
+    assert 'MANAGED_MODEL_PROVIDER = "custom:" + OLLAMA_PROVIDER_NAME' in init_home
+    assert 'OLLAMA_PROVIDER_NAME = "ollama-pro"' in init_home
+    assert "https://ollama.com/v1" in init_home
+    assert "OLLAMA_API_KEY" in init_home
+    assert "deepseek-v4-pro:cloud" in init_home
+    assert "gemini-3.1-flash-lite-preview" in init_home
+
+    for text in (module,):
+        assert "custom:ollama-pro" in text
+        assert "https://ollama.com/v1" in text
+        assert "OLLAMA_API_KEY" in text
         assert "opencode-go" in text
-        assert "deepseek-v4-flash" in text
-        assert "kimi-k2.6" in text
-        assert '"deepseek-v4-pro": {},' not in text
+        assert "deepseek-v4-pro:cloud" in text
+        assert "deepseek-v4-pro" in text
+        assert "gemini-3.1-flash-lite-preview" in text
         assert '"minimax-m2.7": {},' not in text
 
-    assert 'MANAGED_MODEL_PROVIDER = "opencode-go"' in init_home
     assert 'provider = "opencode-go";' in module
+    assert 'provider = ollamaProviderSlug;' in module
     assert 'name = "ghostship-" "router"' not in module
     assert '/opt/ghostship-' 'router' not in module
     assert '_GHOSTSHIP_' 'ROUTER_API_KEY' not in init_home

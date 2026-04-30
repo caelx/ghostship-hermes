@@ -8,7 +8,7 @@
 }:
 let
   pname = "agent-browser";
-  version = "0.24.1";
+  version = "0.26.0";
   platformBinary =
     {
       x86_64-linux = "agent-browser-linux-x64";
@@ -16,7 +16,7 @@ let
     }.${stdenvNoCC.hostPlatform.system} or (throw "Unsupported system for ${pname}: ${stdenvNoCC.hostPlatform.system}");
   src = fetchurl {
     url = "https://registry.npmjs.org/agent-browser/-/${pname}-${version}.tgz";
-    hash = "sha512-csWJtYEQow52b+p93zVZfNrcNBwbxGCZDXDMNWl2ij2i0MFKubIzN+icUeX2/NrkZe5iIau8px+HQlxata2oPw==";
+    hash = "sha512-pdqSfjwbFSp+qnwlb2g23e9wXveIOfMi19xpPA9xZUbzEAUp6W4YBZj6Ybj8z4M7WkcbGDDYc+oDIHDt9R3EDQ==";
   };
 in
 stdenvNoCC.mkDerivation {

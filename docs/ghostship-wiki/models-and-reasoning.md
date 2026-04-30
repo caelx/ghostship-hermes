@@ -2,12 +2,12 @@
 
 ## Managed Model Contract
 
-- Primary: `provider=opencode-go`, model `deepseek-v4-flash`.
-- Fallback: `provider=opencode-go`, model `kimi-k2.6`.
+- Primary: `provider=custom:ollama-pro`, model `deepseek-v4-pro:cloud`.
+- Fallback: `provider=opencode-go`, model `deepseek-v4-pro`.
 - Agent reasoning: `reasoning_effort: high`.
 
-The direct `opencode-go` provider hides the final upstream host behind an
-aggregator, so Kimi/Moonshot-specific host detection is insufficient.
+The OpenCode Go fallback hides the final upstream host behind an aggregator, so
+host-specific reasoning detection is insufficient.
 
 ## Reasoning Replay Patch
 

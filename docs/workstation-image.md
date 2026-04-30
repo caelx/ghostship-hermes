@@ -57,6 +57,7 @@ Downstream should pass only the operator-facing runtime env vars. The full list 
 
 The common downstream set for the default Ghostship runtime is:
 
+- `OLLAMA_API_KEY`
 - `OPENCODE_GO_API_KEY`
 - `GOOGLE_AI_STUDIO_API_KEY`
 - `DISCORD_BOT_TOKEN`
@@ -77,7 +78,7 @@ Discord channel contract:
 - `DISCORD_WEBHOOK_CHANNEL` points at `#webhooks` and is the default channel used when Hermes creates a Discord webhook subscription without an explicit `--deliver-chat-id`.
 - The managed gateway retires closed Discord thread sessions after 05:00 local Hermes time and keeps their historical SQLite transcripts.
 
-The managed Hermes model config calls OpenCode Go directly with `deepseek-v4-flash` as primary and `kimi-k2.6` as fallback.
+The managed Hermes model config calls Ollama Pro directly with `deepseek-v4-pro:cloud` as primary and OpenCode Go with `deepseek-v4-pro` as fallback.
 
 Codex OAuth is not set by env var. Authenticate once inside the persisted home for the forced `#foodstamps` Codex channel:
 

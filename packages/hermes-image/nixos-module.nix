@@ -32,8 +32,13 @@ let
   managedWebhookPort = 8644;
   managedLayoutVersion = "single-agent-v1";
   auxiliaryModelDefault = "gemini-2.5-flash-lite";
+  curatorAuxiliaryModelDefault = "gemini-3.1-flash-lite-preview";
   auxiliaryBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
   auxiliaryApiKeyRef = "\${GOOGLE_AI_STUDIO_API_KEY}";
+  ollamaProviderName = "ollama-pro";
+  ollamaProviderSlug = "custom:ollama-pro";
+  ollamaBaseUrl = "https://ollama.com/v1";
+  ollamaApiKeyEnv = "OLLAMA_API_KEY";
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   repoOverlayBinDir = "/opt/ghostship-overlay/bin";
   runtimeCommand = if includeRepoContent then "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime" else "${repoOverlayBinDir}/ghostship-hermes-runtime";
@@ -41,6 +46,7 @@ let
   yamlFormat = pkgs.formats.yaml { };
   managedRuntimeEnvKeys = [
     "GOOGLE_AI_STUDIO_API_KEY"
+    "OLLAMA_API_KEY"
     "OPENROUTER_API_KEY"
     "OPENROUTER_BASE_URL"
     "OPENROUTER_HTTP_REFERER"
@@ -202,12 +208,25 @@ let
         base_url = auxiliaryBaseUrl;
         api_key = auxiliaryApiKeyRef;
       };
+      curatorGemini = {
+        model = curatorAuxiliaryModelDefault;
+        base_url = auxiliaryBaseUrl;
+        api_key = auxiliaryApiKeyRef;
+      };
     in
     {
       model = {
-        provider = "opencode-go";
-        default = "deepseek-v4-flash";
+        provider = ollamaProviderSlug;
+        default = "deepseek-v4-pro:cloud";
       };
+      custom_providers = [
+        {
+          name = ollamaProviderName;
+          base_url = ollamaBaseUrl;
+          api_key_env = ollamaApiKeyEnv;
+          model = "deepseek-v4-pro:cloud";
+        }
+      ];
       web = {
         backend = "firecrawl";
       };
@@ -225,7 +244,7 @@ let
       };
       fallback_model = {
         provider = "opencode-go";
-        model = "kimi-k2.6";
+        model = "deepseek-v4-pro";
       };
       timezone = "Pacific/Honolulu";
       agent = {
@@ -282,14 +301,15 @@ let
         mode = "off";
       };
       auxiliary = {
-        vision = directGemini;
+        vision = curatorGemini;
         web_extract = directGemini;
-        approval = directGemini;
+        approval = curatorGemini;
         compression = directGemini;
         session_search = directGemini;
         skills_hub = directGemini;
         mcp = directGemini;
         flush_memories = directGemini;
+        curator = curatorGemini;
       };
       discord = {
         require_mention = false;
@@ -611,7 +631,7 @@ EOF
       tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
       ${pkgs.gawk}/bin/awk '
         BEGIN {
-          in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0; in_web = 0; in_session_reset = 0; seen_web = 0; seen_web_backend = 0
+          in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0; in_web = 0; in_session_reset = 0; seen_web = 0; seen_web_backend = 0; seen_custom = 0
           legacy_url = "  base_url: http://127.0.0.1:" "8788" "/v1"
           legacy_key = "  api_key_env: _GHOSTSHIP_" "ROUTER_API_KEY"
           legacy_provider = "  provider: custom:" "ghostship-" "router"
@@ -692,6 +712,8 @@ EOF
           in_agent = 0
           in_web = 0
           in_session_reset = 0
+          seen_custom = 1
+          print
           next
         }
         /^agent:[[:space:]]*$/ {
@@ -727,31 +749,39 @@ EOF
           next
         }
         in_model && $0 == legacy_provider {
-          print "  provider: opencode-go"
+          print "  provider: custom:ollama-pro"
           next
         }
         in_model && $0 == "  provider: opencode-go" {
-          print "  provider: opencode-go"
+          print "  provider: custom:ollama-pro"
           next
         }
         in_model && $0 == "  default: minimax-m2.7" {
-          print "  default: deepseek-v4-flash"
+          print "  default: deepseek-v4-pro:cloud"
           next
         }
         in_model && $0 == "  default: deepseek-v4-pro" {
-          print "  default: deepseek-v4-flash"
+          print "  default: deepseek-v4-pro:cloud"
+          next
+        }
+        in_model && $0 == "  default: deepseek-v4-flash" {
+          print "  default: deepseek-v4-pro:cloud"
+          next
+        }
+        in_model && $0 == "  default: deepseek-v4-pro:cloud" {
+          print
           next
         }
         in_model && $0 == "  provider: openai-codex" {
-          print "  provider: opencode-go"
+          print "  provider: custom:ollama-pro"
           next
         }
         in_model && $0 == "  default: gpt-5.4" {
-          print "  default: deepseek-v4-flash"
+          print "  default: deepseek-v4-pro:cloud"
           next
         }
         in_model && $0 == "  default: gpt-5.5" {
-          print "  default: deepseek-v4-flash"
+          print "  default: deepseek-v4-pro:cloud"
           next
         }
         in_fallback_model && ($0 ~ /^  base_url:[[:space:]]/ || $0 ~ /^  api_key_env:[[:space:]]/) {
@@ -770,26 +800,19 @@ EOF
           next
         }
         in_fallback_model && $0 == "  model: gpt-5.4-mini" {
-          print "  model: kimi-k2.6"
+          print "  model: deepseek-v4-pro"
           next
         }
         in_fallback_model && $0 == "  model: minimax-m2.7" {
-          print "  model: kimi-k2.6"
+          print "  model: deepseek-v4-pro"
           next
         }
-        in_custom && $0 == "  model: deepseek-v4-pro" {
-          print "  model: deepseek-v4-flash"
+        in_fallback_model && $0 == "  model: kimi-k2.6" {
+          print "  model: deepseek-v4-pro"
           next
         }
-        in_custom && $0 == "    deepseek-v4-pro: {}" {
-          print "    deepseek-v4-flash: {}"
-          next
-        }
-        in_custom && $0 == "    minimax-m2.7: {}" {
-          print "    kimi-k2.6: {}"
-          next
-        }
-        in_custom {
+        in_fallback_model && $0 == "  model: deepseek-v4-pro" {
+          print
           next
         }
         in_agent && $0 == "  reasoning_effort: high" {
@@ -839,6 +862,13 @@ EOF
             print "  backend: firecrawl"
           } else if (in_web && !seen_web_backend) {
             print "  backend: firecrawl"
+          }
+          if (!seen_custom) {
+            print "custom_providers:"
+            print "- name: ollama-pro"
+            print "  base_url: https://ollama.com/v1"
+            print "  api_key_env: OLLAMA_API_KEY"
+            print "  model: deepseek-v4-pro:cloud"
           }
         }
       ' "$config_path" >"$tmp_path"

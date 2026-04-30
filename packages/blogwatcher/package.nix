@@ -4,15 +4,15 @@
   fetchurl,
 }:
 let
-  version = "0.1.1";
+  version = "0.2.0";
   srcs = {
     x86_64-linux = {
-      url = "https://github.com/JulienTant/blogwatcher-cli/releases/download/v0.1.1/blogwatcher-cli_linux_amd64.tar.gz";
-      hash = "sha256-2lEHjbF92jR9voF+aBJT2W4BVzc1HMadnMYvmHwZaLs=";
+      url = "https://github.com/JulienTant/blogwatcher-cli/releases/download/v0.2.0/blogwatcher-cli_linux_amd64.tar.gz";
+      hash = "sha256-6qJeu+E2H+kifBGPOP13fOi6ihdelU95BgiefSzs8iI=";
     };
     aarch64-linux = {
-      url = "https://github.com/JulienTant/blogwatcher-cli/releases/download/v0.1.1/blogwatcher-cli_linux_arm64.tar.gz";
-      hash = "sha256-e0FDXoFHsoPpDRLldOMvNqNmrh4UjgRIaTCl4eNRlL0=";
+      url = "https://github.com/JulienTant/blogwatcher-cli/releases/download/v0.2.0/blogwatcher-cli_linux_arm64.tar.gz";
+      hash = "sha256-c22C0Txzf0ndlNnAeeaEDV0R1/MVcLc+HPgL60Z4IMM=";
     };
   };
   source =

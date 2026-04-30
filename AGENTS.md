@@ -83,14 +83,14 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Do not launch baked uBO Lite through `cloakbrowser-current/chrome`; route extension launches to the cached Chromium binary because the CloakBrowser launcher can still hang before `DevToolsActivePort`.
 - Keep the baked uBO Lite extension tree owned by `hermes`; Chrome can hang before `DevToolsActivePort` when the unpacked extension path is root-owned.
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
-- The managed Hermes runtime primary lane is `opencode-go/deepseek-v4-flash`, fallback is `opencode-go/kimi-k2.6`, and managed agent defaults are `reasoning_effort = "high"` and `max_turns = 500`.
+- The managed Hermes runtime primary lane is `custom:ollama-pro/deepseek-v4-pro:cloud`, fallback is `opencode-go/deepseek-v4-pro`, and managed agent defaults are `reasoning_effort = "high"` and `max_turns = 500`.
 - The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Higher-level Bitwarden workflow helpers are model-authored, not image-owned.
 - Export `BITWARDENCLI_APPDATA_DIR` at the image/global env layer too; raw `bw` commands otherwise fall back to `~/.config/Bitwarden CLI`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.
 - Managed Hermes-facing env must be emitted to both `/run/ghostship/hermes.env` and `/home/hermes/.hermes/.env`; preserve unrelated persisted `.env` keys while refreshing the managed subset from current runtime env.
 - Direct `opencode-go` reasoning replay must add an empty `reasoning_content` marker for prior assistant messages that lack stored reasoning when reasoning is enabled; DeepSeek can require it on non-tool assistant history, and the aggregator hides the final Moonshot/Kimi host, so host-only Kimi checks do not fire.
 - Bake `/home/hermes/ghostship-wiki` from repo-managed Markdown plus restored `docs/api`; sync managed files on boot and never delete agent-created wiki files outside `.ghostship-managed-files`.
-- Hermes primary-to-`kimi-k2.6` fallback must log the primary failure trigger and sanitized error even when fallback succeeds; otherwise live diagnosis loses the only useful failure reason.
+- Hermes primary-to-fallback model switches must log the primary failure trigger and sanitized error even when fallback succeeds; otherwise live diagnosis loses the only useful failure reason.
 
 ### Discord Routing
 
