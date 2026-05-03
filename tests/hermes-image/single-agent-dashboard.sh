@@ -668,7 +668,7 @@ run_as_hermes "$container_name" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.herme
 run_as_hermes "$container_name" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: deepseek-v4-pro" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
+run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: xhigh" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
 run_as_hermes "$container_name" '/opt/hermes/venv/bin/python - <<'\''PY'\''
 import yaml
@@ -715,8 +715,7 @@ run_as_hermes "$container_name" '! sed -n "/^browser:/,/^[^ ]/p" /home/hermes/.h
 run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reactions: false" >/dev/null'
 run_as_hermes "$container_name" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  auto_thread: true" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^session_reset:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  mode: daily" >/dev/null'
-run_as_hermes "$container_name" 'sed -n "/^session_reset:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  at_hour: 4" >/dev/null'
+run_as_hermes "$container_name" '! grep -F "session_reset:" /home/hermes/.hermes/config.yaml >/dev/null'
 run_as_hermes "$container_name" 'grep -F "unauthorized_dm_behavior: ignore" /home/hermes/.hermes/config.yaml >/dev/null'
 run_in_container "$container_name" 'test -f /home/hermes/.hermes/skills/custom/SKILL.md'
 run_in_container "$container_name" 'test -f /home/hermes/.hermes/skills/autonomous-ai-agents/codex/SKILL.md'

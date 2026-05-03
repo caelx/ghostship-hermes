@@ -83,7 +83,8 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - Do not launch baked uBO Lite through `cloakbrowser-current/chrome`; route extension launches to the cached Chromium binary because the CloakBrowser launcher can still hang before `DevToolsActivePort`.
 - Keep the baked uBO Lite extension tree owned by `hermes`; Chrome can hang before `DevToolsActivePort` when the unpacked extension path is root-owned.
 - When the workstation smoke fails after the browser block, dump the concrete `/home/hermes` non-hermes ownership list and the CloakBrowser profile tree, otherwise CI hides the actual failing late-stage check.
-- The managed Hermes runtime primary lane is `custom:ollama-pro/deepseek-v4-pro:cloud`, fallback is `opencode-go/deepseek-v4-pro`, and managed agent defaults are `reasoning_effort = "high"` and `max_turns = 500`.
+- The managed Hermes runtime primary lane is `custom:ollama-pro/deepseek-v4-pro:cloud`, fallback is `opencode-go/deepseek-v4-pro`, and managed agent defaults are `reasoning_effort = "xhigh"` and `max_turns = 500`.
+- Managed Hermes sessions must not reset automatically; omit `session_reset` from the image-owned default config and remove it during persisted-home convergence.
 - The image-managed Bitwarden tool is the Password Manager CLI `bw`; persist its state under `/home/hermes/.local/state/bitwarden-cli` with `BITWARDENCLI_APPDATA_DIR`. Higher-level Bitwarden workflow helpers are model-authored, not image-owned.
 - Export `BITWARDENCLI_APPDATA_DIR` at the image/global env layer too; raw `bw` commands otherwise fall back to `~/.config/Bitwarden CLI`.
 - Hermes runtime env passthrough should default-allow downstream vars and exclude only image-owned or other-service-only env; do not maintain Hermes plugin env allowlists.

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Changed managed Hermes defaults to `reasoning_effort: xhigh` and removed automatic `session_reset` seeding/convergence so sessions stay continuous unless operators configure resets themselves.
+
 - Refreshed pinned software versions through the managed updater.
 
 - Pinned Hermes release updated to `v2026.4.30`.

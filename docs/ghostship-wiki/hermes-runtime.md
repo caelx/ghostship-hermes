@@ -10,7 +10,8 @@ Hermes is configured as a local workstation container:
 - Browser provider: local.
 - Web backend: `firecrawl`.
 - Memory provider: holographic memory store.
-- Agent defaults: `max_turns: 500`, `reasoning_effort: high`.
+- Agent defaults: `max_turns: 500`, `reasoning_effort: xhigh`.
+- Sessions do not reset automatically; the managed config omits `session_reset`.
 
 ## Config Files
 

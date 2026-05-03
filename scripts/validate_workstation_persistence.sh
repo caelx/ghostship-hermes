@@ -196,7 +196,7 @@ assert_model_config() {
   run_as_hermes "$target_container" "! sed -n '/^model:/,/^[^ ]/p' /home/hermes/.hermes/config.yaml | grep -F '  base_url: $legacy_router_url' >/dev/null"
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: kimi-k2.6" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: xhigh" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
   run_as_hermes "$target_container" "! sed -n '/^custom_providers:/,/^[^ ]/p' /home/hermes/.hermes/config.yaml | grep -F '${legacy_router_service#ghostship-hermes-}' >/dev/null"
   run_as_hermes "$target_container" 'sed -n "/^discord:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  require_mention: false" >/dev/null'
@@ -209,7 +209,7 @@ assert_config_migration() {
   run_as_hermes "$target_container" "sed -i '/^model:$/a\\  base_url: $legacy_router_url' /home/hermes/.hermes/config.yaml"
   run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  provider: opencode-go$/  provider: openai-codex/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^fallback_model:/,/^[^ ]/s/^  model: minimax-m2.7$/  model: gpt-5.4-mini/" /home/hermes/.hermes/config.yaml'
-  run_as_hermes "$target_container" 'sed -i "/^agent:/,/^[^ ]/s/^  reasoning_effort: high$/  reasoning_effort: medium/" /home/hermes/.hermes/config.yaml'
+  run_as_hermes "$target_container" 'sed -i "/^agent:/,/^[^ ]/s/^  reasoning_effort: xhigh$/  reasoning_effort: medium/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -i "/^agent:/,/^[^ ]/s/^  max_turns: 500$/  max_turns: 110/" /home/hermes/.hermes/config.yaml'
   run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  default: minimax-m2.7" >/dev/null'
@@ -225,7 +225,8 @@ assert_config_migration() {
   run_as_hermes "$target_container" 'sed -n "/^web:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  backend: firecrawl" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  provider: opencode-go" >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^fallback_model:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  model: kimi-k2.6" >/dev/null'
-  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: high" >/dev/null'
+  run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  reasoning_effort: xhigh" >/dev/null'
+  run_as_hermes "$target_container" '! grep -F "session_reset:" /home/hermes/.hermes/config.yaml >/dev/null'
   run_as_hermes "$target_container" 'sed -n "/^agent:/,/^[^ ]/p" /home/hermes/.hermes/config.yaml | grep -F "  max_turns: 500" >/dev/null'
 }
 

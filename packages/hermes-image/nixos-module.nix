@@ -41,8 +41,16 @@ let
   ollamaApiKeyEnv = "OLLAMA_API_KEY";
   certificateFile = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   repoOverlayBinDir = "/opt/ghostship-overlay/bin";
-  runtimeCommand = if includeRepoContent then "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime" else "${repoOverlayBinDir}/ghostship-hermes-runtime";
-  dashboardCommand = if includeRepoContent then "${hermesDashboard}/bin/hermes-dashboard" else "${repoOverlayBinDir}/hermes-dashboard";
+  runtimeCommand =
+    if includeRepoContent then
+      "${ghostshipHermesRuntime}/bin/ghostship-hermes-runtime"
+    else
+      "${repoOverlayBinDir}/ghostship-hermes-runtime";
+  dashboardCommand =
+    if includeRepoContent then
+      "${hermesDashboard}/bin/hermes-dashboard"
+    else
+      "${repoOverlayBinDir}/hermes-dashboard";
   yamlFormat = pkgs.formats.yaml { };
   managedRuntimeEnvKeys = [
     "GOOGLE_AI_STUDIO_API_KEY"
@@ -171,13 +179,15 @@ let
       name = "tmux";
       ref = "nixpkgs#tmux";
     }
-  ] ++ lib.optionals (blogwatcherPackage != null) [
+  ]
+  ++ lib.optionals (blogwatcherPackage != null) [
     {
       name = "blogwatcher-cli";
       bootstrapRef = "${blogwatcherPackage}";
       ref = "${runtimeFlakeRefDefault}#blogwatcher";
     }
-  ] ++ [
+  ]
+  ++ [
     {
       name = "nodejs_22";
       ref = "nixpkgs#nodejs_22";
@@ -249,7 +259,7 @@ let
       timezone = "Pacific/Honolulu";
       agent = {
         max_turns = 500;
-        reasoning_effort = "high";
+        reasoning_effort = "xhigh";
         verbose = false;
       };
       compression = {
@@ -257,11 +267,6 @@ let
         threshold = 0.50;
         target_ratio = 0.25;
         protect_last_n = 20;
-      };
-      session_reset = {
-        mode = "daily";
-        idle_minutes = 240;
-        at_hour = 4;
       };
       browser = {
         cloud_provider = "local";
@@ -334,37 +339,39 @@ let
         timeout = 180;
       };
     };
-  sharedDependencyPackages = with pkgs; [
-    bashInteractive
-    cacert
-    coreutils
-    curl
-    diffutils
-    findutils
-    git
-    gh
-    gnugrep
-    gnused
-    jq
-    nix
-    nodejs_22
-    openssh
-    procps
-    ripgrep
-    tirith
-    ttyd
-    util-linux
-  ] ++ sharedGhostshipDependencyPackages;
-
-  repoCommandPackages = lib.optionals includeRepoContent (
+  sharedDependencyPackages =
+    with pkgs;
     [
-      ghostshipHermesRuntime
-      hermesDashboard
+      bashInteractive
+      cacert
+      coreutils
+      curl
+      diffutils
+      findutils
+      git
+      gh
+      gnugrep
+      gnused
+      jq
+      nix
+      nodejs_22
+      openssh
+      procps
+      ripgrep
+      tirith
+      ttyd
+      util-linux
     ]
-  );
+    ++ sharedGhostshipDependencyPackages;
+
+  repoCommandPackages = lib.optionals includeRepoContent ([
+    ghostshipHermesRuntime
+    hermesDashboard
+  ]);
 
   systemPackages = sharedDependencyPackages ++ repoCommandPackages;
-  servicePath = sharedDependencyPackages ++ [ config.services.hermes-agent.package ] ++ repoCommandPackages;
+  servicePath =
+    sharedDependencyPackages ++ [ config.services.hermes-agent.package ] ++ repoCommandPackages;
   fallbackCommandPath = lib.makeBinPath servicePath;
   hermesUserPathPrefix = "/home/hermes/.local/bin:${managedUserProfile}/bin:/home/hermes/.nix-profile/bin";
   overlayPathSegment = lib.optionalString (!includeRepoContent) "${repoOverlayBinDir}:";
@@ -434,17 +441,17 @@ let
   '';
 
   managedGatewayScript = pkgs.writeShellScript "ghostship-hermes-gateway.sh" ''
-    set -euo pipefail
+        set -euo pipefail
 
-    export PATH="${hermesUserPathPrefix}:$PATH"
-    read -r _gateway_stat < "/proc/$$/stat"
-    set -- $_gateway_stat
-    _gateway_start_time="$22"
-    cat > ${lib.escapeShellArg managedGatewayPidPath} <<EOF
-{"pid": $$, "kind": "hermes-gateway", "argv": ["hermes", "gateway", "run", "--replace"], "start_time": ''${_gateway_start_time}}
-EOF
+        export PATH="${hermesUserPathPrefix}:$PATH"
+        read -r _gateway_stat < "/proc/$$/stat"
+        set -- $_gateway_stat
+        _gateway_start_time="$22"
+        cat > ${lib.escapeShellArg managedGatewayPidPath} <<EOF
+    {"pid": $$, "kind": "hermes-gateway", "argv": ["hermes", "gateway", "run", "--replace"], "start_time": ''${_gateway_start_time}}
+    EOF
 
-    exec hermes gateway run --replace
+        exec hermes gateway run --replace
   '';
   managedGatewayPreStartScript = pkgs.writeShellScript "ghostship-hermes-gateway-pre-start.sh" ''
     set -euo pipefail
@@ -631,10 +638,16 @@ EOF
       tmp_path="$(mktemp "$managed_home/config.yaml.tmp.XXXXXX")"
       ${pkgs.gawk}/bin/awk '
         BEGIN {
-          in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0; in_web = 0; in_session_reset = 0; seen_web = 0; seen_web_backend = 0; seen_custom = 0
+          in_model = 0; in_fallback_model = 0; in_discord = 0; in_custom = 0; in_agent = 0; in_web = 0; in_session_reset = 0; skip_session_reset = 0; seen_web = 0; seen_web_backend = 0; seen_custom = 0
           legacy_url = "  base_url: http://127.0.0.1:" "8788" "/v1"
           legacy_key = "  api_key_env: _GHOSTSHIP_" "ROUTER_API_KEY"
           legacy_provider = "  provider: custom:" "ghostship-" "router"
+        }
+        skip_session_reset && /^[[:space:]]/ {
+          next
+        }
+        skip_session_reset && /^[^[:space:]]/ {
+          skip_session_reset = 0
         }
         /^model:[[:space:]]*$/ {
           in_model = 1
@@ -698,7 +711,7 @@ EOF
           in_agent = 0
           in_web = 0
           in_session_reset = 1
-          print
+          skip_session_reset = 1
           next
         }
         /^custom_providers:[[:space:]]*$/ {
@@ -816,11 +829,15 @@ EOF
           next
         }
         in_agent && $0 == "  reasoning_effort: high" {
+          print "  reasoning_effort: xhigh"
+          next
+        }
+        in_agent && $0 == "  reasoning_effort: xhigh" {
           print
           next
         }
         in_agent && $0 == "  reasoning_effort: medium" {
-          print "  reasoning_effort: high"
+          print "  reasoning_effort: xhigh"
           next
         }
         in_agent && $0 == "  max_turns: 110" {
@@ -842,14 +859,6 @@ EOF
         }
         in_discord && $0 ~ /^  auto_thread:[[:space:]]/ {
           print "  auto_thread: true"
-          next
-        }
-        in_session_reset && $0 ~ /^  mode:[[:space:]]/ {
-          print "  mode: daily"
-          next
-        }
-        in_session_reset && $0 ~ /^  at_hour:[[:space:]]/ {
-          print "  at_hour: 4"
           next
         }
         in_custom && $0 ~ /^[[:space:]]+api_key:[[:space:]]/ {
@@ -975,201 +984,201 @@ EOF
   '';
 
   managedUserToolingScript = pkgs.writeShellScript "ghostship-hermes-user-tooling.sh" ''
-    set -euo pipefail
+        set -euo pipefail
 
-    mode="''${1:-bootstrap}"
-    export HOME=/home/hermes
-    export HERMES_HOME=/home/hermes/.hermes
-    export GHOSTSHIP_HERMES_PROJECT_ROOT="''${GHOSTSHIP_HERMES_PROJECT_ROOT:-${toolingProjectRoot}}"
-    export GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF="''${GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF:-${runtimeFlakeRefDefault}}"
-    export GHOSTSHIP_HERMES_MANAGED_PROFILE="''${GHOSTSHIP_HERMES_MANAGED_PROFILE:-${managedUserProfile}}"
-    export PATH="${hermesUserPathPrefix}:${lib.makeBinPath servicePath}:$PATH"
-    export npm_config_update_notifier=false
-    export npm_config_fund=false
-    export npm_config_cache="$HOME/.cache/npm"
-    export GHOSTSHIP_TOOLING_MODE="$mode"
+        mode="''${1:-bootstrap}"
+        export HOME=/home/hermes
+        export HERMES_HOME=/home/hermes/.hermes
+        export GHOSTSHIP_HERMES_PROJECT_ROOT="''${GHOSTSHIP_HERMES_PROJECT_ROOT:-${toolingProjectRoot}}"
+        export GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF="''${GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF:-${runtimeFlakeRefDefault}}"
+        export GHOSTSHIP_HERMES_MANAGED_PROFILE="''${GHOSTSHIP_HERMES_MANAGED_PROFILE:-${managedUserProfile}}"
+        export PATH="${hermesUserPathPrefix}:${lib.makeBinPath servicePath}:$PATH"
+        export npm_config_update_notifier=false
+        export npm_config_fund=false
+        export npm_config_cache="$HOME/.cache/npm"
+        export GHOSTSHIP_TOOLING_MODE="$mode"
 
-    mkdir -p "$GHOSTSHIP_HERMES_PROJECT_ROOT" "$HOME/.local/bin" "$npm_config_cache" "$(dirname "$GHOSTSHIP_HERMES_MANAGED_PROFILE")"
+        mkdir -p "$GHOSTSHIP_HERMES_PROJECT_ROOT" "$HOME/.local/bin" "$npm_config_cache" "$(dirname "$GHOSTSHIP_HERMES_MANAGED_PROFILE")"
 
-    python3 - <<'PY2'
-import json
-import os
-import subprocess
-from pathlib import Path
+        python3 - <<'PY2'
+    import json
+    import os
+    import subprocess
+    from pathlib import Path
 
-mode = os.environ.get("GHOSTSHIP_TOOLING_MODE", "bootstrap")
-runtime_flake_ref = os.environ.get("GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF", "github:caelx/ghostship-hermes")
-managed_profile = os.environ["GHOSTSHIP_HERMES_MANAGED_PROFILE"]
-project_root = Path(os.environ["GHOSTSHIP_HERMES_PROJECT_ROOT"])
-home = Path(os.environ["HOME"])
-specs = json.loads(r"""${builtins.toJSON managedUserPackages}""")
-managed_npm_packages = json.loads(r"""${builtins.toJSON managedNpmPackages}""")
-managed_npm_bins = json.loads(r"""${builtins.toJSON managedNpmBins}""")
-
-
-def run(command, *, cwd=None, check=True, capture_output=False):
-    return subprocess.run(
-        command,
-        cwd=cwd,
-        check=check,
-        capture_output=capture_output,
-        text=True,
-    )
+    mode = os.environ.get("GHOSTSHIP_TOOLING_MODE", "bootstrap")
+    runtime_flake_ref = os.environ.get("GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF", "github:caelx/ghostship-hermes")
+    managed_profile = os.environ["GHOSTSHIP_HERMES_MANAGED_PROFILE"]
+    project_root = Path(os.environ["GHOSTSHIP_HERMES_PROJECT_ROOT"])
+    home = Path(os.environ["HOME"])
+    specs = json.loads(r"""${builtins.toJSON managedUserPackages}""")
+    managed_npm_packages = json.loads(r"""${builtins.toJSON managedNpmPackages}""")
+    managed_npm_bins = json.loads(r"""${builtins.toJSON managedNpmBins}""")
 
 
-def desired_ref_for(item):
-    if mode == "refresh" and item["name"] == "hermes-agent-wrapped":
-        return f"{runtime_flake_ref}#hermes-agent-wrapped"
-    return item.get("bootstrapRef") or item["ref"]
-
-
-def ref_matches_entry(desired_ref, current_entry):
-    current_refs = {
-        value
-        for value in (
-            current_entry.get("originalUrl"),
-            current_entry.get("originalURL"),
-            current_entry.get("url"),
-            current_entry.get("uri"),
-            current_entry.get("lockedUrl"),
+    def run(command, *, cwd=None, check=True, capture_output=False):
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            check=check,
+            capture_output=capture_output,
+            text=True,
         )
-        if isinstance(value, str) and value
-    }
-    current_refs.update(
-        value
-        for value in current_entry.get("storePaths", [])
-        if isinstance(value, str) and value
+
+
+    def desired_ref_for(item):
+        if mode == "refresh" and item["name"] == "hermes-agent-wrapped":
+            return f"{runtime_flake_ref}#hermes-agent-wrapped"
+        return item.get("bootstrapRef") or item["ref"]
+
+
+    def ref_matches_entry(desired_ref, current_entry):
+        current_refs = {
+            value
+            for value in (
+                current_entry.get("originalUrl"),
+                current_entry.get("originalURL"),
+                current_entry.get("url"),
+                current_entry.get("uri"),
+                current_entry.get("lockedUrl"),
+            )
+            if isinstance(value, str) and value
+        }
+        current_refs.update(
+            value
+            for value in current_entry.get("storePaths", [])
+            if isinstance(value, str) and value
+        )
+
+        if desired_ref in current_refs:
+            return True
+
+        if "#" not in desired_ref:
+            return False
+
+        desired_url, desired_attr = desired_ref.split("#", 1)
+        normalized_urls = set()
+        for value in current_refs:
+            normalized_urls.add(value)
+            if value.startswith("flake:"):
+                normalized_urls.add(value.removeprefix("flake:"))
+
+        desired_url = desired_url.removeprefix("flake:")
+        current_attr = current_entry.get("attrPath")
+        attr_matches = isinstance(current_attr, str) and (
+            current_attr == desired_attr or current_attr.endswith(f".{desired_attr}")
+        )
+        return desired_url in normalized_urls and attr_matches
+
+
+    DEFAULT_NIX_PROFILE_PRIORITY = 5
+    def normalize_priority(value):
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
+
+
+    def priority_matches_entry(desired_priority, current_entry):
+        current_priority = normalize_priority(current_entry.get("priority"))
+        if desired_priority is None:
+            return current_priority in (None, DEFAULT_NIX_PROFILE_PRIORITY)
+        return current_priority == desired_priority
+
+
+    result = run(
+        ["nix", "profile", "list", "--profile", managed_profile, "--json"],
+        check=False,
+        capture_output=True,
     )
+    if result.returncode == 0:
+        elements = json.loads(result.stdout).get("elements", {})
+    else:
+        elements = {}
 
-    if desired_ref in current_refs:
-        return True
+    for item in specs:
+        name = item["name"]
+        desired_ref = desired_ref_for(item)
+        desired_priority = normalize_priority(item.get("priority"))
+        matching_entries = sorted(
+            (entry_name, elements[entry_name])
+            for entry_name in elements
+            if entry_name == name or entry_name.startswith(f"{name}-")
+        )
 
-    if "#" not in desired_ref:
-        return False
+        keep_existing = False
+        if len(matching_entries) == 1 and matching_entries[0][0] == name:
+            _, current_entry = matching_entries[0]
+            keep_existing = ref_matches_entry(desired_ref, current_entry) and priority_matches_entry(desired_priority, current_entry)
 
-    desired_url, desired_attr = desired_ref.split("#", 1)
-    normalized_urls = set()
-    for value in current_refs:
-        normalized_urls.add(value)
-        if value.startswith("flake:"):
-            normalized_urls.add(value.removeprefix("flake:"))
+        if not keep_existing:
+            for entry_name, _ in matching_entries:
+                run(["nix", "profile", "remove", "--profile", managed_profile, entry_name])
+            command = ["nix", "profile", "add", "--profile", managed_profile]
+            if desired_priority is not None:
+                command.extend(["--priority", str(desired_priority)])
+            command.append(desired_ref)
+            run(command)
 
-    desired_url = desired_url.removeprefix("flake:")
-    current_attr = current_entry.get("attrPath")
-    attr_matches = isinstance(current_attr, str) and (
-        current_attr == desired_attr or current_attr.endswith(f".{desired_attr}")
+    package_json = project_root / "package.json"
+    package_lock = project_root / "package-lock.json"
+    project_bin_root = project_root / "node_modules" / ".bin"
+    desired_package_json = (
+        json.dumps(
+            {
+                "name": "ghostship-hermes-runtime-tools",
+                "private": True,
+                "devDependencies": {pkg: "latest" for pkg in managed_npm_packages},
+            },
+            indent=2,
+        )
+        + "\n"
     )
-    return desired_url in normalized_urls and attr_matches
+    package_json_changed = True
+    if package_json.exists():
+        package_json_changed = package_json.read_text() != desired_package_json
+    if package_json_changed:
+        package_json.write_text(desired_package_json)
 
+    needs_npm_install = package_json_changed or not package_lock.exists()
+    if not needs_npm_install:
+        for bin_name in managed_npm_bins:
+            if not (project_bin_root / bin_name).exists():
+                needs_npm_install = True
+                break
 
-DEFAULT_NIX_PROFILE_PRIORITY = 5
-def normalize_priority(value):
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return value
+    if needs_npm_install:
+        run(["npm", "install", "--silent"], cwd=project_root)
 
+    local_bin = home / ".local" / "bin"
+    agent_browser_link = local_bin / "agent-browser"
+    for entry in local_bin.iterdir():
+        if not entry.is_symlink():
+            continue
+        try:
+            target = entry.resolve(strict=False)
+        except OSError:
+            continue
+        if target.parent == project_bin_root and entry.name not in managed_npm_bins:
+            entry.unlink(missing_ok=True)
 
-def priority_matches_entry(desired_priority, current_entry):
-    current_priority = normalize_priority(current_entry.get("priority"))
-    if desired_priority is None:
-        return current_priority in (None, DEFAULT_NIX_PROFILE_PRIORITY)
-    return current_priority == desired_priority
-
-
-result = run(
-    ["nix", "profile", "list", "--profile", managed_profile, "--json"],
-    check=False,
-    capture_output=True,
-)
-if result.returncode == 0:
-    elements = json.loads(result.stdout).get("elements", {})
-else:
-    elements = {}
-
-for item in specs:
-    name = item["name"]
-    desired_ref = desired_ref_for(item)
-    desired_priority = normalize_priority(item.get("priority"))
-    matching_entries = sorted(
-        (entry_name, elements[entry_name])
-        for entry_name in elements
-        if entry_name == name or entry_name.startswith(f"{name}-")
-    )
-
-    keep_existing = False
-    if len(matching_entries) == 1 and matching_entries[0][0] == name:
-        _, current_entry = matching_entries[0]
-        keep_existing = ref_matches_entry(desired_ref, current_entry) and priority_matches_entry(desired_priority, current_entry)
-
-    if not keep_existing:
-        for entry_name, _ in matching_entries:
-            run(["nix", "profile", "remove", "--profile", managed_profile, entry_name])
-        command = ["nix", "profile", "add", "--profile", managed_profile]
-        if desired_priority is not None:
-            command.extend(["--priority", str(desired_priority)])
-        command.append(desired_ref)
-        run(command)
-
-package_json = project_root / "package.json"
-package_lock = project_root / "package-lock.json"
-project_bin_root = project_root / "node_modules" / ".bin"
-desired_package_json = (
-    json.dumps(
-        {
-            "name": "ghostship-hermes-runtime-tools",
-            "private": True,
-            "devDependencies": {pkg: "latest" for pkg in managed_npm_packages},
-        },
-        indent=2,
-    )
-    + "\n"
-)
-package_json_changed = True
-if package_json.exists():
-    package_json_changed = package_json.read_text() != desired_package_json
-if package_json_changed:
-    package_json.write_text(desired_package_json)
-
-needs_npm_install = package_json_changed or not package_lock.exists()
-if not needs_npm_install:
     for bin_name in managed_npm_bins:
-        if not (project_bin_root / bin_name).exists():
-            needs_npm_install = True
-            break
+        target = project_bin_root / bin_name
+        link = local_bin / bin_name
+        if target.exists():
+            link.unlink(missing_ok=True)
+            link.symlink_to(target)
 
-if needs_npm_install:
-    run(["npm", "install", "--silent"], cwd=project_root)
-
-local_bin = home / ".local" / "bin"
-agent_browser_link = local_bin / "agent-browser"
-for entry in local_bin.iterdir():
-    if not entry.is_symlink():
-        continue
-    try:
-        target = entry.resolve(strict=False)
-    except OSError:
-        continue
-    if target.parent == project_bin_root and entry.name not in managed_npm_bins:
-        entry.unlink(missing_ok=True)
-
-for bin_name in managed_npm_bins:
-    target = project_bin_root / bin_name
-    link = local_bin / bin_name
-    if target.exists():
-        link.unlink(missing_ok=True)
-        link.symlink_to(target)
-
-if agent_browser_link.is_symlink():
-    try:
-        target = agent_browser_link.resolve(strict=False)
-    except OSError:
-        target = None
-    if target is None or project_root in target.parents:
-        agent_browser_link.unlink(missing_ok=True)
-PY2
+    if agent_browser_link.is_symlink():
+        try:
+            target = agent_browser_link.resolve(strict=False)
+        except OSError:
+            target = None
+        if target is None or project_root in target.parents:
+            agent_browser_link.unlink(missing_ok=True)
+    PY2
   '';
 
   serviceEnvironment = {
@@ -1178,7 +1187,8 @@ PY2
     BITWARDENCLI_APPDATA_DIR = "/home/hermes/.local/state/bitwarden-cli";
     SSL_CERT_FILE = certificateFile;
     NIX_SSL_CERT_FILE = certificateFile;
-  } // lib.optionalAttrs includeManagedRuntime {
+  }
+  // lib.optionalAttrs includeManagedRuntime {
     GHOSTSHIP_HERMES_PROJECT_ROOT = toolingProjectRoot;
     GHOSTSHIP_HERMES_RUNTIME_FLAKE_REF = runtimeFlakeRefDefault;
     GHOSTSHIP_TERMINAL_CWD = "/workspace";
@@ -1190,13 +1200,16 @@ PY2
     GHOSTSHIP_HUD_DEFAULT_PROFILE_NAME = "Managed Agent";
   };
 
-  userServiceEnvironment = serviceEnvironment // {
-    HOME = "/home/hermes";
-    XDG_RUNTIME_DIR = managedUserRuntimeDir;
-    DBUS_SESSION_BUS_ADDRESS = "unix:path=${managedUserRuntimeDir}/bus";
-  } // lib.optionalAttrs includeManagedRuntime {
-    GHOSTSHIP_HERMES_MANAGED_PROFILE = managedUserProfile;
-  };
+  userServiceEnvironment =
+    serviceEnvironment
+    // {
+      HOME = "/home/hermes";
+      XDG_RUNTIME_DIR = managedUserRuntimeDir;
+      DBUS_SESSION_BUS_ADDRESS = "unix:path=${managedUserRuntimeDir}/bus";
+    }
+    // lib.optionalAttrs includeManagedRuntime {
+      GHOSTSHIP_HERMES_MANAGED_PROFILE = managedUserProfile;
+    };
 
 in
 {
@@ -1211,7 +1224,9 @@ in
       /nix/var/nix/profiles/per-user/root/channels \
       /nix/var/nix/profiles/per-user/root/channels-*
   '';
-  system.activationScripts.no-nix-channel.deps = lib.mkIf (!config.nix.channel.enable) [ "removeStaleRootChannels" ];
+  system.activationScripts.no-nix-channel.deps = lib.mkIf (!config.nix.channel.enable) [
+    "removeStaleRootChannels"
+  ];
 
   imports = [
     "${modulesPath}/profiles/docker-container.nix"
@@ -1320,7 +1335,8 @@ in
     wantedBy = [ "multi-user.target" ];
     before = [
       "hermes-agent.service"
-    ] ++ lib.optionals includeManagedRuntime [
+    ]
+    ++ lib.optionals includeManagedRuntime [
       "ghostship-hermes-hudui.service"
       "${managedGatewayServiceName}.service"
     ];
@@ -1510,7 +1526,10 @@ in
 
   systemd.services.ghostship-hermes-user-tooling-refresh = lib.mkIf includeManagedRuntime {
     description = "Refresh ghostship-hermes user tooling";
-    after = [ "network-online.target" "nix-daemon.service" ];
+    after = [
+      "network-online.target"
+      "nix-daemon.service"
+    ];
     requires = [ "nix-daemon.service" ];
     wants = [ "network-online.target" ];
     environment = userServiceEnvironment;

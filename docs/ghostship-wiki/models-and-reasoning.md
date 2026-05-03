@@ -4,7 +4,7 @@
 
 - Primary: `provider=custom:ollama-pro`, model `deepseek-v4-pro:cloud`.
 - Fallback: `provider=opencode-go`, model `deepseek-v4-pro`.
-- Agent reasoning: `reasoning_effort: high`.
+- Agent reasoning: `reasoning_effort: xhigh`.
 
 The OpenCode Go fallback hides the final upstream host behind an aggregator, so
 host-specific reasoning detection is insufficient.

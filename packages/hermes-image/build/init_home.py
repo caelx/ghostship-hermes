@@ -93,7 +93,7 @@ DEFAULT_CONFIG = {
     "timezone": "Pacific/Honolulu",
     "agent": {
         "max_turns": 500,
-        "reasoning_effort": "high",
+        "reasoning_effort": "xhigh",
         "verbose": False,
     },
     "compression": {
@@ -101,11 +101,6 @@ DEFAULT_CONFIG = {
         "threshold": 0.50,
         "target_ratio": 0.25,
         "protect_last_n": 20,
-    },
-    "session_reset": {
-        "mode": "daily",
-        "idle_minutes": 240,
-        "at_hour": 4,
     },
     "browser": {
         "cloud_provider": "local",
@@ -386,8 +381,8 @@ def _normalize_managed_model_contract(config: object) -> bool:
         changed = True
 
     agent = config.get("agent")
-    if isinstance(agent, dict) and agent.get("reasoning_effort") != "high":
-        agent["reasoning_effort"] = "high"
+    if isinstance(agent, dict) and agent.get("reasoning_effort") != "xhigh":
+        agent["reasoning_effort"] = "xhigh"
         changed = True
     if isinstance(agent, dict) and agent.get("max_turns") != 500:
         agent["max_turns"] = 500
@@ -402,6 +397,14 @@ def _normalize_managed_model_contract(config: object) -> bool:
         changed = True
 
     return changed
+
+
+def _remove_auto_session_reset(config: object) -> bool:
+    if not isinstance(config, dict) or "session_reset" not in config:
+        return False
+
+    del config["session_reset"]
+    return True
 
 
 def main() -> None:
@@ -442,6 +445,7 @@ def main() -> None:
         changed = _normalize_ollama_provider(loaded) or changed
         changed = _normalize_auxiliary_model_contract(loaded) or changed
         changed = _normalize_managed_model_contract(loaded) or changed
+        changed = _remove_auto_session_reset(loaded) or changed
         if changed:
             config_path.write_text(
                 yaml.safe_dump(loaded, sort_keys=False),

@@ -10,16 +10,16 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_managed_discord_defaults_are_threaded_and_daily() -> None:
+def test_managed_discord_defaults_are_threaded_without_session_reset() -> None:
     assert "DISCORD_AUTO_THREAD=true" in read("packages/hermes-image/Dockerfile")
 
     init_home = read("packages/hermes-image/build/init_home.py")
     assert '_env_flag("DISCORD_AUTO_THREAD", "true")' in init_home
-    assert '"session_reset": {\n        "mode": "daily",\n        "idle_minutes": 240,\n        "at_hour": 4,' in init_home
+    assert '"session_reset": {' not in init_home
+    assert "def _remove_auto_session_reset" in init_home
 
     module = read("packages/hermes-image/nixos-module.nix")
-    assert 'mode = "daily";' in module
-    assert "at_hour = 4;" in module
+    assert 'session_reset = {' not in module
     assert "auto_thread = true;" in module
     assert "DISCORD_WEBHOOK_CHANNEL" in module
 
@@ -165,6 +165,7 @@ def test_managed_defaults_use_ollama_pro_and_opencode_go_fallback() -> None:
         assert "deepseek-v4-pro:cloud" in text
         assert "deepseek-v4-pro" in text
         assert "gemini-3.1-flash-lite-preview" in text
+        assert 'reasoning_effort = "xhigh";' in text
         assert '"minimax-m2.7": {},' not in text
 
     assert 'provider = "opencode-go";' in module
