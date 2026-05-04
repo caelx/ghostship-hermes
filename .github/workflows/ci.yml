@@ -27,6 +27,9 @@ jobs:
       - name: Install uv
         run: python3 -m pip install --user uv
 
+      - name: Run Hermes image static tests
+        run: ~/.local/bin/uvx --from pytest pytest tests/hermes-image/test_discord_thread_contract_static.py -q -s
+
       - name: Run dashboard tests
         run: cd packages/hermes-dashboard && ~/.local/bin/uv run --extra dev python -m pytest tests -q -s
 

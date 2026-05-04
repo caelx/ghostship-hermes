@@ -1,5 +1,8 @@
 import importlib.util
 import re
+import subprocess
+import sys
+import tarfile
 from pathlib import Path
 
 
@@ -8,6 +11,66 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_prepare_upstream_hermes_applies_to_pinned_release(tmp_path) -> None:
+    release = read("packages/hermes-image/hermes-release.txt").strip()
+    archive_path = tmp_path / "hermes-agent.tar.gz"
+    extract_dir = tmp_path / "extract"
+    subprocess.run(
+        [
+            "curl",
+            "-fsSL",
+            f"https://github.com/NousResearch/hermes-agent/archive/refs/tags/{release}.tar.gz",
+            "-o",
+            str(archive_path),
+        ],
+        check=True,
+    )
+    with tarfile.open(archive_path, "r:gz") as archive:
+        archive.extractall(extract_dir, filter="data")
+    upstream_root = next(path for path in extract_dir.iterdir() if path.is_dir())
+
+    raw_gateway = (upstream_root / "gateway" / "run.py").read_text(encoding="utf-8")
+    raw_webhook = (upstream_root / "hermes_cli" / "webhook.py").read_text(encoding="utf-8")
+    raw_app = (upstream_root / "web" / "src" / "App.tsx").read_text(encoding="utf-8")
+    assert "_ghostship_discord_forced_channel" not in raw_gateway
+    assert "_ghostship_retire_closed_discord_threads" not in raw_gateway
+    assert "DISCORD_WEBHOOK_CHANNEL" not in raw_webhook
+    assert 'label: "Terminal"' not in raw_app
+    assert "/terminal/" not in raw_app
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "packages/hermes-image/build/prepare_upstream_hermes.py"),
+            str(upstream_root),
+        ],
+        check=True,
+    )
+
+    patched_gateway = (upstream_root / "gateway" / "run.py").read_text(encoding="utf-8")
+    patched_discord = (upstream_root / "gateway" / "platforms" / "discord.py").read_text(encoding="utf-8")
+    patched_webhook = (upstream_root / "hermes_cli" / "webhook.py").read_text(encoding="utf-8")
+    patched_app = (upstream_root / "web" / "src" / "App.tsx").read_text(encoding="utf-8")
+    patched_run_agent = (upstream_root / "run_agent.py").read_text(encoding="utf-8")
+
+    assert "_ghostship_discord_forced_channel" in patched_gateway
+    assert 'parent_chat_id = getattr(source, "chat_id_alt", None)' in patched_gateway
+    assert "This Discord Codex channel is pinned to openai-codex (`gpt-5.5`)." in patched_gateway
+    assert "_ghostship_retire_closed_discord_threads" in patched_gateway
+    assert 'getattr(thread, "archived", False)' in patched_gateway
+    assert "chat_id_alt=parent_channel_id if is_thread else None" in patched_discord
+    assert "chat_id_alt=_parent_id or None" in patched_discord
+    assert "skip_thread = bool(channel_ids & no_thread_channels)" in patched_discord
+    assert 'os.getenv("DISCORD_WEBHOOK_CHANNEL", "").strip()' in patched_webhook
+    assert 'route["deliver_extra"] = {"chat_id": deliver_chat_id}' in patched_webhook
+    assert 'label: "Terminal"' in patched_app
+    assert 'path: "/console"' in patched_app
+    assert "/terminal/" in (upstream_root / "web" / "src" / "pages" / "ConsolePage.tsx").read_text(encoding="utf-8")
+    assert "Primary model failure before fallback" in patched_run_agent
+    assert "ghostship_opencode_go_reasoning" in patched_run_agent
+    assert 'api_msg["reasoning_content"] = ""' in patched_run_agent
 
 
 def test_managed_discord_defaults_are_threaded_without_session_reset() -> None:

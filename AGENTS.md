@@ -63,6 +63,7 @@ tests/hermes-image/single-agent-dashboard.sh ghostship-hermes:dev
 - `ttyd` should be backed by `tmux new -A -s webterm` so browser reconnects do not kill the terminal session.
 - Keep ttyd styling aligned to the dashboard palette.
 - Bind the public web surface to `0.0.0.0:7681`, but keep the internal dashboard listener on localhost.
+- Nginx must rewrite dashboard upstream `Host` to `127.0.0.1:9119`; external hosts such as `hermes.ghostship.io` otherwise trip upstream Hermes' localhost-bound Host guard.
 - Hermes browser tools should use the stock local `agent-browser` lane by exposing native CloakBrowser as the standard `google-chrome` binary that `agent-browser` already probes on Linux.
 - Build-time image prep must install native CloakBrowser under `/opt/ghostship` and prefetch its browser binary so runtime launches do not depend on first-boot network access.
 - The wrapper at `/usr/local/bin/google-chrome` must inject CloakBrowser's default stealth args for normal launches, route extension launches to the cached Chromium binary, default raw Chrome calls to `/home/hermes/.local/state/cloakbrowser` only when callers omit `--user-data-dir`, preserve explicit `--user-data-dir` values, default Chrome to `--log-level=3` unless the caller supplies a log level, and include `--no-sandbox` because agent-browser extension launches otherwise crash before `DevToolsActivePort` in the container.
