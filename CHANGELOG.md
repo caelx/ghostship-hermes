@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Pinned Hermes release updated to `v2026.5.7`.
+
 - Fixed public dashboard access through external hostnames such as `hermes.ghostship.io` by having nginx preserve the upstream Hermes localhost bind contract when proxying dashboard requests, and added CI coverage for the upstream patcher plus external Host smoke checks.
 
 - Changed managed Hermes defaults to `reasoning_effort: xhigh` and removed automatic `session_reset` seeding/convergence so sessions stay continuous unless operators configure resets themselves.
