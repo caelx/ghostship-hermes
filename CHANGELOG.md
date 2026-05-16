@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Pinned Hermes release updated to `v2026.5.16`.
+
 - Pinned Hermes release updated to `v2026.5.7`.
 
 - Fixed public dashboard access through external hostnames such as `hermes.ghostship.io` by having nginx preserve the upstream Hermes localhost bind contract when proxying dashboard requests, and added CI coverage for the upstream patcher plus external Host smoke checks.
